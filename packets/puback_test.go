@@ -78,3 +78,22 @@ func BenchmarkPubackDecode(b *testing.B) {
 		pk.Decode(expectedPackets[Puback][0].rawBytes[2:])
 	}
 }
+
+func TestPubackValidate(t *testing.T) {
+	pk := newPacket(Puback).(*PubackPacket)
+	pk.FixedHeader.decode(expectedPackets[Puback][0].rawBytes[0])
+
+	b, err := pk.Validate()
+	require.NoError(t, err)
+	require.Equal(t, Accepted, b)
+
+}
+
+func BenchmarkPubackValidate(b *testing.B) {
+	pk := newPacket(Puback).(*PubackPacket)
+	pk.FixedHeader.decode(expectedPackets[Puback][0].rawBytes[0])
+
+	for n := 0; n < b.N; n++ {
+		pk.Validate()
+	}
+}

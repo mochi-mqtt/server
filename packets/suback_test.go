@@ -85,3 +85,22 @@ func BenchmarkSubackDecode(b *testing.B) {
 		pk.Decode(expectedPackets[Suback][0].rawBytes[2:])
 	}
 }
+
+func TestSubackValidate(t *testing.T) {
+	pk := newPacket(Suback).(*SubackPacket)
+	pk.FixedHeader.decode(expectedPackets[Suback][0].rawBytes[0])
+
+	b, err := pk.Validate()
+	require.NoError(t, err)
+	require.Equal(t, Accepted, b)
+
+}
+
+func BenchmarkSubackValidate(b *testing.B) {
+	pk := newPacket(Suback).(*SubackPacket)
+	pk.FixedHeader.decode(expectedPackets[Suback][0].rawBytes[0])
+
+	for n := 0; n < b.N; n++ {
+		pk.Validate()
+	}
+}

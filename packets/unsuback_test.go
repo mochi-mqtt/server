@@ -81,3 +81,22 @@ func BenchmarkUnsubackDecode(b *testing.B) {
 		pk.Decode(expectedPackets[Unsuback][0].rawBytes[2:])
 	}
 }
+
+func TestUnsubackValidate(t *testing.T) {
+	pk := newPacket(Unsuback).(*UnsubackPacket)
+	pk.FixedHeader.decode(expectedPackets[Unsuback][0].rawBytes[0])
+
+	b, err := pk.Validate()
+	require.NoError(t, err)
+	require.Equal(t, Accepted, b)
+
+}
+
+func BenchmarkUnsubackValidate(b *testing.B) {
+	pk := newPacket(Unsuback).(*UnsubackPacket)
+	pk.FixedHeader.decode(expectedPackets[Unsuback][0].rawBytes[0])
+
+	for n := 0; n < b.N; n++ {
+		pk.Validate()
+	}
+}

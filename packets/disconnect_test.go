@@ -56,3 +56,22 @@ func BenchmarkDisconnectDecode(b *testing.B) {
 		pk.Decode(expectedPackets[Disconnect][0].rawBytes[2:])
 	}
 }
+
+func TestDisconnectValidate(t *testing.T) {
+	pk := newPacket(Disconnect).(*DisconnectPacket)
+	pk.FixedHeader.decode(expectedPackets[Disconnect][0].rawBytes[0])
+
+	b, err := pk.Validate()
+	require.NoError(t, err)
+	require.Equal(t, Accepted, b)
+
+}
+
+func BenchmarkDisconnectValidate(b *testing.B) {
+	pk := newPacket(Disconnect).(*DisconnectPacket)
+	pk.FixedHeader.decode(expectedPackets[Disconnect][0].rawBytes[0])
+
+	for n := 0; n < b.N; n++ {
+		pk.Validate()
+	}
+}

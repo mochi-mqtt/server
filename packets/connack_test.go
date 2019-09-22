@@ -80,3 +80,22 @@ func BenchmarkConnackDecode(b *testing.B) {
 		pk.Decode(expectedPackets[Connack][0].rawBytes[2:])
 	}
 }
+
+func TestConnackValidate(t *testing.T) {
+	pk := newPacket(Connack).(*ConnackPacket)
+	pk.FixedHeader.decode(expectedPackets[Connack][0].rawBytes[0])
+
+	b, err := pk.Validate()
+	require.NoError(t, err)
+	require.Equal(t, Accepted, b)
+
+}
+
+func BenchmarkConnackValidate(b *testing.B) {
+	pk := newPacket(Connack).(*ConnackPacket)
+	pk.FixedHeader.decode(expectedPackets[Connack][0].rawBytes[0])
+
+	for n := 0; n < b.N; n++ {
+		pk.Validate()
+	}
+}

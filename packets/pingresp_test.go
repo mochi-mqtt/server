@@ -57,3 +57,22 @@ func BenchmarkPingrespDecode(b *testing.B) {
 		pk.Decode(expectedPackets[Pingresp][0].rawBytes[2:])
 	}
 }
+
+func TestPingrespValidate(t *testing.T) {
+	pk := newPacket(Pingresp).(*PingrespPacket)
+	pk.FixedHeader.decode(expectedPackets[Pingresp][0].rawBytes[0])
+
+	b, err := pk.Validate()
+	require.NoError(t, err)
+	require.Equal(t, Accepted, b)
+
+}
+
+func BenchmarkPingrespValidate(b *testing.B) {
+	pk := newPacket(Pingresp).(*PingrespPacket)
+	pk.FixedHeader.decode(expectedPackets[Pingresp][0].rawBytes[0])
+
+	for n := 0; n < b.N; n++ {
+		pk.Validate()
+	}
+}

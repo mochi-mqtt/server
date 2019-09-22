@@ -81,3 +81,22 @@ func BenchmarkPubrecDecode(b *testing.B) {
 		pk.Decode(expectedPackets[Pubrec][0].rawBytes[2:])
 	}
 }
+
+func TestPubrecValidate(t *testing.T) {
+	pk := newPacket(Pubrec).(*PubrecPacket)
+	pk.FixedHeader.decode(expectedPackets[Pubrec][0].rawBytes[0])
+
+	b, err := pk.Validate()
+	require.NoError(t, err)
+	require.Equal(t, Accepted, b)
+
+}
+
+func BenchmarkPubrecValidate(b *testing.B) {
+	pk := newPacket(Pubrec).(*PubrecPacket)
+	pk.FixedHeader.decode(expectedPackets[Pubrec][0].rawBytes[0])
+
+	for n := 0; n < b.N; n++ {
+		pk.Validate()
+	}
+}

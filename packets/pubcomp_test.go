@@ -78,3 +78,22 @@ func BenchmarkPubcompDecode(b *testing.B) {
 		pk.Decode(expectedPackets[Pubcomp][0].rawBytes[2:])
 	}
 }
+
+func TestPubcompValidate(t *testing.T) {
+	pk := newPacket(Pubcomp).(*PubcompPacket)
+	pk.FixedHeader.decode(expectedPackets[Pubcomp][0].rawBytes[0])
+
+	b, err := pk.Validate()
+	require.NoError(t, err)
+	require.Equal(t, Accepted, b)
+
+}
+
+func BenchmarkPubcompValidate(b *testing.B) {
+	pk := newPacket(Pubcomp).(*PubcompPacket)
+	pk.FixedHeader.decode(expectedPackets[Pubcomp][0].rawBytes[0])
+
+	for n := 0; n < b.N; n++ {
+		pk.Validate()
+	}
+}
