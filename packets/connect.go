@@ -28,35 +28,80 @@ type ConnectPacket struct {
 
 // Encode encodes and writes the packet data values to the buffer.
 func (pk *ConnectPacket) Encode(buf *bytes.Buffer) error {
-	var body bytes.Buffer
 
-	// Write flags to packet body.
-	body.Write(encodeString(pk.ProtocolName))
-	body.WriteByte(pk.ProtocolVersion)
-	body.WriteByte(encodeBool(pk.CleanSession)<<1 | encodeBool(pk.WillFlag)<<2 | pk.WillQos<<3 | encodeBool(pk.WillRetain)<<5 | encodeBool(pk.PasswordFlag)<<6 | encodeBool(pk.UsernameFlag)<<7)
-	body.Write(encodeUint16(pk.Keepalive))
-	body.Write(encodeString(pk.ClientIdentifier))
+	protoName := encodeString(pk.ProtocolName)
+	protoVersion := pk.ProtocolVersion
+	flag := encodeBool(pk.CleanSession)<<1 | encodeBool(pk.WillFlag)<<2 | pk.WillQos<<3 | encodeBool(pk.WillRetain)<<5 | encodeBool(pk.PasswordFlag)<<6 | encodeBool(pk.UsernameFlag)<<7
+	keepalive := encodeUint16(pk.Keepalive)
+	clientID := encodeString(pk.ClientIdentifier)
+
+	var willTopic, willFlag, usernameFlag, passwordFlag []byte
 
 	// If will flag is set, add topic and message.
 	if pk.WillFlag {
-		body.Write(encodeString(pk.WillTopic))
-		body.Write(encodeBytes(pk.WillMessage))
+		willTopic = encodeString(pk.WillTopic)
+		willFlag = encodeBytes(pk.WillMessage)
 	}
 
 	// If username flag is set, add username.
 	if pk.UsernameFlag {
-		body.Write(encodeString(pk.Username))
+		usernameFlag = encodeString(pk.Username)
 	}
 
 	// If password flag is set, add password.
 	if pk.PasswordFlag {
-		body.Write(encodeString(pk.Password))
+		passwordFlag = encodeString(pk.Password)
 	}
 
-	pk.FixedHeader.Remaining = body.Len()
-	pk.FixedHeader.encode(buf)
-	buf.Write(body.Bytes())
+	// Get a length for the connect header. This is not super pretty, but it works.
+	pk.FixedHeader.Remaining =
+		len(protoName) + 1 + 1 + len(keepalive) + len(clientID) +
+			len(willTopic) + len(willFlag) +
+			len(usernameFlag) + len(passwordFlag)
 
+	pk.FixedHeader.encode(buf)
+
+	// Eschew magic for readability.
+	buf.Write(protoName)
+	buf.WriteByte(protoVersion)
+	buf.WriteByte(flag)
+	buf.Write(keepalive)
+	buf.Write(clientID)
+	buf.Write(willTopic)
+	buf.Write(willFlag)
+	buf.Write(usernameFlag)
+	buf.Write(passwordFlag)
+
+	/*
+		var body bytes.Buffer
+
+		// Write flags to packet body.
+		body.Write(encodeString(pk.ProtocolName))
+		body.WriteByte(pk.ProtocolVersion)
+		body.WriteByte(encodeBool(pk.CleanSession)<<1 | encodeBool(pk.WillFlag)<<2 | pk.WillQos<<3 | encodeBool(pk.WillRetain)<<5 | encodeBool(pk.PasswordFlag)<<6 | encodeBool(pk.UsernameFlag)<<7)
+		body.Write(encodeUint16(pk.Keepalive))
+		body.Write(encodeString(pk.ClientIdentifier))
+
+		// If will flag is set, add topic and message.
+		if pk.WillFlag {
+			body.Write(encodeString(pk.WillTopic))
+			body.Write(encodeBytes(pk.WillMessage))
+		}
+
+		// If username flag is set, add username.
+		if pk.UsernameFlag {
+			body.Write(encodeString(pk.Username))
+		}
+
+		// If password flag is set, add password.
+		if pk.PasswordFlag {
+			body.Write(encodeString(pk.Password))
+		}
+
+		pk.FixedHeader.Remaining = body.Len()
+		pk.FixedHeader.encode(buf)
+		buf.Write(body.Bytes())
+	*/
 	return nil
 }
 

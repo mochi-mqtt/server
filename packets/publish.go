@@ -16,9 +16,8 @@ type PublishPacket struct {
 
 // Encode encodes and writes the packet data values to the buffer.
 func (pk *PublishPacket) Encode(buf *bytes.Buffer) error {
-	var body bytes.Buffer
-
-	body.Write(encodeString(pk.TopicName)) // Write topic name.
+	topicName := encodeString(pk.TopicName)
+	var packetID []byte
 
 	// Add PacketID if QOS is set.
 	// [MQTT-2.3.1-5] A PUBLISH Packet MUST NOT contain a Packet Identifier if its QoS value is set to 0.
@@ -29,13 +28,13 @@ func (pk *PublishPacket) Encode(buf *bytes.Buffer) error {
 			return errors.New(ErrMissingPacketID)
 		}
 
-		body.Write(encodeUint16(pk.PacketID))
+		packetID = encodeUint16(pk.PacketID)
 	}
 
-	// Set remaining length.
-	pk.FixedHeader.Remaining = body.Len() + len(pk.Payload)
+	pk.FixedHeader.Remaining = len(topicName) + len(packetID) + len(pk.Payload)
 	pk.FixedHeader.encode(buf)
-	buf.Write(body.Bytes())
+	buf.Write(topicName)
+	buf.Write(packetID)
 	buf.Write(pk.Payload)
 
 	return nil

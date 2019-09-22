@@ -17,57 +17,31 @@ type SubscribePacket struct {
 // Encode encodes and writes the packet data values to the buffer.
 func (pk *SubscribePacket) Encode(buf *bytes.Buffer) error {
 
-	var body bytes.Buffer
-
 	// Add the Packet ID.
 	// [MQTT-2.3.1-1] SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
 	if pk.PacketID == 0 {
 		return errors.New(ErrMissingPacketID)
 	}
 
-	body.Write(encodeUint16(pk.PacketID))
+	packetID := encodeUint16(pk.PacketID)
+
+	// Count topics lengths and associated QOS flags.
+	var topicsLen int
+	for _, topic := range pk.Topics {
+		topicsLen += len(encodeString(topic)) + 1
+	}
+
+	pk.FixedHeader.Remaining = len(packetID) + topicsLen
+	pk.FixedHeader.encode(buf)
+	buf.Write(packetID)
 
 	// Add all provided topic names and associated QOS flags.
 	for i, topic := range pk.Topics {
-		body.Write(encodeString(topic))
-		body.WriteByte(pk.Qoss[i])
+		buf.Write(encodeString(topic))
+		buf.WriteByte(pk.Qoss[i])
 	}
 
-	// Set length.
-	pk.FixedHeader.Remaining = body.Len()
-	pk.FixedHeader.encode(buf)
-	buf.Write(body.Bytes())
-
-	/*
-		var body bytes.Buffer
-
-		// Add the Packet ID.
-		// [MQTT-2.3.1-1] SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
-		if pk.PacketID == 0 {
-			return errors.New(ErrMissingPacketID)
-		}
-
-		body.Write(encodeUint16(pk.PacketID))
-
-		// Add all provided topic names and associated QOS flags.
-		for i, topic := range pk.Topics {
-			body.Write(encodeString(topic))
-			body.WriteByte(pk.Qoss[i])
-		}
-
-		// Set length.
-		pk.FixedHeader.Remaining = body.Len()
-
-		// Write header and packet to output.
-		out := pk.FixedHeader.encode()
-		out.Write(body.Bytes())
-		_, err := out.WriteTo(w)
-
-		return err
-	*/
-
 	return nil
-
 }
 
 // Decode extracts the data values from the packet.

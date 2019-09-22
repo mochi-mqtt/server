@@ -25,21 +25,6 @@ func (pk *SubackPacket) Encode(buf *bytes.Buffer) error {
 	pk.FixedHeader.Remaining = buf.Len() - bodyLen // Set length.
 
 	return nil
-	/*
-
-		var body bytes.Buffer
-
-		body.Write(encodeUint16(pk.PacketID))
-
-		body.Write(pk.ReturnCodes)
-
-		// Write header and packet to output.
-		out := pk.FixedHeader.encode()
-		out.Write(body.Bytes())
-		_, err := out.WriteTo(w)
-
-		return err
-	*/
 }
 
 // Decode extracts the data values from the packet.
