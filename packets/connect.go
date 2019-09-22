@@ -72,36 +72,6 @@ func (pk *ConnectPacket) Encode(buf *bytes.Buffer) error {
 	buf.Write(usernameFlag)
 	buf.Write(passwordFlag)
 
-	/*
-		var body bytes.Buffer
-
-		// Write flags to packet body.
-		body.Write(encodeString(pk.ProtocolName))
-		body.WriteByte(pk.ProtocolVersion)
-		body.WriteByte(encodeBool(pk.CleanSession)<<1 | encodeBool(pk.WillFlag)<<2 | pk.WillQos<<3 | encodeBool(pk.WillRetain)<<5 | encodeBool(pk.PasswordFlag)<<6 | encodeBool(pk.UsernameFlag)<<7)
-		body.Write(encodeUint16(pk.Keepalive))
-		body.Write(encodeString(pk.ClientIdentifier))
-
-		// If will flag is set, add topic and message.
-		if pk.WillFlag {
-			body.Write(encodeString(pk.WillTopic))
-			body.Write(encodeBytes(pk.WillMessage))
-		}
-
-		// If username flag is set, add username.
-		if pk.UsernameFlag {
-			body.Write(encodeString(pk.Username))
-		}
-
-		// If password flag is set, add password.
-		if pk.PasswordFlag {
-			body.Write(encodeString(pk.Password))
-		}
-
-		pk.FixedHeader.Remaining = body.Len()
-		pk.FixedHeader.encode(buf)
-		buf.Write(body.Bytes())
-	*/
 	return nil
 }
 

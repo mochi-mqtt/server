@@ -11,7 +11,6 @@ import (
 func TestPubrelEncode(t *testing.T) {
 	require.Contains(t, expectedPackets, Pubrel)
 	for i, wanted := range expectedPackets[Pubrel] {
-
 		if !encodeTestOK(wanted) {
 			continue
 		}
@@ -33,9 +32,7 @@ func TestPubrelEncode(t *testing.T) {
 		require.EqualValues(t, wanted.rawBytes, encoded, "Mismatched byte values [i:%d] %s", i, wanted.desc)
 
 		require.Equal(t, wanted.packet.(*PubrelPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
-
 	}
-
 }
 
 func BenchmarkPubrelEncode(b *testing.B) {

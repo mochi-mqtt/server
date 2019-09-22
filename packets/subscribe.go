@@ -78,7 +78,6 @@ func (pk *SubscribePacket) Decode(buf []byte) error {
 		}
 
 		pk.Qoss = append(pk.Qoss, qos)
-
 	}
 
 	return nil

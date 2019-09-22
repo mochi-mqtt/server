@@ -22,14 +22,11 @@ func (pk *UnsubackPacket) Encode(buf *bytes.Buffer) error {
 
 // Decode extracts the data values from the packet.
 func (pk *UnsubackPacket) Decode(buf []byte) error {
-
 	var err error
-
 	pk.PacketID, _, err = decodeUint16(buf, 0)
 	if err != nil {
 		return errors.New(ErrMalformedPacketID)
 	}
-
 	return nil
 }
 

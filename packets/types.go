@@ -39,6 +39,7 @@ var Names = map[byte]string{
 	14: "DISCONNECT",
 }
 
+// NewFixedHeader returns a fresh fixedheader for a given packet type.
 func NewFixedHeader(packetType byte) FixedHeader {
 	fh := FixedHeader{
 		Type: packetType,

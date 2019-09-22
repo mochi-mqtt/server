@@ -35,7 +35,6 @@ func TestUnsubackEncode(t *testing.T) {
 		}
 
 		require.EqualValues(t, wanted.rawBytes, encoded, "Mismatched byte values [i:%d] %s", i, wanted.desc)
-
 		require.Equal(t, wanted.packet.(*UnsubackPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
 	}
 }

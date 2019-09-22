@@ -29,7 +29,6 @@ func (pk *SubackPacket) Encode(buf *bytes.Buffer) error {
 
 // Decode extracts the data values from the packet.
 func (pk *SubackPacket) Decode(buf []byte) error {
-
 	var offset int
 	var err error
 

@@ -42,7 +42,6 @@ func TestSubscribeEncode(t *testing.T) {
 			require.Equal(t, wanted.packet.(*SubscribePacket).Topics, pk.Topics, "Mismatched Topics slice [i:%d] %s", i, wanted.desc)
 			require.Equal(t, wanted.packet.(*SubscribePacket).Qoss, pk.Qoss, "Mismatched Qoss slice [i:%d] %s", i, wanted.desc)
 		}
-
 	}
 }
 
