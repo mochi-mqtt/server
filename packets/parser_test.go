@@ -169,7 +169,7 @@ func TestRead(t *testing.T) {
 
 	for code, pt := range expectedPackets {
 		for i, wanted := range pt {
-			if wanted.primary && wanted.desc == "Accepted, No Session" {
+			if wanted.primary {
 				var fh FixedHeader
 				b := wanted.rawBytes
 				p := NewParser(conn)
