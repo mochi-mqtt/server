@@ -9,7 +9,6 @@ import (
 )
 
 func TestConnackEncode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Connack)
 	for i, wanted := range expectedPackets[Connack] {
 
@@ -37,12 +36,10 @@ func TestConnackEncode(t *testing.T) {
 
 		require.Equal(t, wanted.packet.(*ConnackPacket).ReturnCode, pk.ReturnCode, "Mismatched return code [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*ConnackPacket).SessionPresent, pk.SessionPresent, "Mismatched session present bool [i:%d] %s", i, wanted.desc)
-
 	}
 }
 
 func TestConnackDecode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Connack)
 	for i, wanted := range expectedPackets[Connack] {
 
@@ -64,9 +61,7 @@ func TestConnackDecode(t *testing.T) {
 
 		require.Equal(t, wanted.packet.(*ConnackPacket).ReturnCode, pk.ReturnCode, "Mismatched return code [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*ConnackPacket).SessionPresent, pk.SessionPresent, "Mismatched session present bool [i:%d] %s", i, wanted.desc)
-
 	}
-
 }
 
 func BenchmarkConnackDecode(b *testing.B) {

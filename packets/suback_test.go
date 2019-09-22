@@ -1,12 +1,11 @@
 package packets
 
 import (
-	"github.com/stretchr/testify/require"
+	"bytes"
 	"testing"
 
-	"bytes"
-
 	"github.com/jinzhu/copier"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSubackEncode(t *testing.T) {
@@ -41,13 +40,10 @@ func TestSubackEncode(t *testing.T) {
 
 		require.Equal(t, wanted.packet.(*SubackPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*SubackPacket).ReturnCodes, pk.ReturnCodes, "Mismatched Return Codes [i:%d] %s", i, wanted.desc)
-
 	}
-
 }
 
 func TestSubackDecode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Suback)
 	for i, wanted := range expectedPackets[Suback] {
 
@@ -69,9 +65,7 @@ func TestSubackDecode(t *testing.T) {
 
 		require.Equal(t, wanted.packet.(*SubackPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*SubackPacket).ReturnCodes, pk.ReturnCodes, "Mismatched Return Codes [i:%d] %s", i, wanted.desc)
-
 	}
-
 }
 
 func BenchmarkSubackDecode(b *testing.B) {

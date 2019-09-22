@@ -1,18 +1,16 @@
 package packets
 
 import (
-	"github.com/stretchr/testify/require"
+	"bytes"
 	"testing"
 
-	"bytes"
-
 	"github.com/jinzhu/copier"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUnsubscribeEncode(t *testing.T) {
 	require.Contains(t, expectedPackets, Unsubscribe)
 	for i, wanted := range expectedPackets[Unsubscribe] {
-
 		if !encodeTestOK(wanted) {
 			continue
 		}
@@ -48,15 +46,11 @@ func TestUnsubscribeEncode(t *testing.T) {
 
 			require.Equal(t, wanted.packet.(*UnsubscribePacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
 			require.Equal(t, wanted.packet.(*UnsubscribePacket).Topics, pk.Topics, "Mismatched Topics slice [i:%d] %s", i, wanted.desc)
-
 		}
-
 	}
-
 }
 
 func TestUnsubscribeDecode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Unsubscribe)
 	for i, wanted := range expectedPackets[Unsubscribe] {
 
@@ -79,7 +73,6 @@ func TestUnsubscribeDecode(t *testing.T) {
 		require.Equal(t, wanted.packet.(*UnsubscribePacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*UnsubscribePacket).Topics, pk.Topics, "Mismatched Topics slice [i:%d] %s", i, wanted.desc)
 	}
-
 }
 
 func BenchmarkUnsubscribeDecode(b *testing.B) {

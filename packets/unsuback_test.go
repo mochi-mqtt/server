@@ -1,18 +1,16 @@
 package packets
 
 import (
-	"github.com/stretchr/testify/require"
+	"bytes"
 	"testing"
 
-	"bytes"
-
 	"github.com/jinzhu/copier"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUnsubackEncode(t *testing.T) {
 	require.Contains(t, expectedPackets, Unsuback)
 	for i, wanted := range expectedPackets[Unsuback] {
-
 		if !encodeTestOK(wanted) {
 			continue
 		}
@@ -40,13 +38,10 @@ func TestUnsubackEncode(t *testing.T) {
 		require.EqualValues(t, wanted.rawBytes, encoded, "Mismatched byte values [i:%d] %s", i, wanted.desc)
 
 		require.Equal(t, wanted.packet.(*UnsubackPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
-
 	}
-
 }
 
 func TestUnsubackDecode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Unsuback)
 	for i, wanted := range expectedPackets[Unsuback] {
 
@@ -67,9 +62,7 @@ func TestUnsubackDecode(t *testing.T) {
 		require.NoError(t, err, "Error unpacking buffer [i:%d] %s", i, wanted.desc)
 
 		require.Equal(t, wanted.packet.(*UnsubackPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
-
 	}
-
 }
 
 func BenchmarkUnsubackDecode(b *testing.B) {

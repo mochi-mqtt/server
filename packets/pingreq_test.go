@@ -10,7 +10,6 @@ import (
 )
 
 func TestPingreqEncode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Pingreq)
 	for i, wanted := range expectedPackets[Pingreq] {
 
@@ -28,20 +27,16 @@ func TestPingreqEncode(t *testing.T) {
 		require.NoError(t, err, "Error writing buffer [i:%d]", i)
 		require.Equal(t, len(wanted.rawBytes), len(b.Bytes()), "Mismatched packet length [i:%d]", i)
 		require.EqualValues(t, wanted.rawBytes, b.Bytes(), "Mismatched byte values [i:%d]", i)
-
 	}
-
 }
 
 func TestPingreqDecode(t *testing.T) {
-
 	pk := newPacket(Pingreq).(*PingreqPacket)
 
 	var b = []byte{}
 	err := pk.Decode(b)
 	require.NoError(t, err, "Error unpacking buffer")
 	require.Empty(t, b)
-
 }
 
 func BenchmarkPingreqDecode(b *testing.B) {

@@ -141,7 +141,7 @@ func (pk *ConnectPacket) Decode(buf []byte) error {
 }
 
 // Validate ensures the packet is compliant.
-func (pk *ConnectPacket) Validate() (byte, error) {
+func (pk *ConnectPacket) Validate() (b byte, err error) {
 
 	// End if protocol name is bad.
 	if pk.ProtocolName != "MQIsdp" && pk.ProtocolName != "MQTT" {

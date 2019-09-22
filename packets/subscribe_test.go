@@ -1,18 +1,16 @@
 package packets
 
 import (
-	"github.com/stretchr/testify/require"
+	"bytes"
 	"testing"
 
-	"bytes"
-
 	"github.com/jinzhu/copier"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSubscribeEncode(t *testing.T) {
 	require.Contains(t, expectedPackets, Subscribe)
 	for i, wanted := range expectedPackets[Subscribe] {
-
 		if !encodeTestOK(wanted) {
 			continue
 		}
@@ -48,15 +46,11 @@ func TestSubscribeEncode(t *testing.T) {
 			require.Equal(t, wanted.packet.(*SubscribePacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
 			require.Equal(t, wanted.packet.(*SubscribePacket).Topics, pk.Topics, "Mismatched Topics slice [i:%d] %s", i, wanted.desc)
 			require.Equal(t, wanted.packet.(*SubscribePacket).Qoss, pk.Qoss, "Mismatched Qoss slice [i:%d] %s", i, wanted.desc)
-
 		}
-
 	}
-
 }
 
 func TestSubscribeDecode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Subscribe)
 	for i, wanted := range expectedPackets[Subscribe] {
 
@@ -80,7 +74,6 @@ func TestSubscribeDecode(t *testing.T) {
 		require.Equal(t, wanted.packet.(*SubscribePacket).Topics, pk.Topics, "Mismatched Topics slice [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*SubscribePacket).Qoss, pk.Qoss, "Mismatched Qoss slice [i:%d] %s", i, wanted.desc)
 	}
-
 }
 
 func BenchmarkSubscribeDecode(b *testing.B) {

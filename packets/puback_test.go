@@ -1,18 +1,16 @@
 package packets
 
 import (
-	"github.com/stretchr/testify/require"
+	"bytes"
 	"testing"
 
-	"bytes"
-
 	"github.com/jinzhu/copier"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPubackEncode(t *testing.T) {
 	require.Contains(t, expectedPackets, Puback)
 	for i, wanted := range expectedPackets[Puback] {
-
 		if !encodeTestOK(wanted) {
 			continue
 		}
@@ -36,13 +34,10 @@ func TestPubackEncode(t *testing.T) {
 		require.EqualValues(t, wanted.rawBytes, encoded, "Mismatched byte values [i:%d] %s", i, wanted.desc)
 
 		require.Equal(t, wanted.packet.(*PubackPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
-
 	}
-
 }
 
 func TestPubackDecode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Puback)
 	for i, wanted := range expectedPackets[Puback] {
 
@@ -65,7 +60,6 @@ func TestPubackDecode(t *testing.T) {
 
 		require.Equal(t, wanted.packet.(*PubackPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
 	}
-
 }
 
 func BenchmarkPubackDecode(b *testing.B) {

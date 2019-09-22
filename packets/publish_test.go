@@ -9,7 +9,6 @@ import (
 )
 
 func TestPublishEncode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Publish)
 	for i, wanted := range expectedPackets[Publish] {
 
@@ -27,11 +26,8 @@ func TestPublishEncode(t *testing.T) {
 		var b bytes.Buffer
 		err := pk.Encode(&b)
 		if wanted.expect != nil {
-
 			require.Error(t, err, "Expected error writing buffer [i:%d] %s", i, wanted.desc)
-
 		} else {
-
 			encoded := b.Bytes()
 
 			// If actualBytes is set, compare mutated version of byte string instead (to avoid length mismatches, etc).
@@ -40,7 +36,6 @@ func TestPublishEncode(t *testing.T) {
 			}
 
 			require.Equal(t, len(wanted.rawBytes), len(encoded), "Mismatched packet length [i:%d] %s", i, wanted.desc)
-
 			if wanted.meta != nil {
 				require.Equal(t, byte(Publish<<4)|wanted.meta.(byte), encoded[0], "Mismatched fixed header bytes [i:%d] %s", i, wanted.desc)
 			} else {
@@ -48,26 +43,18 @@ func TestPublishEncode(t *testing.T) {
 			}
 
 			require.EqualValues(t, wanted.rawBytes, encoded, "Mismatched byte values [i:%d] %s", i, wanted.desc)
-
 			require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Qos, pk.FixedHeader.Qos, "Mismatched QOS [i:%d] %s", i, wanted.desc)
 			require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Dup, pk.FixedHeader.Dup, "Mismatched Dup [i:%d] %s", i, wanted.desc)
 			require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Retain, pk.FixedHeader.Retain, "Mismatched Retain [i:%d] %s", i, wanted.desc)
-
 			require.Equal(t, wanted.packet.(*PublishPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
-
 			require.NoError(t, err, "Error writing buffer [i:%d] %s", i, wanted.desc)
-
 		}
-
 	}
-
 }
 
 func TestPublishDecode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Publish)
 	for i, wanted := range expectedPackets[Publish] {
-
 		if !decodeTestOK(wanted) {
 			continue
 		}
@@ -89,9 +76,7 @@ func TestPublishDecode(t *testing.T) {
 		require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Qos, pk.FixedHeader.Qos, "Mismatched QOS [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Dup, pk.FixedHeader.Dup, "Mismatched Dup [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Retain, pk.FixedHeader.Retain, "Mismatched Retain [i:%d] %s", i, wanted.desc)
-
 		require.Equal(t, wanted.packet.(*PublishPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
-
 	}
 }
 

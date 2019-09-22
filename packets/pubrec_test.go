@@ -1,12 +1,11 @@
 package packets
 
 import (
-	"github.com/stretchr/testify/require"
+	"bytes"
 	"testing"
 
-	"bytes"
-
 	"github.com/jinzhu/copier"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPubrecEncode(t *testing.T) {
@@ -42,7 +41,6 @@ func TestPubrecEncode(t *testing.T) {
 }
 
 func TestPubrecDecode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Pubrec)
 	for i, wanted := range expectedPackets[Pubrec] {
 

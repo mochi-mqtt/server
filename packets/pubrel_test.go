@@ -1,12 +1,11 @@
 package packets
 
 import (
-	"github.com/stretchr/testify/require"
+	"bytes"
 	"testing"
 
-	"bytes"
-
 	"github.com/jinzhu/copier"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPubrelEncode(t *testing.T) {
@@ -42,10 +41,8 @@ func TestPubrelEncode(t *testing.T) {
 }
 
 func TestPubrelDecode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Pubrel)
 	for i, wanted := range expectedPackets[Pubrel] {
-
 		if !decodeTestOK(wanted) {
 			continue
 		}
@@ -62,10 +59,8 @@ func TestPubrelDecode(t *testing.T) {
 		}
 
 		require.NoError(t, err, "Error unpacking buffer [i:%d] %s", i, wanted.desc)
-
 		require.Equal(t, wanted.packet.(*PubrelPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
 	}
-
 }
 
 func BenchmarkPubrelkDecode(b *testing.B) {

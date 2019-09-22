@@ -9,7 +9,6 @@ import (
 )
 
 func TestConnectEncode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Connect)
 	for i, wanted := range expectedPackets[Connect] {
 		if !encodeTestOK(wanted) {
@@ -58,13 +57,10 @@ func TestConnectEncode(t *testing.T) {
 		require.Equal(t, wanted.packet.(*ConnectPacket).WillMessage, pk.WillMessage, "Mismatched packet will message [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*ConnectPacket).WillQos, pk.WillQos, "Mismatched packet will qos [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*ConnectPacket).WillRetain, pk.WillRetain, "Mismatched packet will retain [i:%d] %s", i, wanted.desc)
-
 	}
-
 }
 
 func TestConnectDecode(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Connect)
 	for i, wanted := range expectedPackets[Connect] {
 
@@ -106,13 +102,19 @@ func TestConnectDecode(t *testing.T) {
 		require.Equal(t, wanted.packet.(*ConnectPacket).WillMessage, pk.WillMessage, "Mismatched packet will message [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*ConnectPacket).WillQos, pk.WillQos, "Mismatched packet will qos [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*ConnectPacket).WillRetain, pk.WillRetain, "Mismatched packet will retain [i:%d] %s", i, wanted.desc)
-
 	}
+}
 
+func BenchmarkConnectDecode(b *testing.B) {
+	pk := newPacket(Connect).(*ConnectPacket)
+	pk.FixedHeader.decode(expectedPackets[Connect][0].rawBytes[0])
+
+	for n := 0; n < b.N; n++ {
+		pk.Decode(expectedPackets[Connect][0].rawBytes[2:])
+	}
 }
 
 func TestConnectValidate(t *testing.T) {
-
 	require.Contains(t, expectedPackets, Connect)
 	for i, wanted := range expectedPackets[Connect] {
 		if wanted.group == "validate" {
@@ -121,5 +123,13 @@ func TestConnectValidate(t *testing.T) {
 			require.Equal(t, wanted.expect, ok, "Connect packet didn't validate [i:%d] %s", i, wanted.desc)
 		}
 	}
+}
 
+func BenchmarkConnectValidate(b *testing.B) {
+	pk := newPacket(Connect).(*ConnectPacket)
+	pk.FixedHeader.decode(expectedPackets[Connect][0].rawBytes[0])
+
+	for n := 0; n < b.N; n++ {
+		pk.Validate()
+	}
 }
