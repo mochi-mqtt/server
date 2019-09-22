@@ -39,6 +39,16 @@ func TestConnackEncode(t *testing.T) {
 	}
 }
 
+func BenchmarkConnackEncode(b *testing.B) {
+	pk := new(ConnackPacket)
+	copier.Copy(pk, expectedPackets[Connack][0].packet.(*ConnackPacket))
+	var buf bytes.Buffer
+
+	for n := 0; n < b.N; n++ {
+		pk.Encode(&buf)
+	}
+}
+
 func TestConnackDecode(t *testing.T) {
 	require.Contains(t, expectedPackets, Connack)
 	for i, wanted := range expectedPackets[Connack] {

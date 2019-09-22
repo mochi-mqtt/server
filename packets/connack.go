@@ -16,7 +16,6 @@ type ConnackPacket struct {
 
 // Encode encodes and writes the packet data values to the buffer.
 func (pk *ConnackPacket) Encode(w io.Writer) error {
-
 	var body bytes.Buffer
 
 	// Write flags to packet body.

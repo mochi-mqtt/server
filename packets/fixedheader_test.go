@@ -1,9 +1,11 @@
 package packets
 
 import (
-	"github.com/stretchr/testify/require"
-	"testing"
 	//"bytes"
+	"math"
+	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type fixedHeaderTable struct {
@@ -146,25 +148,23 @@ var fixedHeaderExpected = []fixedHeaderTable{
 }
 
 func TestFixedHeaderEncode(t *testing.T) {
-
 	for i, wanted := range fixedHeaderExpected {
 		b := wanted.header.encode()
-
 		require.Equal(t, len(wanted.rawBytes), len(b.Bytes()), "Mismatched fixedheader length [i:%d] %v", i, wanted.rawBytes)
 		require.EqualValues(t, wanted.rawBytes, b.Bytes(), "Mismatched byte values [i:%d] %v", i, wanted.rawBytes)
-
 	}
+}
 
+func BenchmarkFixedHeaderEncode(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		fixedHeaderExpected[0].header.encode()
+	}
 }
 
 func TestFixedHeaderDecode(t *testing.T) {
-
 	for i, wanted := range fixedHeaderExpected {
-
-		fh := &FixedHeader{}
-
+		fh := new(FixedHeader)
 		err := fh.decode(wanted.rawBytes[0])
-
 		if wanted.flagError {
 			require.Error(t, err, "Expected error reading fixedheader [i:%d] %v", i, wanted.rawBytes)
 		} else {
@@ -173,8 +173,42 @@ func TestFixedHeaderDecode(t *testing.T) {
 			require.Equal(t, wanted.header.Dup, fh.Dup, "Mismatched fixedheader dup [i:%d] %v", i, wanted.rawBytes)
 			require.Equal(t, wanted.header.Qos, fh.Qos, "Mismatched fixedheader qos [i:%d] %v", i, wanted.rawBytes)
 			require.Equal(t, wanted.header.Retain, fh.Retain, "Mismatched fixedheader retain [i:%d] %v", i, wanted.rawBytes)
-
 		}
 	}
+}
 
+func BenchmarkFixedHeaderDecode(b *testing.B) {
+	fh := new(FixedHeader)
+	for n := 0; n < b.N; n++ {
+		err := fh.decode(fixedHeaderExpected[0].rawBytes[0])
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func TestEncodeLength(t *testing.T) {
+	tt := []struct {
+		have int
+		want []byte
+	}{
+		{
+			120,
+			[]byte{0x78},
+		},
+		{
+			math.MaxInt64,
+			[]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f},
+		},
+	}
+
+	for i, wanted := range tt {
+		require.Equal(t, wanted.want, encodeLength(wanted.have), "Returned bytes should match length [i:%d] %s", i, wanted.have)
+	}
+}
+
+func BenchmarkEncodeLength(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		encodeLength(120)
+	}
 }

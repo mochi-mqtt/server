@@ -26,16 +26,15 @@ type FixedHeader struct {
 
 // Encode encodes the FixedHeader and returns a bytes buffer.
 func (fh *FixedHeader) encode() bytes.Buffer {
-
-	var out bytes.Buffer
+	var encoded bytes.Buffer
 
 	// Encode flags.
-	out.WriteByte(fh.Type<<4 | encodeBool(fh.Dup)<<3 | fh.Qos<<1 | encodeBool(fh.Retain))
+	encoded.WriteByte(fh.Type<<4 | encodeBool(fh.Dup)<<3 | fh.Qos<<1 | encodeBool(fh.Retain))
 
 	// Determine encoded length and write the buffer.
-	out.Write(encodeLength(fh.Remaining))
+	encoded.Write(encodeLength(fh.Remaining))
 
-	return out
+	return encoded
 
 }
 
@@ -79,17 +78,17 @@ func (fh *FixedHeader) decode(headerByte byte) error {
 
 // encodeLength creates length bits for the header.
 func encodeLength(length int) []byte {
-	var encLength []byte
+	encodedLength := make([]byte, 0, 8)
 	for {
 		digit := byte(length % 128)
 		length /= 128
 		if length > 0 {
 			digit |= 0x80
 		}
-		encLength = append(encLength, digit)
+		encodedLength = append(encodedLength, digit)
 		if length == 0 {
 			break
 		}
 	}
-	return encLength
+	return encodedLength
 }
