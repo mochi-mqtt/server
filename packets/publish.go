@@ -3,7 +3,6 @@ package packets
 import (
 	"bytes"
 	"errors"
-	"io"
 )
 
 // PublishPacket contains the values of an MQTT PUBLISH packet.
@@ -16,12 +15,10 @@ type PublishPacket struct {
 }
 
 // Encode encodes and writes the packet data values to the buffer.
-func (pk *PublishPacket) Encode(w io.Writer) error {
-
+func (pk *PublishPacket) Encode(buf *bytes.Buffer) error {
 	var body bytes.Buffer
 
-	// Write topic name.
-	body.Write(encodeString(pk.TopicName))
+	body.Write(encodeString(pk.TopicName)) // Write topic name.
 
 	// Add PacketID if QOS is set.
 	// [MQTT-2.3.1-5] A PUBLISH Packet MUST NOT contain a Packet Identifier if its QoS value is set to 0.
@@ -37,15 +34,11 @@ func (pk *PublishPacket) Encode(w io.Writer) error {
 
 	// Set remaining length.
 	pk.FixedHeader.Remaining = body.Len() + len(pk.Payload)
+	pk.FixedHeader.encode(buf)
+	buf.Write(body.Bytes())
+	buf.Write(pk.Payload)
 
-	// Write header and packet to output.
-	out := pk.FixedHeader.encode()
-	out.Write(body.Bytes())
-	out.Write(pk.Payload)
-	_, err := out.WriteTo(w)
-
-	return err
-
+	return nil
 }
 
 // Decode extracts the data values from the packet.

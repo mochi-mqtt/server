@@ -22,18 +22,26 @@ func TestPubackEncode(t *testing.T) {
 		require.Equal(t, Puback, pk.Type, "Mismatched Packet Type [i:%d] %s", i, wanted.desc)
 		require.Equal(t, Puback, pk.FixedHeader.Type, "Mismatched FixedHeader Type [i:%d] %s", i, wanted.desc)
 
-		var b bytes.Buffer
-		err := pk.Encode(&b)
-
-		encoded := b.Bytes()
+		buf := new(bytes.Buffer)
+		err := pk.Encode(buf)
+		require.NoError(t, err, "Expected no error writing buffer [i:%d] %s", i, wanted.desc)
+		encoded := buf.Bytes()
 
 		require.Equal(t, len(wanted.rawBytes), len(encoded), "Mismatched packet length [i:%d] %s", i, wanted.desc)
 		require.Equal(t, byte(Puback<<4), encoded[0], "Mismatched fixed header packets [i:%d] %s", i, wanted.desc)
-
-		require.NoError(t, err, "Error writing buffer [i:%d] %s", i, wanted.desc)
 		require.EqualValues(t, wanted.rawBytes, encoded, "Mismatched byte values [i:%d] %s", i, wanted.desc)
 
 		require.Equal(t, wanted.packet.(*PubackPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
+	}
+}
+
+func BenchmarkPubackEncode(b *testing.B) {
+	pk := new(PubackPacket)
+	copier.Copy(pk, expectedPackets[Puback][0].packet.(*PubackPacket))
+
+	buf := new(bytes.Buffer)
+	for n := 0; n < b.N; n++ {
+		pk.Encode(buf)
 	}
 }
 

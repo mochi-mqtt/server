@@ -1,7 +1,7 @@
 package packets
 
 import (
-	//"bytes"
+	"bytes"
 	"math"
 	"testing"
 
@@ -149,15 +149,17 @@ var fixedHeaderExpected = []fixedHeaderTable{
 
 func TestFixedHeaderEncode(t *testing.T) {
 	for i, wanted := range fixedHeaderExpected {
-		b := wanted.header.encode()
-		require.Equal(t, len(wanted.rawBytes), len(b.Bytes()), "Mismatched fixedheader length [i:%d] %v", i, wanted.rawBytes)
-		require.EqualValues(t, wanted.rawBytes, b.Bytes(), "Mismatched byte values [i:%d] %v", i, wanted.rawBytes)
+		buf := new(bytes.Buffer)
+		wanted.header.encode(buf)
+		require.Equal(t, len(wanted.rawBytes), len(buf.Bytes()), "Mismatched fixedheader length [i:%d] %v", i, wanted.rawBytes)
+		require.EqualValues(t, wanted.rawBytes, buf.Bytes(), "Mismatched byte values [i:%d] %v", i, wanted.rawBytes)
 	}
 }
 
 func BenchmarkFixedHeaderEncode(b *testing.B) {
+	buf := new(bytes.Buffer)
 	for n := 0; n < b.N; n++ {
-		fixedHeaderExpected[0].header.encode()
+		fixedHeaderExpected[0].header.encode(buf)
 	}
 }
 
@@ -203,12 +205,15 @@ func TestEncodeLength(t *testing.T) {
 	}
 
 	for i, wanted := range tt {
-		require.Equal(t, wanted.want, encodeLength(wanted.have), "Returned bytes should match length [i:%d] %s", i, wanted.have)
+		buf := new(bytes.Buffer)
+		encodeLength(buf, wanted.have)
+		require.Equal(t, wanted.want, buf.Bytes(), "Returned bytes should match length [i:%d] %s", i, wanted.have)
 	}
 }
 
 func BenchmarkEncodeLength(b *testing.B) {
+	buf := new(bytes.Buffer)
 	for n := 0; n < b.N; n++ {
-		encodeLength(120)
+		encodeLength(buf, 120)
 	}
 }

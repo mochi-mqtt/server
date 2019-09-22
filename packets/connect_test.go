@@ -22,15 +22,12 @@ func TestConnectEncode(t *testing.T) {
 		require.Equal(t, Connect, pk.Type, "Mismatched Packet Type [i:%d] %s", i, wanted.desc)
 		require.Equal(t, Connect, pk.FixedHeader.Type, "Mismatched FixedHeader Type [i:%d] %s", i, wanted.desc)
 
-		var b bytes.Buffer
-		err := pk.Encode(&b)
-
-		encoded := b.Bytes()
+		buf := new(bytes.Buffer)
+		pk.Encode(buf)
+		encoded := buf.Bytes()
 
 		require.Equal(t, len(wanted.rawBytes), len(encoded), "Mismatched packet length [i:%d] %s", i, wanted.desc)
 		require.Equal(t, byte(Connect<<4), encoded[0], "Mismatched fixed header packets [i:%d] %s", i, wanted.desc)
-
-		require.NoError(t, err, "Error writing buffer [i:%d] %s", i, wanted.desc)
 		require.EqualValues(t, wanted.rawBytes, encoded, "Mismatched byte values [i:%d] %s", i, wanted.desc)
 
 		ok, _ := pk.Validate()
@@ -57,6 +54,16 @@ func TestConnectEncode(t *testing.T) {
 		require.Equal(t, wanted.packet.(*ConnectPacket).WillMessage, pk.WillMessage, "Mismatched packet will message [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*ConnectPacket).WillQos, pk.WillQos, "Mismatched packet will qos [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*ConnectPacket).WillRetain, pk.WillRetain, "Mismatched packet will retain [i:%d] %s", i, wanted.desc)
+	}
+}
+
+func BenchmarkConnectEncode(b *testing.B) {
+	pk := new(ConnectPacket)
+	copier.Copy(pk, expectedPackets[Connect][0].packet.(*ConnectPacket))
+
+	buf := new(bytes.Buffer)
+	for n := 0; n < b.N; n++ {
+		pk.Encode(buf)
 	}
 }
 

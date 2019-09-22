@@ -1,7 +1,7 @@
 package packets
 
 import (
-	"io"
+	"bytes"
 )
 
 // DisconnectPacket contains the values of an MQTT DISCONNECT packet.
@@ -10,12 +10,9 @@ type DisconnectPacket struct {
 }
 
 // Encode encodes and writes the packet data values to the buffer.
-func (pk *DisconnectPacket) Encode(w io.Writer) error {
-
-	out := pk.FixedHeader.encode()
-	_, err := out.WriteTo(w)
-
-	return err
+func (pk *DisconnectPacket) Encode(buf *bytes.Buffer) error {
+	pk.FixedHeader.encode(buf)
+	return nil
 }
 
 // Decode extracts the data values from the packet.

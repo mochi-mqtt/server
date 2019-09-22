@@ -1,7 +1,7 @@
 package packets
 
 import (
-	"io"
+	"bytes"
 )
 
 // PingrespPacket contains the values of an MQTT PINGRESP packet.
@@ -10,12 +10,9 @@ type PingrespPacket struct {
 }
 
 // Encode encodes and writes the packet data values to the buffer.
-func (pk *PingrespPacket) Encode(w io.Writer) error {
-
-	out := pk.FixedHeader.encode()
-	_, err := out.WriteTo(w)
-
-	return err
+func (pk *PingrespPacket) Encode(buf *bytes.Buffer) error {
+	pk.FixedHeader.encode(buf)
+	return nil
 }
 
 // Decode extracts the data values from the packet.

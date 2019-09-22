@@ -3,7 +3,6 @@ package packets
 import (
 	"bytes"
 	"errors"
-	"io"
 )
 
 // ConnectPacket contains the values of an MQTT CONNECT packet.
@@ -28,8 +27,7 @@ type ConnectPacket struct {
 }
 
 // Encode encodes and writes the packet data values to the buffer.
-func (pk *ConnectPacket) Encode(w io.Writer) error {
-
+func (pk *ConnectPacket) Encode(buf *bytes.Buffer) error {
 	var body bytes.Buffer
 
 	// Write flags to packet body.
@@ -55,15 +53,11 @@ func (pk *ConnectPacket) Encode(w io.Writer) error {
 		body.Write(encodeString(pk.Password))
 	}
 
-	// Set remaining length.
 	pk.FixedHeader.Remaining = body.Len()
+	pk.FixedHeader.encode(buf)
+	buf.Write(body.Bytes())
 
-	// Write header and packet to output.
-	out := pk.FixedHeader.encode()
-	out.Write(body.Bytes())
-	_, err := out.WriteTo(w)
-
-	return err
+	return nil
 }
 
 // Decode extracts the data values from the packet.

@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -13,8 +14,8 @@ import (
 // Packet is the base interface that all MQTT packets must implement.
 type Packet interface {
 
-	// Encode encodes a packet into a byte array and writes it to a writer.
-	Encode(io.Writer) error
+	// Encode encodes a packet into a byte buffer.
+	Encode(*bytes.Buffer) error
 
 	// Decode decodes a byte array into a packet struct.
 	Decode([]byte) error

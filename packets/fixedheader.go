@@ -24,8 +24,14 @@ type FixedHeader struct {
 	Remaining int
 }
 
+// encode encodes the FixedHeader and returns a bytes buffer.
+func (fh *FixedHeader) encode(buf *bytes.Buffer) {
+	buf.WriteByte(fh.Type<<4 | encodeBool(fh.Dup)<<3 | fh.Qos<<1 | encodeBool(fh.Retain))
+	encodeLength(buf, fh.Remaining)
+}
+
 // Encode encodes the FixedHeader and returns a bytes buffer.
-func (fh *FixedHeader) encode() bytes.Buffer {
+/*func (fh *FixedHeader) encode() bytes.Buffer {
 	var encoded bytes.Buffer
 
 	// Encode flags.
@@ -37,6 +43,7 @@ func (fh *FixedHeader) encode() bytes.Buffer {
 	return encoded
 
 }
+*/
 
 // decode extracts the specification bits from the header byte.
 func (fh *FixedHeader) decode(headerByte byte) error {
@@ -77,7 +84,7 @@ func (fh *FixedHeader) decode(headerByte byte) error {
 }
 
 // encodeLength creates length bits for the header.
-func encodeLength(length int) []byte {
+/*func encodeLength(length int) []byte {
 	encodedLength := make([]byte, 0, 8)
 	for {
 		digit := byte(length % 128)
@@ -91,4 +98,20 @@ func encodeLength(length int) []byte {
 		}
 	}
 	return encodedLength
+}
+*/
+
+// encodeLength writes length bits for the header.
+func encodeLength(buf *bytes.Buffer, length int) {
+	for {
+		digit := byte(length % 128)
+		length /= 128
+		if length > 0 {
+			digit |= 0x80
+		}
+		buf.WriteByte(digit)
+		if length == 0 {
+			break
+		}
+	}
 }

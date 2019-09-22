@@ -19,12 +19,23 @@ func TestDisconnectEncode(t *testing.T) {
 		require.Equal(t, Disconnect, pk.Type, "Mismatched Packet Type [i:%d]", i)
 		require.Equal(t, Disconnect, pk.FixedHeader.Type, "Mismatched FixedHeader Type [i:%d]", i)
 
-		var b bytes.Buffer
-		err := pk.Encode(&b)
+		buf := new(bytes.Buffer)
+		err := pk.Encode(buf)
+		require.NoError(t, err, "Expected no error writing buffer [i:%d] %s", i, wanted.desc)
+		encoded := buf.Bytes()
 
-		require.NoError(t, err, "Error writing buffer [i:%d]", i)
-		require.Equal(t, len(wanted.rawBytes), len(b.Bytes()), "Mismatched packet length [i:%d]", i)
-		require.EqualValues(t, wanted.rawBytes, b.Bytes(), "Mismatched byte values [i:%d]", i)
+		require.Equal(t, len(wanted.rawBytes), len(encoded), "Mismatched packet length [i:%d]", i)
+		require.EqualValues(t, wanted.rawBytes, encoded, "Mismatched byte values [i:%d]", i)
+	}
+}
+
+func BenchmarkDisconnectEncode(b *testing.B) {
+	pk := new(DisconnectPacket)
+	copier.Copy(pk, expectedPackets[Disconnect][0].packet.(*DisconnectPacket))
+
+	buf := new(bytes.Buffer)
+	for n := 0; n < b.N; n++ {
+		pk.Encode(buf)
 	}
 }
 

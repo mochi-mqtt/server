@@ -3,7 +3,6 @@ package packets
 import (
 	"bytes"
 	"errors"
-	"io"
 )
 
 // ConnackPacket contains the values of an MQTT CONNACK packet.
@@ -15,7 +14,17 @@ type ConnackPacket struct {
 }
 
 // Encode encodes and writes the packet data values to the buffer.
-func (pk *ConnackPacket) Encode(w io.Writer) error {
+func (pk *ConnackPacket) Encode(buf *bytes.Buffer) error {
+	pk.FixedHeader.Remaining = 2
+	pk.FixedHeader.encode(buf)
+	buf.WriteByte(encodeBool(pk.SessionPresent))
+	buf.WriteByte(pk.ReturnCode)
+
+	return nil
+}
+
+// Encode encodes and writes the packet data values to the buffer.
+/*func (pk *ConnackPacket) Encode(w io.Writer) error {
 	var body bytes.Buffer
 
 	// Write flags to packet body.
@@ -34,6 +43,8 @@ func (pk *ConnackPacket) Encode(w io.Writer) error {
 	return err
 
 }
+
+*/
 
 // Decode extracts the data values from the packet.
 func (pk *ConnackPacket) Decode(buf []byte) error {

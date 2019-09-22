@@ -3,7 +3,6 @@ package packets
 import (
 	"bytes"
 	"errors"
-	"io"
 )
 
 // SubackPacket contains the values of an MQTT SUBACK packet.
@@ -15,25 +14,32 @@ type SubackPacket struct {
 }
 
 // Encode encodes and writes the packet data values to the buffer.
-func (pk *SubackPacket) Encode(w io.Writer) error {
+func (pk *SubackPacket) Encode(buf *bytes.Buffer) error {
+	pk.FixedHeader.encode(buf)
 
-	var body bytes.Buffer
+	bodyLen := buf.Len()
 
-	// Encode Packet ID.
-	body.Write(encodeUint16(pk.PacketID))
+	buf.Write(encodeUint16(pk.PacketID)) // Encode Packet ID.
+	buf.Write(pk.ReturnCodes)            // Encode granted QOS flags.
 
-	// Encode granted QOS flags.
-	body.Write(pk.ReturnCodes)
+	pk.FixedHeader.Remaining = buf.Len() - bodyLen // Set length.
 
-	// Set length.
-	pk.FixedHeader.Remaining = body.Len()
+	return nil
+	/*
 
-	// Write header and packet to output.
-	out := pk.FixedHeader.encode()
-	out.Write(body.Bytes())
-	_, err := out.WriteTo(w)
+		var body bytes.Buffer
 
-	return err
+		body.Write(encodeUint16(pk.PacketID))
+
+		body.Write(pk.ReturnCodes)
+
+		// Write header and packet to output.
+		out := pk.FixedHeader.encode()
+		out.Write(body.Bytes())
+		_, err := out.WriteTo(w)
+
+		return err
+	*/
 }
 
 // Decode extracts the data values from the packet.

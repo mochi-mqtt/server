@@ -23,21 +23,29 @@ func TestPubrelEncode(t *testing.T) {
 		require.Equal(t, Pubrel, pk.Type, "Mismatched Packet Type [i:%d] %s", i, wanted.desc)
 		require.Equal(t, Pubrel, pk.FixedHeader.Type, "Mismatched FixedHeader Type [i:%d] %s", i, wanted.desc)
 
-		var b bytes.Buffer
-		err := pk.Encode(&b)
-
-		encoded := b.Bytes()
+		buf := new(bytes.Buffer)
+		err := pk.Encode(buf)
+		require.NoError(t, err, "Expected no error writing buffer [i:%d] %s", i, wanted.desc)
+		encoded := buf.Bytes()
 
 		require.Equal(t, len(wanted.rawBytes), len(encoded), "Mismatched packet length [i:%d] %s", i, wanted.desc)
 		require.Equal(t, byte(Pubrel<<4), encoded[0], "Mismatched fixed header packets [i:%d] %s", i, wanted.desc)
-
-		require.NoError(t, err, "Error writing buffer [i:%d] %s", i, wanted.desc)
 		require.EqualValues(t, wanted.rawBytes, encoded, "Mismatched byte values [i:%d] %s", i, wanted.desc)
 
 		require.Equal(t, wanted.packet.(*PubrelPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
 
 	}
 
+}
+
+func BenchmarkPubrelEncode(b *testing.B) {
+	pk := new(PubrelPacket)
+	copier.Copy(pk, expectedPackets[Pubrel][0].packet.(*PubrelPacket))
+
+	buf := new(bytes.Buffer)
+	for n := 0; n < b.N; n++ {
+		pk.Encode(buf)
+	}
 }
 
 func TestPubrelDecode(t *testing.T) {
@@ -63,7 +71,7 @@ func TestPubrelDecode(t *testing.T) {
 	}
 }
 
-func BenchmarkPubrelkDecode(b *testing.B) {
+func BenchmarkPubrelDecode(b *testing.B) {
 	pk := newPacket(Pubrel).(*PubrelPacket)
 	pk.FixedHeader.decode(expectedPackets[Pubrel][0].rawBytes[0])
 

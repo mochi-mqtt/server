@@ -3,7 +3,6 @@ package packets
 import (
 	"bytes"
 	"errors"
-	"io"
 )
 
 // PubackPacket contains the values of an MQTT PUBACK packet.
@@ -14,20 +13,11 @@ type PubackPacket struct {
 }
 
 // Encode encodes and writes the packet data values to the buffer.
-func (pk *PubackPacket) Encode(w io.Writer) error {
-
-	var body bytes.Buffer
-
-	// Add the Packet ID.
-	body.Write(encodeUint16(pk.PacketID))
-	pk.Remaining = 2
-
-	// Write header and packet to output.
-	out := pk.FixedHeader.encode()
-	out.Write(body.Bytes())
-	_, err := out.WriteTo(w)
-
-	return err
+func (pk *PubackPacket) Encode(buf *bytes.Buffer) error {
+	pk.FixedHeader.Remaining = 2
+	pk.FixedHeader.encode(buf)
+	buf.Write(encodeUint16(pk.PacketID))
+	return nil
 }
 
 // Decode extracts the data values from the packet.

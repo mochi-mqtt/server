@@ -23,12 +23,13 @@ func TestPublishEncode(t *testing.T) {
 		require.Equal(t, Publish, pk.Type, "Mismatched Packet Type [i:%d] %s", i, wanted.desc)
 		require.Equal(t, Publish, pk.FixedHeader.Type, "Mismatched FixedHeader Type [i:%d] %s", i, wanted.desc)
 
-		var b bytes.Buffer
-		err := pk.Encode(&b)
+		buf := new(bytes.Buffer)
+		err := pk.Encode(buf)
+		encoded := buf.Bytes()
+
 		if wanted.expect != nil {
 			require.Error(t, err, "Expected error writing buffer [i:%d] %s", i, wanted.desc)
 		} else {
-			encoded := b.Bytes()
 
 			// If actualBytes is set, compare mutated version of byte string instead (to avoid length mismatches, etc).
 			if len(wanted.actualBytes) > 0 {
@@ -47,8 +48,18 @@ func TestPublishEncode(t *testing.T) {
 			require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Dup, pk.FixedHeader.Dup, "Mismatched Dup [i:%d] %s", i, wanted.desc)
 			require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Retain, pk.FixedHeader.Retain, "Mismatched Retain [i:%d] %s", i, wanted.desc)
 			require.Equal(t, wanted.packet.(*PublishPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
-			require.NoError(t, err, "Error writing buffer [i:%d] %s", i, wanted.desc)
+			require.NoError(t, err, "Expected no error writing buffer [i:%d] %s", i, wanted.desc)
 		}
+	}
+}
+
+func BenchmarkPublishEncode(b *testing.B) {
+	pk := new(PublishPacket)
+	copier.Copy(pk, expectedPackets[Publish][0].packet.(*PublishPacket))
+
+	buf := new(bytes.Buffer)
+	for n := 0; n < b.N; n++ {
+		pk.Encode(buf)
 	}
 }
 
