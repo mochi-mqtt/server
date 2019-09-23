@@ -2,7 +2,6 @@ package packets
 
 import (
 	"encoding/binary"
-	"errors"
 	"unicode/utf8"
 	"unsafe"
 )
@@ -16,7 +15,7 @@ func byteSlice2String(bs []byte) string {
 // decodeUint16 extracts the value of two bytes from a byte array.
 func decodeUint16(buf []byte, offset int) (uint16, int, error) {
 	if len(buf) < offset+2 {
-		return 0, 0, errors.New(ErrOffsetUintOutOfRange)
+		return 0, 0, ErrOffsetUintOutOfRange
 	}
 
 	return binary.BigEndian.Uint16(buf[offset : offset+2]), offset + 2, nil
@@ -30,11 +29,11 @@ func decodeString(buf []byte, offset int) (string, int, error) {
 	}
 
 	if next+int(length) > len(buf) {
-		return "", 0, errors.New(ErrOffsetStrOutOfRange)
+		return "", 0, ErrOffsetStrOutOfRange
 	}
 
 	if !validUTF8(buf[next : next+int(length)]) {
-		return "", 0, errors.New(ErrOffsetStrInvalidUTF8)
+		return "", 0, ErrOffsetStrInvalidUTF8
 	}
 
 	return byteSlice2String(buf[next : next+int(length)]), next + int(length), nil
@@ -48,7 +47,7 @@ func decodeBytes(buf []byte, offset int) ([]byte, int, error) {
 	}
 
 	if next+int(length) > len(buf) {
-		return make([]byte, 0, 0), 0, errors.New(ErrOffsetStrOutOfRange)
+		return make([]byte, 0, 0), 0, ErrOffsetStrOutOfRange
 	}
 
 	return buf[next : next+int(length)], next + int(length), nil
@@ -57,7 +56,7 @@ func decodeBytes(buf []byte, offset int) ([]byte, int, error) {
 // decodeByte extracts the value of a byte from a byte array.
 func decodeByte(buf []byte, offset int) (byte, int, error) {
 	if len(buf) <= offset {
-		return 0, 0, errors.New(ErrOffsetByteOutOfRange)
+		return 0, 0, ErrOffsetByteOutOfRange
 	}
 	return buf[offset], offset + 1, nil
 }
@@ -65,7 +64,7 @@ func decodeByte(buf []byte, offset int) (byte, int, error) {
 // decodeByteBool extracts the value of a byte from a byte array and returns a bool.
 func decodeByteBool(buf []byte, offset int) (bool, int, error) {
 	if len(buf) <= offset {
-		return false, 0, errors.New(ErrOffsetBoolOutOfRange)
+		return false, 0, ErrOffsetBoolOutOfRange
 	}
 	return 1&buf[offset] > 0, offset + 1, nil
 }

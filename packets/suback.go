@@ -2,7 +2,6 @@ package packets
 
 import (
 	"bytes"
-	"errors"
 )
 
 // SubackPacket contains the values of an MQTT SUBACK packet.
@@ -35,7 +34,7 @@ func (pk *SubackPacket) Decode(buf []byte) error {
 	// Get Packet ID.
 	pk.PacketID, offset, err = decodeUint16(buf, offset)
 	if err != nil {
-		return errors.New(ErrMalformedPacketID)
+		return ErrMalformedPacketID
 	}
 
 	// Get Granted QOS flags.

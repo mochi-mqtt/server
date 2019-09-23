@@ -2,7 +2,6 @@ package packets
 
 import (
 	"bytes"
-	"errors"
 )
 
 // FixedHeader contains the values of the fixed header portion of the MQTT packet.
@@ -60,7 +59,7 @@ func (fh *FixedHeader) decode(headerByte byte) error {
 		// [MQTT-2.2.2-2]
 		// If invalid flags are received, the receiver MUST close the Network Connection.
 		if (headerByte>>3)&0x01 > 0 || (headerByte>>1)&0x03 > 0 || headerByte&0x01 > 0 {
-			return errors.New(ErrInvalidFlags)
+			return ErrInvalidFlags
 		}
 	}
 

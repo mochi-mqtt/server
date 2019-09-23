@@ -2,7 +2,6 @@ package packets
 
 import (
 	"bytes"
-	"errors"
 )
 
 // PubrecPacket contains the values of an MQTT PUBREC packet.
@@ -27,7 +26,7 @@ func (pk *PubrecPacket) Decode(buf []byte) error {
 
 	pk.PacketID, _, err = decodeUint16(buf, 0)
 	if err != nil {
-		return errors.New(ErrMalformedPacketID)
+		return ErrMalformedPacketID
 	}
 
 	return nil

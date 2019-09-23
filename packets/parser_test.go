@@ -186,7 +186,7 @@ func TestRead(t *testing.T) {
 				if wanted.expect != nil {
 					require.Error(t, err, "Expected error reading packet [i:%d] %s - %d", i, wanted.desc, code)
 					if err != nil {
-						require.Equal(t, err.Error(), wanted.expect, "Mismatched packet error [i:%d] %s - %d", i, wanted.desc, code)
+						require.Equal(t, err, wanted.expect, "Mismatched packet error [i:%d] %s - %d", i, wanted.desc, code)
 					}
 
 				} else {

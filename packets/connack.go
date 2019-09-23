@@ -2,7 +2,6 @@ package packets
 
 import (
 	"bytes"
-	"errors"
 )
 
 // ConnackPacket contains the values of an MQTT CONNACK packet.
@@ -32,13 +31,13 @@ func (pk *ConnackPacket) Decode(buf []byte) error {
 	// Unpack session present flag.
 	pk.SessionPresent, offset, err = decodeByteBool(buf, 0)
 	if err != nil {
-		return errors.New(ErrMalformedSessionPresent)
+		return ErrMalformedSessionPresent
 	}
 
 	// Unpack return code.
 	pk.ReturnCode, offset, err = decodeByte(buf, offset)
 	if err != nil {
-		return errors.New(ErrMalformedReturnCode)
+		return ErrMalformedReturnCode
 	}
 
 	return nil

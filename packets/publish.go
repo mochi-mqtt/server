@@ -2,7 +2,6 @@ package packets
 
 import (
 	"bytes"
-	"errors"
 )
 
 // PublishPacket contains the values of an MQTT PUBLISH packet.
@@ -25,7 +24,7 @@ func (pk *PublishPacket) Encode(buf *bytes.Buffer) error {
 
 		// [MQTT-2.3.1-1] SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
 		if pk.PacketID == 0 {
-			return errors.New(ErrMissingPacketID)
+			return ErrMissingPacketID
 		}
 
 		packetID = encodeUint16(pk.PacketID)
@@ -47,14 +46,14 @@ func (pk *PublishPacket) Decode(buf []byte) error {
 
 	pk.TopicName, offset, err = decodeString(buf, 0)
 	if err != nil {
-		return errors.New(ErrMalformedTopic)
+		return ErrMalformedTopic
 	}
 
 	// If QOS decode Packet ID.
 	if pk.Qos > 0 {
 		pk.PacketID, offset, err = decodeUint16(buf, offset)
 		if err != nil {
-			return errors.New(ErrMalformedPacketID)
+			return ErrMalformedPacketID
 		}
 	}
 
@@ -80,13 +79,13 @@ func (pk *PublishPacket) Validate() (byte, error) {
 	// @SPEC [MQTT-2.3.1-1]
 	// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
 	if pk.FixedHeader.Qos > 0 && pk.PacketID == 0 {
-		return Failed, errors.New(ErrMissingPacketID)
+		return Failed, ErrMissingPacketID
 	}
 
 	// @SPEC [MQTT-2.3.1-5]
 	// A PUBLISH Packet MUST NOT contain a Packet Identifier if its QoS value is set to 0.
 	if pk.FixedHeader.Qos == 0 && pk.PacketID > 0 {
-		return Failed, errors.New(ErrSurplusPacketID)
+		return Failed, ErrSurplusPacketID
 	}
 
 	return Accepted, nil

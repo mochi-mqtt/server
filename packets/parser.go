@@ -77,7 +77,7 @@ func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 
 		// @SPEC [MQTT-2.2.2-2]
 		// If invalid flags are received, the receiver MUST close the Network Connection.
-		return errors.New(ErrInvalidFlags)
+		return ErrInvalidFlags
 	}
 
 	// The remaining length value can be up to 5 bytes. Peek through each byte
@@ -101,7 +101,7 @@ func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 		// If i has reached 4 without a length terminator, throw a protocol violation.
 		i++
 		if i == 4 {
-			return errors.New(ErrOversizedLengthIndicator)
+			return ErrOversizedLengthIndicator
 		}
 	}
 

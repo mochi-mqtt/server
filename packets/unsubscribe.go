@@ -2,7 +2,6 @@ package packets
 
 import (
 	"bytes"
-	"errors"
 )
 
 // UnsubscribePacket contains the values of an MQTT UNSUBSCRIBE packet.
@@ -19,7 +18,7 @@ func (pk *UnsubscribePacket) Encode(buf *bytes.Buffer) error {
 	// Add the Packet ID.
 	// [MQTT-2.3.1-1] SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
 	if pk.PacketID == 0 {
-		return errors.New(ErrMissingPacketID)
+		return ErrMissingPacketID
 	}
 
 	packetID := encodeUint16(pk.PacketID)
@@ -51,7 +50,7 @@ func (pk *UnsubscribePacket) Decode(buf []byte) error {
 	// Get the Packet ID.
 	pk.PacketID, offset, err = decodeUint16(buf, 0)
 	if err != nil {
-		return errors.New(ErrMalformedPacketID)
+		return ErrMalformedPacketID
 	}
 
 	// Keep decoding until there's no space left.
@@ -61,7 +60,7 @@ func (pk *UnsubscribePacket) Decode(buf []byte) error {
 		var t string
 		t, offset, err = decodeString(buf, offset)
 		if err != nil {
-			return errors.New(ErrMalformedTopic)
+			return ErrMalformedTopic
 		}
 
 		if t != "" {
@@ -80,7 +79,7 @@ func (pk *UnsubscribePacket) Validate() (byte, error) {
 	// @SPEC [MQTT-2.3.1-1].
 	// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
 	if pk.FixedHeader.Qos > 0 && pk.PacketID == 0 {
-		return Failed, errors.New(ErrMissingPacketID)
+		return Failed, ErrMissingPacketID
 	}
 
 	return Accepted, nil

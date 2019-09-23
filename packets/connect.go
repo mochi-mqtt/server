@@ -2,7 +2,6 @@ package packets
 
 import (
 	"bytes"
-	"errors"
 )
 
 // ConnectPacket contains the values of an MQTT CONNECT packet.
@@ -84,17 +83,17 @@ func (pk *ConnectPacket) Decode(buf []byte) error {
 	// Unpack protocol name and version.
 	pk.ProtocolName, offset, err = decodeString(buf, 0)
 	if err != nil {
-		return errors.New(ErrMalformedProtocolName)
+		return ErrMalformedProtocolName
 	}
 
 	pk.ProtocolVersion, offset, err = decodeByte(buf, offset)
 	if err != nil {
-		return errors.New(ErrMalformedProtocolVersion)
+		return ErrMalformedProtocolVersion
 	}
 	// Unpack flags byte.
 	flags, offset, err := decodeByte(buf, offset)
 	if err != nil {
-		return errors.New(ErrMalformedFlags)
+		return ErrMalformedFlags
 	}
 	pk.ReservedBit = 1 & flags
 	pk.CleanSession = 1&(flags>>1) > 0
@@ -107,13 +106,13 @@ func (pk *ConnectPacket) Decode(buf []byte) error {
 	// Get keepalive interval.
 	pk.Keepalive, offset, err = decodeUint16(buf, offset)
 	if err != nil {
-		return errors.New(ErrMalformedKeepalive)
+		return ErrMalformedKeepalive
 	}
 
 	// Get client ID.
 	pk.ClientIdentifier, offset, err = decodeString(buf, offset)
 	if err != nil {
-		return errors.New(ErrMalformedClientID)
+		return ErrMalformedClientID
 	}
 
 	// Get Last Will and Testament topic and message if applicable.
@@ -121,12 +120,12 @@ func (pk *ConnectPacket) Decode(buf []byte) error {
 
 		pk.WillTopic, offset, err = decodeString(buf, offset)
 		if err != nil {
-			return errors.New(ErrMalformedWillTopic)
+			return ErrMalformedWillTopic
 		}
 
 		pk.WillMessage, offset, err = decodeBytes(buf, offset)
 		if err != nil {
-			return errors.New(ErrMalformedWillMessage)
+			return ErrMalformedWillMessage
 		}
 	}
 
@@ -134,14 +133,14 @@ func (pk *ConnectPacket) Decode(buf []byte) error {
 	if pk.UsernameFlag {
 		pk.Username, offset, err = decodeString(buf, offset)
 		if err != nil {
-			return errors.New(ErrMalformedUsername)
+			return ErrMalformedUsername
 		}
 	}
 
 	if pk.PasswordFlag {
 		pk.Password, offset, err = decodeString(buf, offset)
 		if err != nil {
-			return errors.New(ErrMalformedPassword)
+			return ErrMalformedPassword
 		}
 	}
 
@@ -154,38 +153,38 @@ func (pk *ConnectPacket) Validate() (b byte, err error) {
 
 	// End if protocol name is bad.
 	if pk.ProtocolName != "MQIsdp" && pk.ProtocolName != "MQTT" {
-		return ErrConnectProtocolViolation, errors.New(ErrProtocolViolation)
+		return ErrConnectProtocolViolation, ErrProtocolViolation
 	}
 
 	// End if protocol version is bad.
 	if (pk.ProtocolName == "MQIsdp" && pk.ProtocolVersion != 3) ||
 		(pk.ProtocolName == "MQTT" && pk.ProtocolVersion != 4) {
-		return ErrConnectBadProtocolVersion, errors.New(ErrProtocolViolation)
+		return ErrConnectBadProtocolVersion, ErrProtocolViolation
 	}
 
 	// End if reserved bit is not 0.
 	if pk.ReservedBit != 0 {
-		return ErrConnectProtocolViolation, errors.New(ErrProtocolViolation)
+		return ErrConnectProtocolViolation, ErrProtocolViolation
 	}
 
 	// End if ClientID is too long.
 	if len(pk.ClientIdentifier) > 65535 {
-		return ErrConnectProtocolViolation, errors.New(ErrProtocolViolation)
+		return ErrConnectProtocolViolation, ErrProtocolViolation
 	}
 
 	// End if password flag is set without a username.
 	if pk.PasswordFlag && !pk.UsernameFlag {
-		return ErrConnectProtocolViolation, errors.New(ErrProtocolViolation)
+		return ErrConnectProtocolViolation, ErrProtocolViolation
 	}
 
 	// End if Username or Password is too long.
 	if len(pk.Username) > 65535 || len(pk.Password) > 65535 {
-		return ErrConnectProtocolViolation, errors.New(ErrProtocolViolation)
+		return ErrConnectProtocolViolation, ErrProtocolViolation
 	}
 
 	// End if client id isn't set and clean session is false.
 	if !pk.CleanSession && len(pk.ClientIdentifier) == 0 {
-		return ErrConnectBadClientID, errors.New(ErrProtocolViolation)
+		return ErrConnectBadClientID, ErrProtocolViolation
 	}
 
 	return Accepted, nil

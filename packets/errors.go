@@ -1,5 +1,9 @@
 package packets
 
+import (
+	"errors"
+)
+
 const (
 	Accepted byte = 0x00
 	Failed   byte = 0xFF
@@ -15,41 +19,41 @@ const (
 	ErrSubAckNetworkError byte = 0x80
 )
 
-const (
+var (
 	// CONNECT
-	ErrMalformedProtocolName    = "malformed packet: protocol name"
-	ErrMalformedProtocolVersion = "malformed packet: protocol version"
-	ErrMalformedFlags           = "malformed packet: flags"
-	ErrMalformedKeepalive       = "malformed packet: keepalive"
-	ErrMalformedClientID        = "malformed packet: client id"
-	ErrMalformedWillTopic       = "malformed packet: will topic"
-	ErrMalformedWillMessage     = "malformed packet: will message"
-	ErrMalformedUsername        = "malformed packet: username"
-	ErrMalformedPassword        = "malformed packet: password"
+	ErrMalformedProtocolName    = errors.New("malformed packet: protocol name")
+	ErrMalformedProtocolVersion = errors.New("malformed packet: protocol version")
+	ErrMalformedFlags           = errors.New("malformed packet: flags")
+	ErrMalformedKeepalive       = errors.New("malformed packet: keepalive")
+	ErrMalformedClientID        = errors.New("malformed packet: client id")
+	ErrMalformedWillTopic       = errors.New("malformed packet: will topic")
+	ErrMalformedWillMessage     = errors.New("malformed packet: will message")
+	ErrMalformedUsername        = errors.New("malformed packet: username")
+	ErrMalformedPassword        = errors.New("malformed packet: password")
 
 	// CONNACK
-	ErrMalformedSessionPresent = "malformed packet: session present"
-	ErrMalformedReturnCode     = "malformed packet: return code"
+	ErrMalformedSessionPresent = errors.New("malformed packet: session present")
+	ErrMalformedReturnCode     = errors.New("malformed packet: return code")
 
 	// PUBLISH
-	ErrMalformedTopic    = "malformed packet: topic name"
-	ErrMalformedPacketID = "malformed packet: packet id"
+	ErrMalformedTopic    = errors.New("malformed packet: topic name")
+	ErrMalformedPacketID = errors.New("malformed packet: packet id")
 
 	// SUBSCRIBE
-	ErrMalformedQoS = "malformed packet: qos"
+	ErrMalformedQoS = errors.New("malformed packet: qos")
 
 	// PACKETS
-	ErrProtocolViolation        = "protocol violation"
-	ErrOffsetStrOutOfRange      = "offset string out of range"
-	ErrOffsetBytesOutOfRange    = "offset bytes out of range"
-	ErrOffsetByteOutOfRange     = "offset byte out of range"
-	ErrOffsetBoolOutOfRange     = "offset bool out of range"
-	ErrOffsetUintOutOfRange     = "offset uint out of range"
-	ErrOffsetStrInvalidUTF8     = "offset string invalid utf8"
-	ErrInvalidFlags             = "invalid flags set for packet"
-	ErrOversizedLengthIndicator = "protocol violation: oversized length indicator"
-	ErrMissingPacketID          = "missing packet id"
-	ErrSurplusPacketID          = "surplus packet id"
+	ErrProtocolViolation        = errors.New("protocol violation")
+	ErrOffsetStrOutOfRange      = errors.New("offset string out of range")
+	ErrOffsetBytesOutOfRange    = errors.New("offset bytes out of range")
+	ErrOffsetByteOutOfRange     = errors.New("offset byte out of range")
+	ErrOffsetBoolOutOfRange     = errors.New("offset bool out of range")
+	ErrOffsetUintOutOfRange     = errors.New("offset uint out of range")
+	ErrOffsetStrInvalidUTF8     = errors.New("offset string invalid utf8")
+	ErrInvalidFlags             = errors.New("invalid flags set for packet")
+	ErrOversizedLengthIndicator = errors.New("protocol violation: oversized length indicator")
+	ErrMissingPacketID          = errors.New("missing packet id")
+	ErrSurplusPacketID          = errors.New("surplus packet id")
 )
 
 // validateQoS ensures the QoS byte is within the correct range.
