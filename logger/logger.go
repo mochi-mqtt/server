@@ -1,5 +1,0 @@
-package logger
-
-import (
-	"log"
-)

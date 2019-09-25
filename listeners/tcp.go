@@ -23,6 +23,9 @@ type TCP struct {
 	// done is a channel which indicates the process is done and should end.
 	done chan bool
 
+	// start can be called to ensure the serve methods are only called once.
+	start *sync.Once
+
 	// end can be called to ensure the close methods are only called once.
 	end *sync.Once
 }
@@ -34,6 +37,7 @@ func NewTCP(id, address string) (l *TCP, err error) {
 		protocol: "tcp",
 		address:  address,
 		done:     make(chan bool),
+		start:    new(sync.Once),
 		end:      new(sync.Once),
 	}
 
@@ -53,37 +57,38 @@ func (l *TCP) ID() string {
 // Serve starts listening for new TCP connections, and calls the connection
 // establishment callback for any received.
 func (l *TCP) Serve(establish EstablishFunc) {
-DONE:
-	for {
-		select {
-		case <-l.done:
-			break DONE
+	l.start.Do(func() {
+	DONE:
+		for {
+			select {
+			case <-l.done:
+				break DONE
 
-		default:
+			default:
 
-			// Block until a new connection is available.
-			conn, err := l.listen.Accept()
-			if err != nil {
-				break // Not interested in broken connections.
+				// Block until a new connection is available.
+				conn, err := l.listen.Accept()
+				if err != nil {
+					break // Not interested in broken connections.
+				}
+
+				// Establish connection in a new goroutine.
+				go establish(conn)
 			}
-
-			// Establish connection in a new goroutine.
-			go establish(conn)
 		}
-	}
+	})
 }
 
 // Close closes the listener and any client connections.
 func (l *TCP) Close(closeClients CloseFunc) {
 	l.end.Do(func() {
-		closeClients()
+		closeClients(l.id)
 		close(l.done)
 	})
 
 	if l.listen != nil {
 		err := l.listen.Close()
 		if err != nil {
-			// Log the error
 			return
 		}
 

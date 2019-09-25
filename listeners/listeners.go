@@ -1,7 +1,6 @@
 package listeners
 
 import (
-	"errors"
 	"net"
 	"sync"
 )
@@ -10,7 +9,7 @@ import (
 type EstablishFunc func(net.Conn)
 
 // CloseFunc is a callback function for closing all listener clients.
-type CloseFunc func()
+type CloseFunc func(id string)
 
 // Listener is an interface for network listeners. A network listener listens
 // for incoming client connections and adds them to the server.
@@ -18,14 +17,14 @@ type Listener interface {
 
 	// Serve starts the listener listening for new connections. The method
 	// takes a callbacks for establishing new clients.
-	Serve(EstablishFunc) error
+	Serve(EstablishFunc)
 
 	// ID returns the ID of the listener.
 	ID() string
 
 	// Close closes all connections for a listener and stops listening. The method
 	// takes a callback for closing all client connections before ending.
-	Close(CloseFunc) error
+	Close(CloseFunc)
 }
 
 // listeners contains the network listeners for the broker.
@@ -80,34 +79,18 @@ func (l *Listeners) Serve(id string, establisher EstablishFunc) {
 	go func() {
 		defer l.wg.Done()
 		l.wg.Add(1)
-		err := listener.Serve(establisher)
-		if err != nil {
-			l.Errors <- errors.New(err.Error() + "; " + id)
-		}
+		listener.Serve(establisher)
 	}()
 }
 
-// Close stops a listener from the internal map.
-func (l *Listeners) Close(id string, closer CloseFunc) {
-	l.RLock()
-	listener := l.internal[id]
-	l.RUnlock()
-
-	err := listener.Close(closer)
-	if err != nil {
-		l.Errors <- errors.New(err.Error() + "; " + id)
-	}
-}
-
-/*
-
-
-// ServeAll iterates and serves all registered listeners.
+// ServeAll starts all listeners serving from the internal map.
 func (l *Listeners) ServeAll(establisher EstablishFunc) {
 	l.RLock()
-	ids := make([]string, 0, len(l.internal))
+	i := 0
+	ids := make([]string, len(l.internal))
 	for id := range l.internal {
-		ids = append(ids, id)
+		ids[i] = id
+		i++
 	}
 	l.RUnlock()
 
@@ -122,24 +105,17 @@ func (l *Listeners) Close(id string, closer CloseFunc) {
 	listener := l.internal[id]
 	l.RUnlock()
 
-	err := listener.Close(closer)
-	if err != nil {
-	}
-	log.Println("listener ended", id, err)
+	listener.Close(closer)
 }
 
 // CloseAll iterates and closes all registered listeners.
-func (l *Listeners) CloseAll(closer CloseFunc) error {
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
+func (l *Listeners) CloseAll(closer CloseFunc) {
 	l.RLock()
-	ids := make([]string, 0, len(l.internal))
+	i := 0
+	ids := make([]string, len(l.internal))
 	for id := range l.internal {
-		ids = append(ids, id)
+		ids[i] = id
+		i++
 	}
 	l.RUnlock()
 
@@ -147,24 +123,18 @@ func (l *Listeners) CloseAll(closer CloseFunc) error {
 		l.Close(id, closer)
 	}
 
-	select {
-	case <-done:
-	case <-time.After(1 * time.Second):
-		log.Println("timed out closing all")
-	}
-
-	return nil
+	l.wg.Wait()
 }
-*/
 
 // MockCloseFunc is a function signature which can be used in testing.
-func MockCloser() {}
+func MockCloser(id string) {}
 
 // MockCloseFunc is a function signature which can be used in testing.
 func MockEstablisher(c net.Conn) {}
 
 // TCP is a listener for establishing client connections on basic TCP protocol.
 type MockListener struct {
+	sync.RWMutex
 
 	// id is the internal id of the listener.
 	id string
@@ -172,47 +142,50 @@ type MockListener struct {
 	// address is the address to bind to.
 	address string
 
-	// serving indicates that the listener is serving.
-	serving bool
+	// isServing indicates that the listener is serving.
+	isServing bool
 
 	// done is sent when the mock listener should close.
 	done chan error
-
-	// accept is sent to an establisher.
-	accept chan error
-
-	// errors is a channel of errors from the listener.
-	errors chan error
 }
 
 // Serve serves the mock listener.
-func (l *MockListener) Serve(establisher EstablishFunc) error {
-	l.serving = true
+func (l *MockListener) Serve(establisher EstablishFunc) {
+	l.Lock()
+	l.isServing = true
+	l.Unlock()
 DONE:
 	for {
 		select {
 		case <-l.done:
 			break DONE
-
-		case o := <-l.accept:
-			return o
 		}
 	}
-
-	return nil
 }
 
 // ID returns the id of the mock listener.
 func (l *MockListener) ID() string {
-	return l.id
+	l.RLock()
+	id := l.id
+	l.RUnlock()
+	return id
+}
+
+// serving indicates if the listener is serving
+func (l *MockListener) serving() bool {
+	l.RLock()
+	ok := l.isServing
+	l.RUnlock()
+	return ok
 }
 
 // Close closes the mock listener.
-func (l *MockListener) Close(closer CloseFunc) error {
-	l.serving = false
-	closer()
+func (l *MockListener) Close(closer CloseFunc) {
+	l.Lock()
+	defer l.Unlock()
+	l.isServing = false
+	closer(l.id)
 	close(l.done)
-	return nil
 }
 
 // NewMockListener returns a new instance of MockListener
@@ -221,7 +194,5 @@ func NewMockListener(id, address string) *MockListener {
 		id:      id,
 		address: address,
 		done:    make(chan error),
-		accept:  make(chan error),
-		errors:  make(chan error),
 	}
 }

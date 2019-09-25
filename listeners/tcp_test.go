@@ -50,48 +50,49 @@ func TestTCPServe(t *testing.T) {
 	// Close Connection.
 	l, err := NewTCP("t1", ":1883")
 	require.NoError(t, err)
-	o := make(chan error)
-	go func(o chan error) {
-		o <- l.Serve(MockEstablisher)
+	o := make(chan bool)
+	go func(o chan bool) {
+		l.Serve(MockEstablisher)
+		o <- true
 	}(o)
 	time.Sleep(time.Millisecond) // easy non-channel wait for start of serving
 	var closed bool
-	err = l.Close(func() {
+	l.Close(func(id string) {
 		closed = true
 	})
-	require.NoError(t, err)
 	require.Equal(t, true, closed)
-	require.NoError(t, <-o)
+	<-o
 
 	// Close broken/closed listener.
 	l, err = NewTCP("t1", ":1883")
 	require.NoError(t, err)
-	o = make(chan error)
-	go func(o chan error) {
-		o <- l.Serve(MockEstablisher)
+	o = make(chan bool)
+	go func(o chan bool) {
+		l.Serve(MockEstablisher)
+		o <- true
 	}(o)
 
 	time.Sleep(time.Millisecond)
 	l.listen.Close()
-	err = l.Close(MockCloser)
-	require.Error(t, err)
-	require.NoError(t, <-o)
+	l.Close(MockCloser)
+	<-o
 
 	// Accept/Establish.
 	l, err = NewTCP("t1", ":1883")
 	require.NoError(t, err)
-	o = make(chan error)
+	o = make(chan bool)
 	ok := make(chan bool)
-	go func(o chan error, ok chan bool) {
-		o <- l.Serve(func(c net.Conn) {
+	go func(o chan bool, ok chan bool) {
+		l.Serve(func(c net.Conn) {
 			ok <- true
 		})
+		o <- true
 	}(o, ok)
 
 	time.Sleep(time.Millisecond)
 	net.Dial(l.protocol, l.listen.Addr().String())
 	require.Equal(t, true, <-ok)
 	l.Close(MockCloser)
-	require.NoError(t, <-o)
+	<-o
 
 }
