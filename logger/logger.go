@@ -1,0 +1,5 @@
+package logger
+
+import (
+	"log"
+)
