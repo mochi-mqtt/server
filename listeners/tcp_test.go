@@ -1,6 +1,7 @@
 package listeners
 
 import (
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -83,8 +84,9 @@ func TestTCPServe(t *testing.T) {
 	o = make(chan bool)
 	ok := make(chan bool)
 	go func(o chan bool, ok chan bool) {
-		l.Serve(func(c net.Conn) {
+		l.Serve(func(c net.Conn) error {
 			ok <- true
+			return errors.New("testing")
 		})
 		o <- true
 	}(o, ok)

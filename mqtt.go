@@ -2,6 +2,8 @@ package mqtt
 
 import (
 	"errors"
+	"log"
+	"net"
 
 	"github.com/mochi-co/mqtt/listeners"
 )
@@ -55,23 +57,21 @@ func (s *Server) AddListener(listener listeners.Listener) error {
 	return nil
 }
 
-// ListenAndServe begins listening for new client connections on all attached
-// listeners.
-func (s *Server) ListenAndServe() error {
-
-	/*var err = make(chan error)
-	for _, listener := range s.listeners {
-		go func(err chan error) {
-			err <- listener.Serve(listeners.MockEstablisher)
-		}(err)
-	}
-
-	return nil
-	*/
+// Serve begins the event loops for establishing client connections on all
+// attached listeners.
+func (s *Server) Serve() error {
+	s.listeners.ServeAll(s.EstablishConnection)
 	return nil
 }
 
 // Close attempts to gracefully shutdown the server, all listeners, and clients.
 func (s *Server) Close() error {
+	s.listeners.CloseAll(listeners.MockCloser)
+	return nil
+}
+
+// EstablishConnection establishes a new client connection with the broker.
+func (s *Server) EstablishConnection(c net.Conn) error {
+	log.Println("connecting")
 	return nil
 }

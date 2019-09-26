@@ -3,10 +3,11 @@ package listeners
 import (
 	"net"
 	"sync"
+	"time"
 )
 
 // EstablishFunc is a callback function for establishing new clients.
-type EstablishFunc func(net.Conn)
+type EstablishFunc func(net.Conn) error
 
 // CloseFunc is a callback function for closing all listener clients.
 type CloseFunc func(id string)
@@ -63,6 +64,14 @@ func (l *Listeners) Get(id string) (Listener, bool) {
 	return val, ok
 }
 
+// Len returns the length of the listeners map.
+func (l *Listeners) Len() int {
+	l.RLock()
+	val := len(l.internal)
+	l.RUnlock()
+	return val
+}
+
 // Delete removes a listener from the internal map.
 func (l *Listeners) Delete(id string) {
 	l.Lock()
@@ -104,7 +113,6 @@ func (l *Listeners) Close(id string, closer CloseFunc) {
 	l.RLock()
 	listener := l.internal[id]
 	l.RUnlock()
-
 	listener.Close(closer)
 }
 
@@ -122,7 +130,6 @@ func (l *Listeners) CloseAll(closer CloseFunc) {
 	for _, id := range ids {
 		l.Close(id, closer)
 	}
-
 	l.wg.Wait()
 }
 
@@ -130,7 +137,9 @@ func (l *Listeners) CloseAll(closer CloseFunc) {
 func MockCloser(id string) {}
 
 // MockCloseFunc is a function signature which can be used in testing.
-func MockEstablisher(c net.Conn) {}
+func MockEstablisher(c net.Conn) error {
+	return nil
+}
 
 // TCP is a listener for establishing client connections on basic TCP protocol.
 type MockListener struct {
@@ -146,7 +155,16 @@ type MockListener struct {
 	isServing bool
 
 	// done is sent when the mock listener should close.
-	done chan error
+	done chan bool
+}
+
+// NewMockListener returns a new instance of MockListener
+func NewMockListener(id, address string) *MockListener {
+	return &MockListener{
+		id:      id,
+		address: address,
+		done:    make(chan bool),
+	}
 }
 
 // Serve serves the mock listener.
@@ -172,7 +190,7 @@ func (l *MockListener) ID() string {
 }
 
 // serving indicates if the listener is serving
-func (l *MockListener) serving() bool {
+func (l *MockListener) Serving() bool {
 	l.RLock()
 	ok := l.isServing
 	l.RUnlock()
@@ -188,11 +206,58 @@ func (l *MockListener) Close(closer CloseFunc) {
 	close(l.done)
 }
 
-// NewMockListener returns a new instance of MockListener
-func NewMockListener(id, address string) *MockListener {
-	return &MockListener{
-		id:      id,
-		address: address,
-		done:    make(chan error),
-	}
+// MockNetConn satisfies the net.Conn interface.
+type MockNetConn struct{}
+
+// Read reads bytes from the net io.reader.
+func (m *MockNetConn) Read(b []byte) (n int, err error) {
+	return 0, nil
+}
+
+// Read writes bytes to the net io.writer.
+func (m *MockNetConn) Write(b []byte) (n int, err error) {
+	return 0, nil
+}
+
+// Close closes the net.Conn connection.
+func (m *MockNetConn) Close() error {
+	return nil
+}
+
+// LocalAddr returns the local address of the request.
+func (m *MockNetConn) LocalAddr() net.Addr {
+	return new(MockNetAddr)
+}
+
+// RemoteAddr returns the remove address of the request.
+func (m *MockNetConn) RemoteAddr() net.Addr {
+	return new(MockNetAddr)
+}
+
+// SetDeadline sets the request deadline.
+func (m *MockNetConn) SetDeadline(t time.Time) error {
+	return nil
+}
+
+// SetReadDeadline sets the read deadline.
+func (m *MockNetConn) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+// SetWriteDeadline sets the write deadline.
+func (m *MockNetConn) SetWriteDeadline(t time.Time) error {
+	return nil
+}
+
+// MockNetAddr satisfies net.Addr interface.
+type MockNetAddr struct{}
+
+// Network returns the network protocol.
+func (m *MockNetAddr) Network() string {
+	return "tcp"
+}
+
+// String returns the network address.
+func (m *MockNetAddr) String() string {
+	return "127.0.0.1"
 }
