@@ -841,32 +841,6 @@ var expectedPackets = map[byte][]packetTestData{
 
 		// Spec tests
 		{
-			// @SPEC [MQTT-2.3.1-1].
-			// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
-			desc:    "[MQTT-2.3.1-1] No Packet ID with QOS > 0",
-			primary: true,
-			expect:  ErrMissingPacketID,
-			code:    Failed,
-			rawBytes: []byte{
-				byte(Publish<<4) | 2, 14, // Fixed header
-				0, 5, // Topic Name - LSB+MSB
-				'a', '/', 'b', '/', 'c', // Topic Name
-				0, 0, // Packet ID - LSB+MSB
-				'h', 'e', 'l', 'l', 'o', // Payload
-			},
-			packet: &PublishPacket{
-				FixedHeader: FixedHeader{
-					Type: Publish,
-					Qos:  1,
-				},
-				TopicName: "a/b/c",
-				Payload:   []byte("hello"),
-				PacketID:  0,
-			},
-			meta: byte(2),
-		},
-
-		{
 			// @SPEC [MQTT-2.3.1-5]
 			// A PUBLISH Packet MUST NOT contain a Packet Identifier if its QoS value is set to 0.
 			desc:  "[MQTT-2.3.1-5] Packet ID must be 0 if QoS is 0 (a)",
@@ -897,6 +871,60 @@ var expectedPackets = map[byte][]packetTestData{
 				Payload:   []byte("hello"),
 			},
 		},
+		{
+			// @SPEC [MQTT-2.3.1-1].
+			// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
+			desc:   "[MQTT-2.3.1-1] No Packet ID with QOS > 0",
+			group:  "encode",
+			expect: ErrMissingPacketID,
+			code:   Failed,
+			rawBytes: []byte{
+				byte(Publish<<4) | 2, 14, // Fixed header
+				0, 5, // Topic Name - LSB+MSB
+				'a', '/', 'b', '/', 'c', // Topic Name
+				0, 0, // Packet ID - LSB+MSB
+				'h', 'e', 'l', 'l', 'o', // Payload
+			},
+			packet: &PublishPacket{
+				FixedHeader: FixedHeader{
+					Type: Publish,
+					Qos:  1,
+				},
+				TopicName: "a/b/c",
+				Payload:   []byte("hello"),
+				PacketID:  0,
+			},
+			meta: byte(2),
+		},
+		/*
+			{
+				// @SPEC [MQTT-2.3.1-1].
+				// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
+				desc:  "[MQTT-2.3.1-1] No Packet ID with QOS > 0",
+				group: "validate",
+				//primary: true,
+				expect: ErrMissingPacketID,
+				code:   Failed,
+				rawBytes: []byte{
+					byte(Publish<<4) | 2, 14, // Fixed header
+					0, 5, // Topic Name - LSB+MSB
+					'a', '/', 'b', '/', 'c', // Topic Name
+					0, 0, // Packet ID - LSB+MSB
+					'h', 'e', 'l', 'l', 'o', // Payload
+				},
+				packet: &PublishPacket{
+					FixedHeader: FixedHeader{
+						Type: Publish,
+						Qos:  1,
+					},
+					TopicName: "a/b/c",
+					Payload:   []byte("hello"),
+					PacketID:  0,
+				},
+				meta: byte(2),
+			},
+
+		*/
 
 		// Validation Tests
 		{
@@ -914,6 +942,21 @@ var expectedPackets = map[byte][]packetTestData{
 				TopicName: "a/b/c",
 				Payload:   []byte("hello"),
 				PacketID:  3,
+			},
+		},
+		{
+			// @SPEC [MQTT-2.3.1-1].
+			// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
+			desc:   "[MQTT-2.3.1-1] No Packet ID with QOS > 0",
+			group:  "validate",
+			expect: ErrMissingPacketID,
+			code:   Failed,
+			packet: &PublishPacket{
+				FixedHeader: FixedHeader{
+					Type: Publish,
+					Qos:  1,
+				},
+				PacketID: 0,
 			},
 		},
 	},
@@ -1115,14 +1158,31 @@ var expectedPackets = map[byte][]packetTestData{
 			},
 		},
 
+		// Validation
+		{
+			// @SPEC [MQTT-2.3.1-1].
+			// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
+			desc:   "[MQTT-2.3.1-1] Subscribe No Packet ID with QOS > 0",
+			group:  "validate",
+			expect: ErrMissingPacketID,
+			code:   Failed,
+			packet: &SubscribePacket{
+				FixedHeader: FixedHeader{
+					Type: Subscribe,
+					Qos:  1,
+				},
+				PacketID: 0,
+			},
+		},
+
 		// Spec tests
 		{
 			// @SPEC [MQTT-2.3.1-1].
 			// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
-			desc:    "[MQTT-2.3.1-1] No Packet ID with QOS > 0",
-			primary: true,
-			code:    Failed,
-			expect:  ErrMissingPacketID,
+			desc:   "[MQTT-2.3.1-1] Subscribe No Packet ID with QOS > 0",
+			group:  "encode",
+			code:   Failed,
+			expect: ErrMissingPacketID,
 			rawBytes: []byte{
 				byte(Subscribe<<4) | 1<<1, 10, // Fixed header
 				0, 0, // Packet ID - LSB+MSB
@@ -1220,15 +1280,31 @@ var expectedPackets = map[byte][]packetTestData{
 			},
 		},
 		{
-			desc:      "Malformed Subscribe - topic",
+			desc:      "Malformed Unsubscribe - topic",
 			group:     "decode",
 			failFirst: ErrMalformedTopic,
 			rawBytes: []byte{
 				byte(Unsubscribe << 4), 2, // Fixed header
 				0, 21, // Packet ID - LSB+MSB
-
 				0, 3, // Topic Name - LSB+MSB
 				'a', '/',
+			},
+		},
+
+		// Validation
+		{
+			// @SPEC [MQTT-2.3.1-1].
+			// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
+			desc:   "[MQTT-2.3.1-1] Subscribe No Packet ID with QOS > 0",
+			group:  "validate",
+			expect: ErrMissingPacketID,
+			code:   Failed,
+			packet: &UnsubscribePacket{
+				FixedHeader: FixedHeader{
+					Type: Unsubscribe,
+					Qos:  1,
+				},
+				PacketID: 0,
 			},
 		},
 
@@ -1236,10 +1312,10 @@ var expectedPackets = map[byte][]packetTestData{
 		{
 			// @SPEC [MQTT-2.3.1-1].
 			// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
-			desc:    "[MQTT-2.3.1-1] No Packet ID with QOS > 0",
-			primary: true,
-			code:    Failed,
-			expect:  ErrMissingPacketID,
+			desc:   "[MQTT-2.3.1-1] Unsubscribe No Packet ID with QOS > 0",
+			group:  "encode",
+			code:   Failed,
+			expect: ErrMissingPacketID,
 			rawBytes: []byte{
 				byte(Unsubscribe<<4) | 1<<1, 9, // Fixed header
 				0, 0, // Packet ID - LSB+MSB

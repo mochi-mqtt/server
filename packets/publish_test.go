@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"log"
 	"testing"
 
 	"github.com/jinzhu/copier"
@@ -11,7 +12,6 @@ import (
 func TestPublishEncode(t *testing.T) {
 	require.Contains(t, expectedPackets, Publish)
 	for i, wanted := range expectedPackets[Publish] {
-
 		if !encodeTestOK(wanted) {
 			continue
 		}
@@ -26,6 +26,7 @@ func TestPublishEncode(t *testing.T) {
 		buf := new(bytes.Buffer)
 		err := pk.Encode(buf)
 		encoded := buf.Bytes()
+		log.Println(wanted.desc, err)
 
 		if wanted.expect != nil {
 			require.Error(t, err, "Expected error writing buffer [i:%d] %s", i, wanted.desc)
@@ -134,14 +135,19 @@ func BenchmarkPublishCopy(b *testing.B) {
 func TestPublishValidate(t *testing.T) {
 	require.Contains(t, expectedPackets, Publish)
 	for i, wanted := range expectedPackets[Publish] {
-		if wanted.group == "validate" {
+		if wanted.group == "validate" || i == 0 {
 			pk := wanted.packet.(*PublishPacket)
 			ok, err := pk.Validate()
-			require.Equal(t, Failed, ok, "Publish packet didn't validate - code incorrect [i:%d] %s", i, wanted.desc)
-			if err != nil {
-				require.Equal(t, wanted.expect, err, "Publish packet didn't validate - error incorrect [i:%d] %s", i, wanted.desc)
-			}
 
+			if i == 0 {
+				require.NoError(t, err, "Publish should have validated - error incorrect [i:%d] %s", i, wanted.desc)
+				require.Equal(t, Accepted, ok, "Publish should have validated - code incorrect [i:%d] %s", i, wanted.desc)
+			} else {
+				require.Equal(t, Failed, ok, "Publish packet didn't validate - code incorrect [i:%d] %s", i, wanted.desc)
+				if err != nil {
+					require.Equal(t, wanted.expect, err, "Publish packet didn't validate - error incorrect [i:%d] %s", i, wanted.desc)
+				}
+			}
 		}
 	}
 }

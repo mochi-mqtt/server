@@ -91,12 +91,30 @@ func BenchmarkSubscribeDecode(b *testing.B) {
 }
 
 func TestSubscribeValidate(t *testing.T) {
-	pk := newPacket(Subscribe).(*SubscribePacket)
+	/*pk := newPacket(Subscribe).(*SubscribePacket)
 	pk.FixedHeader.decode(expectedPackets[Subscribe][0].rawBytes[0])
 
 	b, err := pk.Validate()
 	require.NoError(t, err)
 	require.Equal(t, Accepted, b)
+	*/
+	require.Contains(t, expectedPackets, Subscribe)
+	for i, wanted := range expectedPackets[Subscribe] {
+		if wanted.group == "validate" || i == 0 {
+			pk := wanted.packet.(*SubscribePacket)
+			ok, err := pk.Validate()
+
+			if i == 0 {
+				require.NoError(t, err, "Subscribe should have validated - error incorrect [i:%d] %s", i, wanted.desc)
+				require.Equal(t, Accepted, ok, "Subscribe should have validated - code incorrect [i:%d] %s", i, wanted.desc)
+			} else {
+				require.Equal(t, Failed, ok, "Subscribe packet didn't validate - code incorrect [i:%d] %s", i, wanted.desc)
+				if err != nil {
+					require.Equal(t, wanted.expect, err, "Subscribe packet didn't validate - error incorrect [i:%d] %s", i, wanted.desc)
+				}
+			}
+		}
+	}
 }
 
 func BenchmarkSubscribeValidate(b *testing.B) {

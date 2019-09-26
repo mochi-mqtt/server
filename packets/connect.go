@@ -76,7 +76,6 @@ func (pk *ConnectPacket) Encode(buf *bytes.Buffer) error {
 
 // Decode extracts the data values from the packet.
 func (pk *ConnectPacket) Decode(buf []byte) error {
-
 	var offset int
 	var err error
 
@@ -117,7 +116,6 @@ func (pk *ConnectPacket) Decode(buf []byte) error {
 
 	// Get Last Will and Testament topic and message if applicable.
 	if pk.WillFlag {
-
 		pk.WillTopic, offset, err = decodeString(buf, offset)
 		if err != nil {
 			return ErrMalformedWillTopic

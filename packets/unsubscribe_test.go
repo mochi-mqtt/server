@@ -91,12 +91,29 @@ func BenchmarkUnsubscribeDecode(b *testing.B) {
 }
 
 func TestUnsubscribeValidate(t *testing.T) {
-	pk := newPacket(Unsubscribe).(*UnsubscribePacket)
+	/*pk := newPacket(Unsubscribe).(*UnsubscribePacket)
 	pk.FixedHeader.decode(expectedPackets[Unsubscribe][0].rawBytes[0])
 
 	b, err := pk.Validate()
 	require.NoError(t, err)
 	require.Equal(t, Accepted, b)
+	*/
+	require.Contains(t, expectedPackets, Unsubscribe)
+	for i, wanted := range expectedPackets[Unsubscribe] {
+		if wanted.group == "validate" || i == 0 {
+			pk := wanted.packet.(*UnsubscribePacket)
+			ok, err := pk.Validate()
+			if i == 0 {
+				require.NoError(t, err, "Unsubscribe should have validated - error incorrect [i:%d] %s", i, wanted.desc)
+				require.Equal(t, Accepted, ok, "Unsubscribe should have validated - code incorrect [i:%d] %s", i, wanted.desc)
+			} else {
+				require.Equal(t, Failed, ok, "Unsubscribe packet didn't validate - code incorrect [i:%d] %s", i, wanted.desc)
+				if err != nil {
+					require.Equal(t, wanted.expect, err, "Unsubscribe packet didn't validate - error incorrect [i:%d] %s", i, wanted.desc)
+				}
+			}
+		}
+	}
 
 }
 

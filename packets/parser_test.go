@@ -131,25 +131,21 @@ func TestRead(t *testing.T) {
 
 				err := p.ReadFixedHeader(&fh)
 				if wanted.failFirst != nil {
-					require.Error(t, err, "Expected error reading fixedheader [i:%d] %s - %d", i, wanted.desc, code)
+					require.Error(t, err, "Expected error reading fixedheader [i:%d] %s - %s", i, wanted.desc, Names[code])
 				} else {
-					require.NoError(t, err, "Error reading fixedheader [i:%d] %s - %d", i, wanted.desc, code)
+					require.NoError(t, err, "Error reading fixedheader [i:%d] %s - %s", i, wanted.desc, Names[code])
 				}
 
-				pko, retcode, err := p.Read()
-				if wanted.code > 0 {
-					require.Equal(t, wanted.code, retcode, "Expected validation code [i:%d] %s - %d", i, wanted.desc, code)
-				}
+				pko, err := p.Read()
 
 				if wanted.expect != nil {
-					require.Error(t, err, "Expected error reading packet [i:%d] %s - %d", i, wanted.desc, code)
+					require.Error(t, err, "Expected error reading packet [i:%d] %s - %s", i, wanted.desc, Names[code])
 					if err != nil {
-						require.Equal(t, err, wanted.expect, "Mismatched packet error [i:%d] %s - %d", i, wanted.desc, code)
+						require.Equal(t, err, wanted.expect, "Mismatched packet error [i:%d] %s - %s", i, wanted.desc, Names[code])
 					}
-
 				} else {
-					require.NoError(t, err, "Error reading packet [i:%d] %s - %d", i, wanted.desc, code)
-					require.Equal(t, wanted.packet, pko, "Mismatched packet final [i:%d] %s - %d", i, wanted.desc, code)
+					require.NoError(t, err, "Error reading packet [i:%d] %s - %s", i, wanted.desc, Names[code])
+					require.Equal(t, wanted.packet, pko, "Mismatched packet final [i:%d] %s - %s", i, wanted.desc, Names[code])
 				}
 			}
 		}
@@ -165,7 +161,7 @@ func TestRead(t *testing.T) {
 	}))
 	err := p.ReadFixedHeader(&fh)
 	require.NoError(t, err)
-	_, _, err = p.Read()
+	_, err = p.Read()
 	require.Error(t, err)
 }
 
@@ -186,7 +182,7 @@ func BenchmarkRead(b *testing.B) {
 		rc = rn
 		p.R.Reset(&rc)
 		p.R.Discard(2)
-		_, _, err := p.Read()
+		_, err := p.Read()
 		if err != nil {
 			panic(err)
 		}
@@ -208,7 +204,7 @@ func TestReadPacketNil(t *testing.T) {
 	p.R = bufio.NewReader(bytes.NewReader([]byte{0, 0}))
 
 	err := p.ReadFixedHeader(&fh)
-	_, _, err = p.Read()
+	_, err = p.Read()
 
 	require.Error(t, err, "Expected error reading packet")
 
@@ -229,7 +225,7 @@ func TestReadPacketReadOverflow(t *testing.T) {
 	err := p.ReadFixedHeader(&fh)
 
 	p.FixedHeader.Remaining = 999999 // overflow buffer
-	_, _, err = p.Read()
+	_, err = p.Read()
 
 	require.Error(t, err, "Expected error reading packet")
 }
@@ -249,7 +245,7 @@ func TestReadPacketReadAllFail(t *testing.T) {
 	err := p.ReadFixedHeader(&fh)
 
 	p.FixedHeader.Remaining = 1 // overflow buffer
-	_, _, err = p.Read()
+	_, err = p.Read()
 
 	require.Error(t, err, "Expected error reading packet")
 }
