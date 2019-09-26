@@ -151,8 +151,10 @@ func TestFixedHeaderEncode(t *testing.T) {
 	for i, wanted := range fixedHeaderExpected {
 		buf := new(bytes.Buffer)
 		wanted.header.encode(buf)
-		require.Equal(t, len(wanted.rawBytes), len(buf.Bytes()), "Mismatched fixedheader length [i:%d] %v", i, wanted.rawBytes)
-		require.EqualValues(t, wanted.rawBytes, buf.Bytes(), "Mismatched byte values [i:%d] %v", i, wanted.rawBytes)
+		if wanted.flagError == false {
+			require.Equal(t, len(wanted.rawBytes), len(buf.Bytes()), "Mismatched fixedheader length [i:%d] %v", i, wanted.rawBytes)
+			require.EqualValues(t, wanted.rawBytes, buf.Bytes(), "Mismatched byte values [i:%d] %v", i, wanted.rawBytes)
+		}
 	}
 }
 

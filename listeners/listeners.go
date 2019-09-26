@@ -207,7 +207,10 @@ func (l *MockListener) Close(closer CloseFunc) {
 }
 
 // MockNetConn satisfies the net.Conn interface.
-type MockNetConn struct{}
+type MockNetConn struct {
+	ID       string
+	Deadline time.Time
+}
 
 // Read reads bytes from the net io.reader.
 func (m *MockNetConn) Read(b []byte) (n int, err error) {
@@ -236,6 +239,7 @@ func (m *MockNetConn) RemoteAddr() net.Addr {
 
 // SetDeadline sets the request deadline.
 func (m *MockNetConn) SetDeadline(t time.Time) error {
+	m.Deadline = t
 	return nil
 }
 

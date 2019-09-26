@@ -89,6 +89,9 @@ func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 	b := 2
 	for ; b < 6; b++ {
 		peeked, err = p.R.Peek(b)
+		if err != nil {
+			return err
+		}
 
 		// Add the byte to the length bytes slice.
 		buf = append(buf, peeked[i])
@@ -119,7 +122,7 @@ func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 }
 
 // Read reads the remaining buffer into an MQTT packet.
-func (p *Parser) Read() (pk Packet, err error) {
+func (p *Parser) Read() (pk Packet, retcode byte, err error) {
 
 	switch p.FixedHeader.Type {
 	case Connect:
@@ -151,7 +154,7 @@ func (p *Parser) Read() (pk Packet, err error) {
 	case Disconnect:
 		pk = &DisconnectPacket{FixedHeader: p.FixedHeader}
 	default:
-		return pk, errors.New("No valid packet available; " + string(p.FixedHeader.Type))
+		return pk, Accepted, errors.New("No valid packet available; " + string(p.FixedHeader.Type))
 	}
 
 	// Attempt to peek the rest of the packet.
@@ -161,7 +164,7 @@ func (p *Parser) Read() (pk Packet, err error) {
 
 		// Only try to continue if reading is still possible.
 		if err != bufio.ErrBufferFull {
-			return pk, err
+			return pk, Accepted, err
 		}
 
 		// If it didn't work, read the buffer directly, and if that still doesn't
@@ -170,14 +173,14 @@ func (p *Parser) Read() (pk Packet, err error) {
 		bt = make([]byte, p.FixedHeader.Remaining)
 		_, err := io.ReadFull(p.R, bt)
 		if err != nil {
-			return pk, err
+			return pk, Accepted, err
 		}
 	}
 
 	// Decode the remaining packet values.
 	err = pk.Decode(bt)
 	if err != nil {
-		return pk, err
+		return pk, Accepted, err
 	}
 
 	// If peeking was successful, discard the rest of the packet now it's been read.
@@ -186,9 +189,9 @@ func (p *Parser) Read() (pk Packet, err error) {
 	}
 
 	// Validate the packet to ensure spec compliance.
-	_, err = pk.Validate()
+	retcode, err = pk.Validate()
 	if err != nil {
-		return pk, err
+		return // pk, retcode, err
 	}
 
 	return

@@ -77,17 +77,17 @@ func TestPublishDecode(t *testing.T) {
 
 		err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
-			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
+			require.Error(t, err, "Expected fh error unpacking buffer [i:%d] %s", i, wanted.desc)
 			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
 		require.NoError(t, err, "Error unpacking buffer [i:%d] %s", i, wanted.desc)
-
 		require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Qos, pk.FixedHeader.Qos, "Mismatched QOS [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Dup, pk.FixedHeader.Dup, "Mismatched Dup [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*PublishPacket).FixedHeader.Retain, pk.FixedHeader.Retain, "Mismatched Retain [i:%d] %s", i, wanted.desc)
 		require.Equal(t, wanted.packet.(*PublishPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)
+
 	}
 }
 
@@ -135,10 +135,8 @@ func TestPublishValidate(t *testing.T) {
 	require.Contains(t, expectedPackets, Publish)
 	for i, wanted := range expectedPackets[Publish] {
 		if wanted.group == "validate" {
-
 			pk := wanted.packet.(*PublishPacket)
 			ok, err := pk.Validate()
-
 			require.Equal(t, Failed, ok, "Publish packet didn't validate - code incorrect [i:%d] %s", i, wanted.desc)
 			if err != nil {
 				require.Equal(t, wanted.expect, err, "Publish packet didn't validate - error incorrect [i:%d] %s", i, wanted.desc)

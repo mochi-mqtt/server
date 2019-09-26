@@ -127,7 +127,7 @@ func TestConnectValidate(t *testing.T) {
 		if wanted.group == "validate" {
 			pk := wanted.packet.(*ConnectPacket)
 			ok, _ := pk.Validate()
-			require.Equal(t, wanted.expect, ok, "Connect packet didn't validate [i:%d] %s", i, wanted.desc)
+			require.Equal(t, wanted.code, ok, "Connect packet didn't validate [i:%d] %s", i, wanted.desc)
 		}
 	}
 }

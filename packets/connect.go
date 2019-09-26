@@ -153,38 +153,38 @@ func (pk *ConnectPacket) Validate() (b byte, err error) {
 
 	// End if protocol name is bad.
 	if pk.ProtocolName != "MQIsdp" && pk.ProtocolName != "MQTT" {
-		return ErrConnectProtocolViolation, ErrProtocolViolation
+		return CodeConnectProtocolViolation, ErrProtocolViolation
 	}
 
 	// End if protocol version is bad.
 	if (pk.ProtocolName == "MQIsdp" && pk.ProtocolVersion != 3) ||
 		(pk.ProtocolName == "MQTT" && pk.ProtocolVersion != 4) {
-		return ErrConnectBadProtocolVersion, ErrProtocolViolation
+		return CodeConnectBadProtocolVersion, ErrProtocolViolation
 	}
 
 	// End if reserved bit is not 0.
 	if pk.ReservedBit != 0 {
-		return ErrConnectProtocolViolation, ErrProtocolViolation
+		return CodeConnectProtocolViolation, ErrProtocolViolation
 	}
 
 	// End if ClientID is too long.
 	if len(pk.ClientIdentifier) > 65535 {
-		return ErrConnectProtocolViolation, ErrProtocolViolation
+		return CodeConnectProtocolViolation, ErrProtocolViolation
 	}
 
 	// End if password flag is set without a username.
 	if pk.PasswordFlag && !pk.UsernameFlag {
-		return ErrConnectProtocolViolation, ErrProtocolViolation
+		return CodeConnectProtocolViolation, ErrProtocolViolation
 	}
 
 	// End if Username or Password is too long.
 	if len(pk.Username) > 65535 || len(pk.Password) > 65535 {
-		return ErrConnectProtocolViolation, ErrProtocolViolation
+		return CodeConnectProtocolViolation, ErrProtocolViolation
 	}
 
 	// End if client id isn't set and clean session is false.
 	if !pk.CleanSession && len(pk.ClientIdentifier) == 0 {
-		return ErrConnectBadClientID, ErrProtocolViolation
+		return CodeConnectBadClientID, ErrProtocolViolation
 	}
 
 	return Accepted, nil

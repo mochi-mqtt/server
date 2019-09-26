@@ -3,74 +3,22 @@ package packets
 import (
 	"bufio"
 	"bytes"
-	"net"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/mochi-co/mqtt/listeners"
 )
 
-const localAddr = "127.0.0.1"
-
-type netAddress struct {
-	val []byte
-}
-
-func (n *netAddress) String() string {
-	return localAddr
-}
-
-func (n *netAddress) Network() string {
-	return "tcp"
-}
-
-type connTester struct {
-	id       string
-	deadline time.Time
-}
-
-func (c *connTester) Read(b []byte) (n int, err error) {
-	return 0, nil
-}
-
-func (c *connTester) Write(b []byte) (n int, err error) {
-	return 0, nil
-}
-
-func (c *connTester) Close() error {
-	return nil
-}
-
-func (c *connTester) LocalAddr() net.Addr {
-	return &netAddress{}
-}
-
-func (c *connTester) RemoteAddr() net.Addr {
-	return &netAddress{}
-}
-
-func (c *connTester) SetDeadline(t time.Time) error {
-	c.deadline = t
-	return nil
-}
-
-func (c *connTester) SetReadDeadline(t time.Time) error {
-	return nil
-}
-
-func (c *connTester) SetWriteDeadline(t time.Time) error {
-	return nil
-}
-
 func TestNewParser(t *testing.T) {
-	conn := new(connTester)
+	conn := new(listeners.MockNetConn)
 	p := NewParser(conn)
 
 	require.NotNil(t, p.R)
 }
 
 func BenchmarkNewParser(b *testing.B) {
-	conn := new(connTester)
+	conn := new(listeners.MockNetConn)
 
 	for n := 0; n < b.N; n++ {
 		NewParser(conn)
@@ -78,17 +26,17 @@ func BenchmarkNewParser(b *testing.B) {
 }
 
 func TestRefreshDeadline(t *testing.T) {
-	conn := new(connTester)
+	conn := new(listeners.MockNetConn)
 	p := NewParser(conn)
 
-	dl := p.Conn.(*connTester).deadline
+	dl := p.Conn.(*listeners.MockNetConn).Deadline
 	p.RefreshDeadline(10)
 
-	require.NotEqual(t, dl, p.Conn.(*connTester).deadline)
+	require.NotEqual(t, dl, p.Conn.(*listeners.MockNetConn).Deadline)
 }
 
 func BenchmarkRefreshDeadline(b *testing.B) {
-	conn := new(connTester)
+	conn := new(listeners.MockNetConn)
 	p := NewParser(conn)
 
 	for n := 0; n < b.N; n++ {
@@ -97,19 +45,19 @@ func BenchmarkRefreshDeadline(b *testing.B) {
 }
 
 func TestReset(t *testing.T) {
-	conn := &connTester{id: "a"}
+	conn := &listeners.MockNetConn{ID: "a"}
 	p := NewParser(conn)
 
-	require.Equal(t, "a", p.Conn.(*connTester).id)
+	require.Equal(t, "a", p.Conn.(*listeners.MockNetConn).ID)
 
-	conn2 := &connTester{id: "b"}
+	conn2 := &listeners.MockNetConn{ID: "b"}
 	p.Reset(conn2)
-	require.Equal(t, "b", p.Conn.(*connTester).id)
+	require.Equal(t, "b", p.Conn.(*listeners.MockNetConn).ID)
 }
 
 func BenchmarkReset(b *testing.B) {
-	conn := &connTester{id: "a"}
-	conn2 := &connTester{id: "b"}
+	conn := &listeners.MockNetConn{ID: "a"}
+	conn2 := &listeners.MockNetConn{ID: "b"}
 	p := NewParser(conn)
 
 	for n := 0; n < b.N; n++ {
@@ -119,12 +67,18 @@ func BenchmarkReset(b *testing.B) {
 
 func TestReadFixedHeader(t *testing.T) {
 
-	conn := new(connTester)
+	conn := new(listeners.MockNetConn)
 
 	// Test null data.
-	fh := new(FixedHeader)
 	p := NewParser(conn)
+	fh := new(FixedHeader)
 	err := p.ReadFixedHeader(fh)
+	require.Error(t, err)
+
+	// Test insufficient peeking.
+	fh = new(FixedHeader)
+	p.R = bufio.NewReader(bytes.NewReader([]byte{Connect << 4}))
+	err = p.ReadFixedHeader(fh)
 	require.Error(t, err)
 
 	// Test expected bytes.
@@ -148,7 +102,7 @@ func TestReadFixedHeader(t *testing.T) {
 }
 
 func BenchmarkReadFixedHeader(b *testing.B) {
-	conn := new(connTester)
+	conn := new(listeners.MockNetConn)
 	fh := new(FixedHeader)
 	p := NewParser(conn)
 
@@ -165,7 +119,7 @@ func BenchmarkReadFixedHeader(b *testing.B) {
 }
 
 func TestRead(t *testing.T) {
-	conn := new(connTester)
+	conn := new(listeners.MockNetConn)
 
 	for code, pt := range expectedPackets {
 		for i, wanted := range pt {
@@ -182,7 +136,11 @@ func TestRead(t *testing.T) {
 					require.NoError(t, err, "Error reading fixedheader [i:%d] %s - %d", i, wanted.desc, code)
 				}
 
-				pko, err := p.Read()
+				pko, retcode, err := p.Read()
+				if wanted.code > 0 {
+					require.Equal(t, wanted.code, retcode, "Expected validation code [i:%d] %s - %d", i, wanted.desc, code)
+				}
+
 				if wanted.expect != nil {
 					require.Error(t, err, "Expected error reading packet [i:%d] %s - %d", i, wanted.desc, code)
 					if err != nil {
@@ -196,10 +154,23 @@ func TestRead(t *testing.T) {
 			}
 		}
 	}
+
+	// Fail decoder
+	var fh FixedHeader
+	p := NewParser(conn)
+	p.R = bufio.NewReader(bytes.NewReader([]byte{
+		byte(Publish << 4), 3, // Fixed header
+		0, 5, // Topic Name - LSB+MSB
+		'a', '/',
+	}))
+	err := p.ReadFixedHeader(&fh)
+	require.NoError(t, err)
+	_, _, err = p.Read()
+	require.Error(t, err)
 }
 
 func BenchmarkRead(b *testing.B) {
-	conn := new(connTester)
+	conn := new(listeners.MockNetConn)
 	p := NewParser(conn)
 
 	p.R = bufio.NewReader(bytes.NewReader(expectedPackets[Publish][1].rawBytes))
@@ -215,7 +186,7 @@ func BenchmarkRead(b *testing.B) {
 		rc = rn
 		p.R.Reset(&rc)
 		p.R.Discard(2)
-		_, err := p.Read()
+		_, _, err := p.Read()
 		if err != nil {
 			panic(err)
 		}
@@ -225,7 +196,7 @@ func BenchmarkRead(b *testing.B) {
 
 func TestReadPacketNil(t *testing.T) {
 
-	conn := &connTester{}
+	conn := new(listeners.MockNetConn)
 	var fh FixedHeader
 	p := NewParser(conn)
 
@@ -237,14 +208,14 @@ func TestReadPacketNil(t *testing.T) {
 	p.R = bufio.NewReader(bytes.NewReader([]byte{0, 0}))
 
 	err := p.ReadFixedHeader(&fh)
-	_, err = p.Read()
+	_, _, err = p.Read()
 
 	require.Error(t, err, "Expected error reading packet")
 
 }
 
 func TestReadPacketReadOverflow(t *testing.T) {
-	conn := &connTester{}
+	conn := new(listeners.MockNetConn)
 	var fh FixedHeader
 	p := NewParser(conn)
 
@@ -258,13 +229,13 @@ func TestReadPacketReadOverflow(t *testing.T) {
 	err := p.ReadFixedHeader(&fh)
 
 	p.FixedHeader.Remaining = 999999 // overflow buffer
-	_, err = p.Read()
+	_, _, err = p.Read()
 
 	require.Error(t, err, "Expected error reading packet")
 }
 
 func TestReadPacketReadAllFail(t *testing.T) {
-	conn := &connTester{}
+	conn := new(listeners.MockNetConn)
 	var fh FixedHeader
 	p := NewParser(conn)
 
@@ -278,7 +249,7 @@ func TestReadPacketReadAllFail(t *testing.T) {
 	err := p.ReadFixedHeader(&fh)
 
 	p.FixedHeader.Remaining = 1 // overflow buffer
-	_, err = p.Read()
+	_, _, err = p.Read()
 
 	require.Error(t, err, "Expected error reading packet")
 }

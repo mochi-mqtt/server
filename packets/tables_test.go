@@ -8,8 +8,10 @@ type packetTestData struct {
 	desc        string      // a description of the test
 	failFirst   interface{} // expected fail result to be run immediately after the method is called
 	expect      interface{} // generic expected fail result to be checked
+	isolate     bool        // isolate can be used to isolate a test
 	primary     bool        // primary is a test that should be run using readPackets
 	meta        interface{} // meta conains a metadata value used in testing on a case-by-case basis.
+	code        byte        // code is an expected validation return code
 }
 
 func encodeTestOK(wanted packetTestData) bool {
@@ -357,35 +359,35 @@ var expectedPackets = map[byte][]packetTestData{
 
 		// Validation Tests
 		{
-			desc:   "Invalid Protocol Name",
-			group:  "validate",
-			expect: ErrConnectProtocolViolation,
+			desc:  "Invalid Protocol Name",
+			group: "validate",
+			code:  CodeConnectProtocolViolation,
 			packet: &ConnectPacket{
 				ProtocolName: "stuff",
 			},
 		},
 		{
-			desc:   "Invalid Protocol Version",
-			group:  "validate",
-			expect: ErrConnectBadProtocolVersion,
+			desc:  "Invalid Protocol Version",
+			group: "validate",
+			code:  CodeConnectBadProtocolVersion,
 			packet: &ConnectPacket{
 				ProtocolName:    "MQTT",
 				ProtocolVersion: 2,
 			},
 		},
 		{
-			desc:   "Invalid Protocol Version",
-			group:  "validate",
-			expect: ErrConnectBadProtocolVersion,
+			desc:  "Invalid Protocol Version",
+			group: "validate",
+			code:  CodeConnectBadProtocolVersion,
 			packet: &ConnectPacket{
 				ProtocolName:    "MQIsdp",
 				ProtocolVersion: 2,
 			},
 		},
 		{
-			desc:   "Reserved bit not 0",
-			group:  "validate",
-			expect: ErrConnectProtocolViolation,
+			desc:  "Reserved bit not 0",
+			group: "validate",
+			code:  CodeConnectProtocolViolation,
 			packet: &ConnectPacket{
 				ProtocolName:    "MQTT",
 				ProtocolVersion: 4,
@@ -393,9 +395,9 @@ var expectedPackets = map[byte][]packetTestData{
 			},
 		},
 		{
-			desc:   "Client ID too long",
-			group:  "validate",
-			expect: ErrConnectProtocolViolation,
+			desc:  "Client ID too long",
+			group: "validate",
+			code:  CodeConnectProtocolViolation,
 			packet: &ConnectPacket{
 				ProtocolName:    "MQTT",
 				ProtocolVersion: 4,
@@ -405,9 +407,9 @@ var expectedPackets = map[byte][]packetTestData{
 			},
 		},
 		{
-			desc:   "Has Password Flag but no Username flag",
-			group:  "validate",
-			expect: ErrConnectProtocolViolation,
+			desc:  "Has Password Flag but no Username flag",
+			group: "validate",
+			code:  CodeConnectProtocolViolation,
 			packet: &ConnectPacket{
 				ProtocolName:    "MQTT",
 				ProtocolVersion: 4,
@@ -415,9 +417,9 @@ var expectedPackets = map[byte][]packetTestData{
 			},
 		},
 		{
-			desc:   "Username too long",
-			group:  "validate",
-			expect: ErrConnectProtocolViolation,
+			desc:  "Username too long",
+			group: "validate",
+			code:  CodeConnectProtocolViolation,
 			packet: &ConnectPacket{
 				ProtocolName:    "MQTT",
 				ProtocolVersion: 4,
@@ -428,9 +430,9 @@ var expectedPackets = map[byte][]packetTestData{
 			},
 		},
 		{
-			desc:   "Password too long",
-			group:  "validate",
-			expect: ErrConnectProtocolViolation,
+			desc:  "Password too long",
+			group: "validate",
+			code:  CodeConnectProtocolViolation,
 			packet: &ConnectPacket{
 				ProtocolName:    "MQTT",
 				ProtocolVersion: 4,
@@ -443,9 +445,9 @@ var expectedPackets = map[byte][]packetTestData{
 			},
 		},
 		{
-			desc:   "Clean session false and client id not set",
-			group:  "validate",
-			expect: ErrConnectBadClientID,
+			desc:  "Clean session false and client id not set",
+			group: "validate",
+			code:  CodeConnectBadClientID,
 			packet: &ConnectPacket{
 				ProtocolName:     "MQTT",
 				ProtocolVersion:  4,
@@ -577,7 +579,7 @@ var expectedPackets = map[byte][]packetTestData{
 			rawBytes: []byte{
 				byte(Connack << 4), 2, // fixed header
 				1, // Session present
-				ErrConnectBadProtocolVersion,
+				CodeConnectBadProtocolVersion,
 			},
 			packet: &ConnackPacket{
 				FixedHeader: FixedHeader{
@@ -585,7 +587,7 @@ var expectedPackets = map[byte][]packetTestData{
 					Remaining: 2,
 				},
 				SessionPresent: true,
-				ReturnCode:     ErrConnectBadProtocolVersion,
+				ReturnCode:     CodeConnectBadProtocolVersion,
 			},
 		},
 		{
@@ -593,7 +595,7 @@ var expectedPackets = map[byte][]packetTestData{
 			rawBytes: []byte{
 				byte(Connack << 4), 2, // fixed header
 				1, // Session present
-				ErrConnectBadClientID,
+				CodeConnectBadClientID,
 			},
 			packet: &ConnackPacket{
 				FixedHeader: FixedHeader{
@@ -601,7 +603,7 @@ var expectedPackets = map[byte][]packetTestData{
 					Remaining: 2,
 				},
 				SessionPresent: true,
-				ReturnCode:     ErrConnectBadClientID,
+				ReturnCode:     CodeConnectBadClientID,
 			},
 		},
 		{
@@ -609,7 +611,7 @@ var expectedPackets = map[byte][]packetTestData{
 			rawBytes: []byte{
 				byte(Connack << 4), 2, // fixed header
 				1, // Session present
-				ErrConnectServerUnavailable,
+				CodeConnectServerUnavailable,
 			},
 			packet: &ConnackPacket{
 				FixedHeader: FixedHeader{
@@ -617,7 +619,7 @@ var expectedPackets = map[byte][]packetTestData{
 					Remaining: 2,
 				},
 				SessionPresent: true,
-				ReturnCode:     ErrConnectServerUnavailable,
+				ReturnCode:     CodeConnectServerUnavailable,
 			},
 		},
 		{
@@ -625,7 +627,7 @@ var expectedPackets = map[byte][]packetTestData{
 			rawBytes: []byte{
 				byte(Connack << 4), 2, // fixed header
 				1, // Session present
-				ErrConnectBadAuthValues,
+				CodeConnectBadAuthValues,
 			},
 			packet: &ConnackPacket{
 				FixedHeader: FixedHeader{
@@ -633,7 +635,7 @@ var expectedPackets = map[byte][]packetTestData{
 					Remaining: 2,
 				},
 				SessionPresent: true,
-				ReturnCode:     ErrConnectBadAuthValues,
+				ReturnCode:     CodeConnectBadAuthValues,
 			},
 		},
 		{
@@ -641,7 +643,7 @@ var expectedPackets = map[byte][]packetTestData{
 			rawBytes: []byte{
 				byte(Connack << 4), 2, // fixed header
 				1, // Session present
-				ErrConnectNotAuthorised,
+				CodeConnectNotAuthorised,
 			},
 			packet: &ConnackPacket{
 				FixedHeader: FixedHeader{
@@ -649,7 +651,7 @@ var expectedPackets = map[byte][]packetTestData{
 					Remaining: 2,
 				},
 				SessionPresent: true,
-				ReturnCode:     ErrConnectNotAuthorised,
+				ReturnCode:     CodeConnectNotAuthorised,
 			},
 		},
 
@@ -663,8 +665,9 @@ var expectedPackets = map[byte][]packetTestData{
 			},
 		},
 		{
-			desc:      "Malformed Connack - bad return code",
-			group:     "decode",
+			desc:  "Malformed Connack - bad return code",
+			group: "decode",
+			//primary:   true,
 			failFirst: ErrMalformedReturnCode,
 			rawBytes: []byte{
 				byte(Connect << 4), 2, // Fixed header
@@ -801,6 +804,7 @@ var expectedPackets = map[byte][]packetTestData{
 				0, 11, // Packet ID - LSB+MSB
 			},
 		},
+
 		{
 			desc:      "Malformed Publish - Packet ID",
 			group:     "decode",
@@ -842,6 +846,7 @@ var expectedPackets = map[byte][]packetTestData{
 			desc:    "[MQTT-2.3.1-1] No Packet ID with QOS > 0",
 			primary: true,
 			expect:  ErrMissingPacketID,
+			code:    Failed,
 			rawBytes: []byte{
 				byte(Publish<<4) | 2, 14, // Fixed header
 				0, 5, // Topic Name - LSB+MSB
@@ -899,6 +904,7 @@ var expectedPackets = map[byte][]packetTestData{
 			desc:   "[MQTT-2.3.1-5] Packet ID must be 0 if QoS is 0 (b)",
 			group:  "validate",
 			expect: ErrSurplusPacketID,
+			code:   Failed,
 			packet: &PublishPacket{
 				FixedHeader: FixedHeader{
 					Type:      Publish,
@@ -1115,6 +1121,7 @@ var expectedPackets = map[byte][]packetTestData{
 			// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
 			desc:    "[MQTT-2.3.1-1] No Packet ID with QOS > 0",
 			primary: true,
+			code:    Failed,
 			expect:  ErrMissingPacketID,
 			rawBytes: []byte{
 				byte(Subscribe<<4) | 1<<1, 10, // Fixed header
@@ -1231,6 +1238,7 @@ var expectedPackets = map[byte][]packetTestData{
 			// SUBSCRIBE, UNSUBSCRIBE, and PUBLISH (in cases where QoS > 0) Control Packets MUST contain a non-zero 16-bit Packet Identifier.
 			desc:    "[MQTT-2.3.1-1] No Packet ID with QOS > 0",
 			primary: true,
+			code:    Failed,
 			expect:  ErrMissingPacketID,
 			rawBytes: []byte{
 				byte(Unsubscribe<<4) | 1<<1, 9, // Fixed header

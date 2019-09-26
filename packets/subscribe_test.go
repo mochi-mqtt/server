@@ -97,7 +97,6 @@ func TestSubscribeValidate(t *testing.T) {
 	b, err := pk.Validate()
 	require.NoError(t, err)
 	require.Equal(t, Accepted, b)
-
 }
 
 func BenchmarkSubscribeValidate(b *testing.B) {

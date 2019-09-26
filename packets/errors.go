@@ -8,13 +8,13 @@ const (
 	Accepted byte = 0x00
 	Failed   byte = 0xFF
 
-	ErrConnectBadProtocolVersion byte = 0x01
-	ErrConnectBadClientID        byte = 0x02
-	ErrConnectServerUnavailable  byte = 0x03
-	ErrConnectBadAuthValues      byte = 0x04
-	ErrConnectNotAuthorised      byte = 0x05
-	ErrConnectNetworkError       byte = 0xFE
-	ErrConnectProtocolViolation  byte = 0xFF
+	CodeConnectBadProtocolVersion byte = 0x01
+	CodeConnectBadClientID        byte = 0x02
+	CodeConnectServerUnavailable  byte = 0x03
+	CodeConnectBadAuthValues      byte = 0x04
+	CodeConnectNotAuthorised      byte = 0x05
+	CodeConnectNetworkError       byte = 0xFE
+	CodeConnectProtocolViolation  byte = 0xFF
 
 	ErrSubAckNetworkError byte = 0x80
 )
