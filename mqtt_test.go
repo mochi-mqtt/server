@@ -4,9 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"net"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/mochi-co/mqtt/listeners"
+	"github.com/mochi-co/mqtt/packets"
 )
 
 func TestNew(t *testing.T) {
@@ -109,6 +112,65 @@ func BenchmarkClose(b *testing.B) {
 
 func TestEstablishConnection(t *testing.T) {
 	s := New()
-	err := s.EstablishConnection(new(listeners.MockNetConn))
-	require.NoError(t, err)
+
+	// Error reading fixed header.
+	r, w := net.Pipe()
+	go func() {
+		w.Write([]byte{99})
+		w.Close()
+	}()
+	err := s.EstablishConnection(r)
+	r.Close()
+	require.Error(t, err)
+	require.Equal(t, ErrReadConnectFixedHeader, err)
+
+	// Error reading connect packet.
+	r, w = net.Pipe()
+	go func() {
+		w.Write([]byte{byte(packets.Connect << 4), 17})
+		w.Close()
+	}()
+
+	err = s.EstablishConnection(r)
+	r.Close()
+	require.Error(t, err)
+	require.Equal(t, ErrReadConnectPacket, err)
+
+	// Read a packet which isnt a connect packet.
+	r, w = net.Pipe()
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connack << 4), 2, // fixed header
+			0, // No existing session
+			packets.Accepted,
+		})
+		w.Close()
+	}()
+
+	err = s.EstablishConnection(r)
+	r.Close()
+	require.Error(t, err)
+	require.Equal(t, ErrFirstPacketInvalid, err)
+
+	// Read a non-conforming connect packet.
+	r, w = net.Pipe()
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 13, // Fixed header
+			0, 2, // Protocol Name - MSB+LSB
+			'M', 'Q', // Protocol Name
+			4,     // Protocol Version
+			2,     // Packet Flags
+			0, 45, // Keepalive
+			0, 3, // Client ID - MSB+LSB
+			'z', 'e', 'n', // Client ID "zen"
+		})
+		w.Close()
+	}()
+
+	err = s.EstablishConnection(r)
+	r.Close()
+	require.Error(t, err)
+	require.Equal(t, ErrReadConnectInvalid, err)
+
 }
