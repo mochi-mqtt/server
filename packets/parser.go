@@ -194,9 +194,7 @@ func (p *Parser) Read() (pk Packet, err error) {
 	if peeked {
 		p.R.Discard(p.FixedHeader.Remaining)
 	}
-
-	// Validate the packet to ensure spec compliance.
-	//retcode, err = pk.Validate()
+	log.Println("KK")
 
 	return
 }

@@ -1,6 +1,7 @@
 package listeners
 
 import (
+	"net"
 	"testing"
 	"time"
 
@@ -8,7 +9,9 @@ import (
 )
 
 func TestMockEstablisher(t *testing.T) {
-	require.Nil(t, MockEstablisher(new(MockNetConn)))
+	_, w := net.Pipe()
+	require.Nil(t, MockEstablisher(w))
+	w.Close()
 }
 
 func TestNewMockListener(t *testing.T) {
@@ -255,6 +258,7 @@ func BenchmarkCloseAllListeners(b *testing.B) {
 	}
 }
 
+/*
 func TestMockNetConnRead(t *testing.T) {
 	nc := new(MockNetConn)
 	n, err := nc.Read([]byte{})
@@ -309,3 +313,4 @@ func TestMockNetAddrString(t *testing.T) {
 	na := new(MockNetAddr)
 	require.Equal(t, "127.0.0.1", na.String())
 }
+*/

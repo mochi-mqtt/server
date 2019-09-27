@@ -3,7 +3,6 @@ package listeners
 import (
 	"net"
 	"sync"
-	"time"
 )
 
 // EstablishFunc is a callback function for establishing new clients.
@@ -244,6 +243,7 @@ func (l *MockListener) Close(closer CloseFunc) {
 	close(l.done)
 }
 
+/*
 // MockNetConn satisfies the net.Conn interface.
 type MockNetConn struct {
 	ID       string
@@ -303,3 +303,4 @@ func (m *MockNetAddr) Network() string {
 func (m *MockNetAddr) String() string {
 	return "127.0.0.1"
 }
+*/

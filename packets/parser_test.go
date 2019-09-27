@@ -3,22 +3,22 @@ package packets
 import (
 	"bufio"
 	"bytes"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/mochi-co/mqtt/listeners"
 )
 
 func TestNewParser(t *testing.T) {
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 	p := NewParser(conn)
 
 	require.NotNil(t, p.R)
 }
 
 func BenchmarkNewParser(b *testing.B) {
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 
 	for n := 0; n < b.N; n++ {
 		NewParser(conn)
@@ -26,17 +26,17 @@ func BenchmarkNewParser(b *testing.B) {
 }
 
 func TestRefreshDeadline(t *testing.T) {
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 	p := NewParser(conn)
 
-	dl := p.Conn.(*listeners.MockNetConn).Deadline
+	dl := p.Conn.(*MockNetConn).Deadline
 	p.RefreshDeadline(10)
 
-	require.NotEqual(t, dl, p.Conn.(*listeners.MockNetConn).Deadline)
+	require.NotEqual(t, dl, p.Conn.(*MockNetConn).Deadline)
 }
 
 func BenchmarkRefreshDeadline(b *testing.B) {
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 	p := NewParser(conn)
 
 	for n := 0; n < b.N; n++ {
@@ -45,19 +45,19 @@ func BenchmarkRefreshDeadline(b *testing.B) {
 }
 
 func TestReset(t *testing.T) {
-	conn := &listeners.MockNetConn{ID: "a"}
+	conn := &MockNetConn{ID: "a"}
 	p := NewParser(conn)
 
-	require.Equal(t, "a", p.Conn.(*listeners.MockNetConn).ID)
+	require.Equal(t, "a", p.Conn.(*MockNetConn).ID)
 
-	conn2 := &listeners.MockNetConn{ID: "b"}
+	conn2 := &MockNetConn{ID: "b"}
 	p.Reset(conn2)
-	require.Equal(t, "b", p.Conn.(*listeners.MockNetConn).ID)
+	require.Equal(t, "b", p.Conn.(*MockNetConn).ID)
 }
 
 func BenchmarkReset(b *testing.B) {
-	conn := &listeners.MockNetConn{ID: "a"}
-	conn2 := &listeners.MockNetConn{ID: "b"}
+	conn := &MockNetConn{ID: "a"}
+	conn2 := &MockNetConn{ID: "b"}
 	p := NewParser(conn)
 
 	for n := 0; n < b.N; n++ {
@@ -67,7 +67,7 @@ func BenchmarkReset(b *testing.B) {
 
 func TestReadFixedHeader(t *testing.T) {
 
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 
 	// Test null data.
 	p := NewParser(conn)
@@ -102,7 +102,7 @@ func TestReadFixedHeader(t *testing.T) {
 }
 
 func BenchmarkReadFixedHeader(b *testing.B) {
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 	fh := new(FixedHeader)
 	p := NewParser(conn)
 
@@ -119,7 +119,7 @@ func BenchmarkReadFixedHeader(b *testing.B) {
 }
 
 func TestRead(t *testing.T) {
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 
 	for code, pt := range expectedPackets {
 		for i, wanted := range pt {
@@ -166,7 +166,7 @@ func TestRead(t *testing.T) {
 }
 
 func BenchmarkRead(b *testing.B) {
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 	p := NewParser(conn)
 
 	p.R = bufio.NewReader(bytes.NewReader(expectedPackets[Publish][1].rawBytes))
@@ -192,7 +192,7 @@ func BenchmarkRead(b *testing.B) {
 
 func TestReadPacketNil(t *testing.T) {
 
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 	var fh FixedHeader
 	p := NewParser(conn)
 
@@ -211,7 +211,7 @@ func TestReadPacketNil(t *testing.T) {
 }
 
 func TestReadPacketReadOverflow(t *testing.T) {
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 	var fh FixedHeader
 	p := NewParser(conn)
 
@@ -231,7 +231,7 @@ func TestReadPacketReadOverflow(t *testing.T) {
 }
 
 func TestReadPacketReadAllFail(t *testing.T) {
-	conn := new(listeners.MockNetConn)
+	conn := new(MockNetConn)
 	var fh FixedHeader
 	p := NewParser(conn)
 
@@ -248,4 +248,64 @@ func TestReadPacketReadAllFail(t *testing.T) {
 	_, err = p.Read()
 
 	require.Error(t, err, "Expected error reading packet")
+}
+
+// MockNetConn satisfies the net.Conn interface.
+type MockNetConn struct {
+	ID       string
+	Deadline time.Time
+}
+
+// Read reads bytes from the net io.reader.
+func (m *MockNetConn) Read(b []byte) (n int, err error) {
+	return 0, nil
+}
+
+// Read writes bytes to the net io.writer.
+func (m *MockNetConn) Write(b []byte) (n int, err error) {
+	return 0, nil
+}
+
+// Close closes the net.Conn connection.
+func (m *MockNetConn) Close() error {
+	return nil
+}
+
+// LocalAddr returns the local address of the request.
+func (m *MockNetConn) LocalAddr() net.Addr {
+	return new(MockNetAddr)
+}
+
+// RemoteAddr returns the remove address of the request.
+func (m *MockNetConn) RemoteAddr() net.Addr {
+	return new(MockNetAddr)
+}
+
+// SetDeadline sets the request deadline.
+func (m *MockNetConn) SetDeadline(t time.Time) error {
+	m.Deadline = t
+	return nil
+}
+
+// SetReadDeadline sets the read deadline.
+func (m *MockNetConn) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+// SetWriteDeadline sets the write deadline.
+func (m *MockNetConn) SetWriteDeadline(t time.Time) error {
+	return nil
+}
+
+// MockNetAddr satisfies net.Addr interface.
+type MockNetAddr struct{}
+
+// Network returns the network protocol.
+func (m *MockNetAddr) Network() string {
+	return "tcp"
+}
+
+// String returns the network address.
+func (m *MockNetAddr) String() string {
+	return "127.0.0.1"
 }

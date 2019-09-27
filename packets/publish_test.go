@@ -2,7 +2,6 @@ package packets
 
 import (
 	"bytes"
-	"log"
 	"testing"
 
 	"github.com/jinzhu/copier"
@@ -26,7 +25,6 @@ func TestPublishEncode(t *testing.T) {
 		buf := new(bytes.Buffer)
 		err := pk.Encode(buf)
 		encoded := buf.Bytes()
-		log.Println(wanted.desc, err)
 
 		if wanted.expect != nil {
 			require.Error(t, err, "Expected error writing buffer [i:%d] %s", i, wanted.desc)
