@@ -39,18 +39,6 @@ var Names = map[byte]string{
 	14: "DISCONNECT",
 }
 
-// NewFixedHeader returns a fresh fixedheader for a given packet type.
-func NewFixedHeader(packetType byte) FixedHeader {
-	fh := FixedHeader{
-		Type: packetType,
-	}
-	if packetType == Pubrel || packetType == Subscribe || packetType == Unsubscribe {
-		fh.Qos = 1
-	}
-
-	return fh
-}
-
 // newPacket returns a packet of a specified packetType.
 // this is a convenience package for testing and shouldn't be used for production
 // code.

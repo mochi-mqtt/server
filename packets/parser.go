@@ -28,8 +28,6 @@ type Packet interface {
 // Parser is an MQTT packet parser that reads and writes MQTT payloads to a
 // buffered IO stream.
 type Parser struct {
-
-	// sync mutex to avoid access collisions.
 	sync.RWMutex
 
 	// Conn is the net.Conn used to establish the connection.
@@ -53,7 +51,7 @@ func NewParser(c net.Conn) *Parser {
 // RefreshDeadline refreshes the read/write deadline for the net.Conn connection.
 func (p *Parser) RefreshDeadline(keepalive uint16) {
 	expiry := time.Duration(keepalive+(keepalive/2)) * time.Second
-	p.Conn.SetDeadline(time.Now().UTC().Add(expiry))
+	p.Conn.SetDeadline(time.Now().Add(expiry))
 }
 
 // Reset sets the new destinations for the read and write buffers.
@@ -69,6 +67,7 @@ func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 	// Peek the maximum message type and flags, and length.
 	peeked, err := p.R.Peek(1)
 	if err != nil {
+		log.Println("PEEK ERR", peeked, err)
 		return err
 	}
 
@@ -160,8 +159,9 @@ func (p *Parser) Read() (pk Packet, err error) {
 
 	// Attempt to peek the rest of the packet.
 	peeked := true
-	log.Println(p.FixedHeader.Remaining)
+
 	bt, err := p.R.Peek(p.FixedHeader.Remaining)
+	log.Println("##", p.FixedHeader.Remaining, ":", bt)
 	if err != nil {
 		log.Println("U")
 
@@ -182,6 +182,11 @@ func (p *Parser) Read() (pk Packet, err error) {
 		}
 	}
 
+	// If peeking was successful, discard the rest of the packet now it's been read.
+	if peeked {
+		p.R.Discard(p.FixedHeader.Remaining)
+	}
+
 	// Decode the remaining packet values.
 	log.Println(bt)
 	err = pk.Decode(bt)
@@ -190,10 +195,6 @@ func (p *Parser) Read() (pk Packet, err error) {
 		return pk, err
 	}
 
-	// If peeking was successful, discard the rest of the packet now it's been read.
-	if peeked {
-		p.R.Discard(p.FixedHeader.Remaining)
-	}
 	log.Println("KK")
 
 	return
