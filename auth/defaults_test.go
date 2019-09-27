@@ -8,13 +8,13 @@ import (
 
 func TestAllowAuth(t *testing.T) {
 	ac := new(Allow)
-	require.Equal(t, true, ac.Auth("user", "pass"))
+	require.Equal(t, true, ac.Authenticate("user", "pass"))
 }
 
 func BenchmarkAllowAuth(b *testing.B) {
 	ac := new(Allow)
 	for n := 0; n < b.N; n++ {
-		ac.Auth("user", "pass")
+		ac.Authenticate("user", "pass")
 	}
 }
 
@@ -32,13 +32,13 @@ func BenchmarkAllowACL(b *testing.B) {
 
 func TestDisallowAuth(t *testing.T) {
 	ac := new(Disallow)
-	require.Equal(t, false, ac.Auth("user", "pass"))
+	require.Equal(t, false, ac.Authenticate("user", "pass"))
 }
 
 func BenchmarkDisallowAuth(b *testing.B) {
 	ac := new(Disallow)
 	for n := 0; n < b.N; n++ {
-		ac.Auth("user", "pass")
+		ac.Authenticate("user", "pass")
 	}
 }
 

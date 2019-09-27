@@ -6,11 +6,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/mochi-co/mqtt/auth"
 )
 
 func TestMockEstablisher(t *testing.T) {
 	_, w := net.Pipe()
-	require.Nil(t, MockEstablisher(w))
+	err := MockEstablisher(w, new(auth.Allow))
+	require.NoError(t, err)
 	w.Close()
 }
 
@@ -25,15 +28,14 @@ func TestNewMockListenerListen(t *testing.T) {
 	require.Equal(t, "t1", mocked.id)
 	require.Equal(t, ":1882", mocked.address)
 
-	require.Equal(t, false, mocked.Listening())
+	require.Equal(t, false, mocked.IsListening)
 	mocked.Listen()
-	require.Equal(t, true, mocked.Listening())
-
+	require.Equal(t, true, mocked.IsListening)
 }
 
 func TestMockListenerServe(t *testing.T) {
 	mocked := NewMockListener("t1", ":1882")
-	require.Equal(t, false, mocked.Serving())
+	require.Equal(t, false, mocked.IsServing)
 
 	o := make(chan bool)
 	go func(o chan bool) {
@@ -42,7 +44,7 @@ func TestMockListenerServe(t *testing.T) {
 	}(o)
 
 	time.Sleep(time.Millisecond) // easy non-channel wait for start of serving
-	require.Equal(t, true, mocked.Serving())
+	require.Equal(t, true, mocked.IsServing)
 
 	var closed bool
 	mocked.Close(func(id string) {
@@ -57,7 +59,7 @@ func TestMockListenerServe(t *testing.T) {
 func TestMockListenerSetConfig(t *testing.T) {
 	mocked := NewMockListener("t1", ":1883")
 	mocked.SetConfig(new(Config))
-	require.NotNil(t, mocked.config)
+	require.NotNil(t, mocked.Config)
 }
 
 func TestMockListenerClose(t *testing.T) {
@@ -155,10 +157,10 @@ func TestServeListener(t *testing.T) {
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Serve("t1", MockEstablisher)
 	time.Sleep(time.Millisecond)
-	require.Equal(t, true, l.internal["t1"].(*MockListener).Serving())
+	require.Equal(t, true, l.internal["t1"].(*MockListener).IsServing)
 
 	l.Close("t1", MockCloser)
-	require.Equal(t, false, l.internal["t1"].(*MockListener).Serving())
+	require.Equal(t, false, l.internal["t1"].(*MockListener).IsServing)
 }
 
 func BenchmarkServeListener(b *testing.B) {
@@ -177,17 +179,17 @@ func TestServeAllListeners(t *testing.T) {
 	l.ServeAll(MockEstablisher)
 	time.Sleep(time.Millisecond)
 
-	require.Equal(t, true, l.internal["t1"].(*MockListener).Serving())
-	require.Equal(t, true, l.internal["t2"].(*MockListener).Serving())
-	require.Equal(t, true, l.internal["t3"].(*MockListener).Serving())
+	require.Equal(t, true, l.internal["t1"].(*MockListener).IsServing)
+	require.Equal(t, true, l.internal["t2"].(*MockListener).IsServing)
+	require.Equal(t, true, l.internal["t3"].(*MockListener).IsServing)
 
 	l.Close("t1", MockCloser)
 	l.Close("t2", MockCloser)
 	l.Close("t3", MockCloser)
 
-	require.Equal(t, false, l.internal["t1"].(*MockListener).Serving())
-	require.Equal(t, false, l.internal["t2"].(*MockListener).Serving())
-	require.Equal(t, false, l.internal["t3"].(*MockListener).Serving())
+	require.Equal(t, false, l.internal["t1"].(*MockListener).IsServing)
+	require.Equal(t, false, l.internal["t2"].(*MockListener).IsServing)
+	require.Equal(t, false, l.internal["t3"].(*MockListener).IsServing)
 }
 
 func BenchmarkServeAllListeners(b *testing.B) {
@@ -231,9 +233,9 @@ func TestCloseAllListeners(t *testing.T) {
 	l.Add(NewMockListener("t3", ":1882"))
 	l.ServeAll(MockEstablisher)
 	time.Sleep(time.Millisecond)
-	require.Equal(t, true, l.internal["t1"].(*MockListener).Serving())
-	require.Equal(t, true, l.internal["t2"].(*MockListener).Serving())
-	require.Equal(t, true, l.internal["t3"].(*MockListener).Serving())
+	require.Equal(t, true, l.internal["t1"].(*MockListener).IsServing)
+	require.Equal(t, true, l.internal["t2"].(*MockListener).IsServing)
+	require.Equal(t, true, l.internal["t3"].(*MockListener).IsServing)
 
 	closed := make(map[string]bool)
 	l.CloseAll(func(id string) {
@@ -257,60 +259,3 @@ func BenchmarkCloseAllListeners(b *testing.B) {
 		l.Close("t1", MockCloser)
 	}
 }
-
-/*
-func TestMockNetConnRead(t *testing.T) {
-	nc := new(MockNetConn)
-	n, err := nc.Read([]byte{})
-	require.Equal(t, 0, n)
-	require.NoError(t, err)
-}
-
-func TestMockNetConnWrite(t *testing.T) {
-	nc := new(MockNetConn)
-	n, err := nc.Write([]byte{})
-	require.Equal(t, 0, n)
-	require.NoError(t, err)
-}
-
-func TestMockNetConnClose(t *testing.T) {
-	nc := new(MockNetConn)
-	err := nc.Close()
-	require.NoError(t, err)
-}
-
-func TestMockNetConnLocalAddr(t *testing.T) {
-	nc := new(MockNetConn)
-	require.Equal(t, new(MockNetAddr), nc.LocalAddr())
-}
-
-func TestMockNetConnRemoteAddr(t *testing.T) {
-	nc := new(MockNetConn)
-	require.Equal(t, new(MockNetAddr), nc.RemoteAddr())
-}
-
-func TestMockNetConnSetDeadline(t *testing.T) {
-	nc := new(MockNetConn)
-	require.NoError(t, nc.SetDeadline(time.Now()))
-}
-
-func TestMockNetConnSetReadDeadline(t *testing.T) {
-	nc := new(MockNetConn)
-	require.NoError(t, nc.SetReadDeadline(time.Now()))
-}
-
-func TestMockNetConnSetWriteDeadline(t *testing.T) {
-	nc := new(MockNetConn)
-	require.NoError(t, nc.SetWriteDeadline(time.Now()))
-}
-
-func TestMockNetAddrNetwork(t *testing.T) {
-	na := new(MockNetAddr)
-	require.Equal(t, "tcp", na.Network())
-}
-
-func TestMockNetAddrString(t *testing.T) {
-	na := new(MockNetAddr)
-	require.Equal(t, "127.0.0.1", na.String())
-}
-*/

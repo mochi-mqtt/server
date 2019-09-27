@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/mochi-co/mqtt/auth"
 )
 
 func TestNewTCP(t *testing.T) {
@@ -25,8 +27,19 @@ func BenchmarkNewTCP(b *testing.B) {
 
 func TestTCPSetConfig(t *testing.T) {
 	l := NewTCP("t1", ":1883")
+
+	l.SetConfig(&Config{
+		Auth: new(auth.Allow),
+	})
+	require.NotNil(t, l.config)
+	require.NotNil(t, l.config.Auth)
+	require.Equal(t, new(auth.Allow), l.config.Auth)
+
+	// Switch to disallow on bad config set.
 	l.SetConfig(new(Config))
 	require.NotNil(t, l.config)
+	require.NotNil(t, l.config.Auth)
+	require.Equal(t, new(auth.Disallow), l.config.Auth)
 }
 
 func BenchmarkTCPSetConfig(b *testing.B) {
@@ -101,7 +114,7 @@ func TestTCPServe(t *testing.T) {
 	o = make(chan bool)
 	ok := make(chan bool)
 	go func(o chan bool, ok chan bool) {
-		l.Serve(func(c net.Conn) error {
+		l.Serve(func(c net.Conn, ac auth.Controller) error {
 			ok <- true
 			return errors.New("testing")
 		})

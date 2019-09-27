@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 
+	"github.com/mochi-co/mqtt/auth"
 	"github.com/mochi-co/mqtt/listeners"
 	"github.com/mochi-co/mqtt/packets"
 )
@@ -15,6 +16,10 @@ var (
 	ErrReadConnectPacket      = errors.New("Error reading CONNECT packet")
 	ErrFirstPacketInvalid     = errors.New("First packet was not CONNECT packet")
 	ErrReadConnectInvalid     = errors.New("CONNECT packet was not valid")
+	ErrConnectNotAuthorized   = errors.New("CONNECT packet was not authorized")
+	ErrReadFixedHeader        = errors.New("Error reading fixed header")
+	ErrReadPacketPayload      = errors.New("Error reading packet payload")
+	ErrReadPacketValidation   = errors.New("Error validating packet")
 )
 
 /*
@@ -43,7 +48,19 @@ type Server struct {
 
 	// listeners is a map of listeners, which listen for new connections.
 	listeners listeners.Listeners
+
+	// clients is a map of clients known to the broker.
+	// clients map[string]Client
 }
+
+// Clients
+/*
+type Clients struct {
+	clients map[string]*Client
+	subscriptions Subscriptions(cl.clients)
+}
+
+*/
 
 // New returns a pointer to a new instance of the MQTT broker.
 func New() *Server {
@@ -53,12 +70,17 @@ func New() *Server {
 }
 
 // AddListener adds a new network listener to the server.
-func (s *Server) AddListener(listener listeners.Listener) error {
+func (s *Server) AddListener(listener listeners.Listener, config *listeners.Config) error {
 	if _, ok := s.listeners.Get(listener.ID()); ok {
 		return ErrListenerIDExists
 	}
 
+	if config != nil {
+		listener.SetConfig(config)
+	}
+
 	s.listeners.Add(listener)
+
 	return nil
 }
 
@@ -76,7 +98,7 @@ func (s *Server) Close() error {
 }
 
 // EstablishConnection establishes a new client connection with the broker.
-func (s *Server) EstablishConnection(c net.Conn) error {
+func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	log.Println("connecting")
 
 	// Create a new packets parser which will parse all packets for this cliet.
@@ -112,6 +134,22 @@ func (s *Server) EstablishConnection(c net.Conn) error {
 	}
 
 	// If a username and password has been provided, perform authentication.
+	if msg.Username != "" && !ac.Authenticate(msg.Username, msg.Password) {
+		retcode = packets.CodeConnectNotAuthorised
+		log.Println("_E", retcode)
+		return ErrConnectNotAuthorized
+	}
+
+	// Add the new client to the clients manager.
+	// @TODO ...
+
+	// Send a CONNACK back to the client.
+	// @TODO ...
+
+	// Publish out any unacknowledged QOS messages still pending for the client.
+	// @TODO ...
+
+	// Block and listen for more packets, and end if an error or nil packet occurs.
 	// @TODO ...
 
 	//	log.Println(msg, retcode)

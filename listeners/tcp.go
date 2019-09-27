@@ -55,7 +55,16 @@ func NewTCP(id, address string) *TCP {
 // SetConfig sets the configuration values for the listener config.
 func (l *TCP) SetConfig(config *Config) {
 	l.Lock()
-	l.config = config
+	if config != nil {
+		l.config = config
+
+		// If a config has been passed without an auth controller,
+		// it may be a mistake, so disallow all traffic.
+		if l.config.Auth == nil {
+			l.config.Auth = new(auth.Disallow)
+		}
+	}
+
 	l.Unlock()
 }
 
@@ -98,19 +107,10 @@ func (l *TCP) Serve(establish EstablishFunc) {
 
 				// Establish connection in a new goroutine.
 				go func(c net.Conn) {
-
-					// Establish that the incoming packet is a Connect packet.
-					err := establish(c)
+					err := establish(c, l.config.Auth)
 					if err != nil {
 						return
 					}
-
-					// Perform Authentication checks (if necessary) on packet.
-					// ...
-
-					// Add new client to listener.
-					// ...
-
 				}(conn)
 			}
 		}

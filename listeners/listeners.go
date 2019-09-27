@@ -3,10 +3,12 @@ package listeners
 import (
 	"net"
 	"sync"
+
+	"github.com/mochi-co/mqtt/auth"
 )
 
 // EstablishFunc is a callback function for establishing new clients.
-type EstablishFunc func(net.Conn) error
+type EstablishFunc func(net.Conn, auth.Controller) error
 
 // CloseFunc is a callback function for closing all listener clients.
 type CloseFunc func(id string)
@@ -84,9 +86,6 @@ func (l *Listeners) Delete(id string) {
 	l.Unlock()
 }
 
-// SetAuth sets the auth manager for a listener by id.
-// ...
-
 // Serve starts a listener serving from the internal map.
 func (l *Listeners) Serve(id string, establisher EstablishFunc) {
 	l.RLock()
@@ -145,7 +144,7 @@ func (l *Listeners) CloseAll(closer CloseFunc) {
 func MockCloser(id string) {}
 
 // MockEstablisher is a function signature which can be used in testing.
-func MockEstablisher(c net.Conn) error {
+func MockEstablisher(c net.Conn, ac auth.Controller) error {
 	return nil
 }
 
@@ -156,17 +155,17 @@ type MockListener struct {
 	// id is the internal id of the listener.
 	id string
 
-	// config contains configuration values for the listener.
-	config *Config
+	// Config contains configuration values for the listener.
+	Config *Config
 
 	// address is the address to bind to.
 	address string
 
-	// isListening indicates that the listener is listening.
-	isListening bool
+	// IsListening indicates that the listener is listening.
+	IsListening bool
 
-	// isServing indicates that the listener is serving.
-	isServing bool
+	// IsServing indicates that the listener is serving.
+	IsServing bool
 
 	// done is sent when the mock listener should close.
 	done chan bool
@@ -184,7 +183,7 @@ func NewMockListener(id, address string) *MockListener {
 // Serve serves the mock listener.
 func (l *MockListener) Serve(establisher EstablishFunc) {
 	l.Lock()
-	l.isServing = true
+	l.IsServing = true
 	l.Unlock()
 DONE:
 	for {
@@ -196,9 +195,17 @@ DONE:
 }
 
 // SetConfig sets the configuration values of the mock listener.
+func (l *MockListener) Listen() error {
+	l.Lock()
+	l.IsListening = true
+	l.Unlock()
+	return nil
+}
+
+// SetConfig sets the configuration values of the mock listener.
 func (l *MockListener) SetConfig(config *Config) {
 	l.Lock()
-	l.config = config
+	l.Config = config
 	l.Unlock()
 }
 
@@ -210,97 +217,11 @@ func (l *MockListener) ID() string {
 	return id
 }
 
-// SetConfig sets the configuration values of the mock listener.
-func (l *MockListener) Listen() error {
-	l.Lock()
-	l.isListening = true
-	l.Unlock()
-	return nil
-}
-
-// Listening indicates if the listener is listening
-func (l *MockListener) Listening() bool {
-	l.RLock()
-	ok := l.isListening
-	l.RUnlock()
-	return ok
-}
-
-// Serving indicates if the listener is serving
-func (l *MockListener) Serving() bool {
-	l.RLock()
-	ok := l.isServing
-	l.RUnlock()
-	return ok
-}
-
 // Close closes the mock listener.
 func (l *MockListener) Close(closer CloseFunc) {
 	l.Lock()
 	defer l.Unlock()
-	l.isServing = false
+	l.IsServing = false
 	closer(l.id)
 	close(l.done)
 }
-
-/*
-// MockNetConn satisfies the net.Conn interface.
-type MockNetConn struct {
-	ID       string
-	Deadline time.Time
-}
-
-// Read reads bytes from the net io.reader.
-func (m *MockNetConn) Read(b []byte) (n int, err error) {
-	return 0, nil
-}
-
-// Read writes bytes to the net io.writer.
-func (m *MockNetConn) Write(b []byte) (n int, err error) {
-	return 0, nil
-}
-
-// Close closes the net.Conn connection.
-func (m *MockNetConn) Close() error {
-	return nil
-}
-
-// LocalAddr returns the local address of the request.
-func (m *MockNetConn) LocalAddr() net.Addr {
-	return new(MockNetAddr)
-}
-
-// RemoteAddr returns the remove address of the request.
-func (m *MockNetConn) RemoteAddr() net.Addr {
-	return new(MockNetAddr)
-}
-
-// SetDeadline sets the request deadline.
-func (m *MockNetConn) SetDeadline(t time.Time) error {
-	m.Deadline = t
-	return nil
-}
-
-// SetReadDeadline sets the read deadline.
-func (m *MockNetConn) SetReadDeadline(t time.Time) error {
-	return nil
-}
-
-// SetWriteDeadline sets the write deadline.
-func (m *MockNetConn) SetWriteDeadline(t time.Time) error {
-	return nil
-}
-
-// MockNetAddr satisfies net.Addr interface.
-type MockNetAddr struct{}
-
-// Network returns the network protocol.
-func (m *MockNetAddr) Network() string {
-	return "tcp"
-}
-
-// String returns the network address.
-func (m *MockNetAddr) String() string {
-	return "127.0.0.1"
-}
-*/
