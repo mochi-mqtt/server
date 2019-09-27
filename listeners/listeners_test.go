@@ -7,18 +7,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMockEstablisher(t *testing.T) {
+	require.Nil(t, MockEstablisher(new(MockNetConn)))
+}
+
 func TestNewMockListener(t *testing.T) {
 	mocked := NewMockListener("t1", ":1882")
 	require.Equal(t, "t1", mocked.id)
 	require.Equal(t, ":1882", mocked.address)
 }
 
-func TestMockEstablisher(t *testing.T) {
-	require.Nil(t, MockEstablisher(new(MockNetConn)))
+func TestNewMockListenerListen(t *testing.T) {
+	mocked := NewMockListener("t1", ":1882")
+	require.Equal(t, "t1", mocked.id)
+	require.Equal(t, ":1882", mocked.address)
+
+	require.Equal(t, false, mocked.Listening())
+	mocked.Listen()
+	require.Equal(t, true, mocked.Listening())
+
 }
 
-func TestNewMockListenerServe(t *testing.T) {
+func TestMockListenerServe(t *testing.T) {
 	mocked := NewMockListener("t1", ":1882")
+	require.Equal(t, false, mocked.Serving())
+
 	o := make(chan bool)
 	go func(o chan bool) {
 		mocked.Serve(MockEstablisher)
@@ -26,15 +39,25 @@ func TestNewMockListenerServe(t *testing.T) {
 	}(o)
 
 	time.Sleep(time.Millisecond) // easy non-channel wait for start of serving
+	require.Equal(t, true, mocked.Serving())
+
 	var closed bool
 	mocked.Close(func(id string) {
 		closed = true
 	})
 	require.Equal(t, true, closed)
 	<-o
+
+	mocked.Listen()
 }
 
-func TestNewMockListenerClose(t *testing.T) {
+func TestMockListenerSetConfig(t *testing.T) {
+	mocked := NewMockListener("t1", ":1883")
+	mocked.SetConfig(new(Config))
+	require.NotNil(t, mocked.config)
+}
+
+func TestMockListenerClose(t *testing.T) {
 	mocked := NewMockListener("t1", ":1882")
 	var closed bool
 	mocked.Close(func(id string) {
@@ -199,7 +222,6 @@ func BenchmarkCloseListener(b *testing.B) {
 }
 
 func TestCloseAllListeners(t *testing.T) {
-
 	l := NewListeners()
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))

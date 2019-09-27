@@ -16,7 +16,13 @@ type CloseFunc func(id string)
 // for incoming client connections and adds them to the server.
 type Listener interface {
 
-	// Serve starts the listener listening for new connections. The method
+	// SetConfig sets the Config values for the listener.
+	SetConfig(*Config)
+
+	// Listen starts listening on the network address.
+	Listen() error
+
+	// Serve starts the listener waiting for new connections. The method
 	// takes a callbacks for establishing new clients.
 	Serve(EstablishFunc)
 
@@ -28,7 +34,7 @@ type Listener interface {
 	Close(CloseFunc)
 }
 
-// listeners contains the network listeners for the broker.
+// Listeners contains the network listeners for the broker.
 type Listeners struct {
 	sync.RWMutex
 
@@ -39,7 +45,7 @@ type Listeners struct {
 	internal map[string]Listener
 
 	// Errors is a channel of errors sent by listeners.
-	Errors chan error
+	//Errors chan error
 }
 
 // NewListeners returns a new instance of Listeners.
@@ -78,6 +84,9 @@ func (l *Listeners) Delete(id string) {
 	delete(l.internal, id)
 	l.Unlock()
 }
+
+// SetAuth sets the auth manager for a listener by id.
+// ...
 
 // Serve starts a listener serving from the internal map.
 func (l *Listeners) Serve(id string, establisher EstablishFunc) {
@@ -133,23 +142,29 @@ func (l *Listeners) CloseAll(closer CloseFunc) {
 	l.wg.Wait()
 }
 
-// MockCloseFunc is a function signature which can be used in testing.
+// MockCloser is a function signature which can be used in testing.
 func MockCloser(id string) {}
 
-// MockCloseFunc is a function signature which can be used in testing.
+// MockEstablisher is a function signature which can be used in testing.
 func MockEstablisher(c net.Conn) error {
 	return nil
 }
 
-// TCP is a listener for establishing client connections on basic TCP protocol.
+// MockListener is a mock listener for establishing client connections.
 type MockListener struct {
 	sync.RWMutex
 
 	// id is the internal id of the listener.
 	id string
 
+	// config contains configuration values for the listener.
+	config *Config
+
 	// address is the address to bind to.
 	address string
+
+	// isListening indicates that the listener is listening.
+	isListening bool
 
 	// isServing indicates that the listener is serving.
 	isServing bool
@@ -181,6 +196,13 @@ DONE:
 	}
 }
 
+// SetConfig sets the configuration values of the mock listener.
+func (l *MockListener) SetConfig(config *Config) {
+	l.Lock()
+	l.config = config
+	l.Unlock()
+}
+
 // ID returns the id of the mock listener.
 func (l *MockListener) ID() string {
 	l.RLock()
@@ -189,7 +211,23 @@ func (l *MockListener) ID() string {
 	return id
 }
 
-// serving indicates if the listener is serving
+// SetConfig sets the configuration values of the mock listener.
+func (l *MockListener) Listen() error {
+	l.Lock()
+	l.isListening = true
+	l.Unlock()
+	return nil
+}
+
+// Listening indicates if the listener is listening
+func (l *MockListener) Listening() bool {
+	l.RLock()
+	ok := l.isListening
+	l.RUnlock()
+	return ok
+}
+
+// Serving indicates if the listener is serving
 func (l *MockListener) Serving() bool {
 	l.RLock()
 	ok := l.isServing

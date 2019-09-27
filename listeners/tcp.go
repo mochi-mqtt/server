@@ -3,13 +3,19 @@ package listeners
 import (
 	"net"
 	"sync"
+
+	"github.com/mochi-co/mqtt/auth"
 )
 
 // TCP is a listener for establishing client connections on basic TCP protocol.
 type TCP struct {
+	sync.RWMutex
 
 	// id is the internal id of the listener.
 	id string
+
+	// config contains configuration values for the listener.
+	config *Config
 
 	// protocol is the TCP protocol to use.
 	protocol string
@@ -31,30 +37,48 @@ type TCP struct {
 }
 
 // NewTCP initialises and returns a new TCP listener, listening on an address.
-func NewTCP(id, address string) (l *TCP, err error) {
-	l = &TCP{
+func NewTCP(id, address string) *TCP {
+	return &TCP{
 		id:       id,
 		protocol: "tcp",
 		address:  address,
 		done:     make(chan bool),
 		start:    new(sync.Once),
 		end:      new(sync.Once),
+		config: &Config{ // default configuration.
+			Auth: new(auth.Allow),
+			TLS:  new(TLS),
+		},
 	}
+}
 
-	l.listen, err = net.Listen(l.protocol, l.address)
-	if err != nil {
-		return
-	}
-
-	return
+// SetConfig sets the configuration values for the listener config.
+func (l *TCP) SetConfig(config *Config) {
+	l.Lock()
+	l.config = config
+	l.Unlock()
 }
 
 // ID returns the id of the listener.
 func (l *TCP) ID() string {
-	return l.id
+	l.RLock()
+	id := l.id
+	l.RUnlock()
+	return id
 }
 
-// Serve starts listening for new TCP connections, and calls the connection
+// Listen starts listening on the listener's network address.
+func (l *TCP) Listen() error {
+	var err error
+	l.listen, err = net.Listen(l.protocol, l.address)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Serve starts waiting for new TCP connections, and calls the connection
 // establishment callback for any received.
 func (l *TCP) Serve(establish EstablishFunc) {
 	l.start.Do(func() {
@@ -74,10 +98,19 @@ func (l *TCP) Serve(establish EstablishFunc) {
 
 				// Establish connection in a new goroutine.
 				go func(c net.Conn) {
+
+					// Establish that the incoming packet is a Connect packet.
 					err := establish(c)
 					if err != nil {
 						return
 					}
+
+					// Perform Authentication checks (if necessary) on packet.
+					// ...
+
+					// Add new client to listener.
+					// ...
+
 				}(conn)
 			}
 		}
@@ -86,6 +119,9 @@ func (l *TCP) Serve(establish EstablishFunc) {
 
 // Close closes the listener and any client connections.
 func (l *TCP) Close(closeClients CloseFunc) {
+	l.Lock()
+	defer l.Unlock()
+
 	l.end.Do(func() {
 		closeClients(l.id)
 		close(l.done)

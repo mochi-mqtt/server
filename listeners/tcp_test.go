@@ -10,17 +10,11 @@ import (
 )
 
 func TestNewTCP(t *testing.T) {
-	l, err := NewTCP("t1", ":1883")
-	require.NoError(t, err)
+	l := NewTCP("t1", ":1883")
 	require.Equal(t, "t1", l.id)
 	require.Equal(t, ":1883", l.address)
 	require.NotNil(t, l.end)
 	require.NotNil(t, l.done)
-
-	// Existing bind address.
-	_, err = NewTCP("t1", ":1883")
-	require.Error(t, err)
-	l.listen.Close()
 }
 
 func BenchmarkNewTCP(b *testing.B) {
@@ -29,27 +23,48 @@ func BenchmarkNewTCP(b *testing.B) {
 	}
 }
 
+func TestTCPSetConfig(t *testing.T) {
+	l := NewTCP("t1", ":1883")
+	l.SetConfig(new(Config))
+	require.NotNil(t, l.config)
+}
+
+func BenchmarkTCPSetConfig(b *testing.B) {
+	l := NewTCP("t1", ":1883")
+	for n := 0; n < b.N; n++ {
+		l.SetConfig(new(Config))
+	}
+}
+
 func TestTCPID(t *testing.T) {
-	l, err := NewTCP("t1", ":1883")
-	l.listen.Close()
-	require.NoError(t, err)
+	l := NewTCP("t1", ":1883")
 	require.Equal(t, "t1", l.ID())
 }
 
 func BenchmarkTCPID(b *testing.B) {
-	l, err := NewTCP("t1", ":1883")
-	if err != nil {
-		panic(err)
-	}
+	l := NewTCP("t1", ":1883")
 	for n := 0; n < b.N; n++ {
 		l.ID()
 	}
 }
 
+func TestTCPListen(t *testing.T) {
+	l := NewTCP("t1", ":1883")
+	err := l.Listen()
+	require.NoError(t, err)
+
+	// Existing bind address.
+	l2 := NewTCP("t2", ":1883")
+	err = l2.Listen()
+	require.Error(t, err)
+	l.listen.Close()
+}
+
 func TestTCPServe(t *testing.T) {
 
 	// Close Connection.
-	l, err := NewTCP("t1", ":1883")
+	l := NewTCP("t1", ":1883")
+	err := l.Listen()
 	require.NoError(t, err)
 	o := make(chan bool)
 	go func(o chan bool) {
@@ -65,7 +80,8 @@ func TestTCPServe(t *testing.T) {
 	<-o
 
 	// Close broken/closed listener.
-	l, err = NewTCP("t1", ":1883")
+	l = NewTCP("t1", ":1883")
+	err = l.Listen()
 	require.NoError(t, err)
 	o = make(chan bool)
 	go func(o chan bool) {
@@ -79,7 +95,8 @@ func TestTCPServe(t *testing.T) {
 	<-o
 
 	// Accept/Establish.
-	l, err = NewTCP("t1", ":1883")
+	l = NewTCP("t1", ":1883")
+	err = l.Listen()
 	require.NoError(t, err)
 	o = make(chan bool)
 	ok := make(chan bool)
@@ -96,5 +113,4 @@ func TestTCPServe(t *testing.T) {
 	require.Equal(t, true, <-ok)
 	l.Close(MockCloser)
 	<-o
-
 }
