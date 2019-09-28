@@ -2,7 +2,6 @@ package mqtt
 
 import (
 	"errors"
-	"log"
 	"sync"
 
 	"github.com/rs/xid"
@@ -87,68 +86,4 @@ func newClient(p *packets.Parser, pk *packets.ConnectPacket) *client {
 	*/
 
 	return cl
-}
-
-// read listens for incoming packets on the packets parser and delegates MQTT
-// actions when received.
-func (cl *client) read() error {
-	var err error
-	var pk packets.Packet
-	fh := new(packets.FixedHeader)
-	var i int
-
-DONE:
-	for {
-		select {
-		case <-cl.end:
-			break DONE
-
-		default:
-			log.Println("CYCLE", i)
-			i++
-			if cl.p.Conn == nil {
-				return ErrConnectionClosed
-			}
-
-			// Reset the keepalive read deadline.
-			cl.p.RefreshDeadline(cl.keepalive)
-
-			// Read in the fixed header of the packet.
-			err = cl.p.ReadFixedHeader(fh)
-			if err != nil {
-				log.Println(">>A ", err)
-				return ErrReadFixedHeader
-			}
-
-			// If it's a disconnect packet, begin the close process.
-			if fh.Type == packets.Disconnect {
-				return nil
-			}
-
-			// Otherwise read in the packet payload.
-			pk, err = cl.p.Read()
-			if err != nil {
-				log.Println(">>B ", err)
-				return ErrReadPacketPayload
-			}
-
-			// Validate the packet if necessary.
-			_, err := pk.Validate()
-			if err != nil {
-				log.Println(">>C ", err)
-				return ErrReadPacketValidation
-			}
-
-			// Log read stats for $SYS.
-			// @TODO ...
-
-			// Process inbound packet.
-			// @TODO ...
-
-			log.Println(fh, pk)
-			return nil
-		}
-	}
-
-	return nil
 }

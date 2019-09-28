@@ -144,15 +144,144 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	// @TODO ...
 
 	// Send a CONNACK back to the client.
-	// @TODO ...
+	// @TODO s.writeClient(cl, connackPK)
 
 	// Publish out any unacknowledged QOS messages still pending for the client.
 	// @TODO ...
 
 	// Block and listen for more packets, and end if an error or nil packet occurs.
-	// @TODO ...
+	// @TODO ... s.readClient
 
 	//	log.Println(msg, retcode)
 	log.Println(msg, pk)
+	return nil
+}
+
+// readClient reads new packets from a client connection.
+func (s *Server) readClient(cl *client) error {
+	var err error
+	var pk packets.Packet
+	fh := new(packets.FixedHeader)
+
+	var i int
+
+DONE:
+	for {
+		select {
+		case <-cl.end:
+			break DONE
+
+		default:
+			log.Println("CYCLE", i)
+			i++
+			if cl.p.Conn == nil {
+				return ErrConnectionClosed
+			}
+
+			// Reset the keepalive read deadline.
+			cl.p.RefreshDeadline(cl.keepalive)
+
+			// Read in the fixed header of the packet.
+			err = cl.p.ReadFixedHeader(fh)
+			if err != nil {
+				log.Println(">>A ", err)
+				return ErrReadFixedHeader
+			}
+
+			// If it's a disconnect packet, begin the close process.
+			if fh.Type == packets.Disconnect {
+				return nil
+			}
+
+			// Otherwise read in the packet payload.
+			pk, err = cl.p.Read()
+			if err != nil {
+				log.Println(">>B ", err)
+				return ErrReadPacketPayload
+			}
+
+			// Validate the packet if necessary.
+			_, err := pk.Validate()
+			if err != nil {
+				log.Println(">>C ", err)
+				return ErrReadPacketValidation
+			}
+
+			// Process inbound packet.
+			go s.processPacket(cl, pk)
+		}
+	}
+
+	return nil
+}
+
+// writeClient writes packets to a client connection.
+func (s *Server) writeClient(cl *client, pk packets.Packet) error {
+
+	// encode packet (use buffer pool)
+	// write packet
+	// refresh deadline
+
+	return nil
+}
+
+// closeClient closes a client connection and publishes any LWT messages.
+func (s *Server) closeClient(cl *client) error {
+
+	// close client connection
+	// send LWT
+
+	return nil
+}
+
+// processPacket processes an inbound packet for a client.
+func (s *Server) processPacket(cl *client, pk packets.Packet) error {
+	log.Println("PROCESSING PACKET", cl, pk)
+
+	// Log read stats for $SYS.
+	// @TODO ... //
+
+	// switch on packet type
+	//// connect
+	//		stop
+	//// disconnect
+	// 		stop
+
+	//// ping
+	// 		pingresp
+	// 		else stop
+
+	//// publish
+	//		retain if 1
+	//		find valid subscribers
+	//			upgrade copied packet
+	// 			if (qos > 1) add packetID > cl.nextPacketID()
+	//			write packet to client
+	//			handle qos > s.processQOS(cl, pk)
+
+	//// pub*
+	//		handle qos > s.processQOS(cl, pk)
+
+	//// subscribe
+	// 		subscribe topics
+	//		send subacks
+	//		receive any retained messages
+
+	//// unsubscribe
+	//		unsubscribe topics
+	//		send unsuback
+
+	return nil
+}
+
+// processQOS handles the back and forth of QOS>0 packets.
+func (s *Server) processQOS(cl *client, pk packets.Packet) error {
+
+	// handle publish in/out
+	// handle puback
+	// handle pubrec
+	// handle pubrel
+	// handle pubcomp
+
 	return nil
 }
