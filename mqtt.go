@@ -125,41 +125,38 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	fh := new(packets.FixedHeader)
 	err := p.ReadFixedHeader(fh)
 	if err != nil {
-		log.Println("_A", err)
 		return ErrReadConnectFixedHeader
 	}
 
 	// Read the first packet expecting a CONNECT message.
 	pk, err := p.Read()
 	if err != nil {
-		log.Println("_B", err)
 		return ErrReadConnectPacket
 	}
 
 	// Ensure first packet is a connect packet.
 	msg, ok := pk.(*packets.ConnectPacket)
 	if !ok {
-		log.Println("_C")
 		return ErrFirstPacketInvalid
 	}
 
 	// Ensure the packet conforms to MQTT CONNECT specifications.
 	retcode, _ := msg.Validate()
 	if retcode != packets.Accepted {
-		log.Println("_D", retcode)
 		return ErrReadConnectInvalid
 	}
 
 	// If a username and password has been provided, perform authentication.
 	if msg.Username != "" && !ac.Authenticate(msg.Username, msg.Password) {
 		retcode = packets.CodeConnectNotAuthorised
-		log.Println("_E", retcode)
 		return ErrConnectNotAuthorized
 	}
 
 	// Add the new client to the clients manager.
 	client := newClient(p, msg)
 	s.clients.Add(client)
+
+	log.Println("connected", client.id)
 
 	// Send a CONNACK back to the client.
 	err = s.writeClient(client, &packets.ConnackPacket{
@@ -172,9 +169,13 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	// @TODO ...
 
 	// Block and listen for more packets, and end if an error or nil packet occurs.
-	// @TODO ... s.readClient
+	err = s.readClient(client)
+	if err != nil {
+		return err
+	}
 
-	log.Println(msg, pk)
+	log.Println("ended", client.id)
+
 	return nil
 }
 
@@ -188,9 +189,11 @@ DONE:
 	for {
 		select {
 		case <-cl.end:
+			log.Println("done ending")
 			break DONE
 
 		default:
+			log.Println("iterating")
 			if cl.p.Conn == nil {
 				return ErrConnectionClosed
 			}
@@ -225,6 +228,8 @@ DONE:
 			go s.processPacket(cl, pk)
 		}
 	}
+
+	log.Println("returning")
 
 	return nil
 }
@@ -261,15 +266,6 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 
 	// Log $SYS stats.
 	// @TODO ...
-
-	return nil
-}
-
-// closeClient closes a client connection and publishes any LWT messages.
-func (s *Server) closeClient(cl *client) error {
-
-	// close client connection
-	// send LWT
 
 	return nil
 }
@@ -326,6 +322,18 @@ func (s *Server) processQOS(cl *client, pk packets.Packet) error {
 	return nil
 }
 
+// closeClient closes a client connection and publishes any LWT messages.
+func (s *Server) closeClient(cl *client) error {
+
+	// Stop listening for new packets.
+	cl.close()
+
+	// Send LWT to subscribers.
+	// @TODO ...
+
+	return nil
+}
+
 // clients contains a map of the clients known by the broker.
 type clients struct {
 	sync.RWMutex
@@ -378,7 +386,7 @@ type client struct {
 	// p is a packets parser which reads incoming packets.
 	p *packets.Parser
 
-	// end is a channel that indicates the client should halt.
+	// end is a channel that indicates the client should be halted.
 	end chan struct{}
 
 	// done can be called to ensure the close methods are only called once.
@@ -435,4 +443,17 @@ func newClient(p *packets.Parser, pk *packets.ConnectPacket) *client {
 	*/
 
 	return cl
+}
+
+// close attempts to gracefully close a client connection.
+func (cl *client) close() {
+	cl.done.Do(func() {
+
+		// Signal to stop lsitening for packets.
+		close(cl.end)
+
+		// Close the network connection.
+		cl.p.Conn.Close() // Error is irrelevant so can be ommited here.
+
+	})
 }

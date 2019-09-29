@@ -3,6 +3,7 @@ package mqtt
 import (
 	"bufio"
 	"io/ioutil"
+	"log"
 	"net"
 	"testing"
 	"time"
@@ -30,7 +31,7 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.buffers)
 	require.NotNil(t, s.readers)
 	require.NotNil(t, s.writers)
-
+	log.Println(s)
 }
 
 func BenchmarkNew(b *testing.B) {
@@ -133,7 +134,7 @@ func BenchmarkClose(b *testing.B) {
 		s.listeners.Delete("t1")
 	}
 }
-func TestEstablishConnection(t *testing.T) {
+func TestEstablishConnectionOK(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -147,13 +148,21 @@ func TestEstablishConnection(t *testing.T) {
 			0, 3, // Client ID - MSB+LSB
 			'z', 'e', 'n', // Client ID "zen"
 		})
-		w.Close()
+
 	}()
-	err := s.EstablishConnection(r, new(auth.Allow))
-	r.Close()
-	require.NoError(t, err)
+
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection(r, new(auth.Allow))
+	}()
+	time.Sleep(time.Millisecond)
 	require.NotEmpty(t, s.clients.internal)
 	require.NotNil(t, s.clients.internal["zen"])
+
+	s.clients.internal["zen"].close()
+	require.NoError(t, <-o)
+	w.Close()
+	r.Close()
 
 }
 func TestEstablishConnectionBadFixedHeader(t *testing.T) {
@@ -247,27 +256,40 @@ func TestEstablishConnectionBadAuth(t *testing.T) {
 	require.Equal(t, ErrConnectNotAuthorized, err)
 }
 
-func TestEstablishConnectionBadConnackWrite(t *testing.T) {
+func TestEstablishConnectionReadClientError(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 15, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			0,     // Packet Flags
+			0, 60, // Keepalive
+			0, 3, // Client ID - MSB+LSB
+			'z', 'e', 'n', // Client ID "zen"
+		})
 
+	}()
+
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection(r, new(auth.Allow))
+	}()
+	time.Sleep(5 * time.Millisecond)
+	s.clients.internal["zen"].close()
+	require.NoError(t, <-o)
+	r.Close()
+	w.Close()
 }
 
-func BenchmarkEstablishConnection(b *testing.B) {
-	//	s := New()
-	for n := 0; n < b.N; n++ {
-		// @TODO ...
-	}
-}
-
-func TestReadClient(t *testing.T) {
+func TestReadClientOK(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
 	cl := newClient(p, new(packets.ConnectPacket))
-	o := make(chan error)
-	go func() {
-		o <- s.readClient(cl)
-	}()
-	time.Sleep(time.Millisecond)
+
 	go func() {
 		b := []byte{
 			byte(packets.Publish << 4), 18, // Fixed header
@@ -276,9 +298,15 @@ func TestReadClient(t *testing.T) {
 			'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload
 		}
 		w.Write(b)
-		close(cl.end)
+		cl.close()
+
 	}()
 	time.Sleep(time.Millisecond)
+	o := make(chan error)
+	go func() {
+		o <- s.readClient(cl)
+	}()
+	time.Sleep(5 * time.Millisecond)
 	require.NoError(t, <-o)
 	w.Close()
 	r.Close()
@@ -367,13 +395,6 @@ func TestReadClientBadPacketValidation(t *testing.T) {
 	require.Equal(t, ErrReadPacketValidation, err)
 }
 
-func BenchmarkReadClient(b *testing.B) {
-	//	s := New()
-	for n := 0; n < b.N; n++ {
-		// @TODO ...
-	}
-}
-
 func TestWriteClient(t *testing.T) {
 	r, w := net.Pipe()
 	s := New()
@@ -405,13 +426,6 @@ func TestWriteClient(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i',
 	}, buf)
 	r.Close()
-}
-
-func BenchmarkWriteClient(b *testing.B) {
-	//	s := New()
-	for n := 0; n < b.N; n++ {
-		// @TODO ...
-	}
 }
 
 func TestWriteClientBadEncode(t *testing.T) {
@@ -462,49 +476,14 @@ func TestWriteClientNilWriter(t *testing.T) {
 	w.Close()
 }
 
-func TestNewClient(t *testing.T) {
-	r, _ := net.Pipe()
-	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
-	r.Close()
-	pk := &packets.ConnectPacket{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
-			Remaining: 16,
-		},
-		ProtocolName:     "MQTT",
-		ProtocolVersion:  4,
-		CleanSession:     true,
-		Keepalive:        60,
-		ClientIdentifier: "zen3",
-	}
-
-	cl := newClient(p, pk)
-	require.NotNil(t, cl)
-	require.Equal(t, pk.Keepalive, cl.keepalive)
-	require.Equal(t, pk.CleanSession, cl.cleanSession)
-	require.Equal(t, pk.ClientIdentifier, cl.id)
-
-	// Autogenerate id.
-	pk = new(packets.ConnectPacket)
-	cl = newClient(p, pk)
-	require.NotNil(t, cl)
-	require.NotEmpty(t, cl.id)
-
-	// Autoset keepalive
-	pk = new(packets.ConnectPacket)
-	cl = newClient(p, pk)
-	require.NotNil(t, cl)
-	require.Equal(t, clientKeepalive, cl.keepalive)
+func TestNewClients(t *testing.T) {
+	cl := newClients()
+	require.NotNil(t, cl.internal)
 }
 
-func BenchmarkNewClient(b *testing.B) {
-	r, _ := net.Pipe()
-	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
-	r.Close()
-	pk := new(packets.ConnectPacket)
-
+func BenchmarkNewClients(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		newClient(p, pk)
+		newClients()
 	}
 }
 
@@ -576,4 +555,61 @@ func BenchmarkClientsDelete(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		cl.Delete("t1")
 	}
+}
+
+func TestNewClient(t *testing.T) {
+	r, _ := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
+	r.Close()
+	pk := &packets.ConnectPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Connect,
+			Remaining: 16,
+		},
+		ProtocolName:     "MQTT",
+		ProtocolVersion:  4,
+		CleanSession:     true,
+		Keepalive:        60,
+		ClientIdentifier: "zen3",
+	}
+
+	cl := newClient(p, pk)
+	require.NotNil(t, cl)
+	require.Equal(t, pk.Keepalive, cl.keepalive)
+	require.Equal(t, pk.CleanSession, cl.cleanSession)
+	require.Equal(t, pk.ClientIdentifier, cl.id)
+
+	// Autogenerate id.
+	pk = new(packets.ConnectPacket)
+	cl = newClient(p, pk)
+	require.NotNil(t, cl)
+	require.NotEmpty(t, cl.id)
+
+	// Autoset keepalive
+	pk = new(packets.ConnectPacket)
+	cl = newClient(p, pk)
+	require.NotNil(t, cl)
+	require.Equal(t, clientKeepalive, cl.keepalive)
+}
+
+func BenchmarkNewClient(b *testing.B) {
+	r, _ := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
+	r.Close()
+	pk := new(packets.ConnectPacket)
+
+	for n := 0; n < b.N; n++ {
+		newClient(p, pk)
+	}
+}
+
+func TestClientClose(t *testing.T) {
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	pk := &packets.ConnectPacket{
+		ClientIdentifier: "zen3",
+	}
+
+	client := newClient(p, pk)
+	require.NotNil(t, client)
 }

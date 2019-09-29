@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -73,7 +72,6 @@ func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 	// Peek the maximum message type and flags, and length.
 	peeked, err := p.R.Peek(1)
 	if err != nil {
-		log.Println("PEEK ERR", peeked, err)
 		return err
 	}
 
@@ -167,13 +165,10 @@ func (p *Parser) Read() (pk Packet, err error) {
 	peeked := true
 
 	bt, err := p.R.Peek(p.FixedHeader.Remaining)
-	log.Println("##", p.FixedHeader.Remaining, ":", bt)
 	if err != nil {
-		log.Println("U")
 
 		// Only try to continue if reading is still possible.
 		if err != bufio.ErrBufferFull {
-			log.Println("A", err)
 			return pk, err
 		}
 
@@ -183,7 +178,6 @@ func (p *Parser) Read() (pk Packet, err error) {
 		bt = make([]byte, p.FixedHeader.Remaining)
 		_, err := io.ReadFull(p.R, bt)
 		if err != nil {
-			log.Println("B", err)
 			return pk, err
 		}
 	}
@@ -194,14 +188,10 @@ func (p *Parser) Read() (pk Packet, err error) {
 	}
 
 	// Decode the remaining packet values.
-	log.Println(bt)
 	err = pk.Decode(bt)
 	if err != nil {
-		log.Println("C", err)
 		return pk, err
 	}
-
-	log.Println("KK")
 
 	return
 }
