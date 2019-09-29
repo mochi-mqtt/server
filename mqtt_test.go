@@ -155,7 +155,7 @@ func TestEstablishConnectionOK(t *testing.T) {
 	go func() {
 		o <- s.EstablishConnection(r, new(auth.Allow))
 	}()
-	time.Sleep(time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
 	require.NotEmpty(t, s.clients.internal)
 	require.NotNil(t, s.clients.internal["zen"])
 
@@ -278,10 +278,11 @@ func TestEstablishConnectionReadClientError(t *testing.T) {
 		o <- s.EstablishConnection(r, new(auth.Allow))
 	}()
 	time.Sleep(5 * time.Millisecond)
-	s.clients.internal["zen"].close()
-	require.NoError(t, <-o)
-	r.Close()
 	w.Close()
+	//	s.clients.internal["zen"].close()
+	require.Error(t, <-o)
+	r.Close()
+
 }
 
 func TestReadClientOK(t *testing.T) {
@@ -396,8 +397,8 @@ func TestReadClientBadPacketValidation(t *testing.T) {
 }
 
 func TestWriteClient(t *testing.T) {
-	r, w := net.Pipe()
 	s := New()
+	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
 	pk := new(packets.ConnectPacket)
 	cl := newClient(p, pk)
@@ -429,8 +430,8 @@ func TestWriteClient(t *testing.T) {
 }
 
 func TestWriteClientBadEncode(t *testing.T) {
-	r, w := net.Pipe()
 	s := New()
+	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
 	pk := new(packets.ConnectPacket)
 	cl := newClient(p, pk)
@@ -446,8 +447,8 @@ func TestWriteClientBadEncode(t *testing.T) {
 }
 
 func TestWriteClientNilFlush(t *testing.T) {
-	r, w := net.Pipe()
 	s := New()
+	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
 	pk := new(packets.ConnectPacket)
 	cl := newClient(p, pk)
@@ -463,8 +464,8 @@ func TestWriteClientNilFlush(t *testing.T) {
 }
 
 func TestWriteClientNilWriter(t *testing.T) {
-	r, w := net.Pipe()
 	s := New()
+	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
 	p.W = nil
 	pk := new(packets.ConnectPacket)
@@ -474,6 +475,27 @@ func TestWriteClientNilWriter(t *testing.T) {
 	require.Equal(t, ErrConnectionClosed, err)
 	r.Close()
 	w.Close()
+}
+
+func TestServerCloseClient(t *testing.T) { // as opposed to client.close
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	pk := &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	}
+
+	s.clients.add(newClient(p, pk))
+	require.NotNil(t, s.clients.internal["zen"])
+
+	// close the client connection.
+	s.closeClient(s.clients.internal["zen"])
+	var ok bool
+	select {
+	case _, ok = <-s.clients.internal["zen"].end:
+	}
+	require.Equal(t, false, ok)
+	require.Nil(t, s.clients.internal["zen"].p.Conn)
 }
 
 func TestNewClients(t *testing.T) {
@@ -489,7 +511,7 @@ func BenchmarkNewClients(b *testing.B) {
 
 func TestClientsAdd(t *testing.T) {
 	cl := newClients()
-	cl.Add(&client{id: "t1"})
+	cl.add(&client{id: "t1"})
 	require.NotNil(t, cl.internal["t1"])
 }
 
@@ -497,63 +519,63 @@ func BenchmarkClientsAdd(b *testing.B) {
 	cl := newClients()
 	client := &client{id: "t1"}
 	for n := 0; n < b.N; n++ {
-		cl.Add(client)
+		cl.add(client)
 	}
 }
 
 func TestClientsGet(t *testing.T) {
 	cl := newClients()
-	cl.Add(&client{id: "t1"})
-	cl.Add(&client{id: "t2"})
+	cl.add(&client{id: "t1"})
+	cl.add(&client{id: "t2"})
 	require.NotNil(t, cl.internal["t1"])
 	require.NotNil(t, cl.internal["t2"])
 
-	client, ok := cl.Get("t1")
+	client, ok := cl.get("t1")
 	require.Equal(t, true, ok)
 	require.Equal(t, "t1", client.id)
 }
 
 func BenchmarkClientsGet(b *testing.B) {
 	cl := newClients()
-	cl.Add(&client{id: "t1"})
+	cl.add(&client{id: "t1"})
 	for n := 0; n < b.N; n++ {
-		cl.Get("t1")
+		cl.get("t1")
 	}
 }
 
 func TestClientsLen(t *testing.T) {
 	cl := newClients()
-	cl.Add(&client{id: "t1"})
-	cl.Add(&client{id: "t2"})
+	cl.add(&client{id: "t1"})
+	cl.add(&client{id: "t2"})
 	require.NotNil(t, cl.internal["t1"])
 	require.NotNil(t, cl.internal["t2"])
-	require.Equal(t, 2, cl.Len())
+	require.Equal(t, 2, cl.len())
 }
 
 func BenchmarkClientsLen(b *testing.B) {
 	cl := newClients()
-	cl.Add(&client{id: "t1"})
+	cl.add(&client{id: "t1"})
 	for n := 0; n < b.N; n++ {
-		cl.Len()
+		cl.len()
 	}
 }
 
 func TestClientsDelete(t *testing.T) {
 	cl := newClients()
-	cl.Add(&client{id: "t1"})
+	cl.add(&client{id: "t1"})
 	require.NotNil(t, cl.internal["t1"])
 
-	cl.Delete("t1")
-	_, ok := cl.Get("t1")
+	cl.delete("t1")
+	_, ok := cl.get("t1")
 	require.Equal(t, false, ok)
 	require.Nil(t, cl.internal["t1"])
 }
 
 func BenchmarkClientsDelete(b *testing.B) {
 	cl := newClients()
-	cl.Add(&client{id: "t1"})
+	cl.add(&client{id: "t1"})
 	for n := 0; n < b.N; n++ {
-		cl.Delete("t1")
+		cl.delete("t1")
 	}
 }
 
@@ -612,4 +634,15 @@ func TestClientClose(t *testing.T) {
 
 	client := newClient(p, pk)
 	require.NotNil(t, client)
+
+	client.close()
+
+	var ok bool
+	select {
+	case _, ok = <-client.end:
+	}
+	require.Equal(t, false, ok)
+	require.Nil(t, client.p.Conn)
+	r.Close()
+	w.Close()
 }

@@ -154,7 +154,7 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 
 	// Add the new client to the clients manager.
 	client := newClient(p, msg)
-	s.clients.Add(client)
+	s.clients.add(client)
 
 	log.Println("connected", client.id)
 
@@ -171,6 +171,7 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	// Block and listen for more packets, and end if an error or nil packet occurs.
 	err = s.readClient(client)
 	if err != nil {
+		log.Println("read err", err)
 		return err
 	}
 
@@ -311,7 +312,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 }
 
 // processQOS handles the back and forth of QOS>0 packets.
-func (s *Server) processQOS(cl *client, pk packets.Packet) error {
+/*func (s *Server) processQOS(cl *client, pk packets.Packet) error {
 
 	// handle publish in/out
 	// handle puback
@@ -321,6 +322,7 @@ func (s *Server) processQOS(cl *client, pk packets.Packet) error {
 
 	return nil
 }
+*/
 
 // closeClient closes a client connection and publishes any LWT messages.
 func (s *Server) closeClient(cl *client) error {
@@ -350,14 +352,14 @@ func newClients() clients {
 }
 
 // Add adds a new client to the clients map, keyed on client id.
-func (cl *clients) Add(val *client) {
+func (cl *clients) add(val *client) {
 	cl.Lock()
 	cl.internal[val.id] = val
 	cl.Unlock()
 }
 
 // Get returns the value of a client if it exists.
-func (cl *clients) Get(id string) (*client, bool) {
+func (cl *clients) get(id string) (*client, bool) {
 	cl.RLock()
 	val, ok := cl.internal[id]
 	cl.RUnlock()
@@ -365,7 +367,7 @@ func (cl *clients) Get(id string) (*client, bool) {
 }
 
 // Len returns the length of the clients map.
-func (cl *clients) Len() int {
+func (cl *clients) len() int {
 	cl.RLock()
 	val := len(cl.internal)
 	cl.RUnlock()
@@ -373,7 +375,7 @@ func (cl *clients) Len() int {
 }
 
 // Delete removes a client from the internal map.
-func (cl *clients) Delete(id string) {
+func (cl *clients) delete(id string) {
 	cl.Lock()
 	delete(cl.internal, id)
 	cl.Unlock()
@@ -448,12 +450,11 @@ func newClient(p *packets.Parser, pk *packets.ConnectPacket) *client {
 // close attempts to gracefully close a client connection.
 func (cl *client) close() {
 	cl.done.Do(func() {
-
 		// Signal to stop lsitening for packets.
 		close(cl.end)
 
 		// Close the network connection.
 		cl.p.Conn.Close() // Error is irrelevant so can be ommited here.
-
+		cl.p.Conn = nil
 	})
 }
