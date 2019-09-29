@@ -36,15 +36,19 @@ type Parser struct {
 	// R is a bufio reader for peeking and reading incoming packets.
 	R *bufio.Reader
 
+	// W is a bufio writer for writing outgoing packets.
+	W *bufio.Writer
+
 	// FixedHeader is the fixed header from the last seen packet.
 	FixedHeader FixedHeader
 }
 
 // NewParser returns an instance of Parser for a connection.
-func NewParser(c net.Conn) *Parser {
+func NewParser(c net.Conn, r *bufio.Reader, w *bufio.Writer) *Parser {
 	return &Parser{
 		Conn: c,
-		R:    bufio.NewReaderSize(c, 512),
+		R:    r,
+		W:    w,
 	}
 }
 
@@ -55,11 +59,13 @@ func (p *Parser) RefreshDeadline(keepalive uint16) {
 }
 
 // Reset sets the new destinations for the read and write buffers.
+/*
 func (p *Parser) Reset(c net.Conn) {
 	p.Lock()
 	defer p.Unlock()
 	p.Conn = c
 }
+*/
 
 // ReadFixedHeader reads in the values of the next packet's fixed header.
 func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
