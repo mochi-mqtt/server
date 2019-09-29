@@ -1,6 +1,8 @@
 package mqtt
 
 import (
+	"bufio"
+	"io/ioutil"
 	"net"
 	"testing"
 	"time"
@@ -12,10 +14,23 @@ import (
 	"github.com/mochi-co/mqtt/packets"
 )
 
+func newBufioReader(c net.Conn) *bufio.Reader {
+	return bufio.NewReaderSize(c, 512)
+}
+
+func newBufioWriter(c net.Conn) *bufio.Writer {
+	return bufio.NewWriterSize(c, 512)
+}
+
 func TestNew(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
 	require.NotNil(t, s.listeners)
+	require.NotNil(t, s.clients)
+	require.NotNil(t, s.buffers)
+	require.NotNil(t, s.readers)
+	require.NotNil(t, s.writers)
+
 }
 
 func BenchmarkNew(b *testing.B) {
@@ -118,11 +133,31 @@ func BenchmarkClose(b *testing.B) {
 		s.listeners.Delete("t1")
 	}
 }
-
 func TestEstablishConnection(t *testing.T) {
 	s := New()
+	r, w := net.Pipe()
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 15, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			2,     // Packet Flags
+			0, 45, // Keepalive
+			0, 3, // Client ID - MSB+LSB
+			'z', 'e', 'n', // Client ID "zen"
+		})
+		w.Close()
+	}()
+	err := s.EstablishConnection(r, new(auth.Allow))
+	r.Close()
+	require.NoError(t, err)
+	require.NotEmpty(t, s.clients.internal)
+	require.NotNil(t, s.clients.internal["zen"])
 
-	// Error reading fixed header.
+}
+func TestEstablishConnectionBadFixedHeader(t *testing.T) {
+	s := New()
 	r, w := net.Pipe()
 	go func() {
 		w.Write([]byte{99})
@@ -132,20 +167,24 @@ func TestEstablishConnection(t *testing.T) {
 	r.Close()
 	require.Error(t, err)
 	require.Equal(t, ErrReadConnectFixedHeader, err)
+}
 
-	// Error reading connect packet.
-	r, w = net.Pipe()
+func TestEstablishConnectionBadConnectPacket(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
 	go func() {
 		w.Write([]byte{byte(packets.Connect << 4), 17})
 		w.Close()
 	}()
-	err = s.EstablishConnection(r, new(auth.Allow))
+	err := s.EstablishConnection(r, new(auth.Allow))
 	r.Close()
 	require.Error(t, err)
 	require.Equal(t, ErrReadConnectPacket, err)
+}
 
-	// Read a packet which isnt a connect packet.
-	r, w = net.Pipe()
+func TestEstablishConnectionNotConnectPacket(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
 	go func() {
 		w.Write([]byte{
 			byte(packets.Connack << 4), 2, // fixed header
@@ -154,13 +193,15 @@ func TestEstablishConnection(t *testing.T) {
 		})
 		w.Close()
 	}()
-	err = s.EstablishConnection(r, new(auth.Allow))
+	err := s.EstablishConnection(r, new(auth.Allow))
 	r.Close()
 	require.Error(t, err)
 	require.Equal(t, ErrFirstPacketInvalid, err)
+}
 
-	// Read a non-conforming connect packet.
-	r, w = net.Pipe()
+func TestEstablishConnectionInvalidConnectPacket(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
 	go func() {
 		w.Write([]byte{
 			byte(packets.Connect << 4), 13, // Fixed header
@@ -174,13 +215,15 @@ func TestEstablishConnection(t *testing.T) {
 		})
 		w.Close()
 	}()
-	err = s.EstablishConnection(r, new(auth.Allow))
+	err := s.EstablishConnection(r, new(auth.Allow))
 	r.Close()
 	require.Error(t, err)
 	require.Equal(t, ErrReadConnectInvalid, err)
+}
 
-	// Fail with a bad authentication details.
-	r, w = net.Pipe()
+func TestEstablishConnectionBadAuth(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
 	go func() {
 		w.Write([]byte{
 			byte(packets.Connect << 4), 28, // Fixed header
@@ -198,103 +241,28 @@ func TestEstablishConnection(t *testing.T) {
 		})
 		w.Close()
 	}()
-	err = s.EstablishConnection(r, new(auth.Disallow))
+	err := s.EstablishConnection(r, new(auth.Disallow))
 	r.Close()
 	require.Error(t, err)
 	require.Equal(t, ErrConnectNotAuthorized, err)
+}
 
-	// Fail creating a new client.
-	// ...
+func TestEstablishConnectionBadConnackWrite(t *testing.T) {
 
 }
 
 func BenchmarkEstablishConnection(b *testing.B) {
 	//	s := New()
 	for n := 0; n < b.N; n++ {
-		//
+		// @TODO ...
 	}
 }
 
 func TestReadClient(t *testing.T) {
 	s := New()
-
-	// Error no connection
-	r0, _ := net.Pipe()
-	p := packets.NewParser(r0)
-	p.Conn.Close()
-	p.Conn = nil
-	r0.Close()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
 	cl := newClient(p, new(packets.ConnectPacket))
-
-	err := s.readClient(cl)
-	require.Error(t, err)
-	require.Equal(t, ErrConnectionClosed, err)
-
-	// Fail on bad FixedHeader.
-	r1, w1 := net.Pipe()
-	go func() {
-		w1.Write([]byte{99})
-		w1.Close()
-	}()
-	p = packets.NewParser(r1)
-	cl = newClient(p, new(packets.ConnectPacket))
-	err = s.readClient(cl)
-	r1.Close()
-	require.Error(t, err)
-	require.Equal(t, ErrReadFixedHeader, err)
-
-	// Terminate on disconnect packet.
-	r2, w2 := net.Pipe()
-	go func() {
-		w2.Write([]byte{packets.Disconnect << 4, 0})
-		w2.Close()
-	}()
-	p = packets.NewParser(r2)
-	cl = newClient(p, new(packets.ConnectPacket))
-	err = s.readClient(cl)
-	r2.Close()
-	require.NoError(t, err)
-
-	// Fail on bad packet payload.
-	r3, w3 := net.Pipe()
-	go func() {
-		w3.Write([]byte{
-			byte(packets.Publish << 4), 7, // Fixed header
-			0, 5, // Topic Name - LSB+MSB
-			'a', '/',
-			0, 11, // Packet ID - LSB+MSB, // malformed packet id.
-		})
-		w3.Close()
-	}()
-	p = packets.NewParser(r3)
-	cl = newClient(p, new(packets.ConnectPacket))
-	err = s.readClient(cl)
-	r3.Close()
-	require.Error(t, err)
-	require.Equal(t, ErrReadPacketPayload, err)
-
-	// Fail on bad packet validation.
-	r4, w4 := net.Pipe()
-	go func() {
-		w4.Write([]byte{
-			byte(packets.Unsubscribe<<4) | 1<<1, 9, // Fixed header
-			0, 0, // Packet ID - LSB+MSB
-			0, 5, // Topic Name - LSB+MSB
-			'a', '/', 'b', '/', 'c', // Topic Name
-		})
-		w4.Close()
-	}()
-	p = packets.NewParser(r4)
-	cl = newClient(p, new(packets.ConnectPacket))
-	err = s.readClient(cl)
-	r4.Close()
-	require.Error(t, err)
-	require.Equal(t, ErrReadPacketValidation, err)
-
-	// Good packet then break cleanly.
-	r5, w5 := net.Pipe()
-	p = packets.NewParser(r5)
-	cl = newClient(p, new(packets.ConnectPacket))
 	o := make(chan error)
 	go func() {
 		o <- s.readClient(cl)
@@ -307,9 +275,305 @@ func TestReadClient(t *testing.T) {
 			'a', '/', 'b', '/', 'c', // Topic Name
 			'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload
 		}
-		w5.Write(b)
+		w.Write(b)
 		close(cl.end)
 	}()
 	time.Sleep(time.Millisecond)
 	require.NoError(t, <-o)
+	w.Close()
+	r.Close()
+}
+
+func TestReadClientNoConn(t *testing.T) {
+	s := New()
+	r, _ := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
+	p.Conn.Close()
+	p.Conn = nil
+	r.Close()
+	cl := newClient(p, new(packets.ConnectPacket))
+
+	err := s.readClient(cl)
+	require.Error(t, err)
+	require.Equal(t, ErrConnectionClosed, err)
+}
+
+func TestReadClientBadFixedHeader(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	go func() {
+		w.Write([]byte{99})
+		w.Close()
+	}()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, new(packets.ConnectPacket))
+	err := s.readClient(cl)
+	r.Close()
+	require.Error(t, err)
+	require.Equal(t, ErrReadFixedHeader, err)
+}
+
+func TestReadClientDisconnect(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	go func() {
+		w.Write([]byte{packets.Disconnect << 4, 0})
+		w.Close()
+	}()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, new(packets.ConnectPacket))
+	err := s.readClient(cl)
+	r.Close()
+	require.NoError(t, err)
+}
+
+func TestReadClientBadPacketPayload(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	go func() {
+		w.Write([]byte{
+			byte(packets.Publish << 4), 7, // Fixed header
+			0, 5, // Topic Name - LSB+MSB
+			'a', '/',
+			0, 11, // Packet ID - LSB+MSB, // malformed packet id.
+		})
+		w.Close()
+	}()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, new(packets.ConnectPacket))
+	err := s.readClient(cl)
+	r.Close()
+	require.Error(t, err)
+	require.Equal(t, ErrReadPacketPayload, err)
+}
+
+func TestReadClientBadPacketValidation(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	go func() {
+		w.Write([]byte{
+			byte(packets.Unsubscribe<<4) | 1<<1, 9, // Fixed header
+			0, 0, // Packet ID - LSB+MSB
+			0, 5, // Topic Name - LSB+MSB
+			'a', '/', 'b', '/', 'c', // Topic Name
+		})
+		w.Close()
+	}()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, new(packets.ConnectPacket))
+	err := s.readClient(cl)
+	r.Close()
+	require.Error(t, err)
+	require.Equal(t, ErrReadPacketValidation, err)
+}
+
+func BenchmarkReadClient(b *testing.B) {
+	//	s := New()
+	for n := 0; n < b.N; n++ {
+		// @TODO ...
+	}
+}
+
+func TestWriteClient(t *testing.T) {
+	r, w := net.Pipe()
+	s := New()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	pk := new(packets.ConnectPacket)
+	cl := newClient(p, pk)
+
+	go func() {
+		err := s.writeClient(cl, &packets.PublishPacket{
+			FixedHeader: packets.FixedHeader{
+				Type:      packets.Publish,
+				Remaining: 18,
+			},
+			TopicName: "a/b/c",
+			Payload:   []byte("hello mochi"),
+		})
+		if err != nil {
+			panic(err)
+		}
+		w.Close()
+	}()
+	time.Sleep(10 * time.Millisecond)
+
+	buf, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, []byte{byte(packets.Publish << 4), 18, // Fixed header
+		0, 5, // Topic Name - LSB+MSB
+		'a', '/', 'b', '/', 'c', // Topic Name
+		'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i',
+	}, buf)
+	r.Close()
+}
+
+func BenchmarkWriteClient(b *testing.B) {
+	//	s := New()
+	for n := 0; n < b.N; n++ {
+		// @TODO ...
+	}
+}
+
+func TestWriteClientBadEncode(t *testing.T) {
+	r, w := net.Pipe()
+	s := New()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	pk := new(packets.ConnectPacket)
+	cl := newClient(p, pk)
+	err := s.writeClient(cl, &packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Qos: 1,
+		},
+		PacketID: 0,
+	})
+	require.Error(t, err)
+	r.Close()
+	w.Close()
+}
+
+func TestWriteClientNilFlush(t *testing.T) {
+	r, w := net.Pipe()
+	s := New()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	pk := new(packets.ConnectPacket)
+	cl := newClient(p, pk)
+	r.Close()
+	w.Close()
+	err := s.writeClient(cl, &packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Qos: 1,
+		},
+		PacketID: 0,
+	})
+	require.Error(t, err)
+}
+
+func TestWriteClientNilWriter(t *testing.T) {
+	r, w := net.Pipe()
+	s := New()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	p.W = nil
+	pk := new(packets.ConnectPacket)
+	cl := newClient(p, pk)
+	err := s.writeClient(cl, &packets.PublishPacket{})
+	require.Error(t, err)
+	require.Equal(t, ErrConnectionClosed, err)
+	r.Close()
+	w.Close()
+}
+
+func TestNewClient(t *testing.T) {
+	r, _ := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
+	r.Close()
+	pk := &packets.ConnectPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Connect,
+			Remaining: 16,
+		},
+		ProtocolName:     "MQTT",
+		ProtocolVersion:  4,
+		CleanSession:     true,
+		Keepalive:        60,
+		ClientIdentifier: "zen3",
+	}
+
+	cl := newClient(p, pk)
+	require.NotNil(t, cl)
+	require.Equal(t, pk.Keepalive, cl.keepalive)
+	require.Equal(t, pk.CleanSession, cl.cleanSession)
+	require.Equal(t, pk.ClientIdentifier, cl.id)
+
+	// Autogenerate id.
+	pk = new(packets.ConnectPacket)
+	cl = newClient(p, pk)
+	require.NotNil(t, cl)
+	require.NotEmpty(t, cl.id)
+
+	// Autoset keepalive
+	pk = new(packets.ConnectPacket)
+	cl = newClient(p, pk)
+	require.NotNil(t, cl)
+	require.Equal(t, clientKeepalive, cl.keepalive)
+}
+
+func BenchmarkNewClient(b *testing.B) {
+	r, _ := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
+	r.Close()
+	pk := new(packets.ConnectPacket)
+
+	for n := 0; n < b.N; n++ {
+		newClient(p, pk)
+	}
+}
+
+func TestClientsAdd(t *testing.T) {
+	cl := newClients()
+	cl.Add(&client{id: "t1"})
+	require.NotNil(t, cl.internal["t1"])
+}
+
+func BenchmarkClientsAdd(b *testing.B) {
+	cl := newClients()
+	client := &client{id: "t1"}
+	for n := 0; n < b.N; n++ {
+		cl.Add(client)
+	}
+}
+
+func TestClientsGet(t *testing.T) {
+	cl := newClients()
+	cl.Add(&client{id: "t1"})
+	cl.Add(&client{id: "t2"})
+	require.NotNil(t, cl.internal["t1"])
+	require.NotNil(t, cl.internal["t2"])
+
+	client, ok := cl.Get("t1")
+	require.Equal(t, true, ok)
+	require.Equal(t, "t1", client.id)
+}
+
+func BenchmarkClientsGet(b *testing.B) {
+	cl := newClients()
+	cl.Add(&client{id: "t1"})
+	for n := 0; n < b.N; n++ {
+		cl.Get("t1")
+	}
+}
+
+func TestClientsLen(t *testing.T) {
+	cl := newClients()
+	cl.Add(&client{id: "t1"})
+	cl.Add(&client{id: "t2"})
+	require.NotNil(t, cl.internal["t1"])
+	require.NotNil(t, cl.internal["t2"])
+	require.Equal(t, 2, cl.Len())
+}
+
+func BenchmarkClientsLen(b *testing.B) {
+	cl := newClients()
+	cl.Add(&client{id: "t1"})
+	for n := 0; n < b.N; n++ {
+		cl.Len()
+	}
+}
+
+func TestClientsDelete(t *testing.T) {
+	cl := newClients()
+	cl.Add(&client{id: "t1"})
+	require.NotNil(t, cl.internal["t1"])
+
+	cl.Delete("t1")
+	_, ok := cl.Get("t1")
+	require.Equal(t, false, ok)
+	require.Nil(t, cl.internal["t1"])
+}
+
+func BenchmarkClientsDelete(b *testing.B) {
+	cl := newClients()
+	cl.Add(&client{id: "t1"})
+	for n := 0; n < b.N; n++ {
+		cl.Delete("t1")
+	}
 }

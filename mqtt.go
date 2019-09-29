@@ -4,10 +4,14 @@ import (
 	"errors"
 	"log"
 	"net"
+	"sync"
+
+	"github.com/rs/xid"
 
 	"github.com/mochi-co/mqtt/auth"
 	"github.com/mochi-co/mqtt/listeners"
 	"github.com/mochi-co/mqtt/packets"
+	"github.com/mochi-co/mqtt/pools"
 )
 
 var (
@@ -20,6 +24,11 @@ var (
 	ErrReadFixedHeader        = errors.New("Error reading fixed header")
 	ErrReadPacketPayload      = errors.New("Error reading packet payload")
 	ErrReadPacketValidation   = errors.New("Error validating packet")
+	ErrConnectionClosed       = errors.New("Connection not open")
+	ErrNoData                 = errors.New("No data")
+
+	// clientKeepalive is the default keepalive time in seconds.
+	clientKeepalive uint16 = 60
 )
 
 /*
@@ -50,22 +59,26 @@ type Server struct {
 	listeners listeners.Listeners
 
 	// clients is a map of clients known to the broker.
-	// clients map[string]Client
-}
+	clients clients
 
-// Clients
-/*
-type Clients struct {
-	clients map[string]*Client
-	subscriptions Subscriptions(cl.clients)
-}
+	// buffers is a pool of bytes.buffer.
+	buffers pools.BytesBuffersPool
 
-*/
+	// readers is a pool of bufio.reader.
+	readers pools.BufioReadersPool
+
+	// writers is a pool of bufio.writer.
+	writers pools.BufioWritersPool
+}
 
 // New returns a pointer to a new instance of the MQTT broker.
 func New() *Server {
 	return &Server{
 		listeners: listeners.NewListeners(),
+		clients:   newClients(),
+		buffers:   pools.NewBytesBuffersPool(),
+		readers:   pools.NewBufioReadersPool(512),
+		writers:   pools.NewBufioWritersPool(512),
 	}
 }
 
@@ -101,8 +114,12 @@ func (s *Server) Close() error {
 func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	log.Println("connecting")
 
-	// Create a new packets parser which will parse all packets for this cliet.
-	p := packets.NewParser(c)
+	// Create a new packets parser which will parse all packets for this client,
+	// using buffered writers and readers from the pool.
+	r, w := s.readers.Get(c), s.writers.Get(c)
+	defer s.readers.Put(r)
+	defer s.writers.Put(w)
+	p := packets.NewParser(c, r, w)
 
 	// Pull the header from the first packet and check for a CONNECT message.
 	fh := new(packets.FixedHeader)
@@ -141,10 +158,15 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	}
 
 	// Add the new client to the clients manager.
-	// @TODO ...
+	client := newClient(p, msg)
+	s.clients.Add(client)
 
 	// Send a CONNACK back to the client.
-	// @TODO s.writeClient(cl, connackPK)
+	err = s.writeClient(client, &packets.ConnackPacket{
+		FixedHeader:    packets.NewFixedHeader(packets.Connack),
+		SessionPresent: msg.CleanSession,
+		ReturnCode:     retcode,
+	})
 
 	// Publish out any unacknowledged QOS messages still pending for the client.
 	// @TODO ...
@@ -152,7 +174,6 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	// Block and listen for more packets, and end if an error or nil packet occurs.
 	// @TODO ... s.readClient
 
-	//	log.Println(msg, retcode)
 	log.Println(msg, pk)
 	return nil
 }
@@ -163,8 +184,6 @@ func (s *Server) readClient(cl *client) error {
 	var pk packets.Packet
 	fh := new(packets.FixedHeader)
 
-	var i int
-
 DONE:
 	for {
 		select {
@@ -172,8 +191,6 @@ DONE:
 			break DONE
 
 		default:
-			log.Println("CYCLE", i)
-			i++
 			if cl.p.Conn == nil {
 				return ErrConnectionClosed
 			}
@@ -184,7 +201,6 @@ DONE:
 			// Read in the fixed header of the packet.
 			err = cl.p.ReadFixedHeader(fh)
 			if err != nil {
-				log.Println(">>A ", err)
 				return ErrReadFixedHeader
 			}
 
@@ -196,14 +212,12 @@ DONE:
 			// Otherwise read in the packet payload.
 			pk, err = cl.p.Read()
 			if err != nil {
-				log.Println(">>B ", err)
 				return ErrReadPacketPayload
 			}
 
 			// Validate the packet if necessary.
 			_, err := pk.Validate()
 			if err != nil {
-				log.Println(">>C ", err)
 				return ErrReadPacketValidation
 			}
 
@@ -218,9 +232,35 @@ DONE:
 // writeClient writes packets to a client connection.
 func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 
-	// encode packet (use buffer pool)
-	// write packet
-	// refresh deadline
+	// Ensure Writer is open.
+	if cl.p.W == nil {
+		return ErrConnectionClosed
+	}
+
+	// Encode packet to a pooled byte buffer.
+	buf := s.buffers.Get()
+	defer s.buffers.Put(buf)
+	err := pk.Encode(buf)
+	if err != nil {
+		return err
+	}
+
+	// Write packet to client.
+	_, err = buf.WriteTo(cl.p.W)
+	if err != nil {
+		return err
+	}
+
+	err = cl.p.W.Flush()
+	if err != nil {
+		return err
+	}
+
+	// Refresh deadline.
+	cl.p.RefreshDeadline(cl.keepalive)
+
+	// Log $SYS stats.
+	// @TODO ...
 
 	return nil
 }
@@ -256,8 +296,8 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	//		find valid subscribers
 	//			upgrade copied packet
 	// 			if (qos > 1) add packetID > cl.nextPacketID()
-	//			write packet to client
-	//			handle qos > s.processQOS(cl, pk)
+	//			write packet to client > go s.writeClient
+	//				handle qos > s.processQOS(cl, pk)
 
 	//// pub*
 	//		handle qos > s.processQOS(cl, pk)
@@ -284,4 +324,115 @@ func (s *Server) processQOS(cl *client, pk packets.Packet) error {
 	// handle pubcomp
 
 	return nil
+}
+
+// clients contains a map of the clients known by the broker.
+type clients struct {
+	sync.RWMutex
+
+	// internal is a map of the clients known by the broker, keyed on client id.
+	internal map[string]*client
+}
+
+// newClients returns an instance of clients.
+func newClients() clients {
+	return clients{
+		internal: make(map[string]*client),
+	}
+}
+
+// Add adds a new client to the clients map, keyed on client id.
+func (cl *clients) Add(val *client) {
+	cl.Lock()
+	cl.internal[val.id] = val
+	cl.Unlock()
+}
+
+// Get returns the value of a client if it exists.
+func (cl *clients) Get(id string) (*client, bool) {
+	cl.RLock()
+	val, ok := cl.internal[id]
+	cl.RUnlock()
+	return val, ok
+}
+
+// Len returns the length of the clients map.
+func (cl *clients) Len() int {
+	cl.RLock()
+	val := len(cl.internal)
+	cl.RUnlock()
+	return val
+}
+
+// Delete removes a client from the internal map.
+func (cl *clients) Delete(id string) {
+	cl.Lock()
+	delete(cl.internal, id)
+	cl.Unlock()
+}
+
+// Client contains information about a client known by the broker.
+type client struct {
+	sync.RWMutex
+
+	// p is a packets parser which reads incoming packets.
+	p *packets.Parser
+
+	// end is a channel that indicates the client should halt.
+	end chan struct{}
+
+	// done can be called to ensure the close methods are only called once.
+	done *sync.Once
+
+	// id is the client id.
+	id string
+
+	// user is the username the client authenticated with.
+	user string
+
+	// keepalive is the number of seconds the connection can stay open without
+	// receiving a message from the client.
+	keepalive uint16
+
+	// cleanSession indicates if the client expects a cleansession.
+	cleanSession bool
+}
+
+// newClient creates a new instance of client.
+func newClient(p *packets.Parser, pk *packets.ConnectPacket) *client {
+
+	cl := &client{
+		p:    p,
+		end:  make(chan struct{}),
+		done: new(sync.Once),
+
+		id:           pk.ClientIdentifier,
+		user:         pk.Username,
+		keepalive:    pk.Keepalive,
+		cleanSession: pk.CleanSession,
+	}
+
+	// If no client id was provided, generate a new one.
+	if cl.id == "" {
+		cl.id = xid.New().String()
+	}
+
+	// if no deadline value was provided, set it to the default seconds.
+	if cl.keepalive == 0 {
+		cl.keepalive = clientKeepalive
+	}
+
+	// If a last will and testament has been provided, record it.
+	/*if pk.WillFlag {
+		// @TODO ...
+		client.will = lwt{
+			topic:   pk.WillTopic,
+			message: pk.WillMessage,
+			qos:     pk.WillQos,
+			retain:  pk.WillRetain,
+		}
+	}
+	*/
+
+	return cl
 }
