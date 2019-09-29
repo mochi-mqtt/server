@@ -25,7 +25,7 @@ func TestNewBytesBuffersPoolGet(t *testing.T) {
 	require.Equal(t, []byte{'m', 'o', 'c', 'h', 'i'}, buf.Bytes())
 }
 
-func BenchmarkNewBytesBuffersPoolGet(b *testing.B) {
+func BenchmarkBytesBuffersPoolGet(b *testing.B) {
 	bpool := NewBytesBuffersPool()
 	for n := 0; n < b.N; n++ {
 		bpool.Get()
@@ -43,7 +43,7 @@ func TestNewBytesBuffersPoolPut(t *testing.T) {
 	require.Equal(t, 0, buf.Len())
 }
 
-func BenchmarkNewBytesBuffersPoolPut(b *testing.B) {
+func BenchmarkBytesBuffersPoolPut(b *testing.B) {
 	bpool := NewBytesBuffersPool()
 	buf := bpool.Get()
 	for n := 0; n < b.N; n++ {
