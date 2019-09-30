@@ -276,14 +276,32 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	log.Println("PROCESSING PACKET", cl, pk)
 
 	// Log read stats for $SYS.
-	// @TODO ... //
+	// @TODO ...
+
+	// Process the packet depending on the detected type.
+	switch pk.(type) { //pk :=
+	case *packets.ConnectPacket:
+		// [MQTT-3.1.0-2]
+		// The server is required to disconnect the client if a second connect
+		// packet is sent.
+		s.closeClient(cl, true)
+
+	case *packets.DisconnectPacket:
+		// Connection is ending gracefully, so close client and return.
+		s.closeClient(cl, true)
+
+	case *packets.PingreqPacket:
+		// Client has sent a ping to keep the connection alive, so send a
+		// response back to acknowledge receipt.
+		err = s.writeClient(client, &packets.PingRespPacket{
+			FixedHeader: packets.NewFixedHeader(packets.PingResp),
+		})
+		if err != nil {
+			s.closeClient(cl, true)
+		}
+	}
 
 	// switch on packet type
-	//// connect
-	//		stop
-	//// disconnect
-	// 		stop
-
 	//// ping
 	// 		pingresp
 	// 		else stop
@@ -325,7 +343,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 */
 
 // closeClient closes a client connection and publishes any LWT messages.
-func (s *Server) closeClient(cl *client) error {
+func (s *Server) closeClient(cl *client, sendLWT bool) error {
 
 	// Stop listening for new packets.
 	cl.close()

@@ -40,7 +40,7 @@ func BenchmarkNew(b *testing.B) {
 	}
 }
 
-func TestAddListener(t *testing.T) {
+func TestServerAddListener(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
 
@@ -62,7 +62,7 @@ func TestAddListener(t *testing.T) {
 	require.Equal(t, ErrListenerIDExists, err)
 }
 
-func BenchmarkAddListener(b *testing.B) {
+func BenchmarkServerAddListener(b *testing.B) {
 	s := New()
 	l := listeners.NewMockListener("t1", ":1882")
 	for n := 0; n < b.N; n++ {
@@ -74,7 +74,7 @@ func BenchmarkAddListener(b *testing.B) {
 	}
 }
 
-func TestServe(t *testing.T) {
+func TestServerServe(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
 
@@ -89,7 +89,7 @@ func TestServe(t *testing.T) {
 	require.Equal(t, true, listener.(*listeners.MockListener).IsServing)
 }
 
-func BenchmarkServe(b *testing.B) {
+func BenchmarkServerServe(b *testing.B) {
 	s := New()
 	l := listeners.NewMockListener("t1", ":1882")
 	err := s.AddListener(l, nil)
@@ -101,7 +101,7 @@ func BenchmarkServe(b *testing.B) {
 	}
 }
 
-func TestClose(t *testing.T) {
+func TestServerClose(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
 
@@ -122,7 +122,7 @@ func TestClose(t *testing.T) {
 
 // This is not a super accurate benchmark, but you can extrapolate the values by
 // subtracting add listener and delete.
-func BenchmarkClose(b *testing.B) {
+func BenchmarkServerClose(b *testing.B) {
 	s := New()
 
 	for n := 0; n < b.N; n++ {
@@ -134,7 +134,7 @@ func BenchmarkClose(b *testing.B) {
 		s.listeners.Delete("t1")
 	}
 }
-func TestEstablishConnectionOK(t *testing.T) {
+func TestServerEstablishConnectionOK(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -161,11 +161,13 @@ func TestEstablishConnectionOK(t *testing.T) {
 
 	s.clients.internal["zen"].close()
 	require.NoError(t, <-o)
+
+	// Check Conanck response.
 	w.Close()
 	r.Close()
 
 }
-func TestEstablishConnectionBadFixedHeader(t *testing.T) {
+func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -178,7 +180,7 @@ func TestEstablishConnectionBadFixedHeader(t *testing.T) {
 	require.Equal(t, ErrReadConnectFixedHeader, err)
 }
 
-func TestEstablishConnectionBadConnectPacket(t *testing.T) {
+func TestServerEstablishConnectionBadConnectPacket(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -191,7 +193,7 @@ func TestEstablishConnectionBadConnectPacket(t *testing.T) {
 	require.Equal(t, ErrReadConnectPacket, err)
 }
 
-func TestEstablishConnectionNotConnectPacket(t *testing.T) {
+func TestServerEstablishConnectionNotConnectPacket(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -208,7 +210,7 @@ func TestEstablishConnectionNotConnectPacket(t *testing.T) {
 	require.Equal(t, ErrFirstPacketInvalid, err)
 }
 
-func TestEstablishConnectionInvalidConnectPacket(t *testing.T) {
+func TestServerEstablishConnectionInvalidConnectPacket(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -230,7 +232,7 @@ func TestEstablishConnectionInvalidConnectPacket(t *testing.T) {
 	require.Equal(t, ErrReadConnectInvalid, err)
 }
 
-func TestEstablishConnectionBadAuth(t *testing.T) {
+func TestServerEstablishConnectionBadAuth(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -256,7 +258,7 @@ func TestEstablishConnectionBadAuth(t *testing.T) {
 	require.Equal(t, ErrConnectNotAuthorized, err)
 }
 
-func TestEstablishConnectionReadClientError(t *testing.T) {
+func TestServerEstablishConnectionReadClientError(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -285,7 +287,7 @@ func TestEstablishConnectionReadClientError(t *testing.T) {
 
 }
 
-func TestReadClientOK(t *testing.T) {
+func TestServerReadClientOK(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
@@ -313,7 +315,7 @@ func TestReadClientOK(t *testing.T) {
 	r.Close()
 }
 
-func TestReadClientNoConn(t *testing.T) {
+func TestServerReadClientNoConn(t *testing.T) {
 	s := New()
 	r, _ := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
@@ -327,7 +329,7 @@ func TestReadClientNoConn(t *testing.T) {
 	require.Equal(t, ErrConnectionClosed, err)
 }
 
-func TestReadClientBadFixedHeader(t *testing.T) {
+func TestServerReadClientBadFixedHeader(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -342,7 +344,7 @@ func TestReadClientBadFixedHeader(t *testing.T) {
 	require.Equal(t, ErrReadFixedHeader, err)
 }
 
-func TestReadClientDisconnect(t *testing.T) {
+func TestServerReadClientDisconnect(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -356,7 +358,7 @@ func TestReadClientDisconnect(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestReadClientBadPacketPayload(t *testing.T) {
+func TestServerReadClientBadPacketPayload(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -376,7 +378,7 @@ func TestReadClientBadPacketPayload(t *testing.T) {
 	require.Equal(t, ErrReadPacketPayload, err)
 }
 
-func TestReadClientBadPacketValidation(t *testing.T) {
+func TestServerReadClientBadPacketValidation(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -396,7 +398,7 @@ func TestReadClientBadPacketValidation(t *testing.T) {
 	require.Equal(t, ErrReadPacketValidation, err)
 }
 
-func TestWriteClient(t *testing.T) {
+func TestServerWriteClient(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
@@ -429,7 +431,7 @@ func TestWriteClient(t *testing.T) {
 	r.Close()
 }
 
-func TestWriteClientBadEncode(t *testing.T) {
+func TestServerWriteClientBadEncode(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
@@ -446,7 +448,7 @@ func TestWriteClientBadEncode(t *testing.T) {
 	w.Close()
 }
 
-func TestWriteClientNilFlush(t *testing.T) {
+func TestServerWriteClientNilFlush(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
@@ -463,7 +465,7 @@ func TestWriteClientNilFlush(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestWriteClientNilWriter(t *testing.T) {
+func TestServerWriteClientNilWriter(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
@@ -489,13 +491,77 @@ func TestServerCloseClient(t *testing.T) { // as opposed to client.close
 	require.NotNil(t, s.clients.internal["zen"])
 
 	// close the client connection.
-	s.closeClient(s.clients.internal["zen"])
+	s.closeClient(s.clients.internal["zen"], true)
 	var ok bool
 	select {
 	case _, ok = <-s.clients.internal["zen"].end:
 	}
 	require.Equal(t, false, ok)
 	require.Nil(t, s.clients.internal["zen"].p.Conn)
+}
+
+func TestServerProcessPacketCONNECT(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	client := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	err := s.processPacket(client, &packets.ConnectPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Connect,
+		},
+	})
+
+	var ok bool
+	select {
+	case _, ok = <-client.end:
+	}
+	require.Equal(t, false, ok)
+	require.Nil(t, client.p.Conn)
+
+	require.NoError(t, err)
+}
+
+func TestServerProcessPacketDISCONNECT(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	client := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	err := s.processPacket(client, &packets.DisconnectPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Disconnect,
+		},
+	})
+
+	var ok bool
+	select {
+	case _, ok = <-client.end:
+	}
+	require.Equal(t, false, ok)
+	require.Nil(t, client.p.Conn)
+
+	require.NoError(t, err)
+}
+
+func TestServerProcessPacketPINGOK(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	client := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	err := s.processPacket(client, &packets.PingPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Ping,
+		},
+	})
+
 }
 
 func TestNewClients(t *testing.T) {
