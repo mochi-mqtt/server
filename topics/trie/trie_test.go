@@ -1,9 +1,11 @@
 package trie
 
 import (
+	//"log"
+	//"strings"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
+	//"github.com/davecgh/go-spew/spew"
 
 	"github.com/stretchr/testify/require"
 )
@@ -163,7 +165,7 @@ func TestSubscribers(t *testing.T) {
 		index := New()
 		index.Subscribe(check.filter, "client-1", 0)
 		clients := index.Subscribers(check.topic)
-		spew.Dump(clients)
+		//spew.Dump(clients)
 		require.Equal(t, check.len, len(clients), "Unexpected clients len at %d %s %s", i, check.filter, check.topic)
 	}
 
@@ -179,5 +181,36 @@ func BenchmarkSubscribers(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		index.Subscribers("path/to/testing/mqtt")
+	}
+}
+
+func TestIsolateParticle(t *testing.T) {
+	particle, hasNext := isolateParticle("path/to/my/mqtt", 0)
+	require.Equal(t, "path", particle)
+	require.Equal(t, true, hasNext)
+	particle, hasNext = isolateParticle("path/to/my/mqtt", 1)
+	require.Equal(t, "to", particle)
+	require.Equal(t, true, hasNext)
+	particle, hasNext = isolateParticle("path/to/my/mqtt", 2)
+	require.Equal(t, "my", particle)
+	require.Equal(t, true, hasNext)
+	particle, hasNext = isolateParticle("path/to/my/mqtt", 3)
+	require.Equal(t, "mqtt", particle)
+	require.Equal(t, false, hasNext)
+
+	particle, hasNext = isolateParticle("/path/", 0)
+	require.Equal(t, "", particle)
+	require.Equal(t, true, hasNext)
+	particle, hasNext = isolateParticle("/path/", 1)
+	require.Equal(t, "path", particle)
+	require.Equal(t, true, hasNext)
+	particle, hasNext = isolateParticle("/path/", 2)
+	require.Equal(t, "", particle)
+	require.Equal(t, false, hasNext)
+}
+
+func BenchmarkIsolateParticle(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		isolateParticle("path/to/my/mqtt", 3)
 	}
 }
