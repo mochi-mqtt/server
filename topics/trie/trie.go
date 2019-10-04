@@ -5,12 +5,103 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mochi-co/mqtt/packets"
 	"github.com/mochi-co/mqtt/topics"
 )
 
 // Index is a prefix/trie tree containing topic subscribers and retained messages.
 type Index struct {
 	Root *Leaf
+}
+
+// New returns a pointer to a new instance of Index.
+func New() *Index {
+	return &Index{
+		Root: &Leaf{
+			Leaves:  make(map[string]*Leaf),
+			Clients: make(map[string]byte),
+		},
+	}
+}
+
+// Subscribe creates a subscription filter for a client.
+func (x *Index) Subscribe(filter, client string, qos byte) {
+	n := x.poperate(filter)
+	n.Lock()
+	n.Clients[client] = qos
+	n.Filter = filter
+	n.Unlock()
+}
+
+// poperate iterates and populates through a topic/filter path, instantiating
+// leaves as it goes and returning the final leaf in the branch.
+// poperate is a more enjoyable word than iterpop.
+func (x *Index) poperate(topic string) *Leaf {
+	var d int
+	var particle string
+	var hasNext = true
+
+	n := x.Root
+	for hasNext {
+		particle, hasNext = isolateParticle(topic, d)
+		d++
+
+		n.Lock()
+		child, _ := n.Leaves[particle]
+		if child == nil {
+			child = &Leaf{
+				Key:     particle,
+				Parent:  n,
+				Leaves:  make(map[string]*Leaf),
+				Clients: make(map[string]byte),
+			}
+			n.Leaves[particle] = child
+		}
+		n.Unlock()
+		n = child
+	}
+
+	return n
+}
+
+// Unsubscribe removes a subscription filter for a client. Returns true if an
+// unsubscribe action sucessful.
+func (x *Index) Unsubscribe(filter, client string) bool {
+
+	// Walk to end leaf.
+	var d int
+	var particle string
+	var hasNext = true
+	e := x.Root
+	for hasNext {
+		particle, hasNext = isolateParticle(filter, d)
+		d++
+		e, _ = e.Leaves[particle]
+
+		// If the topic part doesn't exist in the tree, there's nothing
+		// left to do.
+		if e == nil {
+			return false
+		}
+	}
+
+	// Step backward removing client and orphaned leaves.
+	var key string
+	for e.Parent != nil {
+		key = e.Key
+		delete(e.Clients, client)
+		e = e.Parent
+		if len(e.Clients) == 0 && len(e.Leaves) == 0 {
+			delete(e.Leaves, key)
+		}
+	}
+
+	return true
+}
+
+// Subscribers returns a map of clients who are subscribed to matching filters.
+func (x *Index) Subscribers(topic string) topics.Subscription {
+	return x.Root.subscribers(topic, 0, make(topics.Subscription))
 }
 
 // Leaf is a child node on the tree.
@@ -31,84 +122,14 @@ type Leaf struct {
 
 	// Filter is the path of the topic filter being matched.
 	Filter string
+
+	// Retained is a message which has been retained for a specific topic.
+	Retained *packets.PublishPacket
 }
 
-// New returns a pointer to a new instance of Index.
-func New() *Index {
-	return &Index{
-		Root: &Leaf{
-			Leaves:  make(map[string]*Leaf),
-			Clients: make(map[string]byte),
-		},
-	}
-}
-
-// Subscribe creates a subscription filter for a client.
-func (x *Index) Subscribe(filter, client string, qos byte) {
-	parts := strings.Split(filter, "/")
-
-	n := x.Root
-	for i := 0; i < len(parts); i++ {
-		n.Lock()
-		child, _ := n.Leaves[parts[i]]
-		if child == nil {
-			child = &Leaf{
-				Key:     parts[i],
-				Parent:  n,
-				Leaves:  make(map[string]*Leaf),
-				Clients: make(map[string]byte),
-			}
-			n.Leaves[parts[i]] = child
-		}
-		n.Unlock()
-		n = child
-	}
-
-	n.Clients[client] = qos
-	n.Filter = filter
-
-}
-
-// Unsubscribe removes a subscription filter for a client. Returns true if an
-// unsubscribe action sucessful.
-func (x *Index) Unsubscribe(filter, client string) bool {
-	parts := strings.Split(filter, "/")
-
-	// Walk to end leaf.
-	e := x.Root
-	for i := 0; i < len(parts); i++ {
-		e, _ = e.Leaves[parts[i]]
-
-		// If the topic part doesn't exist in the tree, there's nothing
-		// left to do.
-		if e == nil {
-			return false
-		}
-	}
-
-	// Step backward removing client and orphaned leaves.
-	var orphaned bool
-	var key string
-	for e.Parent != nil {
-		key = e.Key
-		delete(e.Clients, client)
-		orphaned = len(e.Clients) == 0 && len(e.Leaves) == 0
-		e = e.Parent
-		if orphaned {
-			delete(e.Leaves, key)
-		}
-	}
-
-	return true
-}
-
-// Subscribers returns a map of clients who are subscribed to matching filters.
-func (x *Index) Subscribers(topic string) topics.Subscription {
-	clients := x.Root.scanBranch(topic, 0, make(topics.Subscription))
-	return clients
-}
-
-func (l *Leaf) scanBranch(topic string, d int, clients topics.Subscription) topics.Subscription {
+// subscribers recursively steps through a branch of leaves finding clients who
+// have subscription filters matching a topic, and their highest QoS byte.
+func (l *Leaf) subscribers(topic string, d int, clients topics.Subscription) topics.Subscription {
 	l.RLock()
 	part, hasNext := isolateParticle(topic, d)
 
@@ -146,7 +167,7 @@ func (l *Leaf) scanBranch(topic string, d int, clients topics.Subscription) topi
 				return clients
 			} else if hasNext {
 				// Otherwise continue down the branch.
-				clients = child.scanBranch(topic, d+1, clients)
+				clients = child.subscribers(topic, d+1, clients)
 			}
 		}
 	}
@@ -174,67 +195,6 @@ func isolateParticle(filter string, d int) (particle string, hasNext bool) {
 	return
 }
 
-func stuff() {
+func Temp() {
 	log.Println()
 }
-
-/*
-// Subscribers returns a map of clients who are subscribed to matching filters.
-func (x *Index) Subscribers(topic string) topics.Subscription {
-	parts := strings.Split(topic, "/")
-	clients := x.Root.scanBranch(parts, 0, make(topics.Subscription))
-	return clients
-}
-
-func (l *Leaf) scanBranch(parts []string, d int, clients topics.Subscription) topics.Subscription {
-	l.RLock()
-	ix := len(parts)
-
-	// We can only continue if there's enough topic parts remaining.
-	if d < ix {
-
-		// For either the topic part, a +, or a #, follow the branch.
-		for _, particle := range []string{parts[d], "+", "#"} {
-			if child, ok := l.Leaves[particle]; ok {
-
-				// We're only interested in getting clients from the final
-				// element in the topic, or those with wildhashes.
-				if d == ix-1 || particle == "#" {
-
-					// Capture the highest QOS byte for any client with a filter
-					// matching the topic.
-					for client, qos := range child.Clients {
-						if ex, ok := clients[client]; !ok || ex < qos {
-							clients[client] = qos
-						}
-					}
-
-					// Make sure we also capture any client who are listening
-					// to this topic via path/#
-					if d == ix-1 {
-						if extra, ok := child.Leaves["#"]; ok {
-							for client, qos := range extra.Clients {
-								if ex, ok := clients[client]; !ok || ex < qos {
-									clients[client] = qos
-								}
-							}
-						}
-					}
-				}
-
-				// If this branch has hit a wildhash, just return immediately.
-				if particle == "#" {
-					return clients
-
-				} else {
-					// Otherwise continue down the branch.
-					clients = child.scanBranch(parts, d+1, clients)
-				}
-			}
-		}
-	}
-
-	l.RUnlock()
-	return clients
-}
-*/

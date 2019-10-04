@@ -22,6 +22,20 @@ func BenchmarkNew(b *testing.B) {
 	}
 }
 
+func TestPoperate(t *testing.T) {
+	index := New()
+	child := index.poperate("path/to/my/mqtt")
+	require.Equal(t, "mqtt", child.Key)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
+}
+
+func BenchmarkPoperate(b *testing.B) {
+	index := New()
+	for n := 0; n < b.N; n++ {
+		index.poperate("path/to/my/mqtt")
+	}
+}
+
 func TestSubscribe(t *testing.T) {
 	index := New()
 	index.Subscribe("path/to/my/mqtt", "client-1", 0)
@@ -82,6 +96,7 @@ func TestUnsubscribe(t *testing.T) {
 // This benchmark is Unsubscribe-Subscribe
 func BenchmarkUnsubscribe(b *testing.B) {
 	index := New()
+
 	for n := 0; n < b.N; n++ {
 		index.Subscribe("path/to/my/mqtt", "client-1", 0)
 		index.Unsubscribe("path/to/mqtt/basic", "client-1")
