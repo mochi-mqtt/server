@@ -6,8 +6,9 @@ import (
 	"testing"
 
 	//"github.com/davecgh/go-spew/spew"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/mochi-co/mqtt/packets"
 )
 
 func TestNew(t *testing.T) {
@@ -77,6 +78,7 @@ func TestUnsubscribe(t *testing.T) {
 	require.NotNil(t, index.Root.Leaves["#"].Clients["client-3"])
 
 	ok := index.Unsubscribe("path/to/my/mqtt", "client-1")
+
 	require.Equal(t, true, ok)
 	require.Nil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"])
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["+"].Leaves["mqtt"].Clients["client-1"])
@@ -90,7 +92,6 @@ func TestUnsubscribe(t *testing.T) {
 	ok = index.Unsubscribe("fdasfdas/dfsfads/sa", "client-1")
 	require.Equal(t, false, ok)
 
-	//	spew.Dump(index.Root)
 }
 
 // This benchmark is Unsubscribe-Subscribe
@@ -222,10 +223,123 @@ func TestIsolateParticle(t *testing.T) {
 	particle, hasNext = isolateParticle("/path/", 2)
 	require.Equal(t, "", particle)
 	require.Equal(t, false, hasNext)
+
+	particle, hasNext = isolateParticle("a/b/c/+/+", 3)
+	require.Equal(t, "+", particle)
+	require.Equal(t, true, hasNext)
+	particle, hasNext = isolateParticle("a/b/c/+/+", 4)
+	require.Equal(t, "+", particle)
+	require.Equal(t, false, hasNext)
 }
 
 func BenchmarkIsolateParticle(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		isolateParticle("path/to/my/mqtt", 3)
+	}
+}
+
+func TestRetainMessage(t *testing.T) {
+	pk := &packets.PublishPacket{TopicName: "path/to/my/mqtt"}
+	pk2 := &packets.PublishPacket{TopicName: "path/to/another/mqtt"}
+
+	index := New()
+	index.RetainMessage(pk)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
+	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
+
+	index.Subscribe("path/to/another/mqtt", "client-1", 0)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients["client-1"])
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
+
+	index.RetainMessage(pk2)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
+	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients["client-1"])
+}
+
+func BenchmarkRetainMessage(b *testing.B) {
+	index := New()
+	pk := &packets.PublishPacket{TopicName: "path/to/another/mqtt"}
+	for n := 0; n < b.N; n++ {
+		index.RetainMessage(pk)
+	}
+}
+
+func TestMessages(t *testing.T) {
+
+	tt := []struct {
+		packet *packets.PublishPacket
+		filter string
+		len    int
+	}{
+		{
+			&packets.PublishPacket{TopicName: "a/b/c/d"},
+			"a/b/c/d",
+			1,
+		},
+		{
+			&packets.PublishPacket{TopicName: "a/b/c/e"},
+			"a/+/c/+",
+			2,
+		},
+		{
+			&packets.PublishPacket{TopicName: "a/b/d/f"},
+			"+/+/+/+",
+			3,
+		},
+		{
+			&packets.PublishPacket{TopicName: "q/w/e/r/t/y"},
+			"q/w/e/#",
+			1,
+		},
+		{
+			&packets.PublishPacket{TopicName: "q/w/x/r/t/x"},
+			"q/#",
+			2,
+		},
+		{
+			&packets.PublishPacket{TopicName: "asd"},
+			"asd",
+			1,
+		},
+		{
+			&packets.PublishPacket{TopicName: "asd/fgh/jkl"},
+			"#",
+			8,
+		},
+		{
+			&packets.PublishPacket{TopicName: "stuff/asdadsa/dsfdsafdsadfsa/dsfdsf/sdsadas"},
+			"stuff/#/things", // indexer will ignore trailing /things
+			1,
+		},
+	}
+	index := New()
+
+	for _, check := range tt {
+		index.RetainMessage(check.packet)
+	}
+
+	for i, check := range tt {
+		messages := index.Messages(check.filter)
+		require.Equal(t, check.len, len(messages), "Unexpected messages len at %d %s %s", i, check.filter, check.packet.TopicName)
+	}
+
+	//messages := index.Messages("a/b/c/d/+")
+	//spew.Dump(messages)
+	//require.Equal(t, 2, len(messages))
+
+	//log.Println(messages)
+}
+
+func BenchmarkMessages(b *testing.B) {
+	index := New()
+	index.RetainMessage(&packets.PublishPacket{TopicName: "path/to/my/mqtt"})
+	index.RetainMessage(&packets.PublishPacket{TopicName: "path/to/another/mqtt"})
+	index.RetainMessage(&packets.PublishPacket{TopicName: "path/a/some/mqtt"})
+	index.RetainMessage(&packets.PublishPacket{TopicName: "what/is"})
+	index.RetainMessage(&packets.PublishPacket{TopicName: "q/w/e/r/t/y"})
+
+	for n := 0; n < b.N; n++ {
+		index.Messages("path/to/+/mqtt")
 	}
 }
