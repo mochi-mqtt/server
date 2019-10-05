@@ -552,16 +552,119 @@ func TestServerProcessPacketPINGOK(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	o := make(chan error, 2) // race with r/w, so use buffered to not block
+	go func() {
+		o <- s.processPacket(cl, &packets.PingreqPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Pingreq,
+			},
+		})
+		w.Close()
+	}()
+	time.Sleep(10 * time.Millisecond)
+	buf, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Pingresp << 4), 0,
+	}, buf)
+	require.NoError(t, <-o)
+	close(o)
+	r.Close()
+}
+
+func TestServerProcessPacketPINGClose(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	o := make(chan error, 2) // race with r/w, so use buffered to not block
+	go func() {
+		r.Close()
+		w.Close()
+		o <- s.processPacket(cl, &packets.PingreqPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Pingreq,
+			},
+		})
+
+	}()
+	require.NoError(t, <-o)
+	require.Nil(t, p.Conn)
+	close(o)
+}
+
+func TestServerProcessPacketPublishOK(t *testing.T) {
+	s := New()
+
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	c1 := newClient(p, &packets.ConnectPacket{ClientIdentifier: "c1"})
+	s.clients.add(c1)
+	s.topics.Subscribe("a/b/c", c1.id, 0)
+	s.topics.Subscribe("a/+/c", c1.id, 1)
+
+	r2, w2 := net.Pipe()
+	p2 := packets.NewParser(r2, newBufioReader(r2), newBufioWriter(w2))
+	c2 := newClient(p2, &packets.ConnectPacket{ClientIdentifier: "c2"})
+	s.clients.add(c2)
+	s.topics.Subscribe("a/b/+", c2.id, 0)
+
+	o := make(chan error, 2)
+	go func() {
+		o <- s.processPacket(c1, &packets.PublishPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Publish,
+			},
+			TopicName: "a/b/c",
+			Payload:   []byte("hello"),
+		})
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	require.NoError(t, <-o)
+	close(o)
+
+	w.Close()
+	r.Close()
+	r2.Close()
+	w2.Close()
+}
+
+func TestServerProcessPacketPublishRetain(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
 	client := newClient(p, &packets.ConnectPacket{
 		ClientIdentifier: "zen",
 	})
 
-	err := s.processPacket(client, &packets.PingPacket{
+	pk := &packets.PublishPacket{
 		FixedHeader: packets.FixedHeader{
-			Type: packets.Ping,
+			Type:   packets.Publish,
+			Retain: true,
 		},
-	})
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+	}
 
+	o := make(chan error, 2) // race with r/w, so use buffered to not block
+	go func() {
+		o <- s.processPacket(client, pk)
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	require.NoError(t, <-o)
+
+	require.Equal(t, pk, s.topics.Messages("a/b/c")[0])
+	close(o)
+	r.Close()
 }
 
 func TestNewClients(t *testing.T) {
@@ -689,6 +792,21 @@ func BenchmarkNewClient(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		newClient(p, pk)
 	}
+}
+
+func TestNextPacketID(t *testing.T) {
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	client := newClient(p, new(packets.ConnectPacket))
+	require.NotNil(t, client)
+
+	require.Equal(t, uint32(1), client.nextPacketID())
+	require.Equal(t, uint32(2), client.nextPacketID())
+
+	client.packetID = uint32(65534)
+	require.Equal(t, uint32(65535), client.nextPacketID())
+	require.Equal(t, uint32(1), client.nextPacketID())
+
 }
 
 func TestClientClose(t *testing.T) {

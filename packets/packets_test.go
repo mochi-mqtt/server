@@ -12,9 +12,3 @@ func TestNewPacket(t *testing.T) {
 	pk := newPacket(99)
 	require.Equal(t, nil, pk, "Returned packet should be nil")
 }
-
-func BenchmarkNewPacket(b *testing.B) {
-	for n := 0; n < b.N; n++ {
-		newPacket(1)
-	}
-}

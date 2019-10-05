@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/rs/xid"
 
@@ -12,6 +13,14 @@ import (
 	"github.com/mochi-co/mqtt/listeners"
 	"github.com/mochi-co/mqtt/packets"
 	"github.com/mochi-co/mqtt/pools"
+	"github.com/mochi-co/mqtt/topics"
+	"github.com/mochi-co/mqtt/topics/trie"
+)
+
+const (
+	// maxPacketID is the maximum value of a packet ID.
+	// Control Packets MUST contain a non-zero 16-bit Packet Identifier [MQTT-2.3.1-1].
+	maxPacketID = 65535
 )
 
 var (
@@ -61,6 +70,9 @@ type Server struct {
 	// clients is a map of clients known to the broker.
 	clients clients
 
+	// topics is an index of topic subscriptions and retained messages.
+	topics topics.Indexer
+
 	// buffers is a pool of bytes.buffer.
 	buffers pools.BytesBuffersPool
 
@@ -76,6 +88,7 @@ func New() *Server {
 	return &Server{
 		listeners: listeners.NewListeners(),
 		clients:   newClients(),
+		topics:    trie.New(),
 		buffers:   pools.NewBytesBuffersPool(),
 		readers:   pools.NewBufioReadersPool(512),
 		writers:   pools.NewBufioWritersPool(512),
@@ -262,7 +275,7 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 		return err
 	}
 
-	// Refresh deadline.
+	// Refresh deadline to keep the connection alive.
 	cl.p.RefreshDeadline(cl.keepalive)
 
 	// Log $SYS stats.
@@ -279,33 +292,64 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	// @TODO ...
 
 	// Process the packet depending on the detected type.
-	switch pk.(type) { //pk :=
+	switch msg := pk.(type) { //pk :=
 	case *packets.ConnectPacket:
+
 		// [MQTT-3.1.0-2]
 		// The server is required to disconnect the client if a second connect
 		// packet is sent.
 		s.closeClient(cl, true)
 
 	case *packets.DisconnectPacket:
+
 		// Connection is ending gracefully, so close client and return.
 		s.closeClient(cl, true)
 
 	case *packets.PingreqPacket:
 		// Client has sent a ping to keep the connection alive, so send a
 		// response back to acknowledge receipt.
-		err = s.writeClient(client, &packets.PingRespPacket{
-			FixedHeader: packets.NewFixedHeader(packets.PingResp),
+		err := s.writeClient(cl, &packets.PingrespPacket{
+			FixedHeader: packets.NewFixedHeader(packets.Pingresp),
 		})
 		if err != nil {
 			s.closeClient(cl, true)
 		}
+
+	case *packets.PublishPacket:
+		log.Println(msg)
+
+		// If message is retained, add it to the retained messages index.
+		if msg.Retain {
+			log.Println("RETAIN", msg.Retain)
+			s.topics.RetainMessage(msg)
+		}
+
+		// Get all the clients who have a subscription matching the publish
+		// packet's topic.
+		subs := s.topics.Subscribers(msg.TopicName)
+		for id, qos := range subs {
+			if client, ok := s.clients.get(id); ok {
+				log.Println(client, id, qos)
+
+				// Make a copy of the packet to send to client.
+				outgoing := msg.Copy()
+				log.Println(outgoing)
+				// If the subscriber has a higher qos, inherit it.
+				/*	if subscriptions.qos > outgoing.Qos {
+						outgoing.Qos = subscriptions.qos
+					}
+
+					// If QoS byte is set, ensure the message has an id.
+					if outgoing.Qos > 0 && outgoing.PacketID == 0 {
+						//outgoing.PacketID = client.nextPacketID()
+					}*/
+
+			}
+		}
+
 	}
 
 	// switch on packet type
-	//// ping
-	// 		pingresp
-	// 		else stop
-
 	//// publish
 	//		retain if 1
 	//		find valid subscribers
@@ -424,6 +468,9 @@ type client struct {
 
 	// cleanSession indicates if the client expects a cleansession.
 	cleanSession bool
+
+	// packetID is the current highest packetID.
+	packetID uint32
 }
 
 // newClient creates a new instance of client.
@@ -463,6 +510,17 @@ func newClient(p *packets.Parser, pk *packets.ConnectPacket) *client {
 	*/
 
 	return cl
+}
+
+// nextPacketID returns the next packet id for a client, looping back to 0
+// if the maximum ID has been reached.
+func (cl *client) nextPacketID() uint32 {
+	if cl.packetID == uint32(65535) || cl.packetID == uint32(0) {
+		atomic.StoreUint32(&cl.packetID, 1)
+		return 1
+	}
+
+	return atomic.AddUint32(&cl.packetID, 1)
 }
 
 // close attempts to gracefully close a client connection.

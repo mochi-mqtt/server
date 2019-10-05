@@ -202,7 +202,6 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscription)
 // that match a topic filter. Setting `d` to -1 will enable wildhash mode, and will
 // recursively check ALL child leaves in every subsequent branch.
 func (l *Leaf) scanMessages(filter string, d int, messages []*packets.PublishPacket) []*packets.PublishPacket {
-
 	l.RLock()
 
 	// If a wildhash mode has been set, continue recursively checking through all

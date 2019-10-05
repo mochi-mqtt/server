@@ -65,12 +65,13 @@ func (pk *PublishPacket) Decode(buf []byte) error {
 // Copy creates a new instance of PublishPacket bearing the same payload and
 // destination topic, but with an empty header for inheriting new QoS etc flags.
 func (pk *PublishPacket) Copy() *PublishPacket {
-	cc := new(PublishPacket)
-	cc.FixedHeader = NewFixedHeader(Publish)
-	cc.TopicName = pk.TopicName
-	cc.Payload = pk.Payload
-
-	return cc
+	return &PublishPacket{
+		FixedHeader: FixedHeader{
+			Type: Publish,
+		},
+		TopicName: pk.TopicName,
+		Payload:   pk.Payload,
+	}
 }
 
 // Validate ensures the packet is compliant.

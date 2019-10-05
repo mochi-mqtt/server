@@ -10,10 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func newBufioReader(c net.Conn) *bufio.Reader {
+	return bufio.NewReaderSize(c, 512)
+}
+
+func newBufioWriter(c net.Conn) *bufio.Writer {
+	return bufio.NewWriterSize(c, 512)
+}
+
 func TestNewParser(t *testing.T) {
 
 	conn := new(MockNetConn)
-	p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 
 	require.NotNil(t, p.R)
 }
@@ -29,7 +37,7 @@ func BenchmarkNewParser(b *testing.B) {
 
 func TestRefreshDeadline(t *testing.T) {
 	conn := new(MockNetConn)
-	p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 
 	dl := p.Conn.(*MockNetConn).Deadline
 	p.RefreshDeadline(10)
@@ -39,7 +47,7 @@ func TestRefreshDeadline(t *testing.T) {
 
 func BenchmarkRefreshDeadline(b *testing.B) {
 	conn := new(MockNetConn)
-	p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 
 	for n := 0; n < b.N; n++ {
 		p.RefreshDeadline(10)
@@ -74,7 +82,7 @@ func TestReadFixedHeader(t *testing.T) {
 	conn := new(MockNetConn)
 
 	// Test null data.
-	p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 	fh := new(FixedHeader)
 	err := p.ReadFixedHeader(fh)
 	require.Error(t, err)
@@ -88,7 +96,7 @@ func TestReadFixedHeader(t *testing.T) {
 	// Test expected bytes.
 	for i, wanted := range fixedHeaderExpected {
 		fh := new(FixedHeader)
-		p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+		p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 		b := wanted.rawBytes
 		p.R = bufio.NewReader(bytes.NewReader(b))
 
@@ -108,7 +116,7 @@ func TestReadFixedHeader(t *testing.T) {
 func BenchmarkReadFixedHeader(b *testing.B) {
 	conn := new(MockNetConn)
 	fh := new(FixedHeader)
-	p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 
 	var rn bytes.Reader = *bytes.NewReader(fixedHeaderExpected[0].rawBytes)
 	var rc bytes.Reader
@@ -130,7 +138,7 @@ func TestRead(t *testing.T) {
 			if wanted.primary {
 				var fh FixedHeader
 				b := wanted.rawBytes
-				p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+				p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 				p.R = bufio.NewReader(bytes.NewReader(b))
 
 				err := p.ReadFixedHeader(&fh)
@@ -157,7 +165,7 @@ func TestRead(t *testing.T) {
 
 	// Fail decoder
 	var fh FixedHeader
-	p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 	p.R = bufio.NewReader(bytes.NewReader([]byte{
 		byte(Publish << 4), 3, // Fixed header
 		0, 5, // Topic Name - LSB+MSB
@@ -171,7 +179,7 @@ func TestRead(t *testing.T) {
 
 func BenchmarkRead(b *testing.B) {
 	conn := new(MockNetConn)
-	p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 
 	p.R = bufio.NewReader(bytes.NewReader(expectedPackets[Publish][1].rawBytes))
 	var fh FixedHeader
@@ -198,7 +206,7 @@ func TestReadPacketNil(t *testing.T) {
 
 	conn := new(MockNetConn)
 	var fh FixedHeader
-	p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 
 	// Check for un-specified packet.
 	// Create a ping request packet with a false fixedheader type code.
@@ -217,7 +225,7 @@ func TestReadPacketNil(t *testing.T) {
 func TestReadPacketReadOverflow(t *testing.T) {
 	conn := new(MockNetConn)
 	var fh FixedHeader
-	p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 
 	// Check for un-specified packet.
 	// Create a ping request packet with a false fixedheader type code.
@@ -237,7 +245,7 @@ func TestReadPacketReadOverflow(t *testing.T) {
 func TestReadPacketReadAllFail(t *testing.T) {
 	conn := new(MockNetConn)
 	var fh FixedHeader
-	p := NewParser(conn, new(bufio.Reader), new(bufio.Writer))
+	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
 
 	// Check for un-specified packet.
 	// Create a ping request packet with a false fixedheader type code.
