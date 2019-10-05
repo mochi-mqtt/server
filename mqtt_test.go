@@ -29,8 +29,6 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.listeners)
 	require.NotNil(t, s.clients)
 	require.NotNil(t, s.buffers)
-	require.NotNil(t, s.readers)
-	require.NotNil(t, s.writers)
 	log.Println(s)
 }
 
@@ -806,7 +804,16 @@ func TestNextPacketID(t *testing.T) {
 	client.packetID = uint32(65534)
 	require.Equal(t, uint32(65535), client.nextPacketID())
 	require.Equal(t, uint32(1), client.nextPacketID())
+}
 
+func BenchmarkNextPacketID(b *testing.B) {
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	client := newClient(p, new(packets.ConnectPacket))
+
+	for n := 0; n < b.N; n++ {
+		client.nextPacketID()
+	}
 }
 
 func TestClientClose(t *testing.T) {
