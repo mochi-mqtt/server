@@ -245,42 +245,6 @@ DONE:
 	return nil
 }
 
-// writeClient writes packets to a client connection.
-func (s *Server) writeClient(cl *client, pk packets.Packet) error {
-
-	// Ensure Writer is open.
-	if cl.p.W == nil {
-		return ErrConnectionClosed
-	}
-
-	// Encode packet to a pooled byte buffer.
-	buf := s.buffers.Get()
-	defer s.buffers.Put(buf)
-	err := pk.Encode(buf)
-	if err != nil {
-		return err
-	}
-
-	// Write packet to client.
-	_, err = buf.WriteTo(cl.p.W)
-	if err != nil {
-		return err
-	}
-
-	err = cl.p.W.Flush()
-	if err != nil {
-		return err
-	}
-
-	// Refresh deadline to keep the connection alive.
-	cl.p.RefreshDeadline(cl.keepalive)
-
-	// Log $SYS stats.
-	// @TODO ...
-
-	return nil
-}
-
 // processPacket processes an inbound packet for a client.
 func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	log.Println("PROCESSING PACKET", cl, pk)
@@ -329,18 +293,29 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 				log.Println(client, id, qos)
 
 				// Make a copy of the packet to send to client.
-				outgoing := msg.Copy()
-				log.Println(outgoing)
-				// If the subscriber has a higher qos, inherit it.
-				/*	if subscriptions.qos > outgoing.Qos {
-						outgoing.Qos = subscriptions.qos
-					}
+				out := msg.Copy()
 
-					// If QoS byte is set, ensure the message has an id.
-					if outgoing.Qos > 0 && outgoing.PacketID == 0 {
-						//outgoing.PacketID = client.nextPacketID()
-					}*/
+				// If the client subscription has a higher qos, inherit it.
+				if qos > out.Qos {
+					out.Qos = qos
+				}
 
+				// If QoS byte is set, ensure the message has an id.
+				if out.Qos > 0 && out.PacketID == 0 {
+					out.PacketID = uint16(client.nextPacketID())
+				}
+
+				// Write the publish packet out to the receiving client.
+				err := s.writeClient(client, out)
+				if err != nil {
+					s.closeClient(client, true)
+				}
+
+				// If QoS byte is set, save as message to inflight index so we
+				// can track delivery.
+				if out.Qos > 0 {
+					//	client.handleQOS(out)
+				}
 			}
 		}
 
@@ -382,6 +357,45 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	return nil
 }
 */
+
+// writeClient writes packets to a client connection.
+func (s *Server) writeClient(cl *client, pk packets.Packet) error {
+
+	// Ensure Writer is open.
+	if cl.p.W == nil {
+		return ErrConnectionClosed
+	}
+
+	// Encode packet to a pooled byte buffer.
+	buf := s.buffers.Get()
+	defer s.buffers.Put(buf)
+	err := pk.Encode(buf)
+	if err != nil {
+		return err
+	}
+
+	log.Println("==", buf.Bytes())
+
+	// Write packet to client.
+	_, err = buf.WriteTo(cl.p.W)
+	if err != nil {
+		return err
+	}
+
+	err = cl.p.W.Flush()
+	if err != nil {
+		return err
+	}
+	log.Println("WRITE CLIENT", cl.id)
+
+	// Refresh deadline to keep the connection alive.
+	cl.p.RefreshDeadline(cl.keepalive)
+
+	// Log $SYS stats.
+	// @TODO ...
+
+	return nil
+}
 
 // closeClient closes a client connection and publishes any LWT messages.
 func (s *Server) closeClient(cl *client, sendLWT bool) error {

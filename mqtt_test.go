@@ -601,18 +601,23 @@ func TestServerProcessPacketPINGClose(t *testing.T) {
 func TestServerProcessPacketPublishOK(t *testing.T) {
 	s := New()
 
+	// Sender
 	r, w := net.Pipe()
-	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
-	c1 := newClient(p, &packets.ConnectPacket{ClientIdentifier: "c1"})
+	c1 := newClient(
+		packets.NewParser(r, newBufioReader(r), newBufioWriter(w)),
+		&packets.ConnectPacket{ClientIdentifier: "c1"},
+	)
 	s.clients.add(c1)
-	s.topics.Subscribe("a/b/c", c1.id, 0)
-	s.topics.Subscribe("a/+/c", c1.id, 1)
 
+	// Subscriber
 	r2, w2 := net.Pipe()
-	p2 := packets.NewParser(r2, newBufioReader(r2), newBufioWriter(w2))
-	c2 := newClient(p2, &packets.ConnectPacket{ClientIdentifier: "c2"})
+	c2 := newClient(
+		packets.NewParser(r2, newBufioReader(r2), newBufioWriter(w2)),
+		&packets.ConnectPacket{ClientIdentifier: "c2"},
+	)
 	s.clients.add(c2)
 	s.topics.Subscribe("a/b/+", c2.id, 0)
+	s.topics.Subscribe("a/+/c", c2.id, 1)
 
 	o := make(chan error, 2)
 	go func() {
@@ -623,16 +628,34 @@ func TestServerProcessPacketPublishOK(t *testing.T) {
 			TopicName: "a/b/c",
 			Payload:   []byte("hello"),
 		})
+		r.Close()
+		w.Close()
+		w2.Close()
 	}()
 
-	time.Sleep(10 * time.Millisecond)
-	require.NoError(t, <-o)
-	close(o)
+	recv := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r2)
+		if err != nil {
+			panic(err)
+		}
+		recv <- buf
+	}()
 
-	w.Close()
-	r.Close()
+	require.NoError(t, <-o)
+	require.Equal(t,
+		[]byte{
+			byte(packets.Publish<<4 | 2), 14, // Fixed header
+			0, 5, // Topic Name - LSB+MSB
+			'a', '/', 'b', '/', 'c', // Topic Name
+			0, 1, // packet id from qos=1
+			'h', 'e', 'l', 'l', 'o', // Payload
+		},
+		<-recv,
+	)
+	close(o)
+	close(recv)
 	r2.Close()
-	w2.Close()
 }
 
 func TestServerProcessPacketPublishRetain(t *testing.T) {
