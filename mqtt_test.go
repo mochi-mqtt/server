@@ -13,6 +13,7 @@ import (
 	"github.com/mochi-co/mqtt/auth"
 	"github.com/mochi-co/mqtt/listeners"
 	"github.com/mochi-co/mqtt/packets"
+	"github.com/mochi-co/mqtt/topics"
 )
 
 func newBufioReader(c net.Conn) *bufio.Reader {
@@ -864,6 +865,83 @@ func TestServerProcessPacketPubcomp(t *testing.T) {
 	require.Nil(t, client.inFlight.internal[11])
 	close(o)
 	r.Close()
+}
+
+func TestServerProcessPacketSubscribe(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	o := make(chan error, 2)
+	go func() {
+		o <- s.processPacket(cl, &packets.SubscribePacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Subscribe,
+			},
+			PacketID: 10,
+			Topics:   []string{"a/b/c", "d/e/f"},
+			Qoss:     []byte{0, 1},
+		})
+		w.Close()
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	buf, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Suback << 4), 4, // Fixed header
+		0, 10, // Packet ID - LSB+MSB
+		0, // Return Code QoS 0
+		1, // Return Code QoS 1
+	}, buf)
+	require.NoError(t, <-o)
+	close(o)
+	r.Close()
+
+	require.Equal(t, topics.Subscription{cl.id: 0}, s.topics.Subscribers("a/b/c"))
+	require.Equal(t, topics.Subscription{cl.id: 1}, s.topics.Subscribers("d/e/f"))
+}
+
+func TestServerProcessPacketUnsubscribe(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	s.clients.add(cl)
+	s.topics.Subscribe("a/b/c", cl.id, 0)
+	s.topics.Subscribe("d/e/f", cl.id, 1)
+
+	o := make(chan error, 2)
+	go func() {
+		o <- s.processPacket(cl, &packets.UnsubscribePacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Unsubscribe,
+			},
+			PacketID: 12,
+			Topics:   []string{"a/b/c", "d/e/f"},
+		})
+		w.Close()
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	buf, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Unsuback << 4), 2, // Fixed header
+		0, 12, // Packet ID - LSB+MSB
+	}, buf)
+	require.NoError(t, <-o)
+	close(o)
+	r.Close()
+
+	require.Empty(t, s.topics.Subscribers("a/b/c"))
+	require.Empty(t, s.topics.Subscribers("d/e/f"))
 }
 
 func TestNewClients(t *testing.T) {

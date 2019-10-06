@@ -16,7 +16,7 @@ const (
 	CodeConnectNetworkError       byte = 0xFE
 	CodeConnectProtocolViolation  byte = 0xFF
 
-	//ErrSubAckNetworkError byte = 0x80
+	ErrSubAckNetworkError byte = 0x80
 )
 
 var (

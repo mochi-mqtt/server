@@ -288,6 +288,8 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	case *packets.PublishPacket:
 		log.Println(msg)
 
+		// @TODO ... Publish ACL here.
+
 		// If message is retained, add it to the retained messages index.
 		if msg.Retain {
 			log.Println("RETAIN", msg.Retain)
@@ -367,9 +369,53 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		}
 
 	case *packets.SubscribePacket:
+		retCodes := make([]byte, len(msg.Topics))
+		for i := 0; i < len(msg.Topics); i++ {
+			// @TODO ... Subscribe ACL here.
+			//		retCodes[i] = packets.ErrSubAckNetworkError
+			s.topics.Subscribe(msg.Topics[i], cl.id, msg.Qoss[i])
+			retCodes[i] = msg.Qoss[i]
+			log.Println("SUBSCRIBING", msg.Topics[i], msg.Qoss[i], cl.id)
+
+		}
+
+		// Acknowledge the subscriptions with a Suback packet.
+		err := s.writeClient(cl, &packets.SubackPacket{
+			FixedHeader: packets.NewFixedHeader(packets.Suback),
+			PacketID:    msg.PacketID,
+			ReturnCodes: retCodes,
+		})
+		if err != nil {
+			s.closeClient(cl, true)
+		}
+		log.Println("WRITTEN", msg)
+
+		// Publish out any retained messages matching the subscription filter.
+		for i := 0; i < len(msg.Topics); i++ {
+			messages := s.topics.Messages(msg.Topics[i])
+			for _, pkv := range messages {
+				log.Println("SENDING RETAINED", pkv)
+				err := s.writeClient(cl, pkv)
+				if err != nil {
+					s.closeClient(cl, true)
+				}
+			}
+		}
 
 	case *packets.UnsubscribePacket:
+		for i := 0; i < len(msg.Topics); i++ {
+			s.topics.Unsubscribe(msg.Topics[i], cl.id)
+		}
 
+		// Acknowledge the unsubscriptions with a UNSUBACK packet.
+		err := s.writeClient(cl, &packets.UnsubackPacket{
+			FixedHeader: packets.NewFixedHeader(packets.Unsuback),
+			PacketID:    msg.PacketID,
+		})
+		if err != nil {
+			s.closeClient(cl, true)
+		}
+		log.Println("WRITTEN", msg)
 	}
 
 	return nil

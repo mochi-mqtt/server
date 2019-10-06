@@ -14,14 +14,13 @@ type SubackPacket struct {
 
 // Encode encodes and writes the packet data values to the buffer.
 func (pk *SubackPacket) Encode(buf *bytes.Buffer) error {
+
+	packetID := encodeUint16(pk.PacketID)
+	pk.FixedHeader.Remaining = len(packetID) + len(pk.ReturnCodes) // Set length.
 	pk.FixedHeader.encode(buf)
 
-	bodyLen := buf.Len()
-
-	buf.Write(encodeUint16(pk.PacketID)) // Encode Packet ID.
-	buf.Write(pk.ReturnCodes)            // Encode granted QOS flags.
-
-	pk.FixedHeader.Remaining = buf.Len() - bodyLen // Set length.
+	buf.Write(packetID)       // Encode Packet ID.
+	buf.Write(pk.ReturnCodes) // Encode granted QOS flags.
 
 	return nil
 }
