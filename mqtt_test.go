@@ -728,6 +728,110 @@ func TestServerProcessPacketPublishRetain(t *testing.T) {
 	r.Close()
 }
 
+func TestServerProcessPacketPuback(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	client := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	client.inFlight.set(11, &packets.PublishPacket{
+		PacketID: 11,
+	})
+
+	require.NotNil(t, client.inFlight.internal[11])
+
+	pk := &packets.PubackPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Puback,
+			Remaining: 2,
+		},
+		PacketID: 11,
+	}
+
+	o := make(chan error, 2)
+	go func() {
+		o <- s.processPacket(client, pk)
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	require.NoError(t, <-o)
+	require.Nil(t, client.inFlight.internal[11])
+	close(o)
+	r.Close()
+}
+
+func TestServerProcessPacketPubrec(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	cl.inFlight.set(12, &packets.PublishPacket{
+		PacketID: 12,
+	})
+
+	o := make(chan error, 2) // race with r/w, so use buffered to not block
+	go func() {
+		o <- s.processPacket(cl, &packets.PubrecPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Pubrec,
+			},
+			PacketID: 12,
+		})
+		w.Close()
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	buf, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Pubrel<<4) | 2, 2, // Fixed header
+		0, 12, // Packet ID - LSB+MSB
+	}, buf)
+	require.NoError(t, <-o)
+	close(o)
+	r.Close()
+}
+
+func TestServerProcessPacketPubrel(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	cl.inFlight.set(10, &packets.PublishPacket{
+		PacketID: 10,
+	})
+
+	o := make(chan error, 2)
+	go func() {
+		o <- s.processPacket(cl, &packets.PubrelPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Pubrel,
+			},
+			PacketID: 10,
+		})
+		w.Close()
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	buf, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Pubcomp << 4), 2, // Fixed header
+		0, 10, // Packet ID - LSB+MSB
+	}, buf)
+	require.NoError(t, <-o)
+	close(o)
+	r.Close()
+}
+
 func TestNewClients(t *testing.T) {
 	cl := newClients()
 	require.NotNil(t, cl.internal)
@@ -904,7 +1008,7 @@ func TestClientClose(t *testing.T) {
 
 func TestInFlightSet(t *testing.T) {
 	client := newClient(nil, new(packets.ConnectPacket))
-	client.inFlight.set(1, &inFlightMessage{sent: 1})
+	client.inFlight.set(1, new(packets.PublishPacket))
 	require.NotNil(t, client.inFlight.internal[1])
 	require.NotEqual(t, 0, client.inFlight.internal[1].sent)
 }
@@ -912,13 +1016,13 @@ func TestInFlightSet(t *testing.T) {
 func BenchmarkInFlightSet(b *testing.B) {
 	client := newClient(nil, new(packets.ConnectPacket))
 	for n := 0; n < b.N; n++ {
-		client.inFlight.set(1, &inFlightMessage{sent: 1})
+		client.inFlight.set(1, new(packets.PublishPacket))
 	}
 }
 
 func TestInFlightGet(t *testing.T) {
 	client := newClient(nil, new(packets.ConnectPacket))
-	client.inFlight.set(2, &inFlightMessage{sent: 1})
+	client.inFlight.set(2, new(packets.PublishPacket))
 
 	msg, ok := client.inFlight.get(2)
 	require.Equal(t, true, ok)
@@ -927,7 +1031,7 @@ func TestInFlightGet(t *testing.T) {
 
 func BenchmarkInFlightGet(b *testing.B) {
 	client := newClient(nil, new(packets.ConnectPacket))
-	client.inFlight.set(2, &inFlightMessage{sent: 1})
+	client.inFlight.set(2, new(packets.PublishPacket))
 	for n := 0; n < b.N; n++ {
 		client.inFlight.get(2)
 	}
@@ -935,7 +1039,7 @@ func BenchmarkInFlightGet(b *testing.B) {
 
 func TestInFlightDelete(t *testing.T) {
 	client := newClient(nil, new(packets.ConnectPacket))
-	client.inFlight.set(3, &inFlightMessage{sent: 1})
+	client.inFlight.set(3, new(packets.PublishPacket))
 	require.NotNil(t, client.inFlight.internal[3])
 
 	client.inFlight.delete(3)
@@ -949,7 +1053,7 @@ func TestInFlightDelete(t *testing.T) {
 func BenchmarInFlightDelete(b *testing.B) {
 	client := newClient(nil, new(packets.ConnectPacket))
 	for n := 0; n < b.N; n++ {
-		client.inFlight.set(4, &inFlightMessage{sent: 1})
+		client.inFlight.set(4, new(packets.PublishPacket))
 		client.inFlight.delete(4)
 	}
 }

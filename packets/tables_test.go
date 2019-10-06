@@ -1022,16 +1022,18 @@ var expectedPackets = map[byte][]packetTestData{
 			desc:    "Pubrel",
 			primary: true,
 			rawBytes: []byte{
-				byte(Pubrel << 4), 2, // Fixed header
+				byte(Pubrel<<4) | 2, 2, // Fixed header
 				0, 12, // Packet ID - LSB+MSB
 			},
 			packet: &PubrelPacket{
 				FixedHeader: FixedHeader{
 					Type:      Pubrel,
 					Remaining: 2,
+					Qos:       1,
 				},
 				PacketID: 12,
 			},
+			meta: byte(2),
 		},
 
 		// Fail states

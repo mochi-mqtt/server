@@ -28,7 +28,12 @@ func TestPubrelEncode(t *testing.T) {
 		encoded := buf.Bytes()
 
 		require.Equal(t, len(wanted.rawBytes), len(encoded), "Mismatched packet length [i:%d] %s", i, wanted.desc)
-		require.Equal(t, byte(Pubrel<<4), encoded[0], "Mismatched fixed header packets [i:%d] %s", i, wanted.desc)
+		//require.Equal(t, byte(Pubrel<<4), encoded[0], "Mismatched fixed header packets [i:%d] %s", i, wanted.desc)
+		if wanted.meta != nil {
+			require.Equal(t, byte(Pubrel<<4)|wanted.meta.(byte), encoded[0], "Mismatched fixed header bytes [i:%d] %s", i, wanted.desc)
+		} else {
+			require.Equal(t, byte(Pubrel<<4), encoded[0], "Mismatched fixed header bytes [i:%d] %s", i, wanted.desc)
+		}
 		require.EqualValues(t, wanted.rawBytes, encoded, "Mismatched byte values [i:%d] %s", i, wanted.desc)
 
 		require.Equal(t, wanted.packet.(*PubrelPacket).PacketID, pk.PacketID, "Mismatched Packet ID [i:%d] %s", i, wanted.desc)

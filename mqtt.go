@@ -323,21 +323,48 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 				// If QoS byte is set, save as message to inflight index so we
 				// can track delivery.
 				if out.Qos > 0 {
-					//	client.handleQOS(out)
+					client.inFlight.set(out.PacketID, out)
 				}
 			}
 		}
 
-	}
+	case *packets.PubackPacket:
+		cl.inFlight.delete(msg.PacketID)
 
-	// switch on packet type
-	//// publish
-	//		retain if 1
-	//		find valid subscribers
-	//			upgrade copied packet
-	// 			if (qos > 1) add packetID > cl.nextPacketID()
-	//			write packet to client > go s.writeClient
-	//				handle qos > s.processQOS(cl, pk)
+	case *packets.PubrecPacket:
+		if _, ok := cl.inFlight.get(msg.PacketID); ok {
+			out := &packets.PubrelPacket{
+				FixedHeader: packets.NewFixedHeader(packets.Pubrel),
+				PacketID:    msg.PacketID,
+			}
+			log.Println("READY", out)
+			err := s.writeClient(cl, out)
+			if err != nil {
+				s.closeClient(cl, true)
+			}
+			log.Println("WRITTEN", msg)
+			cl.inFlight.set(out.PacketID, out)
+		}
+
+	case *packets.PubrelPacket:
+		if _, ok := cl.inFlight.get(msg.PacketID); ok {
+			out := &packets.PubcompPacket{
+				FixedHeader: packets.NewFixedHeader(packets.Pubcomp),
+				PacketID:    msg.PacketID,
+			}
+			log.Println("READY", out)
+			err := s.writeClient(cl, out)
+			if err != nil {
+				s.closeClient(cl, true)
+			}
+			log.Println("WRITTEN", msg)
+			cl.inFlight.delete(msg.PacketID)
+		}
+
+	case *packets.PubcompPacket:
+		//
+
+	}
 
 	//// pub*
 	//		handle qos > s.processQOS(cl, pk)
@@ -586,11 +613,13 @@ type inFlight struct {
 	internal map[uint16]*inFlightMessage
 }
 
-// set stores the value of an in-flight message, keyed on message id.
-func (i *inFlight) set(key uint16, val *inFlightMessage) {
+// set stores the packet of an in-flight message, keyed on message id.
+func (i *inFlight) set(key uint16, pk packets.Packet) {
 	i.Lock()
-	val.sent = time.Now().Unix()
-	i.internal[key] = val
+	i.internal[key] = &inFlightMessage{
+		packet: pk,
+		sent:   time.Now().Unix(),
+	}
 	i.Unlock()
 }
 
