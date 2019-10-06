@@ -362,37 +362,18 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		}
 
 	case *packets.PubcompPacket:
-		//
+		if _, ok := cl.inFlight.get(msg.PacketID); ok {
+			cl.inFlight.delete(msg.PacketID)
+		}
+
+	case *packets.SubscribePacket:
+
+	case *packets.UnsubscribePacket:
 
 	}
 
-	//// pub*
-	//		handle qos > s.processQOS(cl, pk)
-
-	//// subscribe
-	// 		subscribe topics
-	//		send subacks
-	//		receive any retained messages
-
-	//// unsubscribe
-	//		unsubscribe topics
-	//		send unsuback
-
 	return nil
 }
-
-// processQOS handles the back and forth of QOS>0 packets.
-/*func (s *Server) processQOS(cl *client, pk packets.Packet) error {
-
-	// handle publish in/out
-	// handle puback
-	// handle pubrec
-	// handle pubrel
-	// handle pubcomp
-
-	return nil
-}
-*/
 
 // writeClient writes packets to a client connection.
 func (s *Server) writeClient(cl *client, pk packets.Packet) error {

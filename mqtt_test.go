@@ -832,6 +832,40 @@ func TestServerProcessPacketPubrel(t *testing.T) {
 	r.Close()
 }
 
+func TestServerProcessPacketPubcomp(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	client := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	client.inFlight.set(11, &packets.PublishPacket{
+		PacketID: 11,
+	})
+
+	require.NotNil(t, client.inFlight.internal[11])
+
+	pk := &packets.PubcompPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Pubcomp,
+			Remaining: 2,
+		},
+		PacketID: 11,
+	}
+
+	o := make(chan error, 2)
+	go func() {
+		o <- s.processPacket(client, pk)
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	require.NoError(t, <-o)
+	require.Nil(t, client.inFlight.internal[11])
+	close(o)
+	r.Close()
+}
+
 func TestNewClients(t *testing.T) {
 	cl := newClients()
 	require.NotNil(t, cl.internal)
