@@ -261,7 +261,7 @@ func TestServerEstablishConnectionBadAuth(t *testing.T) {
 	require.Equal(t, ErrConnectNotAuthorized, err)
 }
 
-func TestServerEstablishConnectionReadClientError(t *testing.T) {
+func TestServerEstablishConnectionWriteClientError(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
 	go func() {
@@ -284,10 +284,43 @@ func TestServerEstablishConnectionReadClientError(t *testing.T) {
 	}()
 	time.Sleep(5 * time.Millisecond)
 	w.Close()
-	//	s.clients.internal["zen"].close()
 	require.Error(t, <-o)
 	r.Close()
+}
 
+func TestServerEstablishConnectionReadClientError(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection(r, new(auth.Allow))
+	}()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 15, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			2,     // Packet Flags
+			0, 45, // Keepalive
+			0, 3, // Client ID - MSB+LSB
+			'z', 'e', 'n', // Client ID "zen"
+		})
+	}()
+
+	go func() {
+		_, err := ioutil.ReadAll(w)
+		if err != nil {
+			panic(err)
+		}
+		w.Close()
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	r.Close()
+	require.Error(t, <-o)
 }
 
 func TestServerReadClientOK(t *testing.T) {
@@ -297,22 +330,20 @@ func TestServerReadClientOK(t *testing.T) {
 	cl := newClient(p, new(packets.ConnectPacket))
 
 	go func() {
-		b := []byte{
+		w.Write([]byte{
 			byte(packets.Publish << 4), 18, // Fixed header
 			0, 5, // Topic Name - LSB+MSB
 			'a', '/', 'b', '/', 'c', // Topic Name
 			'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload
-		}
-		w.Write(b)
-		cl.close()
-
+		})
+		close(cl.end)
 	}()
 	time.Sleep(time.Millisecond)
 	o := make(chan error)
 	go func() {
 		o <- s.readClient(cl)
 	}()
-	time.Sleep(5 * time.Millisecond)
+	time.Sleep(time.Millisecond)
 	require.NoError(t, <-o)
 	w.Close()
 	r.Close()
@@ -480,6 +511,10 @@ func TestServerWriteClientNilWriter(t *testing.T) {
 	require.Equal(t, ErrConnectionClosed, err)
 	r.Close()
 	w.Close()
+}
+
+func TestServerWriteClientWriteError(t *testing.T) {
+
 }
 
 func TestServerCloseClient(t *testing.T) { // as opposed to client.close
