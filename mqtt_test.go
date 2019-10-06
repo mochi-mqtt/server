@@ -135,6 +135,12 @@ func BenchmarkServerClose(b *testing.B) {
 func TestServerEstablishConnectionOK(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
+
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection(r, new(auth.Allow))
+	}()
+
 	go func() {
 		w.Write([]byte{
 			byte(packets.Connect << 4), 15, // Fixed header
@@ -146,24 +152,23 @@ func TestServerEstablishConnectionOK(t *testing.T) {
 			0, 3, // Client ID - MSB+LSB
 			'z', 'e', 'n', // Client ID "zen"
 		})
-
+		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+		r.Close()
+		s.clients.internal["zen"].close()
 	}()
 
-	o := make(chan error)
+	recv := make(chan []byte)
 	go func() {
-		o <- s.EstablishConnection(r, new(auth.Allow))
+		buf, err := ioutil.ReadAll(w)
+		if err != nil {
+			panic(err)
+		}
+		recv <- buf
 	}()
-	time.Sleep(5 * time.Millisecond)
-	require.NotEmpty(t, s.clients.internal)
-	require.NotNil(t, s.clients.internal["zen"])
 
-	s.clients.internal["zen"].close()
 	require.NoError(t, <-o)
-
-	// Check Conanck response.
+	require.Equal(t, []byte{byte(packets.Connack << 4), 2, 0, packets.Accepted}, <-recv)
 	w.Close()
-	r.Close()
-
 }
 func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 	s := New()
@@ -787,6 +792,7 @@ func TestNewClient(t *testing.T) {
 
 	cl := newClient(p, pk)
 	require.NotNil(t, cl)
+	require.NotNil(t, cl.inFlight.internal)
 	require.Equal(t, pk.Keepalive, cl.keepalive)
 	require.Equal(t, pk.CleanSession, cl.cleanSession)
 	require.Equal(t, pk.ClientIdentifier, cl.id)
@@ -859,4 +865,56 @@ func TestClientClose(t *testing.T) {
 	require.Nil(t, client.p.Conn)
 	r.Close()
 	w.Close()
+}
+
+func TestInFlightSet(t *testing.T) {
+	client := newClient(nil, new(packets.ConnectPacket))
+	client.inFlight.set(1, &inFlightMessage{sent: 1})
+	require.NotNil(t, client.inFlight.internal[1])
+	require.NotEqual(t, 0, client.inFlight.internal[1].sent)
+}
+
+func BenchmarkInFlightSet(b *testing.B) {
+	client := newClient(nil, new(packets.ConnectPacket))
+	for n := 0; n < b.N; n++ {
+		client.inFlight.set(1, &inFlightMessage{sent: 1})
+	}
+}
+
+func TestInFlightGet(t *testing.T) {
+	client := newClient(nil, new(packets.ConnectPacket))
+	client.inFlight.set(2, &inFlightMessage{sent: 1})
+
+	msg, ok := client.inFlight.get(2)
+	require.Equal(t, true, ok)
+	require.NotEqual(t, 0, msg.sent)
+}
+
+func BenchmarkInFlightGet(b *testing.B) {
+	client := newClient(nil, new(packets.ConnectPacket))
+	client.inFlight.set(2, &inFlightMessage{sent: 1})
+	for n := 0; n < b.N; n++ {
+		client.inFlight.get(2)
+	}
+}
+
+func TestInFlightDelete(t *testing.T) {
+	client := newClient(nil, new(packets.ConnectPacket))
+	client.inFlight.set(3, &inFlightMessage{sent: 1})
+	require.NotNil(t, client.inFlight.internal[3])
+
+	client.inFlight.delete(3)
+	require.Nil(t, client.inFlight.internal[3])
+
+	_, ok := client.inFlight.get(3)
+	require.Equal(t, false, ok)
+
+}
+
+func BenchmarInFlightDelete(b *testing.B) {
+	client := newClient(nil, new(packets.ConnectPacket))
+	for n := 0; n < b.N; n++ {
+		client.inFlight.set(4, &inFlightMessage{sent: 1})
+		client.inFlight.delete(4)
+	}
 }

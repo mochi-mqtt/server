@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/rs/xid"
 
@@ -131,19 +132,20 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 		bufio.NewWriterSize(c, rwBufSize),
 	)
 
+	log.Println("....")
 	// Pull the header from the first packet and check for a CONNECT message.
 	fh := new(packets.FixedHeader)
 	err := p.ReadFixedHeader(fh)
 	if err != nil {
 		return ErrReadConnectFixedHeader
 	}
-
+	log.Println("read fh")
 	// Read the first packet expecting a CONNECT message.
 	pk, err := p.Read()
 	if err != nil {
 		return ErrReadConnectPacket
 	}
-
+	log.Println("read pk")
 	// Ensure first packet is a connect packet.
 	msg, ok := pk.(*packets.ConnectPacket)
 	if !ok {
@@ -164,6 +166,7 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 
 	// Add the new client to the clients manager.
 	client := newClient(p, msg)
+	// ... handle session takeover
 	s.clients.add(client)
 
 	log.Println("connected", client.id)
@@ -171,9 +174,15 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	// Send a CONNACK back to the client.
 	err = s.writeClient(client, &packets.ConnackPacket{
 		FixedHeader:    packets.NewFixedHeader(packets.Connack),
-		SessionPresent: msg.CleanSession,
+		SessionPresent: false, //msg.CleanSession,
 		ReturnCode:     retcode,
 	})
+	if err != nil {
+		log.Println("write err", err)
+		return err
+	}
+
+	log.Println("connack sent", client.id)
 
 	// Publish out any unacknowledged QOS messages still pending for the client.
 	// @TODO ...
@@ -482,11 +491,17 @@ type client struct {
 
 	// packetID is the current highest packetID.
 	packetID uint32
+
+	// inFlight is a map of messages which are in-flight,awaiting completiong of
+	// a QoS pattern.
+	inFlight inFlight
+
+	// wasClosed indicates that the connection was closed deliberately.
+	wasClosed bool
 }
 
 // newClient creates a new instance of client.
 func newClient(p *packets.Parser, pk *packets.ConnectPacket) *client {
-
 	cl := &client{
 		p:    p,
 		end:  make(chan struct{}),
@@ -496,6 +511,9 @@ func newClient(p *packets.Parser, pk *packets.ConnectPacket) *client {
 		user:         pk.Username,
 		keepalive:    pk.Keepalive,
 		cleanSession: pk.CleanSession,
+		inFlight: inFlight{
+			internal: make(map[uint16]*inFlightMessage),
+		},
 	}
 
 	// If no client id was provided, generate a new one.
@@ -537,6 +555,7 @@ func (cl *client) nextPacketID() uint32 {
 
 // close attempts to gracefully close a client connection.
 func (cl *client) close() {
+	log.Println("closing", cl)
 	cl.done.Do(func() {
 
 		// Signal to stop lsitening for packets.
@@ -545,5 +564,47 @@ func (cl *client) close() {
 		// Close the network connection.
 		cl.p.Conn.Close() // Error is irrelevant so can be ommited here.
 		cl.p.Conn = nil
+
 	})
+}
+
+// inFlightMessage contains data about a packet which is currently in-flight.
+type inFlightMessage struct {
+
+	// packet is the packet currently in-flight.
+	packet packets.Packet
+
+	// sent is the last time the message was sent (for retries) in unixtime.
+	sent int64
+}
+
+// inFlight is a map of inFlightMessage keyed on packet id.
+type inFlight struct {
+	sync.RWMutex
+
+	// internal contains the inflight messages.
+	internal map[uint16]*inFlightMessage
+}
+
+// set stores the value of an in-flight message, keyed on message id.
+func (i *inFlight) set(key uint16, val *inFlightMessage) {
+	i.Lock()
+	val.sent = time.Now().Unix()
+	i.internal[key] = val
+	i.Unlock()
+}
+
+// get returns the value of an in-flight message if it exists.
+func (i *inFlight) get(key uint16) (*inFlightMessage, bool) {
+	i.RLock()
+	val, ok := i.internal[key]
+	i.RUnlock()
+	return val, ok
+}
+
+// delete removes an in-flight message from the map.
+func (i *inFlight) delete(key uint16) {
+	i.Lock()
+	delete(i.internal, key)
+	i.Unlock()
 }
