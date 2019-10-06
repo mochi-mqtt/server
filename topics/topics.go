@@ -8,7 +8,7 @@ import (
 type Indexer interface {
 
 	// Subscribers returns the clients with filters matching a topic.
-	Subscribers(topic string) Subscription
+	Subscribers(topic string) Subscriptions
 
 	// Subscribe adds a new filter subscription for a client.
 	Subscribe(filter string, client string, qos byte)
@@ -23,5 +23,5 @@ type Indexer interface {
 	RetainMessage(packet *packets.PublishPacket)
 }
 
-// Subscription is a map of subscriptions keyed on client.
-type Subscription map[string]byte
+// Subscriptions is a map of subscriptions keyed on client.
+type Subscriptions map[string]byte

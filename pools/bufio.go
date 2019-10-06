@@ -1,5 +1,6 @@
 package pools
 
+/*
 import (
 	"bufio"
 	"io"
@@ -63,3 +64,4 @@ func (b BufioWritersPool) Put(x *bufio.Writer) {
 	x.Reset(nil)
 	b.pool.Put(x)
 }
+*/

@@ -1,5 +1,6 @@
 package pools
 
+/*
 import (
 	"bufio"
 	"bytes"
@@ -111,3 +112,4 @@ func BenchmarkBufioWritersPut(b *testing.B) {
 		bpool.Put(w)
 	}
 }
+*/

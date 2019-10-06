@@ -117,8 +117,8 @@ func (x *Index) Unsubscribe(filter, client string) bool {
 }
 
 // Subscribers returns a map of clients who are subscribed to matching filters.
-func (x *Index) Subscribers(topic string) topics.Subscription {
-	return x.Root.scanSubscribers(topic, 0, make(topics.Subscription))
+func (x *Index) Subscribers(topic string) topics.Subscriptions {
+	return x.Root.scanSubscribers(topic, 0, make(topics.Subscriptions))
 }
 
 // Messages returns a slice of retained topic messages which match a filter.
@@ -151,7 +151,7 @@ type Leaf struct {
 
 // scanSubscribers recursively steps through a branch of leaves finding clients who
 // have subscription filters matching a topic, and their highest QoS byte.
-func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscription) topics.Subscription {
+func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions) topics.Subscriptions {
 	l.RLock()
 	part, hasNext := isolateParticle(topic, d)
 
