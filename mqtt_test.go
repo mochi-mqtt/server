@@ -905,6 +905,60 @@ func TestServerProcessPacketSubscribe(t *testing.T) {
 	require.Equal(t, topics.Subscription{cl.id: 1}, s.topics.Subscribers("d/e/f"))
 }
 
+func TestServerProcessPacketSubscribeRetained(t *testing.T) {
+	s := New()
+	r, w := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	cl := newClient(p, &packets.ConnectPacket{
+		ClientIdentifier: "zen",
+	})
+
+	s.topics.RetainMessage(&packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:   packets.Publish,
+			Retain: true,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+	})
+
+	require.Equal(t, 1, len(s.topics.Messages("a/b/c")))
+
+	o := make(chan error, 2)
+	go func() {
+		o <- s.processPacket(cl, &packets.SubscribePacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Subscribe,
+			},
+			PacketID: 10,
+			Topics:   []string{"a/b/c", "d/e/f"},
+			Qoss:     []byte{0, 1},
+		})
+		w.Close()
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	buf, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Suback << 4), 4, // Fixed header
+		0, 10, // Packet ID - LSB+MSB
+		0, // Return Code QoS 0
+		1, // Return Code QoS 1
+
+		// Next packet
+		// Because we're reading all, the retained messages will be published out
+		// in the same buffer.
+		byte(packets.Publish<<4 | 1), 12, // Fixed header
+		0, 5, // Topic Name - LSB+MSB
+		'a', '/', 'b', '/', 'c', // Topic Name
+		'h', 'e', 'l', 'l', 'o', // Payload
+	}, buf)
+	require.NoError(t, <-o)
+	close(o)
+	r.Close()
+}
+
 func TestServerProcessPacketUnsubscribe(t *testing.T) {
 	s := New()
 	r, w := net.Pipe()
