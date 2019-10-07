@@ -932,7 +932,7 @@ func TestServerProcessPublishDisallowACL(t *testing.T) {
 func TestServerProcessPuback(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
 
-	cl.inFlight.set(11, &packets.PublishPacket{PacketID: 11})
+	cl.inFlight.set(11, &inFlightMessage{packet: &packets.PublishPacket{PacketID: 11}, sent: 0})
 	require.NotNil(t, cl.inFlight.internal[11])
 
 	err := s.processPacket(cl, &packets.PubackPacket{
@@ -950,7 +950,7 @@ func TestServerProcessPubrec(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
 	cl.p.W = new(quietWriter)
 
-	cl.inFlight.set(12, &packets.PublishPacket{PacketID: 12})
+	cl.inFlight.set(12, &inFlightMessage{packet: &packets.PublishPacket{PacketID: 12}, sent: 0})
 
 	err := s.processPacket(cl, &packets.PubrecPacket{
 		FixedHeader: packets.FixedHeader{
@@ -987,7 +987,7 @@ func TestServerProcessPubrecWriteError(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
 	cl.p.W = &quietWriter{errAfter: -1}
 
-	cl.inFlight.set(12, &packets.PublishPacket{PacketID: 12})
+	cl.inFlight.set(12, &inFlightMessage{packet: &packets.PublishPacket{PacketID: 12}, sent: 0})
 
 	err := s.processPacket(cl, &packets.PubrecPacket{
 		FixedHeader: packets.FixedHeader{
@@ -1002,7 +1002,7 @@ func TestServerProcessPubrel(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
 	cl.p.W = new(quietWriter)
 
-	cl.inFlight.set(10, &packets.PublishPacket{PacketID: 10})
+	cl.inFlight.set(10, &inFlightMessage{packet: &packets.PublishPacket{PacketID: 10}, sent: 0})
 
 	err := s.processPacket(cl, &packets.PubrelPacket{
 		FixedHeader: packets.FixedHeader{
@@ -1021,16 +1021,17 @@ func BenchmarkServerProcessPubrel(b *testing.B) {
 	s, _, _, cl := setupClient("zen")
 	cl.p.W = new(quietWriter)
 
-	cl.inFlight.set(10, &packets.PublishPacket{PacketID: 10})
+	cl.inFlight.set(10, &inFlightMessage{packet: &packets.PublishPacket{PacketID: 10}, sent: 0})
 
-	pk := &packets.PubrecPacket{
+	pk := &packets.PubrelPacket{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Pubrel,
 		},
 		PacketID: 10,
 	}
+
 	for n := 0; n < b.N; n++ {
-		err := s.processPubrec(cl, pk)
+		err := s.processPubrel(cl, pk)
 		if err != nil {
 			panic(err)
 		}
@@ -1041,7 +1042,7 @@ func TestServerProcessPubrelWriteError(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
 	cl.p.W = &quietWriter{errAfter: -1}
 
-	cl.inFlight.set(10, &packets.PublishPacket{PacketID: 10})
+	cl.inFlight.set(10, &inFlightMessage{packet: &packets.PublishPacket{PacketID: 10}, sent: 0})
 
 	err := s.processPacket(cl, &packets.PubrelPacket{
 		FixedHeader: packets.FixedHeader{
@@ -1056,7 +1057,7 @@ func TestServerProcessPubcomp(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
 	cl.p.W = new(quietWriter)
 
-	cl.inFlight.set(11, &packets.PublishPacket{PacketID: 11})
+	cl.inFlight.set(11, &inFlightMessage{packet: &packets.PublishPacket{PacketID: 11}, sent: 0})
 	require.NotNil(t, cl.inFlight.internal[11])
 
 	err := s.processPacket(cl, &packets.PubcompPacket{
@@ -1075,7 +1076,7 @@ func BenchmarkServerProcessPubcomp(b *testing.B) {
 	s, _, _, cl := setupClient("zen")
 	cl.p.W = new(quietWriter)
 
-	cl.inFlight.set(11, &packets.PublishPacket{PacketID: 11})
+	cl.inFlight.set(11, &inFlightMessage{packet: &packets.PublishPacket{PacketID: 11}, sent: 0})
 
 	pk := &packets.PubcompPacket{
 		FixedHeader: packets.FixedHeader{
@@ -1231,7 +1232,6 @@ func TestServerProcessUnsubscribe(t *testing.T) {
 	s.topics.Subscribe("d/e/f", cl.id, 1)
 	cl.noteSubscription("a/b/c", 0)
 	cl.noteSubscription("d/e/f", 1)
-	log.Println(cl.subscriptions)
 
 	err := s.processPacket(cl, &packets.UnsubscribePacket{
 		FixedHeader: packets.FixedHeader{

@@ -248,22 +248,22 @@ func TestClientClose(t *testing.T) {
 
 func TestInFlightSet(t *testing.T) {
 	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
-	client.inFlight.set(1, new(packets.PublishPacket))
+	client.inFlight.set(1, &inFlightMessage{packet: new(packets.PublishPacket), sent: 0})
 	require.NotNil(t, client.inFlight.internal[1])
 	require.NotEqual(t, 0, client.inFlight.internal[1].sent)
 }
 
 func BenchmarkInFlightSet(b *testing.B) {
 	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
-	pk := new(packets.PublishPacket)
+	in := &inFlightMessage{packet: new(packets.PublishPacket), sent: 0}
 	for n := 0; n < b.N; n++ {
-		client.inFlight.set(1, pk)
+		client.inFlight.set(1, in)
 	}
 }
 
 func TestInFlightGet(t *testing.T) {
 	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
-	client.inFlight.set(2, new(packets.PublishPacket))
+	client.inFlight.set(2, &inFlightMessage{packet: new(packets.PublishPacket), sent: 0})
 
 	msg, ok := client.inFlight.get(2)
 	require.Equal(t, true, ok)
@@ -272,7 +272,7 @@ func TestInFlightGet(t *testing.T) {
 
 func BenchmarkInFlightGet(b *testing.B) {
 	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
-	client.inFlight.set(2, new(packets.PublishPacket))
+	client.inFlight.set(2, &inFlightMessage{packet: new(packets.PublishPacket), sent: 0})
 	for n := 0; n < b.N; n++ {
 		client.inFlight.get(2)
 	}
@@ -280,7 +280,7 @@ func BenchmarkInFlightGet(b *testing.B) {
 
 func TestInFlightDelete(t *testing.T) {
 	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
-	client.inFlight.set(3, new(packets.PublishPacket))
+	client.inFlight.set(3, &inFlightMessage{packet: new(packets.PublishPacket), sent: 0})
 	require.NotNil(t, client.inFlight.internal[3])
 
 	client.inFlight.delete(3)
@@ -293,7 +293,7 @@ func TestInFlightDelete(t *testing.T) {
 func BenchmarInFlightDelete(b *testing.B) {
 	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
 	for n := 0; n < b.N; n++ {
-		client.inFlight.set(4, new(packets.PublishPacket))
+		client.inFlight.set(4, &inFlightMessage{packet: new(packets.PublishPacket), sent: 0})
 		client.inFlight.delete(4)
 	}
 }

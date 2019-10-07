@@ -3,7 +3,6 @@ package mqtt
 import (
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/rs/xid"
 
@@ -115,7 +114,7 @@ func newClient(p *packets.Parser, pk *packets.ConnectPacket, ac auth.Controller)
 		keepalive:    pk.Keepalive,
 		cleanSession: pk.CleanSession,
 		inFlight: inFlight{
-			internal: make(map[uint16]*inFlightMessage, 2),
+			internal: make(map[uint16]*inFlightMessage),
 		},
 		subscriptions: make(map[string]byte),
 	}
@@ -216,6 +215,14 @@ type inFlight struct {
 }
 
 // set stores the packet of an in-flight message, keyed on message id.
+func (i *inFlight) set(key uint16, in *inFlightMessage) {
+	i.Lock()
+	i.internal[key] = in
+	i.Unlock()
+}
+
+/*
+// set stores the packet of an in-flight message, keyed on message id.
 func (i *inFlight) set(key uint16, pk packets.Packet) {
 	i.Lock()
 	i.internal[key] = &inFlightMessage{
@@ -224,6 +231,7 @@ func (i *inFlight) set(key uint16, pk packets.Packet) {
 	}
 	i.Unlock()
 }
+*/
 
 // get returns the value of an in-flight message if it exists.
 func (i *inFlight) get(key uint16) (*inFlightMessage, bool) {

@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"log"
 	"net"
+	"time"
 
 	"github.com/mochi-co/mqtt/auth"
 	"github.com/mochi-co/mqtt/listeners"
@@ -332,7 +332,10 @@ func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
 			},
 			PacketID: pk.PacketID,
 		}
-		cl.inFlight.set(pk.PacketID, rec)
+		cl.inFlight.set(pk.PacketID, &inFlightMessage{
+			packet: rec,
+			sent:   time.Now().Unix(),
+		})
 		err := s.writeClient(cl, rec)
 		if err != nil {
 			s.closeClient(cl, true)
@@ -362,7 +365,10 @@ func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
 			// If QoS byte is set, save as message to inflight index so we
 			// can track delivery.
 			if out.Qos > 0 {
-				client.inFlight.set(out.PacketID, out)
+				client.inFlight.set(out.PacketID, &inFlightMessage{
+					packet: out,
+					sent:   time.Now().Unix(),
+				})
 
 				// If QoS byte is set, ensure the message has an id.
 				if out.PacketID == 0 {
@@ -399,7 +405,10 @@ func (s *Server) processPubrec(cl *client, pk *packets.PubrecPacket) error {
 			PacketID: pk.PacketID,
 		}
 
-		cl.inFlight.set(out.PacketID, out)
+		cl.inFlight.set(out.PacketID, &inFlightMessage{
+			packet: out,
+			sent:   time.Now().Unix(),
+		})
 		err := s.writeClient(cl, out)
 		if err != nil {
 			s.closeClient(cl, true)
@@ -496,7 +505,6 @@ func (s *Server) processUnsubscribe(cl *client, pk *packets.UnsubscribePacket) e
 		s.closeClient(cl, true)
 		return err
 	}
-	log.Println(s)
 
 	return nil
 }
