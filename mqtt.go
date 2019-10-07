@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"time"
@@ -337,7 +336,6 @@ func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
 
 	// Perform Access control check for publish (write).
 	aclOK := cl.ac.ACL(cl.user, pk.TopicName, true)
-	log.Println(aclOK)
 
 	// If message is retained, add it to the retained messages index.
 	if pk.Retain && aclOK {
@@ -384,7 +382,6 @@ func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
 	// packet's topic.
 	subs := s.topics.Subscribers(pk.TopicName)
 	log.Println(pk.TopicName, subs)
-
 	for id, qos := range subs {
 		if client, ok := s.clients.get(id); ok {
 
@@ -481,19 +478,8 @@ func (s *Server) processPubcomp(cl *client, pk *packets.PubcompPacket) error {
 	return nil
 }
 
-func (s *Server) processSubscribe(cl *client, pk *packets.SubscribePacket) error {
-	trie.ReLeaf(s.topics.(*trie.Index).Root, 0)
-
-	time.Sleep(time.Second)
-
-	s.topics.Subscribe(pk.Topics[0], cl.id, 0)
-	fmt.Println("----------------------")
-	trie.ReLeaf(s.topics.(*trie.Index).Root, 0)
-	return nil
-}
-
 // processSubscribe processes a Subscribe packet.
-func (s *Server) processSubscribeX(cl *client, pk *packets.SubscribePacket) error {
+func (s *Server) processSubscribe(cl *client, pk *packets.SubscribePacket) error {
 	retCodes := make([]byte, len(pk.Topics))
 
 	for i := 0; i < len(pk.Topics); i++ {
