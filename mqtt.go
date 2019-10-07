@@ -157,7 +157,7 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	}
 
 	// Add the new client to the clients manager.
-	client := newClient(p, msg)
+	client := newClient(p, msg, ac)
 	// ... handle session takeover
 	s.clients.add(client)
 
@@ -267,12 +267,40 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 
 	case *packets.PublishPacket:
 
-		// @TODO ... Publish ACL here.
+		// Perform Access control check for publish (write).
+		if !cl.ac.ACL(cl.user, msg.TopicName, true) {
+			//	 = packets.ErrSubAckNetworkError
+		}
 
 		// If message is retained, add it to the retained messages index.
 		if msg.Retain {
 			s.topics.RetainMessage(msg)
 		}
+
+		// Send appropriate Ack back to client.
+		/*if msg.Qos == 1 {
+			err := s.writeClient(cl, &packets.PubackPacket{
+				FixedHeader: packets.NewFixedHeader(packets.Puback),
+				PacketID:    msg.PacketID,
+			})
+			if err != nil {
+				s.closeClient(cl, true)
+				return err
+			}
+
+		} else if msg.Qos == 2 {
+			rec := &packets.PubrecPacket{
+				FixedHeader: packets.NewFixedHeader(packets.Pubrec),
+				PacketID:    msg.PacketID,
+			}
+			cl.inFlight.set(msg.PacketID, rec)
+			err := s.writeClient(cl, rec)
+			if err != nil {
+				s.closeClient(cl, true)
+				return err
+			}
+		}
+		*/
 
 		// Get all the clients who have a subscription matching the publish
 		// packet's topic.
@@ -318,13 +346,13 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 				PacketID:    msg.PacketID,
 			}
 
+			cl.inFlight.set(out.PacketID, out)
 			err := s.writeClient(cl, out)
 			if err != nil {
 				s.closeClient(cl, true)
 				return err
 			}
 
-			cl.inFlight.set(out.PacketID, out)
 		}
 
 	case *packets.PubrelPacket:
@@ -351,13 +379,14 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	case *packets.SubscribePacket:
 		retCodes := make([]byte, len(msg.Topics))
 		for i := 0; i < len(msg.Topics); i++ {
-			// @TODO ... Subscribe ACL here.
-			//		retCodes[i] = packets.ErrSubAckNetworkError
-			s.topics.Subscribe(msg.Topics[i], cl.id, msg.Qoss[i])
-			retCodes[i] = msg.Qoss[i]
+			if !cl.ac.ACL(cl.user, msg.Topics[i], false) {
+				retCodes[i] = packets.ErrSubAckNetworkError
+			} else {
+				s.topics.Subscribe(msg.Topics[i], cl.id, msg.Qoss[i])
+				retCodes[i] = msg.Qoss[i]
+			}
 		}
 
-		// Acknowledge the subscriptions with a Suback packet.
 		err := s.writeClient(cl, &packets.SubackPacket{
 			FixedHeader: packets.NewFixedHeader(packets.Suback),
 			PacketID:    msg.PacketID,
@@ -375,7 +404,6 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 			for _, pkv := range messages {
 				err := s.writeClient(cl, pkv)
 				if err != nil {
-					log.Println("write err B", err)
 					s.closeClient(cl, true)
 					return err
 				}
@@ -387,7 +415,6 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 			s.topics.Unsubscribe(msg.Topics[i], cl.id)
 		}
 
-		// Acknowledge the unsubscriptions with a UNSUBACK packet.
 		err := s.writeClient(cl, &packets.UnsubackPacket{
 			FixedHeader: packets.NewFixedHeader(packets.Unsuback),
 			PacketID:    msg.PacketID,
@@ -414,17 +441,21 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 	defer s.buffers.Put(buf)
 	err := pk.Encode(buf)
 	if err != nil {
+		log.Println("ENCODE ERR")
 		return err
 	}
 
 	// Write packet to client.
+	log.Println("WRITE")
 	_, err = buf.WriteTo(cl.p.W)
 	if err != nil {
+		log.Println("WRITE ERR")
 		return err
 	}
 
 	err = cl.p.W.Flush()
 	if err != nil {
+		log.Println("FLUSH ERR")
 		return err
 	}
 

@@ -24,6 +24,17 @@ type Packet interface {
 	Validate() (byte, error)
 }
 
+// BufWriter is an interface for satisfying a bufio.Writer. This is mainly
+// in place to allow testing.
+type BufWriter interface {
+
+	// Write writes a byte buffer.
+	Write(p []byte) (nn int, err error)
+
+	// Flush flushes the buffer.
+	Flush() error
+}
+
 // Parser is an MQTT packet parser that reads and writes MQTT payloads to a
 // buffered IO stream.
 type Parser struct {
@@ -36,14 +47,14 @@ type Parser struct {
 	R *bufio.Reader
 
 	// W is a bufio writer for writing outgoing packets.
-	W *bufio.Writer
+	W BufWriter
 
 	// FixedHeader is the fixed header from the last seen packet.
 	FixedHeader FixedHeader
 }
 
 // NewParser returns an instance of Parser for a connection.
-func NewParser(c net.Conn, r *bufio.Reader, w *bufio.Writer) *Parser {
+func NewParser(c net.Conn, r *bufio.Reader, w BufWriter) *Parser {
 	return &Parser{
 		Conn: c,
 		R:    r,

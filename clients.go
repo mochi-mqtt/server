@@ -7,6 +7,7 @@ import (
 
 	"github.com/rs/xid"
 
+	"github.com/mochi-co/mqtt/auth"
 	"github.com/mochi-co/mqtt/packets"
 )
 
@@ -62,6 +63,9 @@ type client struct {
 	// p is a packets parser which reads incoming packets.
 	p *packets.Parser
 
+	// ac is a pointer to an auth controller inherited from the listener.
+	ac auth.Controller
+
 	// end is a channel that indicates the client should be halted.
 	end chan struct{}
 
@@ -93,9 +97,10 @@ type client struct {
 }
 
 // newClient creates a new instance of client.
-func newClient(p *packets.Parser, pk *packets.ConnectPacket) *client {
+func newClient(p *packets.Parser, pk *packets.ConnectPacket, ac auth.Controller) *client {
 	cl := &client{
 		p:    p,
+		ac:   ac,
 		end:  make(chan struct{}),
 		done: new(sync.Once),
 

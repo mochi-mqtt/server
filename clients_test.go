@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/mochi-co/mqtt/auth"
 	"github.com/mochi-co/mqtt/packets"
 )
 
@@ -106,7 +107,7 @@ func TestNewClient(t *testing.T) {
 		ClientIdentifier: "zen3",
 	}
 
-	cl := newClient(p, pk)
+	cl := newClient(p, pk, new(auth.Allow))
 	require.NotNil(t, cl)
 	require.NotNil(t, cl.inFlight.internal)
 	require.Equal(t, pk.Keepalive, cl.keepalive)
@@ -115,13 +116,13 @@ func TestNewClient(t *testing.T) {
 
 	// Autogenerate id.
 	pk = new(packets.ConnectPacket)
-	cl = newClient(p, pk)
+	cl = newClient(p, pk, new(auth.Allow))
 	require.NotNil(t, cl)
 	require.NotEmpty(t, cl.id)
 
 	// Autoset keepalive
 	pk = new(packets.ConnectPacket)
-	cl = newClient(p, pk)
+	cl = newClient(p, pk, new(auth.Allow))
 	require.NotNil(t, cl)
 	require.Equal(t, clientKeepalive, cl.keepalive)
 }
@@ -133,14 +134,14 @@ func BenchmarkNewClient(b *testing.B) {
 	pk := new(packets.ConnectPacket)
 
 	for n := 0; n < b.N; n++ {
-		newClient(p, pk)
+		newClient(p, pk, new(auth.Allow))
 	}
 }
 
 func TestNextPacketID(t *testing.T) {
 	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
-	client := newClient(p, new(packets.ConnectPacket))
+	client := newClient(p, new(packets.ConnectPacket), new(auth.Allow))
 	require.NotNil(t, client)
 
 	require.Equal(t, uint32(1), client.nextPacketID())
@@ -154,7 +155,7 @@ func TestNextPacketID(t *testing.T) {
 func BenchmarkNextPacketID(b *testing.B) {
 	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
-	client := newClient(p, new(packets.ConnectPacket))
+	client := newClient(p, new(packets.ConnectPacket), new(auth.Allow))
 
 	for n := 0; n < b.N; n++ {
 		client.nextPacketID()
@@ -168,7 +169,7 @@ func TestClientClose(t *testing.T) {
 		ClientIdentifier: "zen3",
 	}
 
-	client := newClient(p, pk)
+	client := newClient(p, pk, new(auth.Allow))
 	require.NotNil(t, client)
 
 	client.close()
@@ -184,21 +185,21 @@ func TestClientClose(t *testing.T) {
 }
 
 func TestInFlightSet(t *testing.T) {
-	client := newClient(nil, new(packets.ConnectPacket))
+	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
 	client.inFlight.set(1, new(packets.PublishPacket))
 	require.NotNil(t, client.inFlight.internal[1])
 	require.NotEqual(t, 0, client.inFlight.internal[1].sent)
 }
 
 func BenchmarkInFlightSet(b *testing.B) {
-	client := newClient(nil, new(packets.ConnectPacket))
+	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
 	for n := 0; n < b.N; n++ {
 		client.inFlight.set(1, new(packets.PublishPacket))
 	}
 }
 
 func TestInFlightGet(t *testing.T) {
-	client := newClient(nil, new(packets.ConnectPacket))
+	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
 	client.inFlight.set(2, new(packets.PublishPacket))
 
 	msg, ok := client.inFlight.get(2)
@@ -207,7 +208,7 @@ func TestInFlightGet(t *testing.T) {
 }
 
 func BenchmarkInFlightGet(b *testing.B) {
-	client := newClient(nil, new(packets.ConnectPacket))
+	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
 	client.inFlight.set(2, new(packets.PublishPacket))
 	for n := 0; n < b.N; n++ {
 		client.inFlight.get(2)
@@ -215,7 +216,7 @@ func BenchmarkInFlightGet(b *testing.B) {
 }
 
 func TestInFlightDelete(t *testing.T) {
-	client := newClient(nil, new(packets.ConnectPacket))
+	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
 	client.inFlight.set(3, new(packets.PublishPacket))
 	require.NotNil(t, client.inFlight.internal[3])
 
@@ -227,7 +228,7 @@ func TestInFlightDelete(t *testing.T) {
 }
 
 func BenchmarInFlightDelete(b *testing.B) {
-	client := newClient(nil, new(packets.ConnectPacket))
+	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
 	for n := 0; n < b.N; n++ {
 		client.inFlight.set(4, new(packets.PublishPacket))
 		client.inFlight.delete(4)

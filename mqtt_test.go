@@ -2,10 +2,10 @@ package mqtt
 
 import (
 	"bufio"
+	"errors"
 	"io/ioutil"
 	"log"
 	"net"
-	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +25,16 @@ func newBufioWriter(c net.Conn) *bufio.Writer {
 	return bufio.NewWriterSize(c, 512)
 }
 
+type ErroringWriter struct{}
+
+func (e *ErroringWriter) Write(b []byte) (int, error) {
+	return 0, errors.New("error")
+}
+
+func (e *ErroringWriter) Flush() error {
+	return errors.New("error")
+}
+
 func setupClient(id string) (s *Server, r net.Conn, w net.Conn, cl *client) {
 	s = New()
 	r, w = net.Pipe()
@@ -33,6 +43,7 @@ func setupClient(id string) (s *Server, r net.Conn, w net.Conn, cl *client) {
 		&packets.ConnectPacket{
 			ClientIdentifier: id,
 		},
+		new(auth.Allow),
 	)
 	return
 }
@@ -552,35 +563,14 @@ func TestServerWriteClientNilWriter(t *testing.T) {
 func TestServerWriteClientWriteError(t *testing.T) {
 	s, r, w, cl := setupClient("zen")
 	s.clients.add(cl)
-	//
+
+	r.Close()
+	cl.p.W = new(ErroringWriter)
 
 	err := s.writeClient(cl, &packets.PublishPacket{})
 	require.Error(t, err)
 	w.Close()
-	r.Close()
 }
-
-/*
-func TestServerProcessPacketSubscribeWriteError(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
-
-	o := make(chan error, 2)
-	go func() {
-		r.Close()
-		err := s.processPacket(cl, &packets.SubscribePacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Subscribe,
-			},
-			PacketID: 10,
-		})
-		o <- err
-	}()
-
-	require.Error(t, <-o)
-	close(o)
-	w.Close()
-}
-*/
 
 /*
 
@@ -992,6 +982,41 @@ func TestServerProcessPacketSubscribe(t *testing.T) {
 
 	require.Equal(t, topics.Subscriptions{cl.id: 0}, s.topics.Subscribers("a/b/c"))
 	require.Equal(t, topics.Subscriptions{cl.id: 1}, s.topics.Subscribers("d/e/f"))
+}
+
+func TestServerProcessPacketSubscribeACLDisallow(t *testing.T) {
+	s, r, w, cl := setupClient("zen")
+	cl.ac = new(auth.Disallow)
+
+	o := make(chan error, 2)
+	go func() {
+		o <- s.processPacket(cl, &packets.SubscribePacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Subscribe,
+			},
+			PacketID: 10,
+			Topics:   []string{"a/b/c", "d/e/f"},
+			Qoss:     []byte{0, 1},
+		})
+		w.Close()
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+
+	buf, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Suback << 4), 4, // Fixed header
+		0, 10, // Packet ID - LSB+MSB
+		packets.ErrSubAckNetworkError,
+		packets.ErrSubAckNetworkError,
+	}, buf)
+	require.NoError(t, <-o)
+	close(o)
+	r.Close()
+
+	require.Empty(t, s.topics.Subscribers("a/b/c"))
+	require.Empty(t, s.topics.Subscribers("d/e/f"))
 }
 
 func TestServerProcessPacketSubscribeRetained(t *testing.T) {
