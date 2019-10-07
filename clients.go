@@ -88,6 +88,9 @@ type client struct {
 	// packetID is the current highest packetID.
 	packetID uint32
 
+	// lwt contains the last will and testament for the client.
+	lwt lwt
+
 	// inFlight is a map of messages which are in-flight,awaiting completiong of
 	// a QoS pattern.
 	inFlight inFlight
@@ -128,16 +131,14 @@ func newClient(p *packets.Parser, pk *packets.ConnectPacket, ac auth.Controller)
 	}
 
 	// If a last will and testament has been provided, record it.
-	/*if pk.WillFlag {
-		// @TODO ...
-		client.will = lwt{
+	if pk.WillFlag {
+		cl.lwt = lwt{
 			topic:   pk.WillTopic,
 			message: pk.WillMessage,
 			qos:     pk.WillQos,
 			retain:  pk.WillRetain,
 		}
 	}
-	*/
 
 	return cl
 }
@@ -178,6 +179,22 @@ func (cl *client) close() {
 		cl.p.Conn = nil
 
 	})
+}
+
+// lwt contains the last will and testament details for a client connection.
+type lwt struct {
+
+	// topic is the topic the will message shall be sent to.
+	topic string
+
+	// message is the message that shall be sent when the client disconnects.
+	message []byte
+
+	// qos is the quality of service byte desired for the will message.
+	qos byte
+
+	// retain indicates whether the will message should be retained.
+	retain bool
 }
 
 // inFlightMessage contains data about a packet which is currently in-flight.

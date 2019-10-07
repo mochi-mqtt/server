@@ -23,18 +23,6 @@ type FixedHeader struct {
 	Remaining int
 }
 
-// NewFixedHeader returns a fresh fixedheader for a given packet type.
-func NewFixedHeader(packetType byte) FixedHeader {
-	fh := FixedHeader{
-		Type: packetType,
-	}
-	if packetType == Pubrel || packetType == Subscribe || packetType == Unsubscribe {
-		fh.Qos = 1
-	}
-
-	return fh
-}
-
 // encode encodes the FixedHeader and returns a bytes buffer.
 func (fh *FixedHeader) encode(buf *bytes.Buffer) {
 	buf.WriteByte(fh.Type<<4 | encodeBool(fh.Dup)<<3 | fh.Qos<<1 | encodeBool(fh.Retain))

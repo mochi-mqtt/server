@@ -128,6 +128,34 @@ func TestNewClient(t *testing.T) {
 	require.Equal(t, clientKeepalive, cl.keepalive)
 }
 
+func TestNewClientLWT(t *testing.T) {
+	r, _ := net.Pipe()
+	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
+	r.Close()
+	pk := &packets.ConnectPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Connect,
+			Remaining: 29,
+		},
+		ProtocolName:     "MQTT",
+		ProtocolVersion:  4,
+		CleanSession:     true,
+		Keepalive:        60,
+		ClientIdentifier: "zen",
+		WillFlag:         true,
+		WillTopic:        "lwt",
+		WillMessage:      []byte("lol gg"),
+		WillQos:          1,
+		WillRetain:       false,
+	}
+
+	cl := newClient(p, pk, new(auth.Allow))
+	require.Equal(t, pk.WillTopic, cl.lwt.topic)
+	require.Equal(t, pk.WillMessage, cl.lwt.message)
+	require.Equal(t, pk.WillQos, cl.lwt.qos)
+	require.Equal(t, pk.WillRetain, cl.lwt.retain)
+}
+
 func BenchmarkNewClient(b *testing.B) {
 	r, _ := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))

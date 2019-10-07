@@ -68,15 +68,6 @@ func (p *Parser) RefreshDeadline(keepalive uint16) {
 	p.Conn.SetDeadline(time.Now().Add(expiry))
 }
 
-// Reset sets the new destinations for the read and write buffers.
-/*
-func (p *Parser) Reset(c net.Conn) {
-	p.Lock()
-	defer p.Unlock()
-	p.Conn = c
-}
-*/
-
 // ReadFixedHeader reads in the values of the next packet's fixed header.
 func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 

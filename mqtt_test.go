@@ -25,14 +25,32 @@ func newBufioWriter(c net.Conn) *bufio.Writer {
 	return bufio.NewWriterSize(c, 512)
 }
 
-type ErroringWriter struct{}
-
-func (e *ErroringWriter) Write(b []byte) (int, error) {
-	return 0, errors.New("error")
+type quietWriter struct {
+	b        []byte
+	f        [][]byte
+	writes   int
+	errAfter int
 }
 
-func (e *ErroringWriter) Flush() error {
-	return errors.New("error")
+func (q *quietWriter) Write(b []byte) (int, error) {
+	q.writes++
+	if len(q.b) > 0 {
+		q.b = append(q.b, b...)
+	} else {
+		q.b = b
+	}
+
+	if q.errAfter == -1 || (q.errAfter > 0 && q.writes > q.errAfter) {
+		return len(b), errors.New("error")
+	}
+
+	return len(b), nil
+}
+
+func (q *quietWriter) Flush() error {
+	q.f = append(q.f, q.b)
+	q.b = []byte{}
+	return nil
 }
 
 func setupClient(id string) (s *Server, r net.Conn, w net.Conn, cl *client) {
@@ -59,7 +77,6 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s)
 	require.NotNil(t, s.listeners)
 	require.NotNil(t, s.clients)
-	require.NotNil(t, s.buffers)
 	log.Println(s)
 }
 
@@ -552,33 +569,24 @@ func TestServerReadClientBadPacketValidation(t *testing.T) {
  */
 
 func TestServerWriteClient(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
 	s.clients.add(cl)
 
-	go func() {
-		err := s.writeClient(cl, &packets.PublishPacket{
-			FixedHeader: packets.FixedHeader{
-				Type:      packets.Publish,
-				Remaining: 18,
-			},
-			TopicName: "a/b/c",
-			Payload:   []byte("hello mochi"),
-		})
-		if err != nil {
-			panic(err)
-		}
-		w.Close()
-	}()
-	time.Sleep(10 * time.Millisecond)
-
-	buf, err := ioutil.ReadAll(r)
+	err := s.writeClient(cl, &packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Publish,
+			Remaining: 18,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello mochi"),
+	})
 	require.NoError(t, err)
 	require.Equal(t, []byte{byte(packets.Publish << 4), 18, // Fixed header
 		0, 5, // Topic Name - LSB+MSB
 		'a', '/', 'b', '/', 'c', // Topic Name
 		'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i',
-	}, buf)
-	r.Close()
+	}, cl.p.W.(*quietWriter).f[0])
 }
 
 func TestServerWriteClientBadEncode(t *testing.T) {
@@ -609,27 +617,22 @@ func TestServerWriteClientNilFlush(t *testing.T) {
 }
 
 func TestServerWriteClientNilWriter(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
+	s, _, _, cl := setupClient("zen")
 	s.clients.add(cl)
 	cl.p.W = nil
 
 	err := s.writeClient(cl, &packets.PublishPacket{})
 	require.Error(t, err)
 	require.Equal(t, ErrConnectionClosed, err)
-	r.Close()
-	w.Close()
 }
 
 func TestServerWriteClientWriteError(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{errAfter: -1}
 	s.clients.add(cl)
-
-	r.Close()
-	cl.p.W = new(ErroringWriter)
 
 	err := s.writeClient(cl, &packets.PublishPacket{})
 	require.Error(t, err)
-	w.Close()
 }
 
 /*
@@ -660,8 +663,22 @@ func TestServerCloseClient(t *testing.T) { // as opposed to client.close
 
  */
 
-func TestServerProcessPacketConnect(t *testing.T) {
+func TestServerProcessPacket(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
+	err := s.processPacket(cl, nil)
+	require.NoError(t, err)
+}
+
+func BenchmarkServerProcessPacket(b *testing.B) {
+	s, _, _, cl := setupClient("zen")
+	for n := 0; n < b.N; n++ {
+		s.processPacket(cl, nil)
+	}
+}
+
+func TestServerProcessConnect(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
 
 	err := s.processPacket(cl, &packets.ConnectPacket{
 		FixedHeader: packets.FixedHeader{
@@ -669,18 +686,29 @@ func TestServerProcessPacketConnect(t *testing.T) {
 		},
 	})
 
+	require.NoError(t, err)
 	var ok bool
 	select {
 	case _, ok = <-cl.end:
 	}
-
 	require.Equal(t, false, ok)
-	require.Nil(t, cl.p.Conn)
-	require.NoError(t, err)
 }
 
-func TestServerProcessPacketDisconnect(t *testing.T) {
+func BenchmarkServerProcessConnect(b *testing.B) {
 	s, _, _, cl := setupClient("zen")
+	pk := &packets.ConnectPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Connect,
+		},
+	}
+	for n := 0; n < b.N; n++ {
+		s.processConnect(cl, pk)
+	}
+}
+
+func TestServerProcessDisconnect(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
 
 	err := s.processPacket(cl, &packets.DisconnectPacket{
 		FixedHeader: packets.FixedHeader{
@@ -688,66 +716,74 @@ func TestServerProcessPacketDisconnect(t *testing.T) {
 		},
 	})
 
+	require.NoError(t, err)
 	var ok bool
 	select {
 	case _, ok = <-cl.end:
 	}
-
 	require.Equal(t, false, ok)
-	require.Nil(t, cl.p.Conn)
-	require.NoError(t, err)
 }
 
-func TestServerProcessPacketPingOK(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
+func BenchmarkServerProcessDisconnect(b *testing.B) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
 
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, &packets.PingreqPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Pingreq,
-			},
-		})
-		w.Close()
-	}()
+	pk := &packets.DisconnectPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Disconnect,
+		},
+	}
+	for n := 0; n < b.N; n++ {
+		s.processDisconnect(cl, pk)
+	}
+}
 
-	time.Sleep(10 * time.Millisecond)
+func TestServerProcessPingreq(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
 
-	buf, err := ioutil.ReadAll(r)
+	err := s.processPacket(cl, &packets.PingreqPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pingreq,
+		},
+	})
 	require.NoError(t, err)
 	require.Equal(t, []byte{
 		byte(packets.Pingresp << 4), 0,
-	}, buf)
-
-	require.NoError(t, <-o)
-
-	close(o)
-	r.Close()
+	}, cl.p.W.(*quietWriter).f[0])
 }
 
-func TestServerProcessPacketPingWriteError(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
+func BenchmarkServerProcessPingreq(b *testing.B) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{}
 
-	o := make(chan error, 2)
-	go func() {
-		r.Close()
-		w.Close()
-		o <- s.processPacket(cl, &packets.PingreqPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Pingreq,
-			},
-		})
-
-	}()
-	require.Error(t, <-o)
-	require.Nil(t, cl.p.Conn)
-
-	close(o)
+	pk := &packets.PingreqPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pingreq,
+		},
+	}
+	for n := 0; n < b.N; n++ {
+		s.processPingreq(cl, pk)
+	}
 }
 
-func TestServerProcessPacketPublishOKQOS1(t *testing.T) {
-	s, r, w, c1 := setupClient("c1")
-	_, r2, w2, c2 := setupClient("c2")
+func TestServerProcessPingreqWriteError(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{errAfter: -1}
+
+	err := s.processPacket(cl, &packets.PingreqPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pingreq,
+		},
+	})
+	require.Error(t, err)
+}
+
+func TestServerProcessPublishQOS1(t *testing.T) {
+	s, _, _, c1 := setupClient("c1")
+	_, _, _, c2 := setupClient("c2")
+	c1.p.W = new(quietWriter)
+	c2.p.W = new(quietWriter)
 
 	s.clients.add(c1)
 	s.clients.add(c2)
@@ -755,394 +791,343 @@ func TestServerProcessPacketPublishOKQOS1(t *testing.T) {
 	s.topics.Subscribe("a/+/c", c2.id, 1)
 	require.Nil(t, c1.inFlight.internal[1])
 
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(c1, &packets.PublishPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Publish,
-				Qos:  1,
-			},
-			TopicName: "a/b/c",
-			Payload:   []byte("hello"),
-			PacketID:  12,
-		})
-		w.Close()
-		w2.Close()
-	}()
-
-	recv := make(chan []byte)
-	go func() {
-		buf, err := ioutil.ReadAll(r2)
-		if err != nil {
-			panic(err)
-		}
-		recv <- buf
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-
-	buf, err := ioutil.ReadAll(r)
+	err := s.processPacket(c1, &packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:   packets.Publish,
+			Qos:    1,
+			Retain: true,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+		PacketID:  12,
+	})
 	require.NoError(t, err)
 	require.Equal(t, []byte{
 		byte(packets.Puback << 4), 2, // Fixed header
 		0, 12, // Packet ID - LSB+MSB
-	}, buf)
+	}, c1.p.W.(*quietWriter).f[0])
 
-	require.NoError(t, <-o)
-	require.Equal(t,
-		[]byte{
-			byte(packets.Publish<<4 | 2), 14, // Fixed header QoS : 1
-			0, 5, // Topic Name - LSB+MSB
-			'a', '/', 'b', '/', 'c', // Topic Name
-			0, 1, // packet id from qos=1
-			'h', 'e', 'l', 'l', 'o', // Payload
-		},
-		<-recv,
-	)
-
-	r.Close()
-	r2.Close()
+	require.Equal(t, []byte{
+		byte(packets.Publish<<4 | 2), 14, // Fixed header QoS : 1
+		0, 5, // Topic Name - LSB+MSB
+		'a', '/', 'b', '/', 'c', // Topic Name
+		0, 1, // packet id from qos=1
+		'h', 'e', 'l', 'l', 'o', // Payload
+	}, c2.p.W.(*quietWriter).f[0])
 }
 
-func TestServerProcessPacketPublishOKQOS2(t *testing.T) {
-	s, r, w, c1 := setupClient("c1")
+func BenchmarkServerProcessPublish(b *testing.B) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{}
 
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(c1, &packets.PublishPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Publish,
-				Qos:  2,
-			},
-			TopicName: "a/b/c",
-			Payload:   []byte("hello"),
-			PacketID:  12,
-		})
-		w.Close()
-	}()
+	pk := &packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+	}
+	for n := 0; n < b.N; n++ {
+		err := s.processPublish(cl, pk)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
 
-	time.Sleep(10 * time.Millisecond)
+func TestServerProcessPublishQOS1WriteError(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{errAfter: -1}
+	err := s.processPacket(cl, &packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+			Qos:  1,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+		PacketID:  12,
+	})
 
-	buf, err := ioutil.ReadAll(r)
+	require.Error(t, err)
+}
+
+func TestServerProcessPublishWritePubsError(t *testing.T) {
+	s, _, _, c1 := setupClient("c1")
+	_, _, _, c2 := setupClient("c2")
+	c2.p.W = &quietWriter{errAfter: -1}
+
+	s.clients.add(c1)
+	s.clients.add(c2)
+	s.topics.Subscribe("a/b/+", c2.id, 0)
+	s.topics.Subscribe("a/+/c", c2.id, 1)
+	require.Nil(t, c1.inFlight.internal[1])
+
+	err := s.processPacket(c1, &packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello2"),
+	})
+	require.Error(t, err)
+
+}
+func TestServerProcessPublishQOS2(t *testing.T) {
+	s, _, _, c1 := setupClient("c1")
+	_, _, _, c2 := setupClient("c2")
+	c1.p.W = new(quietWriter)
+	c2.p.W = new(quietWriter)
+
+	err := s.processPacket(c1, &packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:   packets.Publish,
+			Qos:    2,
+			Retain: true,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+		PacketID:  12,
+	})
 	require.NoError(t, err)
 	require.Equal(t, []byte{
 		byte(packets.Pubrec << 4), 2, // Fixed header
 		0, 12, // Packet ID - LSB+MSB
-	}, buf)
+	}, c1.p.W.(*quietWriter).f[0])
 
-	r.Close()
 }
 
-func TestServerProcessPacketPublishACLDisallow(t *testing.T) {
-	s, r, w, c1 := setupClient("c1")
-	c1.ac = new(auth.Disallow)
+func TestServerProcessPublishQOS2WriteError(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{errAfter: -1}
+	err := s.processPacket(cl, &packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+			Qos:  2,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+		PacketID:  12,
+	})
 
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(c1, &packets.PublishPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Publish,
-				Qos:  1,
-			},
-			TopicName: "a/b/c",
-			PacketID:  12,
-		})
-		w.Close()
-	}()
+	require.Error(t, err)
+}
 
-	time.Sleep(10 * time.Millisecond)
+func TestServerProcessPublishDisallowACL(t *testing.T) {
+	s, _, _, cl := setupClient("c1")
+	cl.p.W = new(quietWriter)
+	cl.ac = new(auth.Disallow)
 
-	buf, err := ioutil.ReadAll(r)
-	require.NoError(t, err)
-	require.Equal(t, []byte{
-		byte(packets.Puback << 4), 2, // Fixed header
-		0, 12, // Packet ID - LSB+MSB
-	}, buf)
+	err := s.processPacket(cl, &packets.PublishPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+	})
 
-	err = <-o
 	require.Error(t, err)
 	require.Equal(t, ErrACLNotAuthorized, err)
-
-	r.Close()
 }
 
-func TestServerProcessPacketPublishOKQOS1WriteError(t *testing.T) {
-	s, r, w, c1 := setupClient("c1")
+func TestServerProcessPuback(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
 
-	o := make(chan error, 2)
-	go func() {
-		r.Close()
-		o <- s.processPacket(c1, &packets.PublishPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Publish,
-				Qos:  1,
-			},
-		})
-		w.Close()
-	}()
+	cl.inFlight.set(11, &packets.PublishPacket{PacketID: 11})
+	require.NotNil(t, cl.inFlight.internal[11])
 
-	require.Error(t, <-o)
+	err := s.processPacket(cl, &packets.PubackPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Puback,
+			Remaining: 2,
+		},
+		PacketID: 11,
+	})
+	require.NoError(t, err)
+	require.Nil(t, cl.inFlight.internal[11])
 }
 
-func TestServerProcessPacketPublishOKQOS2WriteError(t *testing.T) {
-	s, r, w, c1 := setupClient("c1")
+func TestServerProcessPubrec(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
 
-	o := make(chan error, 2)
-	go func() {
-		r.Close()
-		o <- s.processPacket(c1, &packets.PublishPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Publish,
-				Qos:  2,
-			},
-		})
-		w.Close()
-	}()
+	cl.inFlight.set(12, &packets.PublishPacket{PacketID: 12})
 
-	require.Error(t, <-o)
+	err := s.processPacket(cl, &packets.PubrecPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pubrec,
+		},
+		PacketID: 12,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Pubrel<<4) | 2, 2, // Fixed header
+		0, 12, // Packet ID - LSB+MSB
+	}, cl.p.W.(*quietWriter).f[0])
 }
 
-func TestServerProcessPacketPublishRetain(t *testing.T) {
-	s, r, _, cl := setupClient("zen")
+func BenchmarkServerProcessPubrec(b *testing.B) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
 
-	pk := &packets.PublishPacket{
+	pk := &packets.PubrecPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pubrec,
+		},
+		PacketID: 12,
+	}
+	for n := 0; n < b.N; n++ {
+		err := s.processPubrec(cl, pk)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func TestServerProcessPubrecWriteError(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{errAfter: -1}
+
+	cl.inFlight.set(12, &packets.PublishPacket{PacketID: 12})
+
+	err := s.processPacket(cl, &packets.PubrecPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pubrec,
+		},
+		PacketID: 12,
+	})
+	require.Error(t, err)
+}
+
+func TestServerProcessPubrel(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
+
+	cl.inFlight.set(10, &packets.PublishPacket{PacketID: 10})
+
+	err := s.processPacket(cl, &packets.PubrelPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pubrel,
+		},
+		PacketID: 10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Pubcomp << 4), 2, // Fixed header
+		0, 10, // Packet ID - LSB+MSB
+	}, cl.p.W.(*quietWriter).f[0])
+}
+
+func BenchmarkServerProcessPubrel(b *testing.B) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
+
+	cl.inFlight.set(10, &packets.PublishPacket{PacketID: 10})
+
+	pk := &packets.PubrecPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pubrel,
+		},
+		PacketID: 10,
+	}
+	for n := 0; n < b.N; n++ {
+		err := s.processPubrec(cl, pk)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func TestServerProcessPubrelWriteError(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{errAfter: -1}
+
+	cl.inFlight.set(10, &packets.PublishPacket{PacketID: 10})
+
+	err := s.processPacket(cl, &packets.PubrelPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pubrel,
+		},
+		PacketID: 10,
+	})
+	require.Error(t, err)
+}
+
+func TestServerProcessPubcomp(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
+
+	cl.inFlight.set(11, &packets.PublishPacket{PacketID: 11})
+	require.NotNil(t, cl.inFlight.internal[11])
+
+	err := s.processPacket(cl, &packets.PubcompPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Pubcomp,
+			Remaining: 2,
+		},
+		PacketID: 11,
+	})
+	require.NoError(t, err)
+	require.Nil(t, cl.inFlight.internal[11])
+
+}
+
+func BenchmarkServerProcessPubcomp(b *testing.B) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
+
+	cl.inFlight.set(11, &packets.PublishPacket{PacketID: 11})
+
+	pk := &packets.PubcompPacket{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Pubcomp,
+			Remaining: 2,
+		},
+		PacketID: 11,
+	}
+	for n := 0; n < b.N; n++ {
+		err := s.processPubcomp(cl, pk)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func TestServerProcessSubscribe(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
+
+	s.topics.RetainMessage(&packets.PublishPacket{
 		FixedHeader: packets.FixedHeader{
 			Type:   packets.Publish,
 			Retain: true,
 		},
 		TopicName: "a/b/c",
 		Payload:   []byte("hello"),
-	}
+	})
+	require.Equal(t, 1, len(s.topics.Messages("a/b/c")))
 
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, pk)
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-	require.NoError(t, <-o)
-
-	require.Equal(t, pk, s.topics.Messages("a/b/c")[0])
-
-	close(o)
-	r.Close()
-}
-
-func TestServerProcessPacketPublishWriteError(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
-
-	s.clients.add(cl)
-	s.topics.Subscribe("a/+/c", cl.id, 0)
-	require.Nil(t, cl.inFlight.internal[1])
-
-	o := make(chan error, 2)
-	go func() {
-		r.Close()
-		err := s.processPacket(cl, &packets.PublishPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Publish,
-			},
-			TopicName: "a/b/c",
-			Payload:   []byte("hello"),
-		})
-
-		o <- err
-	}()
-
-	require.Error(t, <-o)
-	close(o)
-	w.Close()
-}
-
-func TestServerProcessPacketPuback(t *testing.T) {
-	s, r, _, cl := setupClient("zen")
-
-	cl.inFlight.set(11, &packets.PublishPacket{PacketID: 11})
-	require.NotNil(t, cl.inFlight.internal[11])
-
-	pk := &packets.PubackPacket{
+	err := s.processPacket(cl, &packets.SubscribePacket{
 		FixedHeader: packets.FixedHeader{
-			Type:      packets.Puback,
-			Remaining: 2,
+			Type: packets.Subscribe,
 		},
-		PacketID: 11,
-	}
-
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, pk)
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-
-	require.NoError(t, <-o)
-	require.Nil(t, cl.inFlight.internal[11])
-
-	close(o)
-	r.Close()
-}
-
-func TestServerProcessPacketPubrec(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
-
-	cl.inFlight.set(12, &packets.PublishPacket{PacketID: 12})
-
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, &packets.PubrecPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Pubrec,
-			},
-			PacketID: 12,
-		})
-		w.Close()
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-
-	buf, err := ioutil.ReadAll(r)
-	require.NoError(t, err)
-	require.Equal(t, []byte{
-		byte(packets.Pubrel<<4) | 2, 2, // Fixed header
-		0, 12, // Packet ID - LSB+MSB
-	}, buf)
-
-	require.NoError(t, <-o)
-
-	close(o)
-	r.Close()
-}
-
-func TestServerProcessPacketPubrecWriteError(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
-
-	cl.inFlight.set(10, &packets.PublishPacket{PacketID: 10})
-
-	o := make(chan error, 2)
-	go func() {
-		r.Close()
-		err := s.processPacket(cl, &packets.PubrecPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Pubrec,
-			},
-			PacketID: 10,
-		})
-		o <- err
-	}()
-
-	require.Error(t, <-o)
-	close(o)
-	w.Close()
-}
-
-func TestServerProcessPacketPubrel(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
-
-	cl.inFlight.set(10, &packets.PublishPacket{PacketID: 10})
-
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, &packets.PubrelPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Pubrel,
-			},
-			PacketID: 10,
-		})
-		w.Close()
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-
-	buf, err := ioutil.ReadAll(r)
-	require.NoError(t, err)
-	require.Equal(t, []byte{
-		byte(packets.Pubcomp << 4), 2, // Fixed header
-		0, 10, // Packet ID - LSB+MSB
-	}, buf)
-
-	require.NoError(t, <-o)
-
-	close(o)
-	r.Close()
-}
-
-func TestServerProcessPacketPubrelWriteError(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
-
-	cl.inFlight.set(10, &packets.PublishPacket{PacketID: 10})
-
-	o := make(chan error, 2)
-	go func() {
-		r.Close()
-		err := s.processPacket(cl, &packets.PubrelPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Pubrel,
-			},
-			PacketID: 10,
-		})
-		o <- err
-	}()
-
-	require.Error(t, <-o)
-	close(o)
-	w.Close()
-}
-
-func TestServerProcessPacketPubcomp(t *testing.T) {
-	s, r, _, cl := setupClient("zen")
-
-	cl.inFlight.set(11, &packets.PublishPacket{PacketID: 11})
-	require.NotNil(t, cl.inFlight.internal[11])
-
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, &packets.PubcompPacket{
-			FixedHeader: packets.FixedHeader{
-				Type:      packets.Pubcomp,
-				Remaining: 2,
-			},
-			PacketID: 11,
-		})
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-
-	require.NoError(t, <-o)
-	require.Nil(t, cl.inFlight.internal[11])
-
-	close(o)
-	r.Close()
-}
-
-func TestServerProcessPacketSubscribe(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
-
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, &packets.SubscribePacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Subscribe,
-			},
-			PacketID: 10,
-			Topics:   []string{"a/b/c", "d/e/f"},
-			Qoss:     []byte{0, 1},
-		})
-		w.Close()
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-
-	buf, err := ioutil.ReadAll(r)
+		PacketID: 10,
+		Topics:   []string{"a/b/c", "d/e/f"},
+		Qoss:     []byte{0, 1},
+	})
 	require.NoError(t, err)
 	require.Equal(t, []byte{
 		byte(packets.Suback << 4), 4, // Fixed header
 		0, 10, // Packet ID - LSB+MSB
 		0, // Return Code QoS 0
 		1, // Return Code QoS 1
-	}, buf)
-	require.NoError(t, <-o)
-	close(o)
-	r.Close()
+	}, cl.p.W.(*quietWriter).f[0])
+
+	require.Equal(t, []byte{
+		byte(packets.Publish<<4 | 1), 12, // Fixed header
+		0, 5, // Topic Name - LSB+MSB
+		'a', '/', 'b', '/', 'c', // Topic Name
+		'h', 'e', 'l', 'l', 'o', // Payload
+	}, cl.p.W.(*quietWriter).f[1])
 
 	require.NotNil(t, cl.subscriptions["a/b/c"])
 	require.NotNil(t, cl.subscriptions["d/e/f"])
@@ -1152,43 +1137,69 @@ func TestServerProcessPacketSubscribe(t *testing.T) {
 	require.Equal(t, topics.Subscriptions{cl.id: 1}, s.topics.Subscribers("d/e/f"))
 }
 
-func TestServerProcessPacketSubscribeACLDisallow(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
+func BenchmarkServerProcessSubscribe(b *testing.B) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
+
+	pk := &packets.SubscribePacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Subscribe,
+		},
+		PacketID: 10,
+		Topics:   []string{"a/b/c"},
+		Qoss:     []byte{0},
+	}
+	for n := 0; n < b.N; n++ {
+		err := s.processSubscribe(cl, pk)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func TestServerProcessSubscribeFailACL(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
 	cl.ac = new(auth.Disallow)
 
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, &packets.SubscribePacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Subscribe,
-			},
-			PacketID: 10,
-			Topics:   []string{"a/b/c", "d/e/f"},
-			Qoss:     []byte{0, 1},
-		})
-		w.Close()
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-
-	buf, err := ioutil.ReadAll(r)
+	err := s.processPacket(cl, &packets.SubscribePacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Subscribe,
+		},
+		PacketID: 10,
+		Topics:   []string{"a/b/c", "d/e/f"},
+		Qoss:     []byte{0, 1},
+	})
 	require.NoError(t, err)
 	require.Equal(t, []byte{
 		byte(packets.Suback << 4), 4, // Fixed header
 		0, 10, // Packet ID - LSB+MSB
 		packets.ErrSubAckNetworkError,
 		packets.ErrSubAckNetworkError,
-	}, buf)
-	require.NoError(t, <-o)
-	close(o)
-	r.Close()
+	}, cl.p.W.(*quietWriter).f[0])
 
 	require.Empty(t, s.topics.Subscribers("a/b/c"))
 	require.Empty(t, s.topics.Subscribers("d/e/f"))
 }
 
-func TestServerProcessPacketSubscribeRetained(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
+func TestServerProcessSubscribeWriteError(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{errAfter: -1}
+
+	err := s.processPacket(cl, &packets.SubscribePacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Subscribe,
+		},
+		PacketID: 10,
+		Topics:   []string{"a/b/c", "d/e/f"},
+		Qoss:     []byte{0, 1},
+	})
+	require.Error(t, err)
+}
+
+func TestServerProcessSubscribeWriteRetainedError(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{errAfter: 1}
 
 	s.topics.RetainMessage(&packets.PublishPacket{
 		FixedHeader: packets.FixedHeader{
@@ -1198,106 +1209,22 @@ func TestServerProcessPacketSubscribeRetained(t *testing.T) {
 		TopicName: "a/b/c",
 		Payload:   []byte("hello"),
 	})
-
 	require.Equal(t, 1, len(s.topics.Messages("a/b/c")))
 
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, &packets.SubscribePacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Subscribe,
-			},
-			PacketID: 10,
-			Topics:   []string{"a/b/c", "d/e/f"},
-			Qoss:     []byte{0, 1},
-		})
-		w.Close()
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-
-	buf, err := ioutil.ReadAll(r)
-	require.NoError(t, err)
-	require.Equal(t, []byte{
-		byte(packets.Suback << 4), 4, // Fixed header
-		0, 10, // Packet ID - LSB+MSB
-		0, // Return Code QoS 0
-		1, // Return Code QoS 1
-
-		// Next packet
-		// Because we're reading all, the retained messages will be published out
-		// in the same buffer.
-		byte(packets.Publish<<4 | 1), 12, // Fixed header
-		0, 5, // Topic Name - LSB+MSB
-		'a', '/', 'b', '/', 'c', // Topic Name
-		'h', 'e', 'l', 'l', 'o', // Payload
-	}, buf)
-
-	require.NoError(t, <-o)
-	close(o)
-	r.Close()
-}
-
-func TestServerProcessPacketSubscribeRetainedWriteError(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
-
-	s.topics.RetainMessage(&packets.PublishPacket{
+	err := s.processPacket(cl, &packets.SubscribePacket{
 		FixedHeader: packets.FixedHeader{
-			Type:   packets.Publish,
-			Retain: true,
+			Type: packets.Subscribe,
 		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
+		PacketID: 10,
+		Topics:   []string{"a/b/c", "d/e/f"},
+		Qoss:     []byte{0, 1},
 	})
-
-	require.Equal(t, 1, len(s.topics.Messages("a/b/c")))
-
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, &packets.SubscribePacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Subscribe,
-			},
-			PacketID: 10,
-			Topics:   []string{"a/b/c", "d/e/f"},
-			Qoss:     []byte{0, 1},
-		})
-		w.Close()
-	}()
-
-	buf := make([]byte, 4)
-	for i := 0; i < 4; i++ {
-		r.Read(buf)
-	}
-	r.Close()
-
-	require.Error(t, <-o)
-	close(o)
-	r.Close()
+	require.Error(t, err)
 }
 
-func TestServerProcessPacketSubscribeWriteError(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
-
-	o := make(chan error, 2)
-	go func() {
-		r.Close()
-		err := s.processPacket(cl, &packets.SubscribePacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Subscribe,
-			},
-			PacketID: 10,
-		})
-		o <- err
-	}()
-
-	require.Error(t, <-o)
-	close(o)
-	w.Close()
-}
-
-func TestServerProcessPacketUnsubscribe(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
+func TestServerProcessUnsubscribe(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
 
 	s.clients.add(cl)
 	s.topics.Subscribe("a/b/c", cl.id, 0)
@@ -1306,30 +1233,18 @@ func TestServerProcessPacketUnsubscribe(t *testing.T) {
 	cl.noteSubscription("d/e/f", 1)
 	log.Println(cl.subscriptions)
 
-	o := make(chan error, 2)
-	go func() {
-		o <- s.processPacket(cl, &packets.UnsubscribePacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Unsubscribe,
-			},
-			PacketID: 12,
-			Topics:   []string{"a/b/c", "d/e/f"},
-		})
-		w.Close()
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-
-	buf, err := ioutil.ReadAll(r)
+	err := s.processPacket(cl, &packets.UnsubscribePacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Unsubscribe,
+		},
+		PacketID: 12,
+		Topics:   []string{"a/b/c", "d/e/f"},
+	})
 	require.NoError(t, err)
 	require.Equal(t, []byte{
 		byte(packets.Unsuback << 4), 2, // Fixed header
 		0, 12, // Packet ID - LSB+MSB
-	}, buf)
-
-	require.NoError(t, <-o)
-	close(o)
-	r.Close()
+	}, cl.p.W.(*quietWriter).f[0])
 
 	require.Empty(t, s.topics.Subscribers("a/b/c"))
 	require.Empty(t, s.topics.Subscribers("d/e/f"))
@@ -1337,22 +1252,32 @@ func TestServerProcessPacketUnsubscribe(t *testing.T) {
 	require.NotContains(t, cl.subscriptions, "d/e/f")
 }
 
-func TestServerProcessPacketUnsubscribeWriteError(t *testing.T) {
-	s, r, w, cl := setupClient("zen")
+func BenchmarkServerProcessUnsubscribe(b *testing.B) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
 
-	o := make(chan error, 2)
-	go func() {
-		r.Close()
-		err := s.processPacket(cl, &packets.UnsubscribePacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Unsubscribe,
-			},
-			PacketID: 10,
-		})
-		o <- err
-	}()
+	pk := &packets.UnsubscribePacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Unsubscribe,
+		},
+		PacketID: 12,
+		Topics:   []string{"a/b/c"},
+	}
+	for n := 0; n < b.N; n++ {
+		err := s.processUnsubscribe(cl, pk)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
 
-	require.Error(t, <-o)
-	close(o)
-	w.Close()
+func TestServerProcessUnsubscribeWriteError(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{errAfter: -1}
+	err := s.processPacket(cl, &packets.UnsubscribePacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Unsubscribe,
+		},
+	})
+	require.Error(t, err)
 }

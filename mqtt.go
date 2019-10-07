@@ -2,13 +2,14 @@ package mqtt
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
+	"log"
 	"net"
 
 	"github.com/mochi-co/mqtt/auth"
 	"github.com/mochi-co/mqtt/listeners"
 	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/pools"
 	"github.com/mochi-co/mqtt/topics"
 	"github.com/mochi-co/mqtt/topics/trie"
 )
@@ -40,27 +41,6 @@ var (
 	rwBufSize = 512
 )
 
-/*
-	ErrListenerInvalid        = errors.New("listener validation failed")
-	ErrListenerIDExists       = errors.New("listener id already exists")
-	ErrPortInUse              = errors.New("port already in use")
-	ErrFailedListening        = errors.New("couldnt start net listener")
-	ErrIDNotSet               = errors.New("id not set")
-	ErrListenerNotFound       = errors.New("listener id not found")
-	ErrFailedInitializing     = errors.New("failed initializing")
-	ErrFailedServingTCP       = errors.New("error serving tcp listener")
-	ErrFailedServingWS        = errors.New("error serving websocket listener")
-	ErrAcceptConnection       = errors.New("error accepting connection")
-	ErrEstablishingConnection = errors.New("error establishing connection")
-	ErrCloseConnection        = errors.New("error closing connection")
-
-	ErrReadConnectPacket      = errors.New("error reading CONNECT packet")
-	ErrFirstPacketInvalid     = errors.New("first packet was not CONNECT packet")
-	ErrReadConnectInvalid     = errors.New("CONNECT packet was not valid")
-	ErrParsingRemoteOrigin    = errors.New("error parsing remote origin from websocket")
-	ErrFailedConnack          = errors.New("failed sending CONNACK packet")
-*/
-
 // Server is an MQTT broker server.
 type Server struct {
 
@@ -72,9 +52,6 @@ type Server struct {
 
 	// topics is an index of topic subscriptions and retained messages.
 	topics topics.Indexer
-
-	// buffers is a pool of bytes.buffer.
-	buffers pools.BytesBuffersPool
 }
 
 // New returns a pointer to a new instance of the MQTT broker.
@@ -83,7 +60,6 @@ func New() *Server {
 		listeners: listeners.NewListeners(),
 		clients:   newClients(),
 		topics:    trie.New(),
-		buffers:   pools.NewBytesBuffersPool(),
 	}
 }
 
@@ -180,7 +156,9 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 
 	// Send a CONNACK back to the client.
 	err = s.writeClient(client, &packets.ConnackPacket{
-		FixedHeader:    packets.NewFixedHeader(packets.Connack),
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Connack,
+		},
 		SessionPresent: false, //msg.CleanSession,
 		ReturnCode:     retcode,
 	})
@@ -259,190 +237,266 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	// @TODO ...
 
 	// Process the packet depending on the detected type.
-	switch msg := pk.(type) { //pk :=
+	switch msg := pk.(type) {
 	case *packets.ConnectPacket:
-
-		// [MQTT-3.1.0-2]
-		// The server is required to disconnect the client if a second connect
-		// packet is sent.
-		s.closeClient(cl, true)
+		return s.processConnect(cl, msg)
 
 	case *packets.DisconnectPacket:
-		s.closeClient(cl, true)
+		return s.processDisconnect(cl, msg)
 
 	case *packets.PingreqPacket:
-		err := s.writeClient(cl, &packets.PingrespPacket{
-			FixedHeader: packets.NewFixedHeader(packets.Pingresp),
-		})
-		if err != nil {
-			s.closeClient(cl, true)
-			return err
-		}
+		return s.processPingreq(cl, msg)
 
 	case *packets.PublishPacket:
-
-		// Perform Access control check for publish (write).
-		aclOK := cl.ac.ACL(cl.user, msg.TopicName, true)
-
-		// If message is retained, add it to the retained messages index.
-		if msg.Retain && aclOK {
-			s.topics.RetainMessage(msg)
-		}
-
-		// Send appropriate Ack back to client. In v5 this will include a
-		// auth return code.
-		if msg.Qos == 1 {
-			err := s.writeClient(cl, &packets.PubackPacket{
-				FixedHeader: packets.NewFixedHeader(packets.Puback),
-				PacketID:    msg.PacketID,
-			})
-			if err != nil {
-				s.closeClient(cl, true)
-				return err
-			}
-		} else if msg.Qos == 2 {
-			rec := &packets.PubrecPacket{
-				FixedHeader: packets.NewFixedHeader(packets.Pubrec),
-				PacketID:    msg.PacketID,
-			}
-			cl.inFlight.set(msg.PacketID, rec)
-			err := s.writeClient(cl, rec)
-			if err != nil {
-				s.closeClient(cl, true)
-				return err
-			}
-		}
-
-		// Don't propogate message if client has no permission to do so.
-		if !aclOK {
-			return ErrACLNotAuthorized
-		}
-
-		// Get all the clients who have a subscription matching the publish
-		// packet's topic.
-		subs := s.topics.Subscribers(msg.TopicName)
-		for id, qos := range subs {
-			if client, ok := s.clients.get(id); ok {
-
-				// Make a copy of the packet to send to client.
-				out := msg.Copy()
-
-				// If the client subscription has a higher qos, inherit it.
-				if qos > out.Qos {
-					out.Qos = qos
-				}
-
-				// If QoS byte is set, ensure the message has an id.
-				if out.Qos > 0 && out.PacketID == 0 {
-					out.PacketID = uint16(client.nextPacketID())
-				}
-
-				// If QoS byte is set, save as message to inflight index so we
-				// can track delivery.
-				if out.Qos > 0 {
-					client.inFlight.set(out.PacketID, out)
-				}
-
-				// Write the publish packet out to the receiving client.
-				err := s.writeClient(client, out)
-				if err != nil {
-					s.closeClient(client, true)
-					return err
-				}
-
-			}
-		}
+		return s.processPublish(cl, msg)
 
 	case *packets.PubackPacket:
-		cl.inFlight.delete(msg.PacketID)
+		return s.processPuback(cl, msg)
 
 	case *packets.PubrecPacket:
-		if _, ok := cl.inFlight.get(msg.PacketID); ok {
-			out := &packets.PubrelPacket{
-				FixedHeader: packets.NewFixedHeader(packets.Pubrel),
-				PacketID:    msg.PacketID,
-			}
-
-			cl.inFlight.set(out.PacketID, out)
-			err := s.writeClient(cl, out)
-			if err != nil {
-				s.closeClient(cl, true)
-				return err
-			}
-
-		}
+		return s.processPubrec(cl, msg)
 
 	case *packets.PubrelPacket:
-		if _, ok := cl.inFlight.get(msg.PacketID); ok {
-			out := &packets.PubcompPacket{
-				FixedHeader: packets.NewFixedHeader(packets.Pubcomp),
-				PacketID:    msg.PacketID,
-			}
-
-			err := s.writeClient(cl, out)
-			if err != nil {
-				s.closeClient(cl, true)
-				return err
-			}
-
-			cl.inFlight.delete(msg.PacketID)
-		}
+		return s.processPubrel(cl, msg)
 
 	case *packets.PubcompPacket:
-		if _, ok := cl.inFlight.get(msg.PacketID); ok {
-			cl.inFlight.delete(msg.PacketID)
-		}
+		return s.processPubcomp(cl, msg)
 
 	case *packets.SubscribePacket:
-		retCodes := make([]byte, len(msg.Topics))
-		for i := 0; i < len(msg.Topics); i++ {
-			if !cl.ac.ACL(cl.user, msg.Topics[i], false) {
-				retCodes[i] = packets.ErrSubAckNetworkError
-			} else {
-				s.topics.Subscribe(msg.Topics[i], cl.id, msg.Qoss[i])
-				cl.noteSubscription(msg.Topics[i], msg.Qoss[i])
-				retCodes[i] = msg.Qoss[i]
-			}
-		}
+		return s.processSubscribe(cl, msg)
 
-		err := s.writeClient(cl, &packets.SubackPacket{
-			FixedHeader: packets.NewFixedHeader(packets.Suback),
-			PacketID:    msg.PacketID,
-			ReturnCodes: retCodes,
+	case *packets.UnsubscribePacket:
+		return s.processUnsubscribe(cl, msg)
+	}
+
+	return nil
+}
+
+// processConnect processes a Connect packet. The packet cannot be used to
+// establish a new connection on an existing connection. See EstablishConnection
+// instead.
+func (s *Server) processConnect(cl *client, pk *packets.ConnectPacket) error {
+	s.closeClient(cl, true)
+	return nil
+}
+
+// processDisconnect processes a Disconnect packet.
+func (s *Server) processDisconnect(cl *client, pk *packets.DisconnectPacket) error {
+	s.closeClient(cl, true)
+	return nil
+}
+
+// processPingreq processes a Pingreq packet.
+func (s *Server) processPingreq(cl *client, pk *packets.PingreqPacket) error {
+	err := s.writeClient(cl, &packets.PingrespPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pingresp,
+		},
+	})
+	if err != nil {
+		s.closeClient(cl, true)
+		return err
+	}
+
+	return nil
+}
+
+// processPublish processes a Publish packet.
+func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
+
+	// Perform Access control check for publish (write).
+	aclOK := cl.ac.ACL(cl.user, pk.TopicName, true)
+
+	// If message is retained, add it to the retained messages index.
+	if pk.Retain && aclOK {
+		s.topics.RetainMessage(pk)
+	}
+
+	// Send appropriate Ack back to client. In v5 this will include a
+	// auth return code.
+	if pk.Qos == 1 {
+		err := s.writeClient(cl, &packets.PubackPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Puback,
+			},
+			PacketID: pk.PacketID,
 		})
-
 		if err != nil {
 			s.closeClient(cl, true)
 			return err
 		}
-
-		// Publish out any retained messages matching the subscription filter.
-		for i := 0; i < len(msg.Topics); i++ {
-			messages := s.topics.Messages(msg.Topics[i])
-			for _, pkv := range messages {
-				err := s.writeClient(cl, pkv)
-				if err != nil {
-					s.closeClient(cl, true)
-					return err
-				}
-			}
+	} else if pk.Qos == 2 {
+		rec := &packets.PubrecPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Pubrec,
+			},
+			PacketID: pk.PacketID,
 		}
-
-	case *packets.UnsubscribePacket:
-		for i := 0; i < len(msg.Topics); i++ {
-			s.topics.Unsubscribe(msg.Topics[i], cl.id)
-			cl.forgetSubscription(msg.Topics[i])
-		}
-
-		err := s.writeClient(cl, &packets.UnsubackPacket{
-			FixedHeader: packets.NewFixedHeader(packets.Unsuback),
-			PacketID:    msg.PacketID,
-		})
+		cl.inFlight.set(pk.PacketID, rec)
+		err := s.writeClient(cl, rec)
 		if err != nil {
 			s.closeClient(cl, true)
 			return err
 		}
 	}
+
+	// Don't propogate message if client has no permission to do so.
+	if !aclOK {
+		return ErrACLNotAuthorized
+	}
+
+	// Get all the clients who have a subscription matching the publish
+	// packet's topic.
+	subs := s.topics.Subscribers(pk.TopicName)
+	for id, qos := range subs {
+		if client, ok := s.clients.get(id); ok {
+
+			// Make a copy of the packet to send to client.
+			out := pk.Copy()
+
+			// If the client subscription has a higher qos, inherit it.
+			if qos > out.Qos {
+				out.Qos = qos
+			}
+
+			// If QoS byte is set, save as message to inflight index so we
+			// can track delivery.
+			if out.Qos > 0 {
+				client.inFlight.set(out.PacketID, out)
+
+				// If QoS byte is set, ensure the message has an id.
+				if out.PacketID == 0 {
+					out.PacketID = uint16(client.nextPacketID())
+				}
+			}
+
+			// Write the publish packet out to the receiving client.
+			err := s.writeClient(client, out)
+			if err != nil {
+				s.closeClient(client, true)
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// processPuback processes a Puback packet.
+func (s *Server) processPuback(cl *client, pk *packets.PubackPacket) error {
+	cl.inFlight.delete(pk.PacketID)
+	return nil
+}
+
+// processPubrec processes a Pubrec packet.
+func (s *Server) processPubrec(cl *client, pk *packets.PubrecPacket) error {
+	if _, ok := cl.inFlight.get(pk.PacketID); ok {
+		out := &packets.PubrelPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Pubrel,
+				Qos:  1,
+			},
+			PacketID: pk.PacketID,
+		}
+
+		cl.inFlight.set(out.PacketID, out)
+		err := s.writeClient(cl, out)
+		if err != nil {
+			s.closeClient(cl, true)
+			return err
+		}
+	}
+	return nil
+}
+
+// processPubrel processes a Pubrel packet.
+func (s *Server) processPubrel(cl *client, pk *packets.PubrelPacket) error {
+	if _, ok := cl.inFlight.get(pk.PacketID); ok {
+		out := &packets.PubcompPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Pubcomp,
+			},
+			PacketID: pk.PacketID,
+		}
+
+		err := s.writeClient(cl, out)
+		if err != nil {
+			s.closeClient(cl, true)
+			return err
+		}
+
+		cl.inFlight.delete(pk.PacketID)
+	}
+	return nil
+}
+
+// processPubcomp processes a Pubcomp packet.
+func (s *Server) processPubcomp(cl *client, pk *packets.PubcompPacket) error {
+	if _, ok := cl.inFlight.get(pk.PacketID); ok {
+		cl.inFlight.delete(pk.PacketID)
+	}
+	return nil
+}
+
+// processSubscribe processes a Subscribe packet.
+func (s *Server) processSubscribe(cl *client, pk *packets.SubscribePacket) error {
+	retCodes := make([]byte, len(pk.Topics))
+
+	for i := 0; i < len(pk.Topics); i++ {
+		if !cl.ac.ACL(cl.user, pk.Topics[i], false) {
+			retCodes[i] = packets.ErrSubAckNetworkError
+		} else {
+			s.topics.Subscribe(pk.Topics[i], cl.id, pk.Qoss[i])
+			cl.noteSubscription(pk.Topics[i], pk.Qoss[i])
+			retCodes[i] = pk.Qoss[i]
+		}
+	}
+
+	err := s.writeClient(cl, &packets.SubackPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Suback,
+		},
+		PacketID:    pk.PacketID,
+		ReturnCodes: retCodes,
+	})
+	if err != nil {
+		s.closeClient(cl, true)
+		return err
+	}
+
+	// Publish out any retained messages matching the subscription filter.
+	for i := 0; i < len(pk.Topics); i++ {
+		messages := s.topics.Messages(pk.Topics[i])
+		for _, pkv := range messages {
+			err := s.writeClient(cl, pkv)
+			if err != nil {
+				s.closeClient(cl, true)
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// processUnsubscribe processes an unsubscribe packet.
+func (s *Server) processUnsubscribe(cl *client, pk *packets.UnsubscribePacket) error {
+	for i := 0; i < len(pk.Topics); i++ {
+		s.topics.Unsubscribe(pk.Topics[i], cl.id)
+		cl.forgetSubscription(pk.Topics[i])
+	}
+
+	err := s.writeClient(cl, &packets.UnsubackPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Unsuback,
+		},
+		PacketID: pk.PacketID,
+	})
+	if err != nil {
+		s.closeClient(cl, true)
+		return err
+	}
+	log.Println(s)
 
 	return nil
 }
@@ -455,9 +509,7 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 		return ErrConnectionClosed
 	}
 
-	// Encode packet to a pooled byte buffer.
-	buf := s.buffers.Get()
-	defer s.buffers.Put(buf)
+	buf := new(bytes.Buffer)
 	err := pk.Encode(buf)
 	if err != nil {
 		return err
