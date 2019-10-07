@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"io/ioutil"
-	"log"
+	//"log"
 	"net"
 	"testing"
 	"time"
@@ -77,7 +77,7 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s)
 	require.NotNil(t, s.listeners)
 	require.NotNil(t, s.clients)
-	log.Println(s)
+	//	log.Println(s)
 }
 
 func BenchmarkNew(b *testing.B) {

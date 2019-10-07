@@ -4,21 +4,31 @@ mqtt
 ## Benchmarks
 
 ```
-BenchmarkNewClients-4                 	170779270	         7.37 ns/op	       0 B/op	       0 allocs/op
-BenchmarkClientsAdd-4                 	22766790	        53.7 ns/op	       0 B/op	       0 allocs/op
-BenchmarkClientsGet-4                 	47437056	        25.1 ns/op	       0 B/op	       0 allocs/op
-BenchmarkClientsLen-4                 	69567729	        17.9 ns/op	       0 B/op	       0 allocs/op
-BenchmarkClientsDelete-4              	31792556	        37.8 ns/op	       0 B/op	       0 allocs/op
-BenchmarkNewClient-4                  	 2118105	       545 ns/op	     400 B/op	       6 allocs/op
-BenchmarkNextPacketID-4               	100000000	        12.5 ns/op	       0 B/op	       0 allocs/op
-BenchmarkClientNoteSubscription-4     	25201116	        47.9 ns/op	       0 B/op	       0 allocs/op
-BenchmarkClientForgetSubscription-4   	10870302	        98.4 ns/op	       0 B/op	       0 allocs/op
-BenchmarkInFlightSet-4                	 5487393	       218 ns/op	      32 B/op	       1 allocs/op
-BenchmarkInFlightGet-4                	23242458	        46.0 ns/op	       0 B/op	       0 allocs/op
-BenchmarkNew-4                        	 2827027	       445 ns/op	     440 B/op	       7 allocs/op
-BenchmarkServerAddListener-4          	 6961400	       168 ns/op	       0 B/op	       0 allocs/op
-BenchmarkServerServe-4                	  446793	      4034 ns/op	     552 B/op	       4 allocs/op
-BenchmarkServerClose-4                	 1000000	      1600 ns/op	     192 B/op	       3 allocs/op
+BenchmarkNewClients-4                 	145755818	         7.92 ns/op	       0 B/op	       0 allocs/op
+BenchmarkClientsAdd-4                 	24870105	        55.9 ns/op	       0 B/op	       0 allocs/op
+BenchmarkClientsGet-4                 	55802703	        23.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkClientsLen-4                 	70591254	        16.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkClientsDelete-4              	33240973	        37.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNewClient-4                  	 2598082	       461 ns/op	     448 B/op	       6 allocs/op
+BenchmarkNextPacketID-4               	100000000	        11.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkClientNoteSubscription-4     	24480771	        46.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkClientForgetSubscription-4   	12960447	        95.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkInFlightSet-4                	17793058	        67.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkInFlightGet-4                	25092826	        46.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNew-4                        	22918302	        44.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerAddListener-4          	 7614312	       160 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerServe-4                	  405841	      4993 ns/op	     556 B/op	       4 allocs/op
+BenchmarkServerClose-4                	  781466	      1814 ns/op	     192 B/op	       3 allocs/op
+BenchmarkServerProcessPacket-4        	345994209	         7.46 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerProcessConnect-4       	230116939	         5.22 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerProcessDisconnect-4    	214293916	         5.11 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerProcessPingreq-4       	  796363	      2678 ns/op	     459 B/op	       7 allocs/op
+BenchmarkServerProcessPublish-4       	 8610757	       237 ns/op	      48 B/op	       1 allocs/op
+BenchmarkServerProcessPubrec-4        	44983093	        24.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerProcessPubrel-4        	48499730	        25.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerProcessPubcomp-4       	46276398	        22.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerProcessSubscribe-4     	  590350	      3744 ns/op	     728 B/op	       9 allocs/op
+BenchmarkServerProcessUnsubscribe-4   	  508149	      2687 ns/op	     475 B/op	       7 allocs/op
 ```
 
 ```

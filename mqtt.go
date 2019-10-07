@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"log"
 	"net"
 	"time"
 
@@ -580,7 +579,6 @@ func (s *Server) closeClient(cl *client, sendLWT bool) error {
 			return err
 		}
 
-		log.Println("sending LWT", cl.lwt)
 	}
 
 	// Stop listening for new packets.

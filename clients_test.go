@@ -168,26 +168,21 @@ func BenchmarkNewClient(b *testing.B) {
 }
 
 func TestNextPacketID(t *testing.T) {
-	r, w := net.Pipe()
-	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
-	client := newClient(p, new(packets.ConnectPacket), new(auth.Allow))
-	require.NotNil(t, client)
+	_, _, _, cl := setupClient("zen")
 
-	require.Equal(t, uint32(1), client.nextPacketID())
-	require.Equal(t, uint32(2), client.nextPacketID())
+	require.Equal(t, uint32(1), cl.nextPacketID())
+	require.Equal(t, uint32(2), cl.nextPacketID())
 
-	client.packetID = uint32(65534)
-	require.Equal(t, uint32(65535), client.nextPacketID())
-	require.Equal(t, uint32(1), client.nextPacketID())
+	cl.packetID = uint32(65534)
+	require.Equal(t, uint32(65535), cl.nextPacketID())
+	require.Equal(t, uint32(1), cl.nextPacketID())
 }
 
 func BenchmarkNextPacketID(b *testing.B) {
-	r, w := net.Pipe()
-	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
-	client := newClient(p, new(packets.ConnectPacket), new(auth.Allow))
+	_, _, _, cl := setupClient("zen")
 
 	for n := 0; n < b.N; n++ {
-		client.nextPacketID()
+		cl.nextPacketID()
 	}
 }
 
