@@ -104,7 +104,7 @@ func newClient(p *packets.Parser, pk *packets.ConnectPacket) *client {
 		keepalive:    pk.Keepalive,
 		cleanSession: pk.CleanSession,
 		inFlight: inFlight{
-			internal: make(map[uint16]*inFlightMessage),
+			internal: make(map[uint16]*inFlightMessage, 2),
 		},
 	}
 

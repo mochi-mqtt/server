@@ -3,6 +3,7 @@ package mqtt
 import (
 	"bufio"
 	"errors"
+	"log"
 	"net"
 
 	"github.com/mochi-co/mqtt/auth"
@@ -261,6 +262,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		})
 		if err != nil {
 			s.closeClient(cl, true)
+			return err
 		}
 
 	case *packets.PublishPacket:
@@ -295,6 +297,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 				err := s.writeClient(client, out)
 				if err != nil {
 					s.closeClient(client, true)
+					return err
 				}
 
 				// If QoS byte is set, save as message to inflight index so we
@@ -318,6 +321,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 			err := s.writeClient(cl, out)
 			if err != nil {
 				s.closeClient(cl, true)
+				return err
 			}
 
 			cl.inFlight.set(out.PacketID, out)
@@ -333,6 +337,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 			err := s.writeClient(cl, out)
 			if err != nil {
 				s.closeClient(cl, true)
+				return err
 			}
 
 			cl.inFlight.delete(msg.PacketID)
@@ -358,8 +363,10 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 			PacketID:    msg.PacketID,
 			ReturnCodes: retCodes,
 		})
+
 		if err != nil {
 			s.closeClient(cl, true)
+			return err
 		}
 
 		// Publish out any retained messages matching the subscription filter.
@@ -368,7 +375,9 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 			for _, pkv := range messages {
 				err := s.writeClient(cl, pkv)
 				if err != nil {
+					log.Println("write err B", err)
 					s.closeClient(cl, true)
+					return err
 				}
 			}
 		}
@@ -385,6 +394,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		})
 		if err != nil {
 			s.closeClient(cl, true)
+			return err
 		}
 	}
 
