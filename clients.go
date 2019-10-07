@@ -221,18 +221,6 @@ func (i *inFlight) set(key uint16, in *inFlightMessage) {
 	i.Unlock()
 }
 
-/*
-// set stores the packet of an in-flight message, keyed on message id.
-func (i *inFlight) set(key uint16, pk packets.Packet) {
-	i.Lock()
-	i.internal[key] = &inFlightMessage{
-		packet: pk,
-		sent:   time.Now().Unix(),
-	}
-	i.Unlock()
-}
-*/
-
 // get returns the value of an in-flight message if it exists.
 func (i *inFlight) get(key uint16) (*inFlightMessage, bool) {
 	i.RLock()

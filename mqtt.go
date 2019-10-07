@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"log"
 	"net"
 	"time"
 
@@ -166,13 +167,29 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 		return err
 	}
 
-	// Publish out any unacknowledged QOS messages still pending for the client.
-	// @TODO ...
+	// Resend any unacknowledged QOS messages still pending for the client.
+	err = s.resendInflight(client)
 
 	// Block and listen for more packets, and end if an error or nil packet occurs.
 	err = s.readClient(client)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// resendInflight republishes any inflight messages to the client.
+func (s *Server) resendInflight(cl *client) error {
+	cl.RLock()
+	msgs := cl.inFlight.internal
+	cl.RUnlock()
+	for id, msg := range msgs {
+		log.Println(id, msg)
+		err := s.writeClient(cl, msg.packet)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

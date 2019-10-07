@@ -455,6 +455,48 @@ func TestServerEstablishConnectionReadClientError(t *testing.T) {
 	require.Error(t, <-o)
 }
 
+func TestResendInflight(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = new(quietWriter)
+
+	cl.inFlight.set(1, &inFlightMessage{
+		packet: &packets.PublishPacket{
+			FixedHeader: packets.FixedHeader{
+				Type:   packets.Publish,
+				Qos:    1,
+				Retain: true,
+				Dup:    true,
+			},
+			TopicName: "a/b/c",
+			Payload:   []byte("hello"),
+			PacketID:  1,
+		},
+		sent: time.Now().Unix(),
+	})
+
+	err := s.resendInflight(cl)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Publish<<4 | 11), 14, // Fixed header QoS : 1
+		0, 5, // Topic Name - LSB+MSB
+		'a', '/', 'b', '/', 'c', // Topic Name
+		0, 1, // packet id from qos=1
+		'h', 'e', 'l', 'l', 'o', // Payload)
+	}, cl.p.W.(*quietWriter).f[0])
+
+}
+
+func TestResendInflightWriteError(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.p.W = &quietWriter{errAfter: -1}
+	cl.inFlight.set(1, &inFlightMessage{
+		packet: &packets.PublishPacket{},
+	})
+
+	err := s.resendInflight(cl)
+	require.Error(t, err)
+}
+
 /*
 
  * Server Read Client
