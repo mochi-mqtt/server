@@ -4,8 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
+	"log"
 	"net"
 	"time"
+
+	//"github.com/davecgh/go-spew/spew"
 
 	"github.com/mochi-co/mqtt/auth"
 	"github.com/mochi-co/mqtt/listeners"
@@ -257,33 +261,42 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	// Process the packet depending on the detected type.
 	switch msg := pk.(type) {
 	case *packets.ConnectPacket:
+		log.Println(msg)
 		return s.processConnect(cl, msg)
 
 	case *packets.DisconnectPacket:
+		log.Println(msg)
 		return s.processDisconnect(cl, msg)
 
 	case *packets.PingreqPacket:
 		return s.processPingreq(cl, msg)
 
 	case *packets.PublishPacket:
+		log.Println(msg)
 		return s.processPublish(cl, msg)
 
 	case *packets.PubackPacket:
+		log.Println(msg)
 		return s.processPuback(cl, msg)
 
 	case *packets.PubrecPacket:
+		log.Println(msg)
 		return s.processPubrec(cl, msg)
 
 	case *packets.PubrelPacket:
+		log.Println(msg)
 		return s.processPubrel(cl, msg)
 
 	case *packets.PubcompPacket:
+		log.Println(msg)
 		return s.processPubcomp(cl, msg)
 
 	case *packets.SubscribePacket:
+		log.Println(msg)
 		return s.processSubscribe(cl, msg)
 
 	case *packets.UnsubscribePacket:
+		log.Println(msg)
 		return s.processUnsubscribe(cl, msg)
 	}
 
@@ -324,6 +337,7 @@ func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
 
 	// Perform Access control check for publish (write).
 	aclOK := cl.ac.ACL(cl.user, pk.TopicName, true)
+	log.Println(aclOK)
 
 	// If message is retained, add it to the retained messages index.
 	if pk.Retain && aclOK {
@@ -369,6 +383,8 @@ func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
 	// Get all the clients who have a subscription matching the publish
 	// packet's topic.
 	subs := s.topics.Subscribers(pk.TopicName)
+	log.Println(pk.TopicName, subs)
+
 	for id, qos := range subs {
 		if client, ok := s.clients.get(id); ok {
 
@@ -465,8 +481,19 @@ func (s *Server) processPubcomp(cl *client, pk *packets.PubcompPacket) error {
 	return nil
 }
 
-// processSubscribe processes a Subscribe packet.
 func (s *Server) processSubscribe(cl *client, pk *packets.SubscribePacket) error {
+	trie.ReLeaf(s.topics.(*trie.Index).Root, 0)
+
+	time.Sleep(time.Second)
+
+	s.topics.Subscribe(pk.Topics[0], cl.id, 0)
+	fmt.Println("----------------------")
+	trie.ReLeaf(s.topics.(*trie.Index).Root, 0)
+	return nil
+}
+
+// processSubscribe processes a Subscribe packet.
+func (s *Server) processSubscribeX(cl *client, pk *packets.SubscribePacket) error {
 	retCodes := make([]byte, len(pk.Topics))
 
 	for i := 0; i < len(pk.Topics); i++ {

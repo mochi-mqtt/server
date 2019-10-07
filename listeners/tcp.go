@@ -98,7 +98,6 @@ func (l *TCP) Serve(establish EstablishFunc) {
 				break DONE
 
 			default:
-
 				// Block until a new connection is available.
 				conn, err := l.listen.Accept()
 				if err != nil {

@@ -1,12 +1,23 @@
 package trie
 
 import (
+	"fmt"
+	"log"
 	"strings"
 	"sync"
+
+	//"github.com/davecgh/go-spew/spew"
 
 	"github.com/mochi-co/mqtt/packets"
 	"github.com/mochi-co/mqtt/topics"
 )
+
+func ReLeaf(leaf *Leaf, d int) {
+	for k, v := range leaf.Leaves {
+		fmt.Println(d, strings.Repeat("  ", d), k)
+		ReLeaf(v, d+1)
+	}
+}
 
 // Index is a prefix/trie tree containing topic subscribers and retained messages.
 type Index struct {
@@ -23,15 +34,6 @@ func New() *Index {
 	}
 }
 
-// Subscribe creates a subscription filter for a client.
-func (x *Index) Subscribe(filter, client string, qos byte) {
-	n := x.poperate(filter)
-	n.Lock()
-	n.Clients[client] = qos
-	n.Filter = filter
-	n.Unlock()
-}
-
 // RetainMessage saves a message payload to the end of a topic branch.
 func (x *Index) RetainMessage(msg *packets.PublishPacket) {
 	n := x.poperate(msg.TopicName)
@@ -40,41 +42,25 @@ func (x *Index) RetainMessage(msg *packets.PublishPacket) {
 	n.Unlock()
 }
 
-// poperate iterates and populates through a topic/filter path, instantiating
-// leaves as it goes and returning the final leaf in the branch.
-// poperate is a more enjoyable word than iterpop.
-func (x *Index) poperate(topic string) *Leaf {
-	var d int
-	var particle string
-	var hasNext = true
+// Subscribe creates a subscription filter for a client.
+func (x *Index) Subscribe(filter, client string, qos byte) {
+	log.Println("called subscribe", filter, client, qos)
 
-	n := x.Root
-	for hasNext {
-		particle, hasNext = isolateParticle(topic, d)
-		d++
+	ReLeaf(x.Root, 0)
+	n := x.poperate(filter)
+	n.Lock()
+	n.Clients[client] = qos
+	n.Filter = filter
+	n.Unlock()
+	ReLeaf(x.Root, 0)
 
-		n.Lock()
-		child, _ := n.Leaves[particle]
-		if child == nil {
-			child = &Leaf{
-				Key:     particle,
-				Parent:  n,
-				Leaves:  make(map[string]*Leaf),
-				Clients: make(map[string]byte),
-			}
-			n.Leaves[particle] = child
-		}
-		n.Unlock()
-		n = child
-	}
-
-	return n
+	//spew.Dump(x)
 }
 
 // Unsubscribe removes a subscription filter for a client. Returns true if an
 // unsubscribe action sucessful.
 func (x *Index) Unsubscribe(filter, client string) bool {
-
+	log.Println("called unsubscribe", filter, client)
 	// Walk to end leaf.
 	var d int
 	var particle string
@@ -116,8 +102,41 @@ func (x *Index) Unsubscribe(filter, client string) bool {
 	return true
 }
 
+// poperate iterates and populates through a topic/filter path, instantiating
+// leaves as it goes and returning the final leaf in the branch.
+// poperate is a more enjoyable word than iterpop.
+func (x *Index) poperate(topic string) *Leaf {
+	var d int
+	var particle string
+	var hasNext = true
+	log.Println("poperating", topic)
+	n := x.Root
+	for hasNext {
+		particle, hasNext = isolateParticle(topic, d)
+		d++
+
+		n.Lock()
+		child, _ := n.Leaves[particle]
+		if child == nil {
+			child = &Leaf{
+				Key:     particle,
+				Parent:  n,
+				Leaves:  make(map[string]*Leaf),
+				Clients: make(map[string]byte),
+			}
+			n.Leaves[particle] = child
+			log.Println("> ", particle, child)
+		}
+		n.Unlock()
+		n = child
+	}
+
+	return n
+}
+
 // Subscribers returns a map of clients who are subscribed to matching filters.
 func (x *Index) Subscribers(topic string) topics.Subscriptions {
+	//spew.Dump(x)
 	return x.Root.scanSubscribers(topic, 0, make(topics.Subscriptions))
 }
 
@@ -158,7 +177,7 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions
 	// For either the topic part, a +, or a #, follow the branch.
 	for _, particle := range []string{part, "+", "#"} {
 		if child, ok := l.Leaves[particle]; ok {
-
+			log.Printf("++ %s: %+v\n", particle, child)
 			// We're only interested in getting clients from the final
 			// element in the topic, or those with wildhashes.
 			if !hasNext || particle == "#" {

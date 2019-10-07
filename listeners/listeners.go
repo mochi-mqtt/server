@@ -87,20 +87,29 @@ func (l *Listeners) Delete(id string) {
 }
 
 // Serve starts a listener serving from the internal map.
-func (l *Listeners) Serve(id string, establisher EstablishFunc) {
+func (l *Listeners) Serve(id string, establisher EstablishFunc) error {
 	l.RLock()
 	listener := l.internal[id]
 	l.RUnlock()
 
-	go func() {
+	// Start listening on the network address.
+	err := listener.Listen()
+	if err != nil {
+		return err
+	}
+
+	go func(e EstablishFunc) {
 		defer l.wg.Done()
 		l.wg.Add(1)
-		listener.Serve(establisher)
-	}()
+		listener.Serve(e)
+
+	}(establisher)
+
+	return nil
 }
 
 // ServeAll starts all listeners serving from the internal map.
-func (l *Listeners) ServeAll(establisher EstablishFunc) {
+func (l *Listeners) ServeAll(establisher EstablishFunc) error {
 	l.RLock()
 	i := 0
 	ids := make([]string, len(l.internal))
@@ -111,8 +120,13 @@ func (l *Listeners) ServeAll(establisher EstablishFunc) {
 	l.RUnlock()
 
 	for _, id := range ids {
-		l.Serve(id, establisher)
+		err := l.Serve(id, establisher)
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 // Close stops a listener from the internal map.
