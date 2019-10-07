@@ -1,7 +1,6 @@
 package mqtt
 
 import (
-	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -148,14 +147,11 @@ func (cl *client) nextPacketID() uint32 {
 
 // close attempts to gracefully close a client connection.
 func (cl *client) close() {
-	log.Println("closing", cl)
 	cl.done.Do(func() {
-
-		// Signal to stop lsitening for packets.
-		close(cl.end)
+		close(cl.end) // Signal to stop listening for packets.
 
 		// Close the network connection.
-		cl.p.Conn.Close() // Error is irrelevant so can be ommited here.
+		cl.p.Conn.Close() // Error is irrelevant so can be ommitted here.
 		cl.p.Conn = nil
 
 	})

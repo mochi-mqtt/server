@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -75,8 +74,6 @@ func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 	if err != nil {
 		return err
 	}
-
-	log.Println("PEEKED", peeked)
 
 	// Unpack message type and flags from byte 1.
 	err = fh.decode(peeked[0])

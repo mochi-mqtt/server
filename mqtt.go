@@ -3,7 +3,6 @@ package mqtt
 import (
 	"bufio"
 	"errors"
-	"log"
 	"net"
 
 	"github.com/mochi-co/mqtt/auth"
@@ -117,7 +116,6 @@ func (s *Server) Close() error {
 
 // EstablishConnection establishes a new client connection with the broker.
 func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
-	log.Println("connecting")
 
 	// Create a new packets parser which will parse all packets for this client,
 	// using buffered writers and readers.
@@ -127,20 +125,18 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 		bufio.NewWriterSize(c, rwBufSize),
 	)
 
-	log.Println("....")
 	// Pull the header from the first packet and check for a CONNECT message.
 	fh := new(packets.FixedHeader)
 	err := p.ReadFixedHeader(fh)
 	if err != nil {
 		return ErrReadConnectFixedHeader
 	}
-	log.Println("read fh")
 	// Read the first packet expecting a CONNECT message.
 	pk, err := p.Read()
 	if err != nil {
 		return ErrReadConnectPacket
 	}
-	log.Println("read pk")
+
 	// Ensure first packet is a connect packet.
 	msg, ok := pk.(*packets.ConnectPacket)
 	if !ok {
@@ -164,8 +160,6 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	// ... handle session takeover
 	s.clients.add(client)
 
-	log.Println("connected", client.id)
-
 	// Send a CONNACK back to the client.
 	err = s.writeClient(client, &packets.ConnackPacket{
 		FixedHeader:    packets.NewFixedHeader(packets.Connack),
@@ -173,11 +167,8 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 		ReturnCode:     retcode,
 	})
 	if err != nil {
-		log.Println("write err", err)
 		return err
 	}
-
-	log.Println("connack sent", client.id)
 
 	// Publish out any unacknowledged QOS messages still pending for the client.
 	// @TODO ...
@@ -185,11 +176,8 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	// Block and listen for more packets, and end if an error or nil packet occurs.
 	err = s.readClient(client)
 	if err != nil {
-		log.Println("read err", err)
 		return err
 	}
-
-	log.Println("ended", client.id)
 
 	return nil
 }
@@ -204,11 +192,9 @@ DONE:
 	for {
 		select {
 		case <-cl.end:
-			log.Println("done ending")
 			break DONE
 
 		default:
-			log.Println("iterating")
 			if cl.p.Conn == nil {
 				return ErrConnectionClosed
 			}
@@ -244,14 +230,11 @@ DONE:
 		}
 	}
 
-	log.Println("returning")
-
 	return nil
 }
 
 // processPacket processes an inbound packet for a client.
 func (s *Server) processPacket(cl *client, pk packets.Packet) error {
-	log.Println("PROCESSING PACKET", cl, pk)
 
 	// Log read stats for $SYS.
 	// @TODO ...
@@ -281,13 +264,11 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		}
 
 	case *packets.PublishPacket:
-		log.Println(msg)
 
 		// @TODO ... Publish ACL here.
 
 		// If message is retained, add it to the retained messages index.
 		if msg.Retain {
-			log.Println("RETAIN", msg.Retain)
 			s.topics.RetainMessage(msg)
 		}
 
@@ -296,7 +277,6 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		subs := s.topics.Subscribers(msg.TopicName)
 		for id, qos := range subs {
 			if client, ok := s.clients.get(id); ok {
-				log.Println(client, id, qos)
 
 				// Make a copy of the packet to send to client.
 				out := msg.Copy()
@@ -334,12 +314,12 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 				FixedHeader: packets.NewFixedHeader(packets.Pubrel),
 				PacketID:    msg.PacketID,
 			}
-			log.Println("READY", out)
+
 			err := s.writeClient(cl, out)
 			if err != nil {
 				s.closeClient(cl, true)
 			}
-			log.Println("WRITTEN", msg)
+
 			cl.inFlight.set(out.PacketID, out)
 		}
 
@@ -349,12 +329,12 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 				FixedHeader: packets.NewFixedHeader(packets.Pubcomp),
 				PacketID:    msg.PacketID,
 			}
-			log.Println("READY", out)
+
 			err := s.writeClient(cl, out)
 			if err != nil {
 				s.closeClient(cl, true)
 			}
-			log.Println("WRITTEN", msg)
+
 			cl.inFlight.delete(msg.PacketID)
 		}
 
@@ -370,8 +350,6 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 			//		retCodes[i] = packets.ErrSubAckNetworkError
 			s.topics.Subscribe(msg.Topics[i], cl.id, msg.Qoss[i])
 			retCodes[i] = msg.Qoss[i]
-			log.Println("SUBSCRIBING", msg.Topics[i], msg.Qoss[i], cl.id)
-
 		}
 
 		// Acknowledge the subscriptions with a Suback packet.
@@ -383,13 +361,11 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		if err != nil {
 			s.closeClient(cl, true)
 		}
-		log.Println("WRITTEN", msg)
 
 		// Publish out any retained messages matching the subscription filter.
 		for i := 0; i < len(msg.Topics); i++ {
 			messages := s.topics.Messages(msg.Topics[i])
 			for _, pkv := range messages {
-				log.Println("SENDING RETAINED", pkv)
 				err := s.writeClient(cl, pkv)
 				if err != nil {
 					s.closeClient(cl, true)
@@ -410,7 +386,6 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		if err != nil {
 			s.closeClient(cl, true)
 		}
-		log.Println("WRITTEN", msg)
 	}
 
 	return nil
@@ -432,8 +407,6 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 		return err
 	}
 
-	log.Println("==", buf.Bytes())
-
 	// Write packet to client.
 	_, err = buf.WriteTo(cl.p.W)
 	if err != nil {
@@ -444,7 +417,6 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 	if err != nil {
 		return err
 	}
-	log.Println("WRITE CLIENT", cl.id)
 
 	// Refresh deadline to keep the connection alive.
 	cl.p.RefreshDeadline(cl.keepalive)

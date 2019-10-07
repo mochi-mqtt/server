@@ -673,6 +673,7 @@ func TestServerProcessPacketPublishOK(t *testing.T) {
 	s.clients.add(c2)
 	s.topics.Subscribe("a/b/+", c2.id, 0)
 	s.topics.Subscribe("a/+/c", c2.id, 1)
+	require.Nil(t, c1.inFlight.internal[1])
 
 	o := make(chan error, 2)
 	go func() {
@@ -700,7 +701,7 @@ func TestServerProcessPacketPublishOK(t *testing.T) {
 	require.NoError(t, <-o)
 	require.Equal(t,
 		[]byte{
-			byte(packets.Publish<<4 | 2), 14, // Fixed header
+			byte(packets.Publish<<4 | 2), 14, // Fixed header QoS : 1
 			0, 5, // Topic Name - LSB+MSB
 			'a', '/', 'b', '/', 'c', // Topic Name
 			0, 1, // packet id from qos=1
@@ -708,6 +709,8 @@ func TestServerProcessPacketPublishOK(t *testing.T) {
 		},
 		<-recv,
 	)
+
+	require.NotNil(t, c2.inFlight.internal[1])
 
 	close(o)
 	close(recv)
@@ -745,7 +748,6 @@ func TestServerProcessPacketPuback(t *testing.T) {
 	s, r, _, cl := setupClient("zen")
 
 	cl.inFlight.set(11, &packets.PublishPacket{PacketID: 11})
-
 	require.NotNil(t, cl.inFlight.internal[11])
 
 	pk := &packets.PubackPacket{
