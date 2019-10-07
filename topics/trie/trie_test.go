@@ -75,7 +75,7 @@ func TestUnsubscribe(t *testing.T) {
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["+"].Leaves["mqtt"].Clients["client-1"])
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients["client-1"])
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients["client-2"])
-	require.NotNil(t, index.Root.Leaves["#"].Clients["client-3"])
+	require.Contains(t, index.Root.Leaves["#"].Clients, "client-3")
 
 	ok := index.Unsubscribe("path/to/my/mqtt", "client-1")
 
@@ -87,7 +87,7 @@ func TestUnsubscribe(t *testing.T) {
 	require.Equal(t, true, ok)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients["client-1"])
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients["client-2"])
-	require.NotNil(t, index.Root.Leaves["#"].Clients["client-3"])
+	require.Contains(t, index.Root.Leaves["#"].Clients, "client-3")
 
 	ok = index.Unsubscribe("fdasfdas/dfsfads/sa", "client-1")
 	require.Equal(t, false, ok)
@@ -254,7 +254,7 @@ func TestRetainMessage(t *testing.T) {
 	index.RetainMessage(pk2)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
 	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients["client-1"])
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
 }
 
 func BenchmarkRetainMessage(b *testing.B) {

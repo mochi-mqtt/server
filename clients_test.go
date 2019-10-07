@@ -24,7 +24,7 @@ func BenchmarkNewClients(b *testing.B) {
 func TestClientsAdd(t *testing.T) {
 	cl := newClients()
 	cl.add(&client{id: "t1"})
-	require.NotNil(t, cl.internal["t1"])
+	require.Contains(t, cl.internal, "t1")
 }
 
 func BenchmarkClientsAdd(b *testing.B) {
@@ -39,8 +39,8 @@ func TestClientsGet(t *testing.T) {
 	cl := newClients()
 	cl.add(&client{id: "t1"})
 	cl.add(&client{id: "t2"})
-	require.NotNil(t, cl.internal["t1"])
-	require.NotNil(t, cl.internal["t2"])
+	require.Contains(t, cl.internal, "t1")
+	require.Contains(t, cl.internal, "t2")
 
 	client, ok := cl.get("t1")
 	require.Equal(t, true, ok)
@@ -59,8 +59,8 @@ func TestClientsLen(t *testing.T) {
 	cl := newClients()
 	cl.add(&client{id: "t1"})
 	cl.add(&client{id: "t2"})
-	require.NotNil(t, cl.internal["t1"])
-	require.NotNil(t, cl.internal["t2"])
+	require.Contains(t, cl.internal, "t1")
+	require.Contains(t, cl.internal, "t2")
 	require.Equal(t, 2, cl.len())
 }
 
@@ -75,7 +75,7 @@ func BenchmarkClientsLen(b *testing.B) {
 func TestClientsDelete(t *testing.T) {
 	cl := newClients()
 	cl.add(&client{id: "t1"})
-	require.NotNil(t, cl.internal["t1"])
+	require.Contains(t, cl.internal, "t1")
 
 	cl.delete("t1")
 	_, ok := cl.get("t1")
@@ -195,7 +195,7 @@ func TestClientNoteSubscription(t *testing.T) {
 	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
 	require.NotNil(t, client)
 	client.noteSubscription("a/b/c", 0)
-	require.NotNil(t, client.subscriptions["a/b/c"])
+	require.Contains(t, client.subscriptions, "a/b/c")
 	require.Equal(t, byte(0), client.subscriptions["a/b/c"])
 }
 

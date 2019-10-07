@@ -85,7 +85,7 @@ func BenchmarkNewListeners(b *testing.B) {
 func TestAddListener(t *testing.T) {
 	l := NewListeners()
 	l.Add(NewMockListener("t1", ":1882"))
-	require.NotNil(t, l.internal["t1"])
+	require.Contains(t, l.internal, "t1")
 }
 
 func BenchmarkAddListener(b *testing.B) {
@@ -100,8 +100,8 @@ func TestGetListener(t *testing.T) {
 	l := NewListeners()
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
-	require.NotNil(t, l.internal["t1"])
-	require.NotNil(t, l.internal["t2"])
+	require.Contains(t, l.internal, "t1")
+	require.Contains(t, l.internal, "t2")
 
 	g, ok := l.Get("t1")
 	require.Equal(t, true, ok)
@@ -120,8 +120,8 @@ func TestLenListener(t *testing.T) {
 	l := NewListeners()
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
-	require.NotNil(t, l.internal["t1"])
-	require.NotNil(t, l.internal["t2"])
+	require.Contains(t, l.internal, "t1")
+	require.Contains(t, l.internal, "t2")
 	require.Equal(t, 2, l.Len())
 }
 
@@ -136,7 +136,7 @@ func BenchmarkLenListener(b *testing.B) {
 func TestDeleteListener(t *testing.T) {
 	l := NewListeners()
 	l.Add(NewMockListener("t1", ":1882"))
-	require.NotNil(t, l.internal["t1"])
+	require.Contains(t, l.internal, "t1")
 
 	l.Delete("t1")
 	_, ok := l.Get("t1")
@@ -241,9 +241,9 @@ func TestCloseAllListeners(t *testing.T) {
 	l.CloseAll(func(id string) {
 		closed[id] = true
 	})
-	require.NotNil(t, closed["t1"])
-	require.NotNil(t, closed["t2"])
-	require.NotNil(t, closed["t3"])
+	require.Contains(t, closed, "t1")
+	require.Contains(t, closed, "t2")
+	require.Contains(t, closed, "t3")
 	require.Equal(t, true, closed["t1"])
 	require.Equal(t, true, closed["t2"])
 	require.Equal(t, true, closed["t3"])

@@ -686,7 +686,7 @@ func TestServerCloseClient(t *testing.T) { // as opposed to client.close
 	s, _, _, cl := setupClient("zen")
 	s.clients.add(cl)
 
-	require.NotNil(t, s.clients.internal["zen"])
+	require.Contains(t, s.clients.internal, "zen")
 
 	// close the client connection.
 	err := s.closeClient(s.clients.internal["zen"], true)
@@ -716,7 +716,6 @@ func TestServerCloseClientLWT(t *testing.T) { // as opposed to client.close
 	s.topics.Subscribe("a/b/c", c2.id, 0)
 
 	// close the client connection.
-	log.Println(s.clients.internal["zen"])
 	err := s.closeClient(s.clients.internal["zen"], true)
 	require.NoError(t, err)
 
@@ -745,10 +744,8 @@ func TestServerCloseClientLWTWriteError(t *testing.T) { // as opposed to client.
 	s.topics.Subscribe("a/b/c", c2.id, 0)
 
 	// close the client connection.
-	log.Println(s.clients.internal["zen"])
 	err := s.closeClient(s.clients.internal["zen"], true)
 	require.Error(t, err)
-
 }
 
 /*
@@ -1224,8 +1221,8 @@ func TestServerProcessSubscribe(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o', // Payload
 	}, cl.p.W.(*quietWriter).f[1])
 
-	require.NotNil(t, cl.subscriptions["a/b/c"])
-	require.NotNil(t, cl.subscriptions["d/e/f"])
+	require.Contains(t, cl.subscriptions, "a/b/c")
+	require.Contains(t, cl.subscriptions, "d/e/f")
 	require.Equal(t, byte(0), cl.subscriptions["a/b/c"])
 	require.Equal(t, byte(1), cl.subscriptions["d/e/f"])
 	require.Equal(t, topics.Subscriptions{cl.id: 0}, s.topics.Subscribers("a/b/c"))
