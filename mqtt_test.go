@@ -685,7 +685,7 @@ func TestServerProcessPacketPingWriteError(t *testing.T) {
 	close(o)
 }
 
-func TestServerProcessPacketPublishOK(t *testing.T) {
+func TestServerProcessPacketPublishOKQOS1(t *testing.T) {
 	s, r, w, c1 := setupClient("c1")
 	_, r2, w2, c2 := setupClient("c2")
 
@@ -700,11 +700,12 @@ func TestServerProcessPacketPublishOK(t *testing.T) {
 		o <- s.processPacket(c1, &packets.PublishPacket{
 			FixedHeader: packets.FixedHeader{
 				Type: packets.Publish,
+				Qos:  1,
 			},
 			TopicName: "a/b/c",
 			Payload:   []byte("hello"),
+			PacketID:  12,
 		})
-		r.Close()
 		w.Close()
 		w2.Close()
 	}()
@@ -712,11 +713,22 @@ func TestServerProcessPacketPublishOK(t *testing.T) {
 	recv := make(chan []byte)
 	go func() {
 		buf, err := ioutil.ReadAll(r2)
+		log.Println("BUF2", buf, err)
 		if err != nil {
 			panic(err)
 		}
 		recv <- buf
 	}()
+
+	time.Sleep(10 * time.Millisecond)
+
+	buf, err := ioutil.ReadAll(r)
+	log.Println("BUF", buf, err)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Puback << 4), 2, // Fixed header
+		0, 12, // Packet ID - LSB+MSB
+	}, buf)
 
 	require.NoError(t, <-o)
 	require.Equal(t,
@@ -730,12 +742,107 @@ func TestServerProcessPacketPublishOK(t *testing.T) {
 		<-recv,
 	)
 
-	require.NotNil(t, c2.inFlight.internal[1])
-
-	close(o)
-	close(recv)
-
+	r.Close()
 	r2.Close()
+}
+
+func TestServerProcessPacketPublishOKQOS2(t *testing.T) {
+	s, r, w, c1 := setupClient("c1")
+
+	o := make(chan error, 2)
+	go func() {
+		o <- s.processPacket(c1, &packets.PublishPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Publish,
+				Qos:  2,
+			},
+			TopicName: "a/b/c",
+			Payload:   []byte("hello"),
+			PacketID:  12,
+		})
+		w.Close()
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+
+	buf, err := ioutil.ReadAll(r)
+	log.Println("BUF", buf, err)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Pubrec << 4), 2, // Fixed header
+		0, 12, // Packet ID - LSB+MSB
+	}, buf)
+
+	r.Close()
+}
+
+func TestServerProcessPacketPublishACLDisallow(t *testing.T) {
+	s, r, w, c1 := setupClient("c1")
+	c1.ac = new(auth.Disallow)
+
+	o := make(chan error, 2)
+	go func() {
+		o <- s.processPacket(c1, &packets.PublishPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Publish,
+				Qos:  1,
+			},
+			TopicName: "a/b/c",
+			PacketID:  12,
+		})
+		w.Close()
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+
+	buf, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, []byte{
+		byte(packets.Puback << 4), 2, // Fixed header
+		0, 12, // Packet ID - LSB+MSB
+	}, buf)
+
+	err = <-o
+	require.Error(t, err)
+	require.Equal(t, ErrACLNotAuthorized, err)
+
+	r.Close()
+}
+
+func TestServerProcessPacketPublishOKQOS1WriteError(t *testing.T) {
+	s, r, w, c1 := setupClient("c1")
+
+	o := make(chan error, 2)
+	go func() {
+		r.Close()
+		o <- s.processPacket(c1, &packets.PublishPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Publish,
+				Qos:  1,
+			},
+		})
+		w.Close()
+	}()
+
+	require.Error(t, <-o)
+}
+
+func TestServerProcessPacketPublishOKQOS2WriteError(t *testing.T) {
+	s, r, w, c1 := setupClient("c1")
+
+	o := make(chan error, 2)
+	go func() {
+		r.Close()
+		o <- s.processPacket(c1, &packets.PublishPacket{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Publish,
+				Qos:  2,
+			},
+		})
+		w.Close()
+	}()
+
+	require.Error(t, <-o)
 }
 
 func TestServerProcessPacketPublishRetain(t *testing.T) {

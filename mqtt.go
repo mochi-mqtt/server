@@ -32,6 +32,7 @@ var (
 	ErrReadPacketValidation   = errors.New("Error validating packet")
 	ErrConnectionClosed       = errors.New("Connection not open")
 	ErrNoData                 = errors.New("No data")
+	ErrACLNotAuthorized       = errors.New("ACL not authorized")
 
 	// clientKeepalive is the default keepalive time in seconds.
 	clientKeepalive uint16 = 60
@@ -234,7 +235,8 @@ DONE:
 	return nil
 }
 
-// processPacket processes an inbound packet for a client.
+// processPacket processes an inbound packet for a client. Since the method is
+// typically called as a goroutine, errors are mostly for test checking purposes.
 func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 
 	// Log read stats for $SYS.
@@ -250,13 +252,9 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		s.closeClient(cl, true)
 
 	case *packets.DisconnectPacket:
-
-		// Connection is ending gracefully, so close client and return.
 		s.closeClient(cl, true)
 
 	case *packets.PingreqPacket:
-		// Client has sent a ping to keep the connection alive, so send a
-		// response back to acknowledge receipt.
 		err := s.writeClient(cl, &packets.PingrespPacket{
 			FixedHeader: packets.NewFixedHeader(packets.Pingresp),
 		})
@@ -268,17 +266,16 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	case *packets.PublishPacket:
 
 		// Perform Access control check for publish (write).
-		if !cl.ac.ACL(cl.user, msg.TopicName, true) {
-			//	 = packets.ErrSubAckNetworkError
-		}
+		aclOK := cl.ac.ACL(cl.user, msg.TopicName, true)
 
 		// If message is retained, add it to the retained messages index.
-		if msg.Retain {
+		if msg.Retain && aclOK {
 			s.topics.RetainMessage(msg)
 		}
 
-		// Send appropriate Ack back to client.
-		/*if msg.Qos == 1 {
+		// Send appropriate Ack back to client. In v5 this will include a
+		// auth return code.
+		if msg.Qos == 1 {
 			err := s.writeClient(cl, &packets.PubackPacket{
 				FixedHeader: packets.NewFixedHeader(packets.Puback),
 				PacketID:    msg.PacketID,
@@ -287,7 +284,6 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 				s.closeClient(cl, true)
 				return err
 			}
-
 		} else if msg.Qos == 2 {
 			rec := &packets.PubrecPacket{
 				FixedHeader: packets.NewFixedHeader(packets.Pubrec),
@@ -300,13 +296,18 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 				return err
 			}
 		}
-		*/
+
+		// Don't propogate message if client has no permission to do so.
+		if !aclOK {
+			return ErrACLNotAuthorized
+		}
 
 		// Get all the clients who have a subscription matching the publish
 		// packet's topic.
 		subs := s.topics.Subscribers(msg.TopicName)
 		for id, qos := range subs {
 			if client, ok := s.clients.get(id); ok {
+				log.Println("_3")
 
 				// Make a copy of the packet to send to client.
 				out := msg.Copy()
@@ -321,6 +322,12 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 					out.PacketID = uint16(client.nextPacketID())
 				}
 
+				// If QoS byte is set, save as message to inflight index so we
+				// can track delivery.
+				if out.Qos > 0 {
+					client.inFlight.set(out.PacketID, out)
+				}
+
 				// Write the publish packet out to the receiving client.
 				err := s.writeClient(client, out)
 				if err != nil {
@@ -328,13 +335,9 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 					return err
 				}
 
-				// If QoS byte is set, save as message to inflight index so we
-				// can track delivery.
-				if out.Qos > 0 {
-					client.inFlight.set(out.PacketID, out)
-				}
 			}
 		}
+		log.Println("_3")
 
 	case *packets.PubackPacket:
 		cl.inFlight.delete(msg.PacketID)
