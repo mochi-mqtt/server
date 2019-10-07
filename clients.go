@@ -176,7 +176,6 @@ func (cl *client) close() {
 		// Close the network connection.
 		cl.p.Conn.Close() // Error is irrelevant so can be ommitted here.
 		cl.p.Conn = nil
-
 	})
 }
 

@@ -483,7 +483,6 @@ func TestResendInflight(t *testing.T) {
 		0, 1, // packet id from qos=1
 		'h', 'e', 'l', 'l', 'o', // Payload)
 	}, cl.p.W.(*quietWriter).f[0])
-
 }
 
 func TestResendInflightWriteError(t *testing.T) {
@@ -690,13 +689,66 @@ func TestServerCloseClient(t *testing.T) { // as opposed to client.close
 	require.NotNil(t, s.clients.internal["zen"])
 
 	// close the client connection.
-	s.closeClient(s.clients.internal["zen"], true)
+	err := s.closeClient(s.clients.internal["zen"], true)
+	require.NoError(t, err)
 	var ok bool
 	select {
 	case _, ok = <-s.clients.internal["zen"].end:
 	}
 	require.Equal(t, false, ok)
 	require.Nil(t, s.clients.internal["zen"].p.Conn)
+}
+
+func TestServerCloseClientLWT(t *testing.T) { // as opposed to client.close
+	s, _, _, c1 := setupClient("zen")
+	c1.p.W = new(quietWriter)
+	s.clients.add(c1)
+	require.Contains(t, s.clients.internal, "zen")
+	c1.lwt = lwt{
+		topic:   "a/b/c",
+		message: []byte{'h', 'e', 'l', 'l', 'o'},
+	}
+
+	_, _, _, c2 := setupClient("zen2")
+	c2.p.W = new(quietWriter)
+	s.clients.add(c2)
+	require.Contains(t, s.clients.internal, "zen2")
+	s.topics.Subscribe("a/b/c", c2.id, 0)
+
+	// close the client connection.
+	log.Println(s.clients.internal["zen"])
+	err := s.closeClient(s.clients.internal["zen"], true)
+	require.NoError(t, err)
+
+	require.Equal(t, []byte{
+		byte(packets.Publish << 4), 12, // Fixed header QoS : 1
+		0, 5, // Topic Name - LSB+MSB
+		'a', '/', 'b', '/', 'c', // Topic Name
+		'h', 'e', 'l', 'l', 'o', // Payload
+	}, c2.p.W.(*quietWriter).f[0])
+}
+
+func TestServerCloseClientLWTWriteError(t *testing.T) { // as opposed to client.close
+	s, _, _, c1 := setupClient("zen")
+	c1.p.W = new(quietWriter)
+	s.clients.add(c1)
+	require.Contains(t, s.clients.internal, "zen")
+	c1.lwt = lwt{
+		topic:   "a/b/c",
+		message: []byte{'h', 'e', 'l', 'l', 'o'},
+	}
+
+	_, _, _, c2 := setupClient("zen2")
+	c2.p.W = &quietWriter{errAfter: -1}
+	s.clients.add(c2)
+	require.Contains(t, s.clients.internal, "zen2")
+	s.topics.Subscribe("a/b/c", c2.id, 0)
+
+	// close the client connection.
+	log.Println(s.clients.internal["zen"])
+	err := s.closeClient(s.clients.internal["zen"], true)
+	require.Error(t, err)
+
 }
 
 /*

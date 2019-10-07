@@ -176,6 +176,9 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 		return err
 	}
 
+	// Publish last will and testament.
+	s.closeClient(client, true)
+
 	return nil
 }
 
@@ -184,8 +187,7 @@ func (s *Server) resendInflight(cl *client) error {
 	cl.RLock()
 	msgs := cl.inFlight.internal
 	cl.RUnlock()
-	for id, msg := range msgs {
-		log.Println(id, msg)
+	for _, msg := range msgs {
 		err := s.writeClient(cl, msg.packet)
 		if err != nil {
 			return err
@@ -563,11 +565,26 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 // closeClient closes a client connection and publishes any LWT messages.
 func (s *Server) closeClient(cl *client, sendLWT bool) error {
 
+	// If an LWT message is set, publish it to the topic subscribers.
+	if sendLWT && cl.lwt.topic != "" {
+		err := s.processPublish(cl, &packets.PublishPacket{
+			FixedHeader: packets.FixedHeader{
+				Type:   packets.Publish,
+				Retain: cl.lwt.retain,
+				Qos:    cl.lwt.qos,
+			},
+			TopicName: cl.lwt.topic,
+			Payload:   cl.lwt.message,
+		})
+		if err != nil {
+			return err
+		}
+
+		log.Println("sending LWT", cl.lwt)
+	}
+
 	// Stop listening for new packets.
 	cl.close()
-
-	// Send LWT to subscribers.
-	// @TODO ...
 
 	return nil
 }
