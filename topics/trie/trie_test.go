@@ -35,7 +35,6 @@ func TestPoperate(t *testing.T) {
 	require.Equal(t, "e", child.Key)
 	child = index.poperate("a/b/c/c/a")
 	require.Equal(t, "a", child.Key)
-
 }
 
 func BenchmarkPoperate(b *testing.B) {
@@ -43,23 +42,6 @@ func BenchmarkPoperate(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		index.poperate("path/to/my/mqtt")
 	}
-}
-
-func TestPopProblem(t *testing.T) {
-	index := New()
-	n := index.poperate("a/b/c/d/e")
-	n.Lock()
-	n.Clients["abc"] = 0
-	n.Filter = "a/b/c/d/e"
-	n.Unlock()
-	reLeaf(index.Root, 0)
-
-	n = index.poperate("a/b/c/c/a")
-	n.Lock()
-	n.Clients["abc"] = 0
-	n.Filter = "a/b/c/c/a"
-	n.Unlock()
-	reLeaf(index.Root, 0)
 }
 
 func TestSubscribeOK(t *testing.T) {
@@ -72,20 +54,16 @@ func TestSubscribeOK(t *testing.T) {
 
 	index.Subscribers("a/b")
 
-	reLeaf(index.Root, 0)
+	//	ReLeaf(index.Root, 0)
 
-	//spew.Dump(index)
-	/*
-		require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients["client-1"])
-		require.Equal(t, "path/to/my/mqtt", index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Filter)
-		require.Equal(t, "mqtt", index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Key)
-		require.Equal(t, index.Root.Leaves["path"], index.Root.Leaves["path"].Leaves["to"].Parent)
-		require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients["client-2"])
-		require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients["client-2"])
-		require.NotNil(t, index.Root.Leaves["path"].Leaves["+"].Clients["client-2"])
-		require.NotNil(t, index.Root.Leaves["#"].Clients["client-3"])
-	*/
-	//	spew.Dump(index.Root)
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients, "client-1")
+	require.Equal(t, "path/to/my/mqtt", index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Filter)
+	require.Equal(t, "mqtt", index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Key)
+	require.Equal(t, index.Root.Leaves["path"], index.Root.Leaves["path"].Leaves["to"].Parent)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients, "client-2")
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-2")
+	require.Contains(t, index.Root.Leaves["path"].Leaves["+"].Clients, "client-2")
+	require.Contains(t, index.Root.Leaves["#"].Clients, "client-3")
 }
 
 func BenchmarkSubscribe(b *testing.B) {
@@ -95,34 +73,45 @@ func BenchmarkSubscribe(b *testing.B) {
 	}
 }
 
-func TestUnsubscribe(t *testing.T) {
+func TestUnsubscribeA(t *testing.T) {
 	index := New()
 	index.Subscribe("path/to/my/mqtt", "client-1", 0)
 	index.Subscribe("path/to/+/mqtt", "client-1", 0)
 	index.Subscribe("path/to/stuff", "client-1", 0)
 	index.Subscribe("path/to/stuff", "client-2", 0)
 	index.Subscribe("#", "client-3", 0)
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients["client-1"])
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["+"].Leaves["mqtt"].Clients["client-1"])
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients["client-1"])
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients["client-2"])
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients, "client-1")
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["+"].Leaves["mqtt"].Clients, "client-1")
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients, "client-1")
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients, "client-2")
 	require.Contains(t, index.Root.Leaves["#"].Clients, "client-3")
 
 	ok := index.Unsubscribe("path/to/my/mqtt", "client-1")
 
 	require.Equal(t, true, ok)
 	require.Nil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"])
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["+"].Leaves["mqtt"].Clients["client-1"])
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["+"].Leaves["mqtt"].Clients, "client-1")
 
 	ok = index.Unsubscribe("path/to/stuff", "client-1")
 	require.Equal(t, true, ok)
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients["client-1"])
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients["client-2"])
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients, "client-1")
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients, "client-2")
 	require.Contains(t, index.Root.Leaves["#"].Clients, "client-3")
 
 	ok = index.Unsubscribe("fdasfdas/dfsfads/sa", "client-1")
 	require.Equal(t, false, ok)
 
+}
+
+func TestUnsubscribeCascade(t *testing.T) {
+	index := New()
+	index.Subscribe("a/b/c", "client-1", 0)
+	index.Subscribe("a/b/c/e/e", "client-1", 0)
+
+	ok := index.Unsubscribe("a/b/c/e/e", "client-1")
+	require.Equal(t, true, ok)
+	require.NotEmpty(t, index.Root.Leaves)
+	require.Contains(t, index.Root.Leaves["a"].Leaves["b"].Leaves["c"].Clients, "client-1")
 }
 
 // This benchmark is Unsubscribe-Subscribe

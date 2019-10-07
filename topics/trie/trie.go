@@ -2,7 +2,6 @@ package trie
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 
@@ -44,23 +43,22 @@ func (x *Index) RetainMessage(msg *packets.PublishPacket) {
 
 // Subscribe creates a subscription filter for a client.
 func (x *Index) Subscribe(filter, client string, qos byte) {
-	log.Println("called subscribe", filter, client, qos)
 
-	ReLeaf(x.Root, 0)
+	//log.Println("popperating")
 	n := x.poperate(filter)
 	n.Lock()
 	n.Clients[client] = qos
 	n.Filter = filter
+	//log.Println("updated", n)
 	n.Unlock()
+	//log.Println("subbed")
 	ReLeaf(x.Root, 0)
-
-	//spew.Dump(x)
 }
 
 // Unsubscribe removes a subscription filter for a client. Returns true if an
 // unsubscribe action sucessful.
 func (x *Index) Unsubscribe(filter, client string) bool {
-	log.Println("called unsubscribe", filter, client)
+
 	// Walk to end leaf.
 	var d int
 	var particle string
@@ -81,11 +79,15 @@ func (x *Index) Unsubscribe(filter, client string) bool {
 	// Step backward removing client and orphaned leaves.
 	var key string
 	var orphaned bool
+	var end = true
 	for e.Parent != nil {
 		key = e.Key
 
-		// Wipe the client from this leaf.
-		delete(e.Clients, client)
+		// Wipe the client from this leaf if it's the filter end.
+		if end {
+			delete(e.Clients, client)
+			end = false
+		}
 
 		// If this leaf is empty, note it as orphaned.
 		orphaned = len(e.Clients) == 0 && len(e.Leaves) == 0
@@ -109,7 +111,6 @@ func (x *Index) poperate(topic string) *Leaf {
 	var d int
 	var particle string
 	var hasNext = true
-	log.Println("poperating", topic)
 	n := x.Root
 	for hasNext {
 		particle, hasNext = isolateParticle(topic, d)
@@ -125,7 +126,6 @@ func (x *Index) poperate(topic string) *Leaf {
 				Clients: make(map[string]byte),
 			}
 			n.Leaves[particle] = child
-			log.Println("> ", particle, child)
 		}
 		n.Unlock()
 		n = child
@@ -136,7 +136,6 @@ func (x *Index) poperate(topic string) *Leaf {
 
 // Subscribers returns a map of clients who are subscribed to matching filters.
 func (x *Index) Subscribers(topic string) topics.Subscriptions {
-	//spew.Dump(x)
 	return x.Root.scanSubscribers(topic, 0, make(topics.Subscriptions))
 }
 
@@ -177,7 +176,7 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions
 	// For either the topic part, a +, or a #, follow the branch.
 	for _, particle := range []string{part, "+", "#"} {
 		if child, ok := l.Leaves[particle]; ok {
-			log.Printf("++ %s: %+v\n", particle, child)
+
 			// We're only interested in getting clients from the final
 			// element in the topic, or those with wildhashes.
 			if !hasNext || particle == "#" {

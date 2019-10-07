@@ -3,14 +3,15 @@ package packets
 import (
 	"encoding/binary"
 	"unicode/utf8"
-	"unsafe"
+	//"unsafe"
 )
 
 // byteSlice2String provides a zero-alloc, no-copy byte to string conversion.
 // via https://github.com/golang/go/issues/25484#issuecomment-391415660
-func byteSlice2String(bs []byte) string {
+/*func byteSlice2String(bs []byte) string {
 	return *(*string)(unsafe.Pointer(&bs))
 }
+*/
 
 // decodeUint16 extracts the value of two bytes from a byte array.
 func decodeUint16(buf []byte, offset int) (uint16, int, error) {
@@ -36,7 +37,8 @@ func decodeString(buf []byte, offset int) (string, int, error) {
 		return "", 0, ErrOffsetStrInvalidUTF8
 	}
 
-	return byteSlice2String(buf[next : next+int(length)]), next + int(length), nil
+	//return byteSlice2String(buf[next : next+int(length)]), next + int(length), nil
+	return string(buf[next : next+int(length)]), next + int(length), nil
 }
 
 // decodeBytes extracts a byte array from a byte array, beginning at an offset. Used primarily for message payloads.
