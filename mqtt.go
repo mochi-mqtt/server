@@ -3,7 +3,6 @@ package mqtt
 import (
 	"bufio"
 	"errors"
-	"log"
 	"net"
 
 	"github.com/mochi-co/mqtt/auth"
@@ -157,9 +156,26 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 		return ErrConnectNotAuthorized
 	}
 
-	// Add the new client to the clients manager.
+	// Create a new client with this connection.
 	client := newClient(p, msg, ac)
-	// ... handle session takeover
+
+	// If it's not a clean session and a client already exists with the same
+	// id, inherit the session.
+	if existing, ok := s.clients.get(msg.ClientIdentifier); ok {
+		existing.close()
+		existing.Lock()
+		if msg.CleanSession {
+			for k := range existing.subscriptions {
+				s.topics.Unsubscribe(k, existing.id)
+			}
+		} else {
+			client.inFlight = existing.inFlight // Inherit from existing session.
+			client.subscriptions = existing.subscriptions
+		}
+		existing.Unlock()
+	}
+
+	// Add the new client to the clients manager.
 	s.clients.add(client)
 
 	// Send a CONNACK back to the client.
@@ -307,7 +323,6 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		subs := s.topics.Subscribers(msg.TopicName)
 		for id, qos := range subs {
 			if client, ok := s.clients.get(id); ok {
-				log.Println("_3")
 
 				// Make a copy of the packet to send to client.
 				out := msg.Copy()
@@ -337,7 +352,6 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 
 			}
 		}
-		log.Println("_3")
 
 	case *packets.PubackPacket:
 		cl.inFlight.delete(msg.PacketID)
@@ -386,6 +400,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 				retCodes[i] = packets.ErrSubAckNetworkError
 			} else {
 				s.topics.Subscribe(msg.Topics[i], cl.id, msg.Qoss[i])
+				cl.noteSubscription(msg.Topics[i], msg.Qoss[i])
 				retCodes[i] = msg.Qoss[i]
 			}
 		}
@@ -416,6 +431,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	case *packets.UnsubscribePacket:
 		for i := 0; i < len(msg.Topics); i++ {
 			s.topics.Unsubscribe(msg.Topics[i], cl.id)
+			cl.forgetSubscription(msg.Topics[i])
 		}
 
 		err := s.writeClient(cl, &packets.UnsubackPacket{
@@ -444,21 +460,17 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 	defer s.buffers.Put(buf)
 	err := pk.Encode(buf)
 	if err != nil {
-		log.Println("ENCODE ERR")
 		return err
 	}
 
 	// Write packet to client.
-	log.Println("WRITE")
 	_, err = buf.WriteTo(cl.p.W)
 	if err != nil {
-		log.Println("WRITE ERR")
 		return err
 	}
 
 	err = cl.p.W.Flush()
 	if err != nil {
-		log.Println("FLUSH ERR")
 		return err
 	}
 

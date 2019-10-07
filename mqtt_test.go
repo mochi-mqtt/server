@@ -170,10 +170,19 @@ func BenchmarkServerClose(b *testing.B) {
 
  */
 
-func TestServerEstablishConnectionOK(t *testing.T) {
-	r, w := net.Pipe()
-
+func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
+	r2, w2 := net.Pipe()
 	s := New()
+	s.clients.internal["zen"] = newClient(
+		packets.NewParser(r2, newBufioReader(r2), newBufioWriter(w2)),
+		&packets.ConnectPacket{ClientIdentifier: "zen"},
+		new(auth.Allow),
+	)
+	s.clients.internal["zen"].subscriptions = map[string]byte{
+		"a/b/c": 1,
+	}
+
+	r, w := net.Pipe()
 	o := make(chan error)
 	go func() {
 		o <- s.EstablishConnection(r, new(auth.Allow))
@@ -208,6 +217,57 @@ func TestServerEstablishConnectionOK(t *testing.T) {
 	require.Equal(t, []byte{byte(packets.Connack << 4), 2, 0, packets.Accepted}, <-recv)
 	w.Close()
 }
+
+func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
+	r2, w2 := net.Pipe()
+	s := New()
+	s.clients.internal["zen"] = newClient(
+		packets.NewParser(r2, newBufioReader(r2), newBufioWriter(w2)),
+		&packets.ConnectPacket{ClientIdentifier: "zen"},
+		new(auth.Allow),
+	)
+	subs := map[string]byte{
+		"a/b/c": 1,
+	}
+	s.clients.internal["zen"].subscriptions = subs
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection(r, new(auth.Allow))
+	}()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 15, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			0,     // Packet Flags
+			0, 45, // Keepalive
+			0, 3, // Client ID - MSB+LSB
+			'z', 'e', 'n', // Client ID "zen"
+		})
+		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+		r.Close()
+		s.clients.internal["zen"].close()
+	}()
+
+	recv := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(w)
+		if err != nil {
+			panic(err)
+		}
+		recv <- buf
+	}()
+
+	require.NoError(t, <-o)
+	require.Equal(t, []byte{byte(packets.Connack << 4), 2, 0, packets.Accepted}, <-recv)
+	require.Equal(t, subs, s.clients.internal["zen"].subscriptions)
+	w.Close()
+}
+
 func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 	r, w := net.Pipe()
 
@@ -713,7 +773,6 @@ func TestServerProcessPacketPublishOKQOS1(t *testing.T) {
 	recv := make(chan []byte)
 	go func() {
 		buf, err := ioutil.ReadAll(r2)
-		log.Println("BUF2", buf, err)
 		if err != nil {
 			panic(err)
 		}
@@ -723,7 +782,6 @@ func TestServerProcessPacketPublishOKQOS1(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	buf, err := ioutil.ReadAll(r)
-	log.Println("BUF", buf, err)
 	require.NoError(t, err)
 	require.Equal(t, []byte{
 		byte(packets.Puback << 4), 2, // Fixed header
@@ -766,7 +824,6 @@ func TestServerProcessPacketPublishOKQOS2(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	buf, err := ioutil.ReadAll(r)
-	log.Println("BUF", buf, err)
 	require.NoError(t, err)
 	require.Equal(t, []byte{
 		byte(packets.Pubrec << 4), 2, // Fixed header
@@ -1087,6 +1144,10 @@ func TestServerProcessPacketSubscribe(t *testing.T) {
 	close(o)
 	r.Close()
 
+	require.NotNil(t, cl.subscriptions["a/b/c"])
+	require.NotNil(t, cl.subscriptions["d/e/f"])
+	require.Equal(t, byte(0), cl.subscriptions["a/b/c"])
+	require.Equal(t, byte(1), cl.subscriptions["d/e/f"])
 	require.Equal(t, topics.Subscriptions{cl.id: 0}, s.topics.Subscribers("a/b/c"))
 	require.Equal(t, topics.Subscriptions{cl.id: 1}, s.topics.Subscribers("d/e/f"))
 }
@@ -1241,6 +1302,9 @@ func TestServerProcessPacketUnsubscribe(t *testing.T) {
 	s.clients.add(cl)
 	s.topics.Subscribe("a/b/c", cl.id, 0)
 	s.topics.Subscribe("d/e/f", cl.id, 1)
+	cl.noteSubscription("a/b/c", 0)
+	cl.noteSubscription("d/e/f", 1)
+	log.Println(cl.subscriptions)
 
 	o := make(chan error, 2)
 	go func() {
@@ -1269,6 +1333,8 @@ func TestServerProcessPacketUnsubscribe(t *testing.T) {
 
 	require.Empty(t, s.topics.Subscribers("a/b/c"))
 	require.Empty(t, s.topics.Subscribers("d/e/f"))
+	require.NotContains(t, cl.subscriptions, "a/b/c")
+	require.NotContains(t, cl.subscriptions, "d/e/f")
 }
 
 func TestServerProcessPacketUnsubscribeWriteError(t *testing.T) {

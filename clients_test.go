@@ -110,6 +110,7 @@ func TestNewClient(t *testing.T) {
 	cl := newClient(p, pk, new(auth.Allow))
 	require.NotNil(t, cl)
 	require.NotNil(t, cl.inFlight.internal)
+	require.NotNil(t, cl.subscriptions)
 	require.Equal(t, pk.Keepalive, cl.keepalive)
 	require.Equal(t, pk.CleanSession, cl.cleanSession)
 	require.Equal(t, pk.ClientIdentifier, cl.id)
@@ -162,6 +163,39 @@ func BenchmarkNextPacketID(b *testing.B) {
 	}
 }
 
+func TestClientNoteSubscription(t *testing.T) {
+	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
+	require.NotNil(t, client)
+	client.noteSubscription("a/b/c", 0)
+	require.NotNil(t, client.subscriptions["a/b/c"])
+	require.Equal(t, byte(0), client.subscriptions["a/b/c"])
+}
+
+func BenchmarkClientNoteSubscription(b *testing.B) {
+	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
+	for n := 0; n < b.N; n++ {
+		client.noteSubscription("a/b/c", 0)
+	}
+}
+
+func TestClientForgetSubscription(t *testing.T) {
+	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
+	require.NotNil(t, client)
+	client.subscriptions = map[string]byte{
+		"a/b/c/": 1,
+	}
+	client.forgetSubscription("a/b/c/")
+	require.Empty(t, client.subscriptions["a/b/c"])
+}
+
+func BenchmarkClientForgetSubscription(b *testing.B) {
+	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
+	for n := 0; n < b.N; n++ {
+		client.noteSubscription("a/b/c", 0)
+		client.forgetSubscription("a/b/c/")
+	}
+}
+
 func TestClientClose(t *testing.T) {
 	r, w := net.Pipe()
 	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
@@ -193,8 +227,9 @@ func TestInFlightSet(t *testing.T) {
 
 func BenchmarkInFlightSet(b *testing.B) {
 	client := newClient(nil, new(packets.ConnectPacket), new(auth.Allow))
+	pk := new(packets.PublishPacket)
 	for n := 0; n < b.N; n++ {
-		client.inFlight.set(1, new(packets.PublishPacket))
+		client.inFlight.set(1, pk)
 	}
 }
 

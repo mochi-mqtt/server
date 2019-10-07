@@ -92,6 +92,9 @@ type client struct {
 	// a QoS pattern.
 	inFlight inFlight
 
+	// subscriptions is a map of the subscription filters a client maintains.
+	subscriptions map[string]byte
+
 	// wasClosed indicates that the connection was closed deliberately.
 	wasClosed bool
 }
@@ -111,6 +114,7 @@ func newClient(p *packets.Parser, pk *packets.ConnectPacket, ac auth.Controller)
 		inFlight: inFlight{
 			internal: make(map[uint16]*inFlightMessage, 2),
 		},
+		subscriptions: make(map[string]byte),
 	}
 
 	// If no client id was provided, generate a new one.
@@ -148,6 +152,20 @@ func (cl *client) nextPacketID() uint32 {
 	}
 
 	return atomic.AddUint32(&cl.packetID, 1)
+}
+
+// noteSubscription makes a note of a subscription for the client.
+func (c *client) noteSubscription(filter string, qos byte) {
+	c.Lock()
+	c.subscriptions[filter] = qos
+	c.Unlock()
+}
+
+// forgetSubscription forgests a subscription note for the client.
+func (c *client) forgetSubscription(filter string) {
+	c.Lock()
+	delete(c.subscriptions, filter)
+	c.Unlock()
 }
 
 // close attempts to gracefully close a client connection.
