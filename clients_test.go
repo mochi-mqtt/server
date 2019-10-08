@@ -125,7 +125,7 @@ func TestNewClient(t *testing.T) {
 	pk = new(packets.ConnectPacket)
 	cl = newClient(p, pk, new(auth.Allow))
 	require.NotNil(t, cl)
-	require.Equal(t, clientKeepalive, cl.keepalive)
+	require.Equal(t, defaultClientKeepalive, cl.keepalive)
 }
 
 func TestNewClientLWT(t *testing.T) {

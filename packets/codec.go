@@ -37,8 +37,11 @@ func decodeString(buf []byte, offset int) (string, int, error) {
 		return "", 0, ErrOffsetStrInvalidUTF8
 	}
 
+	b := make([]byte, len(buf))
+	copy(b, buf)
+
 	//return byteSlice2String(buf[next : next+int(length)]), next + int(length), nil
-	return string(buf[next : next+int(length)]), next + int(length), nil
+	return string(b[next : next+int(length)]), next + int(length), nil
 }
 
 // decodeBytes extracts a byte array from a byte array, beginning at an offset. Used primarily for message payloads.
@@ -52,7 +55,10 @@ func decodeBytes(buf []byte, offset int) ([]byte, int, error) {
 		return make([]byte, 0, 0), 0, ErrOffsetStrOutOfRange
 	}
 
-	return buf[next : next+int(length)], next + int(length), nil
+	b := make([]byte, len(buf))
+	copy(b, buf)
+
+	return b[next : next+int(length)], next + int(length), nil
 }
 
 // decodeByte extracts the value of a byte from a byte array.
@@ -71,6 +77,80 @@ func decodeByteBool(buf []byte, offset int) (bool, int, error) {
 	return 1&buf[offset] > 0, offset + 1, nil
 }
 
+/*
+// OLD
+// decodeUint16 extracts the value of two bytes from a byte array.
+func decodeUint16(buf []byte, offset int) (uint16, int, error) {
+	var b []byte
+
+	if len(buf) < offset+2 {
+		return 0, 0, ErrOffsetUintOutOfRange
+	}
+
+	for i := offset; i < offset+2; i++ {
+		b = append(b, buf[i])
+	}
+
+	return binary.BigEndian.Uint16(b), offset + 2, nil
+}
+
+// decodeString extracts a string from a byte array, beginning at an offset.
+func decodeString(buf []byte, offset int) (string, int, error) {
+	var b []byte
+
+	length, next, err := decodeUint16(buf, offset)
+	if err != nil {
+		return "", 0, err
+	}
+
+	for i := next; i < next+int(length); i++ {
+		if i >= len(buf) {
+			return "", 0, ErrOffsetStrOutOfRange
+		}
+		b = append(b, buf[i])
+	}
+
+	if !validUTF8(b) {
+		return "", 0, ErrOffsetStrInvalidUTF8
+	}
+
+	return string(b), next + int(length), nil
+}
+
+// decodeBytes extracts a byte array from a byte array, beginning at an offset. Used primarily for message payloads.
+func decodeBytes(buf []byte, offset int) ([]byte, int, error) {
+	var b []byte
+
+	length, next, err := decodeUint16(buf, offset)
+	if err != nil {
+		return b, 0, err
+	}
+
+	for i := next; i < next+int(length); i++ {
+		if i >= len(buf) {
+			return b, 0, ErrOffsetBytesOutOfRange
+		}
+		b = append(b, buf[i])
+	}
+	return b, next + int(length), nil
+}
+
+// decodeByte extracts the value of a byte from a byte array.
+func decodeByte(buf []byte, offset int) (byte, int, error) {
+	if len(buf) <= offset {
+		return 0, 0, ErrOffsetByteOutOfRange
+	}
+	return buf[offset], offset + 1, nil
+}
+
+// decodeByteBool extracts the value of a byte from a byte array and returns a bool.
+func decodeByteBool(buf []byte, offset int) (bool, int, error) {
+	if len(buf) <= offset {
+		return false, 0, ErrOffsetBoolOutOfRange
+	}
+	return 1&buf[offset] > 0, offset + 1, nil
+}
+*/
 // encodeBool returns a byte instead of a bool.
 func encodeBool(b bool) byte {
 	if b {

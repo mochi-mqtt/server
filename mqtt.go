@@ -37,9 +37,6 @@ var (
 	ErrNoData                 = errors.New("No data")
 	ErrACLNotAuthorized       = errors.New("ACL not authorized")
 
-	// clientKeepalive is the default keepalive time in seconds.
-	clientKeepalive uint16 = 60
-
 	// rwBufSize is the size of client read/write buffers.
 	rwBufSize = 512
 )
@@ -172,11 +169,14 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 	// Resend any unacknowledged QOS messages still pending for the client.
 	err = s.resendInflight(client)
 
+	log.Println("prep reading")
 	// Block and listen for more packets, and end if an error or nil packet occurs.
 	err = s.readClient(client)
 	if err != nil {
-		return err
+		log.Println("connection lost")
 	}
+
+	log.Println("client lost", err)
 
 	// Publish last will and testament.
 	s.closeClient(client, true)
@@ -202,13 +202,14 @@ func (s *Server) resendInflight(cl *client) error {
 // readClient reads new packets from a client connection.
 func (s *Server) readClient(cl *client) error {
 	var err error
-	var pk packets.Packet
-	fh := new(packets.FixedHeader)
+	//var pk packets.Packet
+	//fh := new(packets.FixedHeader)
 
 DONE:
 	for {
 		select {
 		case <-cl.end:
+			log.Println("ended client", cl)
 			break DONE
 
 		default:
@@ -220,6 +221,7 @@ DONE:
 			cl.p.RefreshDeadline(cl.keepalive)
 
 			// Read in the fixed header of the packet.
+			fh := new(packets.FixedHeader)
 			err = cl.p.ReadFixedHeader(fh)
 			if err != nil {
 				return ErrReadFixedHeader
@@ -231,13 +233,13 @@ DONE:
 			}
 
 			// Otherwise read in the packet payload.
-			pk, err = cl.p.Read()
+			pk, err := cl.p.Read()
 			if err != nil {
 				return ErrReadPacketPayload
 			}
 
 			// Validate the packet if necessary.
-			_, err := pk.Validate()
+			_, err = pk.Validate()
 			if err != nil {
 				return ErrReadPacketValidation
 			}
@@ -246,6 +248,8 @@ DONE:
 			go s.processPacket(cl, pk)
 		}
 	}
+
+	log.Println("read finished client", cl)
 
 	return nil
 }
@@ -264,6 +268,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		return s.processConnect(cl, msg)
 
 	case *packets.DisconnectPacket:
+		log.Println("GOT DISCONNECT", cl, msg)
 		log.Println(msg)
 		return s.processDisconnect(cl, msg)
 
@@ -381,7 +386,7 @@ func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
 	// Get all the clients who have a subscription matching the publish
 	// packet's topic.
 	subs := s.topics.Subscribers(pk.TopicName)
-	log.Println(pk.TopicName, subs)
+	log.Println("SUBSCRIBERS:", pk.TopicName, subs)
 	for id, qos := range subs {
 		if client, ok := s.clients.get(id); ok {
 
@@ -508,6 +513,7 @@ func (s *Server) processSubscribe(cl *client, pk *packets.SubscribePacket) error
 	for i := 0; i < len(pk.Topics); i++ {
 		messages := s.topics.Messages(pk.Topics[i])
 		for _, pkv := range messages {
+			log.Println(pk.Topics[i], pkv.Payload, string(pkv.Payload))
 			err := s.writeClient(cl, pkv)
 			if err != nil {
 				s.closeClient(cl, true)
@@ -548,11 +554,26 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 		return ErrConnectionClosed
 	}
 
+	switch msg := pk.(type) {
+	case *packets.PublishPacket:
+		log.Printf("---PACKET %+v\n", msg)
+		//log.Println("---PAYLOAD", msg.Payload)
+	}
+
 	buf := new(bytes.Buffer)
 	err := pk.Encode(buf)
 	if err != nil {
 		return err
 	}
+	/*
+		switch pk.(type) {
+		case *packets.PublishPacket:
+			log.Println("---START")
+			for k, v := range buf.Bytes() {
+				log.Println(k, v, string(v))
+			}
+			log.Println("---END")
+		}*/
 
 	// Write packet to client.
 	_, err = buf.WriteTo(cl.p.W)

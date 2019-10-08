@@ -57,7 +57,8 @@ func (pk *PublishPacket) Decode(buf []byte) error {
 		}
 	}
 
-	pk.Payload = buf[offset:]
+	pk.Payload = make([]byte, len(buf))
+	copy(pk.Payload, buf[offset:])
 
 	return nil
 }

@@ -10,6 +10,11 @@ import (
 	"github.com/mochi-co/mqtt/packets"
 )
 
+var (
+	// defaultClientKeepalive is the default keepalive time in seconds.
+	defaultClientKeepalive uint16 = 60
+)
+
 // clients contains a map of the clients known by the broker.
 type clients struct {
 	sync.RWMutex
@@ -126,7 +131,7 @@ func newClient(p *packets.Parser, pk *packets.ConnectPacket, ac auth.Controller)
 
 	// if no deadline value was provided, set it to the default seconds.
 	if cl.keepalive == 0 {
-		cl.keepalive = clientKeepalive
+		cl.keepalive = defaultClientKeepalive
 	}
 
 	// If a last will and testament has been provided, record it.

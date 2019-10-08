@@ -2,6 +2,7 @@ package trie
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -11,15 +12,16 @@ import (
 	"github.com/mochi-co/mqtt/topics"
 )
 
-func ReLeaf(leaf *Leaf, d int) {
+func ReLeaf(m string, leaf *Leaf, d int) {
 	for k, v := range leaf.Leaves {
-		fmt.Println(d, strings.Repeat("  ", d), k)
-		ReLeaf(v, d+1)
+		fmt.Println(m, d, strings.Repeat("  ", d), k)
+		ReLeaf(m, v, d+1)
 	}
 }
 
 // Index is a prefix/trie tree containing topic subscribers and retained messages.
 type Index struct {
+	sync.RWMutex
 	Root *Leaf
 }
 
@@ -35,24 +37,27 @@ func New() *Index {
 
 // RetainMessage saves a message payload to the end of a topic branch.
 func (x *Index) RetainMessage(msg *packets.PublishPacket) {
+	log.Printf(">>--PACKET %+v\n", msg)
+	log.Println("retaining message...")
 	n := x.poperate(msg.TopicName)
 	n.Lock()
 	n.Message = msg
 	n.Unlock()
+	log.Println("y")
+	log.Println("retained", msg.TopicName, string(msg.Payload))
+
+	//spew.Dump(x.Root)
 }
 
 // Subscribe creates a subscription filter for a client.
 func (x *Index) Subscribe(filter, client string, qos byte) {
 
-	//log.Println("popperating")
 	n := x.poperate(filter)
-	n.Lock()
+	//n.Lock()
 	n.Clients[client] = qos
 	n.Filter = filter
-	//log.Println("updated", n)
-	n.Unlock()
-	//log.Println("subbed")
-	ReLeaf(x.Root, 0)
+	//n.Unlock()
+	ReLeaf("sub", x.Root, 0)
 }
 
 // Unsubscribe removes a subscription filter for a client. Returns true if an
@@ -90,7 +95,7 @@ func (x *Index) Unsubscribe(filter, client string) bool {
 		}
 
 		// If this leaf is empty, note it as orphaned.
-		orphaned = len(e.Clients) == 0 && len(e.Leaves) == 0
+		orphaned = len(e.Clients) == 0 && len(e.Leaves) == 0 && e.Message == nil
 
 		// Traverse up the branch.
 		e = e.Parent
@@ -108,6 +113,7 @@ func (x *Index) Unsubscribe(filter, client string) bool {
 // leaves as it goes and returning the final leaf in the branch.
 // poperate is a more enjoyable word than iterpop.
 func (x *Index) poperate(topic string) *Leaf {
+
 	var d int
 	var particle string
 	var hasNext = true
@@ -116,7 +122,7 @@ func (x *Index) poperate(topic string) *Leaf {
 		particle, hasNext = isolateParticle(topic, d)
 		d++
 
-		n.Lock()
+		//n.Lock()
 		child, _ := n.Leaves[particle]
 		if child == nil {
 			child = &Leaf{
@@ -127,7 +133,7 @@ func (x *Index) poperate(topic string) *Leaf {
 			}
 			n.Leaves[particle] = child
 		}
-		n.Unlock()
+		//n.Unlock()
 		n = child
 	}
 
@@ -141,6 +147,7 @@ func (x *Index) Subscribers(topic string) topics.Subscriptions {
 
 // Messages returns a slice of retained topic messages which match a filter.
 func (x *Index) Messages(filter string) []*packets.PublishPacket {
+	ReLeaf("messages", x.Root, 0)
 	return x.Root.scanMessages(filter, 0, make([]*packets.PublishPacket, 0, 32))
 }
 
@@ -170,7 +177,7 @@ type Leaf struct {
 // scanSubscribers recursively steps through a branch of leaves finding clients who
 // have subscription filters matching a topic, and their highest QoS byte.
 func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions) topics.Subscriptions {
-	l.RLock()
+	//l.RLock()
 	part, hasNext := isolateParticle(topic, d)
 
 	// For either the topic part, a +, or a #, follow the branch.
@@ -212,7 +219,7 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions
 		}
 	}
 
-	l.RUnlock()
+	//l.RUnlock()
 	return clients
 }
 
@@ -220,7 +227,7 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions
 // that match a topic filter. Setting `d` to -1 will enable wildhash mode, and will
 // recursively check ALL child leaves in every subsequent branch.
 func (l *Leaf) scanMessages(filter string, d int, messages []*packets.PublishPacket) []*packets.PublishPacket {
-	l.RLock()
+	//l.RLock()
 
 	// If a wildhash mode has been set, continue recursively checking through all
 	// child leaves regardless of their particle key.
@@ -279,7 +286,7 @@ func (l *Leaf) scanMessages(filter string, d int, messages []*packets.PublishPac
 		}
 	}
 
-	l.RUnlock()
+	//l.RUnlock()
 
 	return messages
 }
