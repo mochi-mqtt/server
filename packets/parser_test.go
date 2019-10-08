@@ -3,6 +3,7 @@ package packets
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -10,19 +11,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newBufioReader(c net.Conn) *bufio.Reader {
+func newBufioReader(c io.Reader) *bufio.Reader {
 	return bufio.NewReaderSize(c, 512)
 }
 
-func newBufioWriter(c net.Conn) *bufio.Writer {
+func newBufioWriter(c io.Writer) *bufio.Writer {
 	return bufio.NewWriterSize(c, 512)
 }
 
 func TestNewParser(t *testing.T) {
-
 	conn := new(MockNetConn)
 	p := NewParser(conn, newBufioReader(conn), newBufioWriter(conn))
-
 	require.NotNil(t, p.R)
 }
 
@@ -54,31 +53,7 @@ func BenchmarkRefreshDeadline(b *testing.B) {
 	}
 }
 
-/*
-func TestReset(t *testing.T) {
-	conn := &MockNetConn{ID: "a"}
-	p := NewParser(conn)
-
-	require.Equal(t, "a", p.Conn.(*MockNetConn).ID)
-
-	conn2 := &MockNetConn{ID: "b"}
-	p.Reset(conn2)
-	require.Equal(t, "b", p.Conn.(*MockNetConn).ID)
-}
-
-func BenchmarkReset(b *testing.B) {
-	conn := &MockNetConn{ID: "a"}
-	conn2 := &MockNetConn{ID: "b"}
-	p := NewParser(conn)
-
-	for n := 0; n < b.N; n++ {
-		p.Reset(conn2)
-	}
-}
-*/
-
 func TestReadFixedHeader(t *testing.T) {
-
 	conn := new(MockNetConn)
 
 	// Test null data.
@@ -200,6 +175,51 @@ func BenchmarkRead(b *testing.B) {
 		}
 	}
 
+}
+
+// This is a super important test. It checks whether or not subsequent packets
+// mutate each other. This happens when you use a single byte buffer for decoding
+// multiple packets.
+func TestReadPacketNoOverwrite(t *testing.T) {
+
+	pk1 := []byte{
+		byte(Publish << 4), 12, // Fixed header
+		0, 5, // Topic Name - LSB+MSB
+		'a', '/', 'b', '/', 'c', // Topic Name
+		'h', 'e', 'l', 'l', 'o', // Payload
+	}
+
+	pk2 := []byte{
+		byte(Publish << 4), 14, // Fixed header
+		0, 5, // Topic Name - LSB+MSB
+		'x', '/', 'y', '/', 'z', // Topic Name
+		'y', 'a', 'h', 'a', 'l', 'l', 'o', // Payload
+	}
+
+	r, w := net.Pipe()
+	p := NewParser(r, newBufioReader(r), newBufioWriter(w))
+	go func() {
+		w.Write(pk1)
+		w.Write(pk2)
+		w.Close()
+	}()
+
+	var fh FixedHeader
+	err := p.ReadFixedHeader(&fh)
+	require.NoError(t, err)
+	o1, err := p.Read()
+	require.NoError(t, err)
+	require.Equal(t, []byte{'h', 'e', 'l', 'l', 'o'}, o1.(*PublishPacket).Payload)
+	require.Equal(t, []byte{'h', 'e', 'l', 'l', 'o'}, pk1[9:])
+	require.NoError(t, err)
+
+	err = p.ReadFixedHeader(&fh)
+	require.NoError(t, err)
+	o2, err := p.Read()
+	require.NoError(t, err)
+
+	require.Equal(t, []byte{'y', 'a', 'h', 'a', 'l', 'l', 'o'}, o2.(*PublishPacket).Payload)
+	require.Equal(t, []byte{'h', 'e', 'l', 'l', 'o'}, o1.(*PublishPacket).Payload, "o1 payload was mutated")
 }
 
 func TestReadPacketNil(t *testing.T) {

@@ -189,8 +189,11 @@ func (p *Parser) Read() (pk Packet, err error) {
 		p.R.Discard(p.FixedHeader.Remaining)
 	}
 
-	// Decode the remaining packet values.
-	err = pk.Decode(bt)
+	// Decode the remaining packet values using a fresh copy of the bytes,
+	// otherwise the next packet will change the data of this one.
+	// 🚨 DANGER!! This line is super important. If the bytes being decoded are not
+	// in their own memory space, packets will get corrupted all over the place.
+	err = pk.Decode(append([]byte{}, bt[:]...)) // <--- MUST BE A COPY.
 	if err != nil {
 		return pk, err
 	}
