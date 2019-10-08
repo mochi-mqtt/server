@@ -64,8 +64,10 @@ func NewParser(c net.Conn, r *bufio.Reader, w BufWriter) *Parser {
 
 // RefreshDeadline refreshes the read/write deadline for the net.Conn connection.
 func (p *Parser) RefreshDeadline(keepalive uint16) {
-	expiry := time.Duration(keepalive+(keepalive/2)) * time.Second
-	p.Conn.SetDeadline(time.Now().Add(expiry))
+	if p.Conn != nil {
+		expiry := time.Duration(keepalive+(keepalive/2)) * time.Second
+		p.Conn.SetDeadline(time.Now().Add(expiry))
+	}
 }
 
 // ReadFixedHeader reads in the values of the next packet's fixed header.

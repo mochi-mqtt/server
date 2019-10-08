@@ -77,6 +77,7 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s)
 	require.NotNil(t, s.listeners)
 	require.NotNil(t, s.clients)
+	require.NotNil(t, s.inbound)
 	//	log.Println(s)
 }
 
@@ -84,6 +85,11 @@ func BenchmarkNew(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		New()
 	}
+}
+
+func TestProcessor(t *testing.T) {
+	s := New()
+
 }
 
 func TestServerAddListener(t *testing.T) {

@@ -26,7 +26,7 @@ func main() {
 	fmt.Println(aurora.Magenta("Mochi MQTT Broker initializing..."))
 
 	server := mqtt.New()
-	tcp := listeners.NewTCP("t1", ":1882")
+	tcp := listeners.NewTCP("t1", ":1883")
 	log.Println(tcp)
 	err := server.AddListener(tcp, nil)
 	if err != nil {

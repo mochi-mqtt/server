@@ -2,7 +2,6 @@ package trie
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	//	"sync"
 	sync "github.com/sasha-s/go-deadlock"
@@ -22,7 +21,8 @@ func ReLeaf(m string, leaf *Leaf, d int) {
 
 // Index is a prefix/trie tree containing topic subscribers and retained messages.
 type Index struct {
-	sync.RWMutex
+	mu sync.RWMutex
+	//	sync.RWMutex
 	Root *Leaf
 }
 
@@ -38,11 +38,12 @@ func New() *Index {
 
 // RetainMessage saves a message payload to the end of a topic branch.
 func (x *Index) RetainMessage(msg *packets.PublishPacket) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
 	if len(msg.Payload) > 0 {
 		n := x.poperate(msg.TopicName)
 		n.Message = msg
 	} else {
-		log.Println("unpoperating", msg.TopicName)
 		x.unpoperate(msg.TopicName, "", true)
 	}
 	//spew.Dump(x.Root)
@@ -50,8 +51,8 @@ func (x *Index) RetainMessage(msg *packets.PublishPacket) {
 
 // Subscribe creates a subscription filter for a client.
 func (x *Index) Subscribe(filter, client string, qos byte) {
-	x.Lock()
-	defer x.Unlock()
+	x.mu.Lock()
+	defer x.mu.Unlock()
 	n := x.poperate(filter)
 	n.Clients[client] = qos
 	n.Filter = filter
@@ -61,62 +62,15 @@ func (x *Index) Subscribe(filter, client string, qos byte) {
 // Unsubscribe removes a subscription filter for a client. Returns true if an
 // unsubscribe action sucessful.
 func (x *Index) Unsubscribe(filter, client string) bool {
+	x.mu.Lock()
+	defer x.mu.Unlock()
 	return x.unpoperate(filter, client, false)
-	/*x.Lock()
-	defer x.Unlock()
-
-	// Walk to end leaf.
-	var d int
-	var particle string
-	var hasNext = true
-	e := x.Root
-	for hasNext {
-		particle, hasNext = isolateParticle(filter, d)
-		d++
-		e, _ = e.Leaves[particle]
-
-		// If the topic part doesn't exist in the tree, there's nothing
-		// left to do.
-		if e == nil {
-			return false
-		}
-	}
-
-	// Step backward removing client and orphaned leaves.
-	var key string
-	var orphaned bool
-	var end = true
-	for e.Parent != nil {
-		key = e.Key
-
-		// Wipe the client from this leaf if it's the filter end.
-		if end {
-			delete(e.Clients, client)
-			end = false
-		}
-
-		// If this leaf is empty, note it as orphaned.
-		orphaned = len(e.Clients) == 0 && len(e.Leaves) == 0 && e.Message == nil
-
-		// Traverse up the branch.
-		e = e.Parent
-
-		// If the leaf we just came from was empty, delete it.
-		if orphaned {
-			delete(e.Leaves, key)
-		}
-	}
-
-	return true
-	*/
 }
 
 // unpoperate steps backward through a trie sequence and removes any orphaned
 // nodes. If a client id is specified, it will unsubscribe a client. If message
 // is true, it will delete a retained message.
 func (x *Index) unpoperate(filter string, client string, message bool) bool {
-	x.Lock()
-	defer x.Unlock()
 
 	// Walk to end leaf.
 	var d int
@@ -199,22 +153,21 @@ func (x *Index) poperate(topic string) *Leaf {
 
 // Subscribers returns a map of clients who are subscribed to matching filters.
 func (x *Index) Subscribers(topic string) topics.Subscriptions {
-	x.RLock()
-	defer x.RUnlock()
+	x.mu.RLock()
+	defer x.mu.RUnlock()
 	return x.Root.scanSubscribers(topic, 0, make(topics.Subscriptions))
 }
 
 // Messages returns a slice of retained topic messages which match a filter.
 func (x *Index) Messages(filter string) []*packets.PublishPacket {
 	// ReLeaf("messages", x.Root, 0)
-	x.RLock()
-	defer x.RUnlock()
+	x.mu.RLock()
+	defer x.mu.RUnlock()
 	return x.Root.scanMessages(filter, 0, make([]*packets.PublishPacket, 0, 32))
 }
 
 // Leaf is a child node on the tree.
 type Leaf struct {
-	sync.RWMutex
 
 	// Key contains the key that was used to create the leaf.
 	Key string

@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"log"
 	"net"
+	"sync"
 	"time"
 
 	//"github.com/davecgh/go-spew/spew"
@@ -51,6 +53,25 @@ type Server struct {
 
 	// topics is an index of topic subscriptions and retained messages.
 	topics topics.Indexer
+
+	// inbound is a small worker pool which processes incoming packets.
+	inbound chan transitMsg
+
+	// outbount is a small worker pool which processes incoming packets.
+	outbount chan transitMsg
+
+	//inboundPool is a waitgroup for the inbound workers.
+	inboundPool sync.WaitGroup
+}
+
+// transitMsg contains data to be sent to the inbound channel.
+type transitMsg struct {
+
+	// client is the client who received or will receive the message.
+	client *client
+
+	// packet is the packet sent or received.
+	packet packets.Packet
 }
 
 // New returns a pointer to a new instance of the MQTT broker.
@@ -59,7 +80,35 @@ func New() *Server {
 		listeners: listeners.NewListeners(),
 		clients:   newClients(),
 		topics:    trie.New(),
+		inbound:   make(chan transitMsg),
 	}
+}
+
+func (s *Server) StartProcessing() {
+	var workers = 8
+	s.inboundPool = sync.WaitGroup{}
+	s.inboundPool.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		log.Println("spawning worker", i)
+		go func(wid int) {
+			defer s.inboundPool.Done()
+			for {
+				select {
+				case p, ok := <-s.inbound:
+					if !ok {
+						log.Println("worker closed", wid)
+						return
+					}
+					s.processPacket(p.client, p.packet)
+				}
+			}
+		}(i)
+	}
+
+	log.Println("spawned all workers")
+
+	return
 }
 
 // AddListener adds a new network listener to the server.
@@ -80,7 +129,9 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 // Serve begins the event loops for establishing client connections on all
 // attached listeners.
 func (s *Server) Serve() error {
+	s.StartProcessing()
 	s.listeners.ServeAll(s.EstablishConnection)
+
 	return nil
 }
 
@@ -133,9 +184,8 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	// id, inherit the session.
 	var sessionPresent bool
 	if existing, ok := s.clients.get(msg.ClientIdentifier); ok {
-
-		existing.close()
 		existing.Lock()
+		existing.close()
 		if msg.CleanSession {
 			for k := range existing.subscriptions {
 				s.topics.Unsubscribe(k, existing.id)
@@ -242,7 +292,9 @@ DONE:
 			}
 
 			// Process inbound packet.
-			go s.processPacket(cl, pk)
+			s.inbound <- transitMsg{client: cl, packet: pk}
+
+			//go s.processPacket(cl, pk)
 		}
 	}
 
@@ -531,6 +583,8 @@ func (s *Server) processUnsubscribe(cl *client, pk *packets.UnsubscribePacket) e
 
 // writeClient writes packets to a client connection.
 func (s *Server) writeClient(cl *client, pk packets.Packet) error {
+	cl.p.Lock()
+	defer cl.p.Unlock()
 
 	// Ensure Writer is open.
 	if cl.p.W == nil {
@@ -565,7 +619,14 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 
 // Close attempts to gracefully shutdown the server, all listeners, and clients.
 func (s *Server) Close() error {
+
+	// Close all listeners.
 	s.listeners.CloseAll(s.closeListenerClients)
+
+	// Close down waitgroups and pools.
+	close(s.inbound)
+	s.inboundPool.Wait()
+
 	return nil
 }
 
