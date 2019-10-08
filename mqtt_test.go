@@ -202,7 +202,7 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 	r, w := net.Pipe()
 	o := make(chan error)
 	go func() {
-		o <- s.EstablishConnection(r, new(auth.Allow))
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
 	}()
 
 	go func() {
@@ -211,7 +211,7 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 			0, 4, // Protocol Name - MSB+LSB
 			'M', 'Q', 'T', 'T', // Protocol Name
 			4,     // Protocol Version
-			2,     // Packet Flags
+			2,     // Packet Flags - clean session
 			0, 45, // Keepalive
 			0, 3, // Client ID - MSB+LSB
 			'z', 'e', 'n', // Client ID "zen"
@@ -231,7 +231,10 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 	}()
 
 	require.NoError(t, <-o)
-	require.Equal(t, []byte{byte(packets.Connack << 4), 2, 0, packets.Accepted}, <-recv)
+	require.Equal(t, []byte{
+		byte(packets.Connack << 4), 2,
+		0, packets.Accepted,
+	}, <-recv)
 	w.Close()
 }
 
@@ -251,7 +254,7 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 	r, w := net.Pipe()
 	o := make(chan error)
 	go func() {
-		o <- s.EstablishConnection(r, new(auth.Allow))
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
 	}()
 
 	go func() {
@@ -280,7 +283,10 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 	}()
 
 	require.NoError(t, <-o)
-	require.Equal(t, []byte{byte(packets.Connack << 4), 2, 0, packets.Accepted}, <-recv)
+	require.Equal(t, []byte{
+		byte(packets.Connack << 4), 2,
+		1, packets.Accepted,
+	}, <-recv)
 	require.Equal(t, subs, s.clients.internal["zen"].subscriptions)
 	w.Close()
 }
@@ -294,7 +300,7 @@ func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 	}()
 
 	s := New()
-	err := s.EstablishConnection(r, new(auth.Allow))
+	err := s.EstablishConnection("tcp", r, new(auth.Allow))
 
 	r.Close()
 	require.Error(t, err)
@@ -310,7 +316,7 @@ func TestServerEstablishConnectionBadConnectPacket(t *testing.T) {
 	}()
 
 	s := New()
-	err := s.EstablishConnection(r, new(auth.Allow))
+	err := s.EstablishConnection("tcp", r, new(auth.Allow))
 	r.Close()
 
 	require.Error(t, err)
@@ -330,7 +336,7 @@ func TestServerEstablishConnectionNotConnectPacket(t *testing.T) {
 	}()
 
 	s := New()
-	err := s.EstablishConnection(r, new(auth.Allow))
+	err := s.EstablishConnection("tcp", r, new(auth.Allow))
 
 	r.Close()
 	require.Error(t, err)
@@ -355,7 +361,7 @@ func TestServerEstablishConnectionInvalidConnectPacket(t *testing.T) {
 	}()
 
 	s := New()
-	err := s.EstablishConnection(r, new(auth.Allow))
+	err := s.EstablishConnection("tcp", r, new(auth.Allow))
 	r.Close()
 	require.Error(t, err)
 	require.Equal(t, ErrReadConnectInvalid, err)
@@ -383,7 +389,7 @@ func TestServerEstablishConnectionBadAuth(t *testing.T) {
 	}()
 
 	s := New()
-	err := s.EstablishConnection(r, new(auth.Disallow))
+	err := s.EstablishConnection("tcp", r, new(auth.Disallow))
 
 	r.Close()
 	require.Error(t, err)
@@ -410,7 +416,7 @@ func TestServerEstablishConnectionWriteClientError(t *testing.T) {
 	o := make(chan error)
 	go func() {
 		s := New()
-		o <- s.EstablishConnection(r, new(auth.Allow))
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
 	}()
 
 	time.Sleep(5 * time.Millisecond)
@@ -426,7 +432,7 @@ func TestServerEstablishConnectionReadClientError(t *testing.T) {
 	o := make(chan error)
 	go func() {
 		s := New()
-		o <- s.EstablishConnection(r, new(auth.Allow))
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
 	}()
 
 	go func() {

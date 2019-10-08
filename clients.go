@@ -60,6 +60,19 @@ func (cl *clients) delete(id string) {
 	cl.Unlock()
 }
 
+// getByListener returns clients matching a listener id.
+func (cl *clients) getByListener(id string) []*client {
+	clients := make([]*client, 0, cl.len())
+	cl.RLock()
+	for _, v := range cl.internal {
+		if v.listener == id {
+			clients = append(clients, v)
+		}
+	}
+	cl.RUnlock()
+	return clients
+}
+
 // Client contains information about a client known by the broker.
 type client struct {
 	sync.RWMutex
@@ -78,6 +91,9 @@ type client struct {
 
 	// id is the client id.
 	id string
+
+	// listener is the id of the listener the client is connected to.
+	listener string
 
 	// user is the username the client authenticated with.
 	user string

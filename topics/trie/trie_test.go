@@ -1,9 +1,6 @@
 package trie
 
 import (
-	//"log"
-	//"fmt"
-	//"strings"
 	"testing"
 
 	//"github.com/davecgh/go-spew/spew"
@@ -52,16 +49,13 @@ func TestSubscribeOK(t *testing.T) {
 	index.Subscribe("path/+", "client-2", 0)
 	index.Subscribe("#", "client-3", 0)
 
-	index.Subscribers("a/b")
-
-	//	ReLeaf(index.Root, 0)
-
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients, "client-1")
 	require.Equal(t, "path/to/my/mqtt", index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Filter)
 	require.Equal(t, "mqtt", index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Key)
 	require.Equal(t, index.Root.Leaves["path"], index.Root.Leaves["path"].Leaves["to"].Parent)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients, "client-2")
-	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-2")
+
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
 	require.Contains(t, index.Root.Leaves["path"].Leaves["+"].Clients, "client-2")
 	require.Contains(t, index.Root.Leaves["#"].Clients, "client-3")
 }
@@ -94,7 +88,7 @@ func TestUnsubscribeA(t *testing.T) {
 
 	ok = index.Unsubscribe("path/to/stuff", "client-1")
 	require.Equal(t, true, ok)
-	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients, "client-1")
+	require.NotContains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients, "client-1")
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients, "client-2")
 	require.Contains(t, index.Root.Leaves["#"].Clients, "client-3")
 
@@ -285,7 +279,7 @@ func BenchmarkRetainMessage(b *testing.B) {
 	}
 }
 
-func TestMessages(t *testing.T) {
+func TestMessagesPattern(t *testing.T) {
 
 	tt := []struct {
 		packet *packets.PublishPacket
@@ -343,12 +337,17 @@ func TestMessages(t *testing.T) {
 		messages := index.Messages(check.filter)
 		require.Equal(t, check.len, len(messages), "Unexpected messages len at %d %s %s", i, check.filter, check.packet.TopicName)
 	}
+}
 
-	//messages := index.Messages("a/b/c/d/+")
-	//spew.Dump(messages)
-	//require.Equal(t, 2, len(messages))
+func TestMessagesFind(t *testing.T) {
+	index := New()
+	index.RetainMessage(&packets.PublishPacket{TopicName: "a/a", Payload: []byte{'a'}})
+	index.RetainMessage(&packets.PublishPacket{TopicName: "a/b", Payload: []byte{'b'}})
+	messages := index.Messages("a/a")
+	require.Equal(t, 1, len(messages))
 
-	//log.Println(messages)
+	messages = index.Messages("a/+")
+	require.Equal(t, 2, len(messages))
 }
 
 func BenchmarkMessages(b *testing.B) {

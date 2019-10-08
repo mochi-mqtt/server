@@ -181,7 +181,6 @@ func BenchmarkRead(b *testing.B) {
 // mutate each other. This happens when you use a single byte buffer for decoding
 // multiple packets.
 func TestReadPacketNoOverwrite(t *testing.T) {
-
 	pk1 := []byte{
 		byte(Publish << 4), 12, // Fixed header
 		0, 5, // Topic Name - LSB+MSB

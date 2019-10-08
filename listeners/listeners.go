@@ -8,7 +8,7 @@ import (
 )
 
 // EstablishFunc is a callback function for establishing new clients.
-type EstablishFunc func(net.Conn, auth.Controller) error
+type EstablishFunc func(id string, c net.Conn, ac auth.Controller) error
 
 // CloseFunc is a callback function for closing all listener clients.
 type CloseFunc func(id string)

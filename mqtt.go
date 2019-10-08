@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"log"
 	"net"
 	"time"
 
@@ -85,14 +84,8 @@ func (s *Server) Serve() error {
 	return nil
 }
 
-// Close attempts to gracefully shutdown the server, all listeners, and clients.
-func (s *Server) Close() error {
-	s.listeners.CloseAll(listeners.MockCloser)
-	return nil
-}
-
 // EstablishConnection establishes a new client connection with the broker.
-func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
+func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
 
 	// Create a new packets parser which will parse all packets for this client,
 	// using buffered writers and readers.
@@ -134,10 +127,13 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 
 	// Create a new client with this connection.
 	client := newClient(p, msg, ac)
+	client.listener = lid // Note the listener the client is connected to.
 
 	// If it's not a clean session and a client already exists with the same
 	// id, inherit the session.
+	var sessionPresent bool
 	if existing, ok := s.clients.get(msg.ClientIdentifier); ok {
+
 		existing.close()
 		existing.Lock()
 		if msg.CleanSession {
@@ -147,6 +143,7 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 		} else {
 			client.inFlight = existing.inFlight // Inherit from existing session.
 			client.subscriptions = existing.subscriptions
+			sessionPresent = true
 		}
 		existing.Unlock()
 	}
@@ -159,7 +156,7 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Connack,
 		},
-		SessionPresent: false, //msg.CleanSession,
+		SessionPresent: sessionPresent,
 		ReturnCode:     retcode,
 	})
 	if err != nil {
@@ -168,20 +165,21 @@ func (s *Server) EstablishConnection(c net.Conn, ac auth.Controller) error {
 
 	// Resend any unacknowledged QOS messages still pending for the client.
 	err = s.resendInflight(client)
-
-	log.Println("prep reading")
-	// Block and listen for more packets, and end if an error or nil packet occurs.
-	err = s.readClient(client)
 	if err != nil {
-		log.Println("connection lost")
+		return err
 	}
 
-	log.Println("client lost", err)
+	// Block and listen for more packets, and end if an error or nil packet occurs.
+	var sendLWT bool
+	err = s.readClient(client)
+	if err != nil {
+		sendLWT = true // Only send LWT on bad disconnect [MQTT-3.14.4-3]
+	}
 
 	// Publish last will and testament.
-	s.closeClient(client, true)
+	s.closeClient(client, sendLWT)
 
-	return nil
+	return err // capture err or nil from readClient.
 }
 
 // resendInflight republishes any inflight messages to the client.
@@ -202,14 +200,13 @@ func (s *Server) resendInflight(cl *client) error {
 // readClient reads new packets from a client connection.
 func (s *Server) readClient(cl *client) error {
 	var err error
-	//var pk packets.Packet
-	//fh := new(packets.FixedHeader)
+	var pk packets.Packet
+	fh := new(packets.FixedHeader)
 
 DONE:
 	for {
 		select {
 		case <-cl.end:
-			log.Println("ended client", cl)
 			break DONE
 
 		default:
@@ -221,7 +218,7 @@ DONE:
 			cl.p.RefreshDeadline(cl.keepalive)
 
 			// Read in the fixed header of the packet.
-			fh := new(packets.FixedHeader)
+			//fh := new(packets.FixedHeader)
 			err = cl.p.ReadFixedHeader(fh)
 			if err != nil {
 				return ErrReadFixedHeader
@@ -233,7 +230,7 @@ DONE:
 			}
 
 			// Otherwise read in the packet payload.
-			pk, err := cl.p.Read()
+			pk, err = cl.p.Read()
 			if err != nil {
 				return ErrReadPacketPayload
 			}
@@ -249,8 +246,6 @@ DONE:
 		}
 	}
 
-	log.Println("read finished client", cl)
-
 	return nil
 }
 
@@ -264,43 +259,33 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 	// Process the packet depending on the detected type.
 	switch msg := pk.(type) {
 	case *packets.ConnectPacket:
-		log.Println(msg)
 		return s.processConnect(cl, msg)
 
 	case *packets.DisconnectPacket:
-		log.Println("GOT DISCONNECT", cl, msg)
-		log.Println(msg)
 		return s.processDisconnect(cl, msg)
 
 	case *packets.PingreqPacket:
 		return s.processPingreq(cl, msg)
 
 	case *packets.PublishPacket:
-		log.Println(msg)
 		return s.processPublish(cl, msg)
 
 	case *packets.PubackPacket:
-		log.Println(msg)
 		return s.processPuback(cl, msg)
 
 	case *packets.PubrecPacket:
-		log.Println(msg)
 		return s.processPubrec(cl, msg)
 
 	case *packets.PubrelPacket:
-		log.Println(msg)
 		return s.processPubrel(cl, msg)
 
 	case *packets.PubcompPacket:
-		log.Println(msg)
 		return s.processPubcomp(cl, msg)
 
 	case *packets.SubscribePacket:
-		log.Println(msg)
 		return s.processSubscribe(cl, msg)
 
 	case *packets.UnsubscribePacket:
-		log.Println(msg)
 		return s.processUnsubscribe(cl, msg)
 	}
 
@@ -386,7 +371,6 @@ func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
 	// Get all the clients who have a subscription matching the publish
 	// packet's topic.
 	subs := s.topics.Subscribers(pk.TopicName)
-	log.Println("SUBSCRIBERS:", pk.TopicName, subs)
 	for id, qos := range subs {
 		if client, ok := s.clients.get(id); ok {
 
@@ -513,7 +497,6 @@ func (s *Server) processSubscribe(cl *client, pk *packets.SubscribePacket) error
 	for i := 0; i < len(pk.Topics); i++ {
 		messages := s.topics.Messages(pk.Topics[i])
 		for _, pkv := range messages {
-			log.Println(pk.Topics[i], pkv.Payload, string(pkv.Payload))
 			err := s.writeClient(cl, pkv)
 			if err != nil {
 				s.closeClient(cl, true)
@@ -554,26 +537,11 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 		return ErrConnectionClosed
 	}
 
-	switch msg := pk.(type) {
-	case *packets.PublishPacket:
-		log.Printf("---PACKET %+v\n", msg)
-		//log.Println("---PAYLOAD", msg.Payload)
-	}
-
 	buf := new(bytes.Buffer)
 	err := pk.Encode(buf)
 	if err != nil {
 		return err
 	}
-	/*
-		switch pk.(type) {
-		case *packets.PublishPacket:
-			log.Println("---START")
-			for k, v := range buf.Bytes() {
-				log.Println(k, v, string(v))
-			}
-			log.Println("---END")
-		}*/
 
 	// Write packet to client.
 	_, err = buf.WriteTo(cl.p.W)
@@ -595,6 +563,22 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 	return nil
 }
 
+// Close attempts to gracefully shutdown the server, all listeners, and clients.
+func (s *Server) Close() error {
+	s.listeners.CloseAll(s.closeListenerClients)
+	return nil
+}
+
+// closeListenerClients closes all clients on the specified listener.
+func (s *Server) closeListenerClients(listener string) {
+	clients := s.clients.getByListener(listener)
+	for _, client := range clients {
+		// LWT send will be triggered by connection EOF.
+		s.closeClient(client, false) // omit errors
+	}
+
+}
+
 // closeClient closes a client connection and publishes any LWT messages.
 func (s *Server) closeClient(cl *client, sendLWT bool) error {
 
@@ -612,7 +596,6 @@ func (s *Server) closeClient(cl *client, sendLWT bool) error {
 		if err != nil {
 			return err
 		}
-
 	}
 
 	// Stop listening for new packets.

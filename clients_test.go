@@ -1,6 +1,7 @@
 package mqtt
 
 import (
+	"log"
 	"net"
 	"testing"
 
@@ -88,6 +89,29 @@ func BenchmarkClientsDelete(b *testing.B) {
 	cl.add(&client{id: "t1"})
 	for n := 0; n < b.N; n++ {
 		cl.delete("t1")
+	}
+}
+
+func TestClientsGetByListener(t *testing.T) {
+	cl := newClients()
+	cl.add(&client{id: "t1", listener: "tcp1"})
+	cl.add(&client{id: "t2", listener: "ws1"})
+	require.Contains(t, cl.internal, "t1")
+	require.Contains(t, cl.internal, "t2")
+
+	clients := cl.getByListener("tcp1")
+	log.Println(clients)
+	require.NotEmpty(t, clients)
+	require.Equal(t, 1, len(clients))
+	require.Equal(t, "tcp1", clients[0].listener)
+}
+
+func BenchmarkClientsGetByListener(b *testing.B) {
+	cl := newClients()
+	cl.add(&client{id: "t1", listener: "tcp1"})
+	cl.add(&client{id: "t2", listener: "ws1"})
+	for n := 0; n < b.N; n++ {
+		cl.getByListener("tcp1")
 	}
 }
 

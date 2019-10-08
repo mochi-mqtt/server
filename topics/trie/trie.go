@@ -2,9 +2,9 @@ package trie
 
 import (
 	"fmt"
-	"log"
 	"strings"
-	"sync"
+	//	"sync"
+	sync "github.com/sasha-s/go-deadlock"
 
 	//"github.com/davecgh/go-spew/spew"
 
@@ -37,32 +37,28 @@ func New() *Index {
 
 // RetainMessage saves a message payload to the end of a topic branch.
 func (x *Index) RetainMessage(msg *packets.PublishPacket) {
-	log.Printf(">>--PACKET %+v\n", msg)
-	log.Println("retaining message...")
+	x.Lock()
+	defer x.Unlock()
 	n := x.poperate(msg.TopicName)
-	n.Lock()
 	n.Message = msg
-	n.Unlock()
-	log.Println("y")
-	log.Println("retained", msg.TopicName, string(msg.Payload))
-
 	//spew.Dump(x.Root)
 }
 
 // Subscribe creates a subscription filter for a client.
 func (x *Index) Subscribe(filter, client string, qos byte) {
-
+	x.Lock()
+	defer x.Unlock()
 	n := x.poperate(filter)
-	//n.Lock()
 	n.Clients[client] = qos
 	n.Filter = filter
-	//n.Unlock()
-	ReLeaf("sub", x.Root, 0)
+	//ReLeaf("sub", x.Root, 0)
 }
 
 // Unsubscribe removes a subscription filter for a client. Returns true if an
 // unsubscribe action sucessful.
 func (x *Index) Unsubscribe(filter, client string) bool {
+	x.Lock()
+	defer x.Unlock()
 
 	// Walk to end leaf.
 	var d int
@@ -113,7 +109,6 @@ func (x *Index) Unsubscribe(filter, client string) bool {
 // leaves as it goes and returning the final leaf in the branch.
 // poperate is a more enjoyable word than iterpop.
 func (x *Index) poperate(topic string) *Leaf {
-
 	var d int
 	var particle string
 	var hasNext = true
@@ -122,7 +117,6 @@ func (x *Index) poperate(topic string) *Leaf {
 		particle, hasNext = isolateParticle(topic, d)
 		d++
 
-		//n.Lock()
 		child, _ := n.Leaves[particle]
 		if child == nil {
 			child = &Leaf{
@@ -133,7 +127,6 @@ func (x *Index) poperate(topic string) *Leaf {
 			}
 			n.Leaves[particle] = child
 		}
-		//n.Unlock()
 		n = child
 	}
 
@@ -142,12 +135,16 @@ func (x *Index) poperate(topic string) *Leaf {
 
 // Subscribers returns a map of clients who are subscribed to matching filters.
 func (x *Index) Subscribers(topic string) topics.Subscriptions {
+	x.RLock()
+	defer x.RUnlock()
 	return x.Root.scanSubscribers(topic, 0, make(topics.Subscriptions))
 }
 
 // Messages returns a slice of retained topic messages which match a filter.
 func (x *Index) Messages(filter string) []*packets.PublishPacket {
-	ReLeaf("messages", x.Root, 0)
+	// ReLeaf("messages", x.Root, 0)
+	x.RLock()
+	defer x.RUnlock()
 	return x.Root.scanMessages(filter, 0, make([]*packets.PublishPacket, 0, 32))
 }
 
@@ -177,7 +174,6 @@ type Leaf struct {
 // scanSubscribers recursively steps through a branch of leaves finding clients who
 // have subscription filters matching a topic, and their highest QoS byte.
 func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions) topics.Subscriptions {
-	//l.RLock()
 	part, hasNext := isolateParticle(topic, d)
 
 	// For either the topic part, a +, or a #, follow the branch.
@@ -219,7 +215,6 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions
 		}
 	}
 
-	//l.RUnlock()
 	return clients
 }
 
@@ -227,7 +222,6 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions
 // that match a topic filter. Setting `d` to -1 will enable wildhash mode, and will
 // recursively check ALL child leaves in every subsequent branch.
 func (l *Leaf) scanMessages(filter string, d int, messages []*packets.PublishPacket) []*packets.PublishPacket {
-	//l.RLock()
 
 	// If a wildhash mode has been set, continue recursively checking through all
 	// child leaves regardless of their particle key.
@@ -248,13 +242,9 @@ func (l *Leaf) scanMessages(filter string, d int, messages []*packets.PublishPac
 	// these topics.
 	if !hasNext {
 
-		// If it's a specific particle, we only need the single message.
-		if child, ok := l.Leaves[particle]; ok {
-			if child.Message != nil {
-				messages = append(messages, child.Message)
-			}
-
-		} else if particle == "+" || particle == "#" {
+		// Wildcards and Wildhashes must be checked first, otherwise they
+		// may be detected as standard particles, and not act properly.
+		if particle == "+" || particle == "#" {
 			// Otherwise, if it's a wildcard or wildhash, get messages from all
 			// the child leaves. This wildhash captures messages on the actual
 			// wildhash position, whereas the d == -1 block collects subsequent
@@ -264,7 +254,13 @@ func (l *Leaf) scanMessages(filter string, d int, messages []*packets.PublishPac
 					messages = append(messages, child.Message)
 				}
 			}
+		} else if child, ok := l.Leaves[particle]; ok {
+			// If it's a specific particle, we only need the single message.
+			if child.Message != nil {
+				messages = append(messages, child.Message)
+			}
 		}
+
 	} else {
 
 		// If it's not the last particle, branch out to the next leaves, scanning
@@ -285,8 +281,6 @@ func (l *Leaf) scanMessages(filter string, d int, messages []*packets.PublishPac
 			messages = child.scanMessages(filter, -1, messages)
 		}
 	}
-
-	//l.RUnlock()
 
 	return messages
 }
