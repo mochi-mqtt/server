@@ -78,6 +78,7 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.listeners)
 	require.NotNil(t, s.clients)
 	require.NotNil(t, s.inbound)
+	require.NotNil(t, s.outbound)
 	//	log.Println(s)
 }
 
