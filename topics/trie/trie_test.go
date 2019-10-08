@@ -41,6 +41,80 @@ func BenchmarkPoperate(b *testing.B) {
 	}
 }
 
+func TestUnpoperate(t *testing.T) {
+	index := New()
+	index.Subscribe("path/to/my/mqtt", "client-1", 0)
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients, "client-1")
+
+	index.Subscribe("path/to/another/mqtt", "client-1", 0)
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
+
+	pk := &packets.PublishPacket{TopicName: "path/to/retained/message", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
+	index.RetainMessage(pk)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["retained"].Leaves["message"])
+	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["retained"].Leaves["message"].Message)
+
+	pk2 := &packets.PublishPacket{TopicName: "path/to/my/mqtt", Payload: []byte{'s', 'h', 'a', 'r', 'e', 'd'}}
+	index.RetainMessage(pk2)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
+	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
+
+	index.unpoperate("path/to/my/mqtt", "", true) // delete retained
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients, "client-1")
+	require.Nil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
+
+	index.unpoperate("path/to/my/mqtt", "client-1", false) // unsubscribe client
+	require.Nil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"])
+
+	index.unpoperate("path/to/retained/message", "", true) // delete retained
+	require.NotContains(t, index.Root.Leaves["path"].Leaves["to"].Leaves, "my")
+
+	//require.Empty(t, index.Root.Leaves["path"])
+
+}
+
+func BenchmarkUnpoperate(b *testing.B) {
+	//index := New()
+	for n := 0; n < b.N; n++ {
+		//		index.poperate("path/to/my/mqtt")
+	}
+}
+
+func TestRetainMessage(t *testing.T) {
+	pk := &packets.PublishPacket{TopicName: "path/to/my/mqtt", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
+	pk2 := &packets.PublishPacket{TopicName: "path/to/another/mqtt", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
+
+	index := New()
+	index.RetainMessage(pk)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
+	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
+
+	index.Subscribe("path/to/another/mqtt", "client-1", 0)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients["client-1"])
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
+
+	index.RetainMessage(pk2)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
+	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
+
+	// Delete retained
+	pk3 := &packets.PublishPacket{TopicName: "path/to/another/mqtt", Payload: []byte{}}
+	index.RetainMessage(pk3)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
+	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
+	require.Nil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
+
+}
+
+func BenchmarkRetainMessage(b *testing.B) {
+	index := New()
+	pk := &packets.PublishPacket{TopicName: "path/to/another/mqtt"}
+	for n := 0; n < b.N; n++ {
+		index.RetainMessage(pk)
+	}
+}
+
 func TestSubscribeOK(t *testing.T) {
 	index := New()
 	index.Subscribe("path/to/my/mqtt", "client-1", 0)
@@ -252,33 +326,6 @@ func BenchmarkIsolateParticle(b *testing.B) {
 	}
 }
 
-func TestRetainMessage(t *testing.T) {
-	pk := &packets.PublishPacket{TopicName: "path/to/my/mqtt"}
-	pk2 := &packets.PublishPacket{TopicName: "path/to/another/mqtt"}
-
-	index := New()
-	index.RetainMessage(pk)
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
-	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
-
-	index.Subscribe("path/to/another/mqtt", "client-1", 0)
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients["client-1"])
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
-
-	index.RetainMessage(pk2)
-	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
-	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
-	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
-}
-
-func BenchmarkRetainMessage(b *testing.B) {
-	index := New()
-	pk := &packets.PublishPacket{TopicName: "path/to/another/mqtt"}
-	for n := 0; n < b.N; n++ {
-		index.RetainMessage(pk)
-	}
-}
-
 func TestMessagesPattern(t *testing.T) {
 
 	tt := []struct {
@@ -287,42 +334,42 @@ func TestMessagesPattern(t *testing.T) {
 		len    int
 	}{
 		{
-			&packets.PublishPacket{TopicName: "a/b/c/d"},
+			&packets.PublishPacket{TopicName: "a/b/c/d", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"a/b/c/d",
 			1,
 		},
 		{
-			&packets.PublishPacket{TopicName: "a/b/c/e"},
+			&packets.PublishPacket{TopicName: "a/b/c/e", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"a/+/c/+",
 			2,
 		},
 		{
-			&packets.PublishPacket{TopicName: "a/b/d/f"},
+			&packets.PublishPacket{TopicName: "a/b/d/f", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"+/+/+/+",
 			3,
 		},
 		{
-			&packets.PublishPacket{TopicName: "q/w/e/r/t/y"},
+			&packets.PublishPacket{TopicName: "q/w/e/r/t/y", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"q/w/e/#",
 			1,
 		},
 		{
-			&packets.PublishPacket{TopicName: "q/w/x/r/t/x"},
+			&packets.PublishPacket{TopicName: "q/w/x/r/t/x", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"q/#",
 			2,
 		},
 		{
-			&packets.PublishPacket{TopicName: "asd"},
+			&packets.PublishPacket{TopicName: "asd", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"asd",
 			1,
 		},
 		{
-			&packets.PublishPacket{TopicName: "asd/fgh/jkl"},
+			&packets.PublishPacket{TopicName: "asd/fgh/jkl", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"#",
 			8,
 		},
 		{
-			&packets.PublishPacket{TopicName: "stuff/asdadsa/dsfdsafdsadfsa/dsfdsf/sdsadas"},
+			&packets.PublishPacket{TopicName: "stuff/asdadsa/dsfdsafdsadfsa/dsfdsf/sdsadas", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"stuff/#/things", // indexer will ignore trailing /things
 			1,
 		},

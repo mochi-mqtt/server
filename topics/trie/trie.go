@@ -2,6 +2,7 @@ package trie
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	//	"sync"
 	sync "github.com/sasha-s/go-deadlock"
@@ -37,10 +38,13 @@ func New() *Index {
 
 // RetainMessage saves a message payload to the end of a topic branch.
 func (x *Index) RetainMessage(msg *packets.PublishPacket) {
-	x.Lock()
-	defer x.Unlock()
-	n := x.poperate(msg.TopicName)
-	n.Message = msg
+	if len(msg.Payload) > 0 {
+		n := x.poperate(msg.TopicName)
+		n.Message = msg
+	} else {
+		log.Println("unpoperating", msg.TopicName)
+		x.unpoperate(msg.TopicName, "", true)
+	}
 	//spew.Dump(x.Root)
 }
 
@@ -57,7 +61,8 @@ func (x *Index) Subscribe(filter, client string, qos byte) {
 // Unsubscribe removes a subscription filter for a client. Returns true if an
 // unsubscribe action sucessful.
 func (x *Index) Unsubscribe(filter, client string) bool {
-	x.Lock()
+	return x.unpoperate(filter, client, false)
+	/*x.Lock()
 	defer x.Unlock()
 
 	// Walk to end leaf.
@@ -103,6 +108,65 @@ func (x *Index) Unsubscribe(filter, client string) bool {
 	}
 
 	return true
+	*/
+}
+
+// unpoperate steps backward through a trie sequence and removes any orphaned
+// nodes. If a client id is specified, it will unsubscribe a client. If message
+// is true, it will delete a retained message.
+func (x *Index) unpoperate(filter string, client string, message bool) bool {
+	x.Lock()
+	defer x.Unlock()
+
+	// Walk to end leaf.
+	var d int
+	var particle string
+	var hasNext = true
+	e := x.Root
+	for hasNext {
+		particle, hasNext = isolateParticle(filter, d)
+		d++
+		e, _ = e.Leaves[particle]
+
+		// If the topic part doesn't exist in the tree, there's nothing
+		// left to do.
+		if e == nil {
+			return false
+		}
+	}
+
+	// Step backward removing client and orphaned leaves.
+	var key string
+	var orphaned bool
+	var end = true
+	for e.Parent != nil {
+		key = e.Key
+
+		// Wipe the client from this leaf if it's the filter end.
+		if end {
+			if client != "" {
+				delete(e.Clients, client)
+			}
+			if message {
+				e.Message = nil
+			}
+			end = false
+		}
+
+		// If this leaf is empty, note it as orphaned.
+		orphaned = len(e.Clients) == 0 && len(e.Leaves) == 0 && e.Message == nil
+
+		// Traverse up the branch.
+		e = e.Parent
+
+		// If the leaf we just came from was empty, delete it.
+		if orphaned {
+			delete(e.Leaves, key)
+		}
+	}
+
+	return true
+
 }
 
 // poperate iterates and populates through a topic/filter path, instantiating
