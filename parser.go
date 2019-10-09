@@ -1,28 +1,16 @@
-package packets
+package mqtt
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/mochi-co/mqtt/packets"
 )
-
-// Packet is the base interface that all MQTT packets must implement.
-type Packet interface {
-
-	// Encode encodes a packet into a byte buffer.
-	Encode(*bytes.Buffer) error
-
-	// Decode decodes a byte array into a packet struct.
-	Decode([]byte) error
-
-	// Validate the packet. Returns a error code and error if not valid.
-	Validate() (byte, error)
-}
 
 // BufWriter is an interface for satisfying a bufio.Writer. This is mainly
 // in place to allow testing.
@@ -50,7 +38,7 @@ type Parser struct {
 	W BufWriter
 
 	// FixedHeader is the fixed header from the last seen packet.
-	FixedHeader FixedHeader
+	FixedHeader packets.FixedHeader
 }
 
 // NewParser returns an instance of Parser for a connection.
@@ -71,7 +59,7 @@ func (p *Parser) RefreshDeadline(keepalive uint16) {
 }
 
 // ReadFixedHeader reads in the values of the next packet's fixed header.
-func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
+func (p *Parser) ReadFixedHeader(fh *packets.FixedHeader) error {
 
 	// Peek the maximum message type and flags, and length.
 	peeked, err := p.R.Peek(1)
@@ -80,12 +68,12 @@ func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 	}
 
 	// Unpack message type and flags from byte 1.
-	err = fh.decode(peeked[0])
+	err = fh.Decode(peeked[0])
 	if err != nil {
 
 		// @SPEC [MQTT-2.2.2-2]
 		// If invalid flags are received, the receiver MUST close the Network Connection.
-		return ErrInvalidFlags
+		return packets.ErrInvalidFlags
 	}
 
 	// The remaining length value can be up to 5 bytes. Peek through each byte
@@ -112,7 +100,7 @@ func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 		// If i has reached 4 without a length terminator, throw a protocol violation.
 		i++
 		if i == 4 {
-			return ErrOversizedLengthIndicator
+			return packets.ErrOversizedLengthIndicator
 		}
 	}
 
@@ -130,37 +118,37 @@ func (p *Parser) ReadFixedHeader(fh *FixedHeader) error {
 }
 
 // Read reads the remaining buffer into an MQTT packet.
-func (p *Parser) Read() (pk Packet, err error) {
+func (p *Parser) Read() (pk packets.Packet, err error) {
 
 	switch p.FixedHeader.Type {
-	case Connect:
-		pk = &ConnectPacket{FixedHeader: p.FixedHeader}
-	case Connack:
-		pk = &ConnackPacket{FixedHeader: p.FixedHeader}
-	case Publish:
-		pk = &PublishPacket{FixedHeader: p.FixedHeader}
-	case Puback:
-		pk = &PubackPacket{FixedHeader: p.FixedHeader}
-	case Pubrec:
-		pk = &PubrecPacket{FixedHeader: p.FixedHeader}
-	case Pubrel:
-		pk = &PubrelPacket{FixedHeader: p.FixedHeader}
-	case Pubcomp:
-		pk = &PubcompPacket{FixedHeader: p.FixedHeader}
-	case Subscribe:
-		pk = &SubscribePacket{FixedHeader: p.FixedHeader}
-	case Suback:
-		pk = &SubackPacket{FixedHeader: p.FixedHeader}
-	case Unsubscribe:
-		pk = &UnsubscribePacket{FixedHeader: p.FixedHeader}
-	case Unsuback:
-		pk = &UnsubackPacket{FixedHeader: p.FixedHeader}
-	case Pingreq:
-		pk = &PingreqPacket{FixedHeader: p.FixedHeader}
-	case Pingresp:
-		pk = &PingrespPacket{FixedHeader: p.FixedHeader}
-	case Disconnect:
-		pk = &DisconnectPacket{FixedHeader: p.FixedHeader}
+	case packets.Connect:
+		pk = &packets.ConnectPacket{FixedHeader: p.FixedHeader}
+	case packets.Connack:
+		pk = &packets.ConnackPacket{FixedHeader: p.FixedHeader}
+	case packets.Publish:
+		pk = &packets.PublishPacket{FixedHeader: p.FixedHeader}
+	case packets.Puback:
+		pk = &packets.PubackPacket{FixedHeader: p.FixedHeader}
+	case packets.Pubrec:
+		pk = &packets.PubrecPacket{FixedHeader: p.FixedHeader}
+	case packets.Pubrel:
+		pk = &packets.PubrelPacket{FixedHeader: p.FixedHeader}
+	case packets.Pubcomp:
+		pk = &packets.PubcompPacket{FixedHeader: p.FixedHeader}
+	case packets.Subscribe:
+		pk = &packets.SubscribePacket{FixedHeader: p.FixedHeader}
+	case packets.Suback:
+		pk = &packets.SubackPacket{FixedHeader: p.FixedHeader}
+	case packets.Unsubscribe:
+		pk = &packets.UnsubscribePacket{FixedHeader: p.FixedHeader}
+	case packets.Unsuback:
+		pk = &packets.UnsubackPacket{FixedHeader: p.FixedHeader}
+	case packets.Pingreq:
+		pk = &packets.PingreqPacket{FixedHeader: p.FixedHeader}
+	case packets.Pingresp:
+		pk = &packets.PingrespPacket{FixedHeader: p.FixedHeader}
+	case packets.Disconnect:
+		pk = &packets.DisconnectPacket{FixedHeader: p.FixedHeader}
 	default:
 		return pk, errors.New("No valid packet available; " + string(p.FixedHeader.Type))
 	}

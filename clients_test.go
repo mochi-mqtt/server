@@ -117,7 +117,7 @@ func BenchmarkClientsGetByListener(b *testing.B) {
 
 func TestNewClient(t *testing.T) {
 	r, _ := net.Pipe()
-	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
+	p := NewParser(r, newBufioReader(r), newBufioWriter(r))
 	r.Close()
 	pk := &packets.ConnectPacket{
 		FixedHeader: packets.FixedHeader{
@@ -154,7 +154,7 @@ func TestNewClient(t *testing.T) {
 
 func TestNewClientLWT(t *testing.T) {
 	r, _ := net.Pipe()
-	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
+	p := NewParser(r, newBufioReader(r), newBufioWriter(r))
 	r.Close()
 	pk := &packets.ConnectPacket{
 		FixedHeader: packets.FixedHeader{
@@ -182,7 +182,7 @@ func TestNewClientLWT(t *testing.T) {
 
 func BenchmarkNewClient(b *testing.B) {
 	r, _ := net.Pipe()
-	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(r))
+	p := NewParser(r, newBufioReader(r), newBufioWriter(r))
 	r.Close()
 	pk := new(packets.ConnectPacket)
 
@@ -245,7 +245,7 @@ func BenchmarkClientForgetSubscription(b *testing.B) {
 
 func TestClientClose(t *testing.T) {
 	r, w := net.Pipe()
-	p := packets.NewParser(r, newBufioReader(r), newBufioWriter(w))
+	p := NewParser(r, newBufioReader(r), newBufioWriter(w))
 	pk := &packets.ConnectPacket{
 		ClientIdentifier: "zen3",
 	}

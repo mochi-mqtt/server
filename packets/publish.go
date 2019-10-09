@@ -31,7 +31,7 @@ func (pk *PublishPacket) Encode(buf *bytes.Buffer) error {
 	}
 
 	pk.FixedHeader.Remaining = len(topicName) + len(packetID) + len(pk.Payload)
-	pk.FixedHeader.encode(buf)
+	pk.FixedHeader.Encode(buf)
 	buf.Write(topicName)
 	buf.Write(packetID)
 	buf.Write(pk.Payload)

@@ -14,7 +14,7 @@ type UnsubackPacket struct {
 // Encode encodes and writes the packet data values to the buffer.
 func (pk *UnsubackPacket) Encode(buf *bytes.Buffer) error {
 	pk.FixedHeader.Remaining = 2
-	pk.FixedHeader.encode(buf)
+	pk.FixedHeader.Encode(buf)
 	buf.Write(encodeUint16(pk.PacketID))
 	return nil
 }

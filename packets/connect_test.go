@@ -78,7 +78,7 @@ func TestConnectDecode(t *testing.T) {
 		require.Equal(t, uint8(1), Connect, "Incorrect Packet Type [i:%d] %s", i, wanted.desc)
 		require.Equal(t, true, (len(wanted.rawBytes) > 2), "Insufficent bytes in packet [i:%d] %s", i, wanted.desc)
 
-		pk := newPacket(Connect).(*ConnectPacket)
+		pk := &ConnectPacket{FixedHeader: FixedHeader{Type: Connect}}
 		err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
@@ -113,8 +113,8 @@ func TestConnectDecode(t *testing.T) {
 }
 
 func BenchmarkConnectDecode(b *testing.B) {
-	pk := newPacket(Connect).(*ConnectPacket)
-	pk.FixedHeader.decode(expectedPackets[Connect][0].rawBytes[0])
+	pk := &ConnectPacket{FixedHeader: FixedHeader{Type: Connect}}
+	pk.FixedHeader.Decode(expectedPackets[Connect][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Connect][0].rawBytes[2:])
@@ -133,8 +133,8 @@ func TestConnectValidate(t *testing.T) {
 }
 
 func BenchmarkConnectValidate(b *testing.B) {
-	pk := newPacket(Connect).(*ConnectPacket)
-	pk.FixedHeader.decode(expectedPackets[Connect][0].rawBytes[0])
+	pk := &ConnectPacket{FixedHeader: FixedHeader{Type: Connect}}
+	pk.FixedHeader.Decode(expectedPackets[Connect][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()

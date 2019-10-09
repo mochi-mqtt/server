@@ -24,13 +24,13 @@ type FixedHeader struct {
 }
 
 // encode encodes the FixedHeader and returns a bytes buffer.
-func (fh *FixedHeader) encode(buf *bytes.Buffer) {
+func (fh *FixedHeader) Encode(buf *bytes.Buffer) {
 	buf.WriteByte(fh.Type<<4 | encodeBool(fh.Dup)<<3 | fh.Qos<<1 | encodeBool(fh.Retain))
 	encodeLength(buf, fh.Remaining)
 }
 
 // decode extracts the specification bits from the header byte.
-func (fh *FixedHeader) decode(headerByte byte) error {
+func (fh *FixedHeader) Decode(headerByte byte) error {
 
 	// Get the message type from the first 4 bytes.
 	fh.Type = headerByte >> 4

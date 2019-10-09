@@ -65,7 +65,7 @@ func TestSubscribeDecode(t *testing.T) {
 
 		require.Equal(t, uint8(8), Subscribe, "Incorrect Packet Type [i:%d] %s", i, wanted.desc)
 
-		pk := newPacket(Subscribe).(*SubscribePacket)
+		pk := &SubscribePacket{FixedHeader: FixedHeader{Type: Subscribe, Qos: 1}}
 		err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
@@ -82,8 +82,8 @@ func TestSubscribeDecode(t *testing.T) {
 }
 
 func BenchmarkSubscribeDecode(b *testing.B) {
-	pk := newPacket(Subscribe).(*SubscribePacket)
-	pk.FixedHeader.decode(expectedPackets[Subscribe][0].rawBytes[0])
+	pk := &SubscribePacket{FixedHeader: FixedHeader{Type: Subscribe, Qos: 1}}
+	pk.FixedHeader.Decode(expectedPackets[Subscribe][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Subscribe][0].rawBytes[2:])
@@ -91,13 +91,6 @@ func BenchmarkSubscribeDecode(b *testing.B) {
 }
 
 func TestSubscribeValidate(t *testing.T) {
-	/*pk := newPacket(Subscribe).(*SubscribePacket)
-	pk.FixedHeader.decode(expectedPackets[Subscribe][0].rawBytes[0])
-
-	b, err := pk.Validate()
-	require.NoError(t, err)
-	require.Equal(t, Accepted, b)
-	*/
 	require.Contains(t, expectedPackets, Subscribe)
 	for i, wanted := range expectedPackets[Subscribe] {
 		if wanted.group == "validate" || i == 0 {
@@ -118,8 +111,8 @@ func TestSubscribeValidate(t *testing.T) {
 }
 
 func BenchmarkSubscribeValidate(b *testing.B) {
-	pk := newPacket(Subscribe).(*SubscribePacket)
-	pk.FixedHeader.decode(expectedPackets[Subscribe][0].rawBytes[0])
+	pk := &SubscribePacket{FixedHeader: FixedHeader{Type: Subscribe, Qos: 1}}
+	pk.FixedHeader.Decode(expectedPackets[Subscribe][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()

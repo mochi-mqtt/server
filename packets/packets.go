@@ -1,5 +1,9 @@
 package packets
 
+import (
+	"bytes"
+)
+
 // All of the valid packet types and their packet identifier.
 const (
 	Reserved    byte = iota
@@ -39,41 +43,15 @@ var Names = map[byte]string{
 	14: "DISCONNECT",
 }
 
-// newPacket returns a packet of a specified packetType.
-// this is a convenience package for testing and shouldn't be used for production
-// code.
-func newPacket(packetType byte) Packet {
+// Packet is the base interface that all MQTT packets must implement.
+type Packet interface {
 
-	switch packetType {
-	case Connect:
-		return &ConnectPacket{FixedHeader: FixedHeader{Type: Connect}}
-	case Connack:
-		return &ConnackPacket{FixedHeader: FixedHeader{Type: Connack}}
-	case Publish:
-		return &PublishPacket{FixedHeader: FixedHeader{Type: Publish}}
-	case Puback:
-		return &PubackPacket{FixedHeader: FixedHeader{Type: Puback}}
-	case Pubrec:
-		return &PubrecPacket{FixedHeader: FixedHeader{Type: Pubrec}}
-	case Pubrel:
-		return &PubrelPacket{FixedHeader: FixedHeader{Type: Pubrel, Qos: 1}}
-	case Pubcomp:
-		return &PubcompPacket{FixedHeader: FixedHeader{Type: Pubcomp}}
-	case Subscribe:
-		return &SubscribePacket{FixedHeader: FixedHeader{Type: Subscribe, Qos: 1}}
-	case Suback:
-		return &SubackPacket{FixedHeader: FixedHeader{Type: Suback}}
-	case Unsubscribe:
-		return &UnsubscribePacket{FixedHeader: FixedHeader{Type: Unsubscribe, Qos: 1}}
-	case Unsuback:
-		return &UnsubackPacket{FixedHeader: FixedHeader{Type: Unsuback}}
-	case Pingreq:
-		return &PingreqPacket{FixedHeader: FixedHeader{Type: Pingreq}}
-	case Pingresp:
-		return &PingrespPacket{FixedHeader: FixedHeader{Type: Pingresp}}
-	case Disconnect:
-		return &DisconnectPacket{FixedHeader: FixedHeader{Type: Disconnect}}
-	}
-	return nil
+	// Encode encodes a packet into a byte buffer.
+	Encode(*bytes.Buffer) error
 
+	// Decode decodes a byte array into a packet struct.
+	Decode([]byte) error
+
+	// Validate the packet. Returns a error code and error if not valid.
+	Validate() (byte, error)
 }

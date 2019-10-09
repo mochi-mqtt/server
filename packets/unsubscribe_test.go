@@ -66,7 +66,7 @@ func TestUnsubscribeDecode(t *testing.T) {
 
 		require.Equal(t, uint8(10), Unsubscribe, "Incorrect Packet Type [i:%d] %s", i, wanted.desc)
 
-		pk := newPacket(Unsubscribe).(*UnsubscribePacket)
+		pk := &UnsubscribePacket{FixedHeader: FixedHeader{Type: Unsubscribe, Qos: 1}}
 		err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
@@ -82,8 +82,8 @@ func TestUnsubscribeDecode(t *testing.T) {
 }
 
 func BenchmarkUnsubscribeDecode(b *testing.B) {
-	pk := newPacket(Unsubscribe).(*UnsubscribePacket)
-	pk.FixedHeader.decode(expectedPackets[Unsubscribe][0].rawBytes[0])
+	pk := &UnsubscribePacket{FixedHeader: FixedHeader{Type: Unsubscribe, Qos: 1}}
+	pk.FixedHeader.Decode(expectedPackets[Unsubscribe][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Unsubscribe][0].rawBytes[2:])
@@ -91,13 +91,6 @@ func BenchmarkUnsubscribeDecode(b *testing.B) {
 }
 
 func TestUnsubscribeValidate(t *testing.T) {
-	/*pk := newPacket(Unsubscribe).(*UnsubscribePacket)
-	pk.FixedHeader.decode(expectedPackets[Unsubscribe][0].rawBytes[0])
-
-	b, err := pk.Validate()
-	require.NoError(t, err)
-	require.Equal(t, Accepted, b)
-	*/
 	require.Contains(t, expectedPackets, Unsubscribe)
 	for i, wanted := range expectedPackets[Unsubscribe] {
 		if wanted.group == "validate" || i == 0 {
@@ -118,8 +111,8 @@ func TestUnsubscribeValidate(t *testing.T) {
 }
 
 func BenchmarkUnsubscribeValidate(b *testing.B) {
-	pk := newPacket(Unsubscribe).(*UnsubscribePacket)
-	pk.FixedHeader.decode(expectedPackets[Unsubscribe][0].rawBytes[0])
+	pk := &UnsubscribePacket{FixedHeader: FixedHeader{Type: Unsubscribe, Qos: 1}}
+	pk.FixedHeader.Decode(expectedPackets[Unsubscribe][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()

@@ -58,7 +58,7 @@ func (pk *ConnectPacket) Encode(buf *bytes.Buffer) error {
 			len(willTopic) + len(willFlag) +
 			len(usernameFlag) + len(passwordFlag)
 
-	pk.FixedHeader.encode(buf)
+	pk.FixedHeader.Encode(buf)
 
 	// Eschew magic for readability.
 	buf.Write(protoName)

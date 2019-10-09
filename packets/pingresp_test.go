@@ -41,7 +41,7 @@ func BenchmarkPingrespEncode(b *testing.B) {
 }
 
 func TestPingrespDecode(t *testing.T) {
-	pk := newPacket(Pingresp).(*PingrespPacket)
+	pk := &PingrespPacket{FixedHeader: FixedHeader{Type: Pingresp}}
 
 	var b = []byte{}
 	err := pk.Decode(b)
@@ -50,8 +50,8 @@ func TestPingrespDecode(t *testing.T) {
 }
 
 func BenchmarkPingrespDecode(b *testing.B) {
-	pk := newPacket(Pingresp).(*PingrespPacket)
-	pk.FixedHeader.decode(expectedPackets[Pingresp][0].rawBytes[0])
+	pk := &PingrespPacket{FixedHeader: FixedHeader{Type: Pingresp}}
+	pk.FixedHeader.Decode(expectedPackets[Pingresp][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Pingresp][0].rawBytes[2:])
@@ -59,8 +59,8 @@ func BenchmarkPingrespDecode(b *testing.B) {
 }
 
 func TestPingrespValidate(t *testing.T) {
-	pk := newPacket(Pingresp).(*PingrespPacket)
-	pk.FixedHeader.decode(expectedPackets[Pingresp][0].rawBytes[0])
+	pk := &PingrespPacket{FixedHeader: FixedHeader{Type: Pingresp}}
+	pk.FixedHeader.Decode(expectedPackets[Pingresp][0].rawBytes[0])
 
 	b, err := pk.Validate()
 	require.NoError(t, err)
@@ -69,8 +69,8 @@ func TestPingrespValidate(t *testing.T) {
 }
 
 func BenchmarkPingrespValidate(b *testing.B) {
-	pk := newPacket(Pingresp).(*PingrespPacket)
-	pk.FixedHeader.decode(expectedPackets[Pingresp][0].rawBytes[0])
+	pk := &PingrespPacket{FixedHeader: FixedHeader{Type: Pingresp}}
+	pk.FixedHeader.Decode(expectedPackets[Pingresp][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()

@@ -40,7 +40,7 @@ func BenchmarkDisconnectEncode(b *testing.B) {
 }
 
 func TestDisconnectDecode(t *testing.T) {
-	pk := newPacket(Disconnect).(*DisconnectPacket)
+	pk := &DisconnectPacket{FixedHeader: FixedHeader{Type: Disconnect}}
 
 	var b = []byte{}
 	err := pk.Decode(b)
@@ -49,8 +49,8 @@ func TestDisconnectDecode(t *testing.T) {
 }
 
 func BenchmarkDisconnectDecode(b *testing.B) {
-	pk := newPacket(Disconnect).(*DisconnectPacket)
-	pk.FixedHeader.decode(expectedPackets[Disconnect][0].rawBytes[0])
+	pk := &DisconnectPacket{FixedHeader: FixedHeader{Type: Disconnect}}
+	pk.FixedHeader.Decode(expectedPackets[Disconnect][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Disconnect][0].rawBytes[2:])
@@ -58,8 +58,8 @@ func BenchmarkDisconnectDecode(b *testing.B) {
 }
 
 func TestDisconnectValidate(t *testing.T) {
-	pk := newPacket(Disconnect).(*DisconnectPacket)
-	pk.FixedHeader.decode(expectedPackets[Disconnect][0].rawBytes[0])
+	pk := &DisconnectPacket{FixedHeader: FixedHeader{Type: Disconnect}}
+	pk.FixedHeader.Decode(expectedPackets[Disconnect][0].rawBytes[0])
 
 	b, err := pk.Validate()
 	require.NoError(t, err)
@@ -68,8 +68,8 @@ func TestDisconnectValidate(t *testing.T) {
 }
 
 func BenchmarkDisconnectValidate(b *testing.B) {
-	pk := newPacket(Disconnect).(*DisconnectPacket)
-	pk.FixedHeader.decode(expectedPackets[Disconnect][0].rawBytes[0])
+	pk := &DisconnectPacket{FixedHeader: FixedHeader{Type: Disconnect}}
+	pk.FixedHeader.Decode(expectedPackets[Disconnect][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()

@@ -4,10 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"log"
 	"net"
-	"runtime"
-	"sync"
 	"time"
 
 	//"github.com/davecgh/go-spew/spew"
@@ -54,15 +51,6 @@ type Server struct {
 
 	// topics is an index of topic subscriptions and retained messages.
 	topics topics.Indexer
-
-	// inbound is a small worker pool which processes incoming packets.
-	inbound chan transitMsg
-
-	// outbound is a small worker pool which processes incoming packets.
-	outbound chan transitMsg
-
-	//inboundPool is a waitgroup for the inbound workers.
-	inboundPool sync.WaitGroup
 }
 
 // transitMsg contains data to be sent to the inbound channel.
@@ -81,70 +69,7 @@ func New() *Server {
 		listeners: listeners.NewListeners(),
 		clients:   newClients(),
 		topics:    trie.New(),
-		inbound:   make(chan transitMsg),
-		outbound:  make(chan transitMsg),
 	}
-}
-
-func (s *Server) StartProcessing() {
-	var workers = runtime.NumCPU()
-	s.inboundPool = sync.WaitGroup{}
-
-	s.inboundPool.Add(workers)
-	for i := 0; i < workers; i++ {
-		log.Println("spawning worker", i)
-		go func(wid int) {
-			defer s.inboundPool.Done()
-			for {
-				select {
-				case v, ok := <-s.inbound:
-					if !ok {
-						log.Println("worker inbound closed", wid)
-						return
-					}
-					s.processPacket(v.client, v.packet)
-				case v, ok := <-s.outbound:
-					if !ok {
-						log.Println("worker outbound closed", wid)
-						return
-					}
-
-					err := s.writeClient(v.client, v.packet)
-					if err != nil {
-						log.Println("outbound closing client", v.client.id)
-						s.closeClient(v.client, true)
-					}
-				}
-			}
-		}(i)
-	}
-
-	s.inboundPool.Add(workers)
-	for i := 0; i < workers; i++ {
-		log.Println("spawning worker", i)
-		go func(wid int) {
-			defer s.inboundPool.Done()
-			for {
-				select {
-				case v, ok := <-s.outbound:
-					if !ok {
-						log.Println("worker outbound closed", wid)
-						return
-					}
-
-					err := s.writeClient(v.client, v.packet)
-					if err != nil {
-						log.Println("outbound closing client", v.client.id)
-						s.closeClient(v.client, true)
-					}
-				}
-			}
-		}(i)
-	}
-
-	log.Println("spawned all workers")
-
-	return
 }
 
 // AddListener adds a new network listener to the server.
@@ -165,7 +90,6 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 // Serve begins the event loops for establishing client connections on all
 // attached listeners.
 func (s *Server) Serve() error {
-	s.StartProcessing()
 	s.listeners.ServeAll(s.EstablishConnection)
 
 	return nil
@@ -176,7 +100,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	// Create a new packets parser which will parse all packets for this client,
 	// using buffered writers and readers.
-	p := packets.NewParser(
+	p := NewParser(
 		c,
 		bufio.NewReaderSize(c, rwBufSize),
 		bufio.NewWriterSize(c, rwBufSize),
@@ -328,9 +252,7 @@ DONE:
 			}
 
 			// Process inbound packet.
-			s.inbound <- transitMsg{client: cl, packet: pk}
-
-			//go s.processPacket(cl, pk)
+			s.processPacket(cl, pk)
 		}
 	}
 
@@ -485,14 +407,11 @@ func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
 			}
 
 			// Write the publish packet out to the receiving client.
-			s.outbound <- transitMsg{client: client, packet: out}
-			/*
-				err := s.writeClient(client, out)
-				if err != nil {
-					s.closeClient(client, true)
-					return err
-				}
-			*/
+			err := s.writeClient(client, out)
+			if err != nil {
+				s.closeClient(client, true)
+				return err
+			}
 		}
 	}
 
@@ -572,42 +491,27 @@ func (s *Server) processSubscribe(cl *client, pk *packets.SubscribePacket) error
 		}
 	}
 
-	s.outbound <- transitMsg{
-		client: cl,
-		packet: &packets.SubackPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Suback,
-			},
-			PacketID:    pk.PacketID,
-			ReturnCodes: retCodes,
+	err := s.writeClient(cl, &packets.SubackPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Suback,
 		},
+		PacketID:    pk.PacketID,
+		ReturnCodes: retCodes,
+	})
+	if err != nil {
+		s.closeClient(cl, true)
+		return err
 	}
-	/*
-		err := s.writeClient(cl, &packets.SubackPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Suback,
-			},
-			PacketID:    pk.PacketID,
-			ReturnCodes: retCodes,
-		})
-		if err != nil {
-			s.closeClient(cl, true)
-			return err
-		}
-	*/
 
 	// Publish out any retained messages matching the subscription filter.
 	for i := 0; i < len(pk.Topics); i++ {
 		messages := s.topics.Messages(pk.Topics[i])
 		for _, pkv := range messages {
-			s.outbound <- transitMsg{client: cl, packet: pkv}
-			/*
-				err := s.writeClient(cl, pkv)
-				if err != nil {
-					s.closeClient(cl, true)
-					return err
-				}
-			*/
+			err := s.writeClient(cl, pkv)
+			if err != nil {
+				s.closeClient(cl, true)
+				return err
+			}
 		}
 	}
 
@@ -676,11 +580,6 @@ func (s *Server) Close() error {
 
 	// Close all listeners.
 	s.listeners.CloseAll(s.closeListenerClients)
-
-	// Close down waitgroups and pools.
-	close(s.inbound)
-	close(s.outbound)
-	s.inboundPool.Wait()
 
 	return nil
 }

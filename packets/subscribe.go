@@ -31,7 +31,7 @@ func (pk *SubscribePacket) Encode(buf *bytes.Buffer) error {
 	}
 
 	pk.FixedHeader.Remaining = len(packetID) + topicsLen
-	pk.FixedHeader.encode(buf)
+	pk.FixedHeader.Encode(buf)
 	buf.Write(packetID)
 
 	// Add all provided topic names and associated QOS flags.

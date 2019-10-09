@@ -1,10 +1,8 @@
 package mqtt
 
 import (
-	"bufio"
 	"errors"
 	"io/ioutil"
-	//"log"
 	"net"
 	"testing"
 	"time"
@@ -16,14 +14,6 @@ import (
 	"github.com/mochi-co/mqtt/packets"
 	"github.com/mochi-co/mqtt/topics"
 )
-
-func newBufioReader(c net.Conn) *bufio.Reader {
-	return bufio.NewReaderSize(c, 512)
-}
-
-func newBufioWriter(c net.Conn) *bufio.Writer {
-	return bufio.NewWriterSize(c, 512)
-}
 
 type quietWriter struct {
 	b        []byte
@@ -57,7 +47,7 @@ func setupClient(id string) (s *Server, r net.Conn, w net.Conn, cl *client) {
 	s = New()
 	r, w = net.Pipe()
 	cl = newClient(
-		packets.NewParser(r, newBufioReader(r), newBufioWriter(w)),
+		NewParser(r, newBufioReader(r), newBufioWriter(w)),
 		&packets.ConnectPacket{
 			ClientIdentifier: id,
 		},
@@ -77,8 +67,6 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s)
 	require.NotNil(t, s.listeners)
 	require.NotNil(t, s.clients)
-	require.NotNil(t, s.inbound)
-	require.NotNil(t, s.outbound)
 	//	log.Println(s)
 }
 
@@ -86,11 +74,6 @@ func BenchmarkNew(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		New()
 	}
-}
-
-func TestProcessor(t *testing.T) {
-	s := New()
-
 }
 
 func TestServerAddListener(t *testing.T) {
@@ -198,7 +181,7 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 	r2, w2 := net.Pipe()
 	s := New()
 	s.clients.internal["zen"] = newClient(
-		packets.NewParser(r2, newBufioReader(r2), newBufioWriter(w2)),
+		NewParser(r2, newBufioReader(r2), newBufioWriter(w2)),
 		&packets.ConnectPacket{ClientIdentifier: "zen"},
 		new(auth.Allow),
 	)
@@ -249,7 +232,7 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 	r2, w2 := net.Pipe()
 	s := New()
 	s.clients.internal["zen"] = newClient(
-		packets.NewParser(r2, newBufioReader(r2), newBufioWriter(w2)),
+		NewParser(r2, newBufioReader(r2), newBufioWriter(w2)),
 		&packets.ConnectPacket{ClientIdentifier: "zen"},
 		new(auth.Allow),
 	)

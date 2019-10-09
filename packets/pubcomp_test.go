@@ -36,7 +36,7 @@ func TestPubcompEncode(t *testing.T) {
 }
 
 func BenchmarkPubcompEncode(b *testing.B) {
-	pk := new(PubcompPacket)
+	pk := &PubcompPacket{FixedHeader: FixedHeader{Type: Pubcomp}}
 	copier.Copy(pk, expectedPackets[Pubcomp][0].packet.(*PubcompPacket))
 
 	buf := new(bytes.Buffer)
@@ -55,7 +55,7 @@ func TestPubcompDecode(t *testing.T) {
 
 		require.Equal(t, uint8(7), Pubcomp, "Incorrect Packet Type [i:%d] %s", i, wanted.desc)
 
-		pk := newPacket(Pubcomp).(*PubcompPacket)
+		pk := &PubcompPacket{FixedHeader: FixedHeader{Type: Pubcomp}}
 		err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 
 		if wanted.failFirst != nil {
@@ -71,8 +71,8 @@ func TestPubcompDecode(t *testing.T) {
 }
 
 func BenchmarkPubcompDecode(b *testing.B) {
-	pk := newPacket(Pubcomp).(*PubcompPacket)
-	pk.FixedHeader.decode(expectedPackets[Pubcomp][0].rawBytes[0])
+	pk := &PubcompPacket{FixedHeader: FixedHeader{Type: Pubcomp}}
+	pk.FixedHeader.Decode(expectedPackets[Pubcomp][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Pubcomp][0].rawBytes[2:])
@@ -80,8 +80,8 @@ func BenchmarkPubcompDecode(b *testing.B) {
 }
 
 func TestPubcompValidate(t *testing.T) {
-	pk := newPacket(Pubcomp).(*PubcompPacket)
-	pk.FixedHeader.decode(expectedPackets[Pubcomp][0].rawBytes[0])
+	pk := &PubcompPacket{FixedHeader: FixedHeader{Type: Pubcomp}}
+	pk.FixedHeader.Decode(expectedPackets[Pubcomp][0].rawBytes[0])
 
 	b, err := pk.Validate()
 	require.NoError(t, err)
@@ -90,8 +90,8 @@ func TestPubcompValidate(t *testing.T) {
 }
 
 func BenchmarkPubcompValidate(b *testing.B) {
-	pk := newPacket(Pubcomp).(*PubcompPacket)
-	pk.FixedHeader.decode(expectedPackets[Pubcomp][0].rawBytes[0])
+	pk := &PubcompPacket{FixedHeader: FixedHeader{Type: Pubcomp}}
+	pk.FixedHeader.Decode(expectedPackets[Pubcomp][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()

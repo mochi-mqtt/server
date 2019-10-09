@@ -42,7 +42,7 @@ func BenchmarkPingreqEncode(b *testing.B) {
 }
 
 func TestPingreqDecode(t *testing.T) {
-	pk := newPacket(Pingreq).(*PingreqPacket)
+	pk := &PingreqPacket{FixedHeader: FixedHeader{Type: Pingreq}}
 
 	var b = []byte{}
 	err := pk.Decode(b)
@@ -51,8 +51,8 @@ func TestPingreqDecode(t *testing.T) {
 }
 
 func BenchmarkPingreqDecode(b *testing.B) {
-	pk := newPacket(Pingreq).(*PingreqPacket)
-	pk.FixedHeader.decode(expectedPackets[Pingreq][0].rawBytes[0])
+	pk := &PingreqPacket{FixedHeader: FixedHeader{Type: Pingreq}}
+	pk.FixedHeader.Decode(expectedPackets[Pingreq][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Pingreq][0].rawBytes[2:])
@@ -60,8 +60,8 @@ func BenchmarkPingreqDecode(b *testing.B) {
 }
 
 func TestPingreqValidate(t *testing.T) {
-	pk := newPacket(Pingreq).(*PingreqPacket)
-	pk.FixedHeader.decode(expectedPackets[Pingreq][0].rawBytes[0])
+	pk := &PingreqPacket{FixedHeader: FixedHeader{Type: Pingreq}}
+	pk.FixedHeader.Decode(expectedPackets[Pingreq][0].rawBytes[0])
 
 	b, err := pk.Validate()
 	require.NoError(t, err)
@@ -70,8 +70,8 @@ func TestPingreqValidate(t *testing.T) {
 }
 
 func BenchmarkPingreqValidate(b *testing.B) {
-	pk := newPacket(Pingreq).(*PingreqPacket)
-	pk.FixedHeader.decode(expectedPackets[Pingreq][0].rawBytes[0])
+	pk := &PingreqPacket{FixedHeader: FixedHeader{Type: Pingreq}}
+	pk.FixedHeader.Decode(expectedPackets[Pingreq][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()

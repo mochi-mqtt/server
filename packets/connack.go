@@ -15,7 +15,7 @@ type ConnackPacket struct {
 // Encode encodes and writes the packet data values to the buffer.
 func (pk *ConnackPacket) Encode(buf *bytes.Buffer) error {
 	pk.FixedHeader.Remaining = 2
-	pk.FixedHeader.encode(buf)
+	pk.FixedHeader.Encode(buf)
 	buf.WriteByte(encodeBool(pk.SessionPresent))
 	buf.WriteByte(pk.ReturnCode)
 

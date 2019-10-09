@@ -59,7 +59,7 @@ func TestUnsubackDecode(t *testing.T) {
 
 		require.Equal(t, uint8(11), Unsuback, "Incorrect Packet Type [i:%d] %s", i, wanted.desc)
 
-		pk := newPacket(Unsuback).(*UnsubackPacket)
+		pk := &UnsubackPacket{FixedHeader: FixedHeader{Type: Unsuback}}
 		err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
@@ -74,8 +74,8 @@ func TestUnsubackDecode(t *testing.T) {
 }
 
 func BenchmarkUnsubackDecode(b *testing.B) {
-	pk := newPacket(Unsuback).(*UnsubackPacket)
-	pk.FixedHeader.decode(expectedPackets[Unsuback][0].rawBytes[0])
+	pk := &UnsubackPacket{FixedHeader: FixedHeader{Type: Unsuback}}
+	pk.FixedHeader.Decode(expectedPackets[Unsuback][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Unsuback][0].rawBytes[2:])
@@ -83,8 +83,8 @@ func BenchmarkUnsubackDecode(b *testing.B) {
 }
 
 func TestUnsubackValidate(t *testing.T) {
-	pk := newPacket(Unsuback).(*UnsubackPacket)
-	pk.FixedHeader.decode(expectedPackets[Unsuback][0].rawBytes[0])
+	pk := &UnsubackPacket{FixedHeader: FixedHeader{Type: Unsuback}}
+	pk.FixedHeader.Decode(expectedPackets[Unsuback][0].rawBytes[0])
 
 	b, err := pk.Validate()
 	require.NoError(t, err)
@@ -93,8 +93,8 @@ func TestUnsubackValidate(t *testing.T) {
 }
 
 func BenchmarkUnsubackValidate(b *testing.B) {
-	pk := newPacket(Unsuback).(*UnsubackPacket)
-	pk.FixedHeader.decode(expectedPackets[Unsuback][0].rawBytes[0])
+	pk := &UnsubackPacket{FixedHeader: FixedHeader{Type: Unsuback}}
+	pk.FixedHeader.Decode(expectedPackets[Unsuback][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()

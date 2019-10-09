@@ -105,12 +105,15 @@ func (l *TCP) Serve(establish EstablishFunc) {
 				}
 
 				// Establish connection in a new goroutine.
-				go func(c net.Conn) {
-					err := establish(l.id, c, l.config.Auth)
-					if err != nil {
-						return
-					}
-				}(conn)
+				go establish(l.id, conn, l.config.Auth)
+				/*
+					go func(c net.Conn) {
+						err := establish(l.id, c, l.config.Auth)
+						if err != nil {
+							return
+						}
+					}(conn)
+				*/
 			}
 		}
 	})

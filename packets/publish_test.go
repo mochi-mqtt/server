@@ -71,8 +71,8 @@ func TestPublishDecode(t *testing.T) {
 
 		require.Equal(t, uint8(3), Publish, "Incorrect Packet Type [i:%d] %s", i, wanted.desc)
 
-		pk := newPacket(Publish).(*PublishPacket)
-		pk.FixedHeader.decode(wanted.rawBytes[0])
+		pk := &PublishPacket{FixedHeader: FixedHeader{Type: Publish}}
+		pk.FixedHeader.Decode(wanted.rawBytes[0])
 
 		err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
@@ -91,8 +91,8 @@ func TestPublishDecode(t *testing.T) {
 }
 
 func BenchmarkPublishDecode(b *testing.B) {
-	pk := newPacket(Publish).(*PublishPacket)
-	pk.FixedHeader.decode(expectedPackets[Publish][1].rawBytes[0])
+	pk := &PublishPacket{FixedHeader: FixedHeader{Type: Publish}}
+	pk.FixedHeader.Decode(expectedPackets[Publish][1].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Publish][1].rawBytes[2:])
@@ -104,7 +104,7 @@ func TestPublishCopy(t *testing.T) {
 	for i, wanted := range expectedPackets[Publish] {
 		if wanted.group == "copy" {
 
-			pk := newPacket(Publish).(*PublishPacket)
+			pk := &PublishPacket{FixedHeader: FixedHeader{Type: Publish}}
 			err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 			require.NoError(t, err, "Error unpacking buffer [i:%d] %s", i, wanted.desc)
 
@@ -122,8 +122,8 @@ func TestPublishCopy(t *testing.T) {
 }
 
 func BenchmarkPublishCopy(b *testing.B) {
-	pk := newPacket(Publish).(*PublishPacket)
-	pk.FixedHeader.decode(expectedPackets[Publish][1].rawBytes[0])
+	pk := &PublishPacket{FixedHeader: FixedHeader{Type: Publish}}
+	pk.FixedHeader.Decode(expectedPackets[Publish][1].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Copy()
@@ -151,8 +151,8 @@ func TestPublishValidate(t *testing.T) {
 }
 
 func BenchmarkPublishValidate(b *testing.B) {
-	pk := newPacket(Publish).(*PublishPacket)
-	pk.FixedHeader.decode(expectedPackets[Publish][1].rawBytes[0])
+	pk := &PublishPacket{FixedHeader: FixedHeader{Type: Publish}}
+	pk.FixedHeader.Decode(expectedPackets[Publish][1].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		_, err := pk.Validate()

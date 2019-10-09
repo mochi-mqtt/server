@@ -59,7 +59,7 @@ func TestPubrelDecode(t *testing.T) {
 
 		require.Equal(t, uint8(6), Pubrel, "Incorrect Packet Type [i:%d] %s", i, wanted.desc)
 
-		pk := newPacket(Pubrel).(*PubrelPacket)
+		pk := &PubrelPacket{FixedHeader: FixedHeader{Type: Pubrel, Qos: 1}}
 		err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 
 		if wanted.failFirst != nil {
@@ -74,8 +74,8 @@ func TestPubrelDecode(t *testing.T) {
 }
 
 func BenchmarkPubrelDecode(b *testing.B) {
-	pk := newPacket(Pubrel).(*PubrelPacket)
-	pk.FixedHeader.decode(expectedPackets[Pubrel][0].rawBytes[0])
+	pk := &PubrelPacket{FixedHeader: FixedHeader{Type: Pubrel, Qos: 1}}
+	pk.FixedHeader.Decode(expectedPackets[Pubrel][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Pubrel][0].rawBytes[2:])
@@ -83,8 +83,8 @@ func BenchmarkPubrelDecode(b *testing.B) {
 }
 
 func TestPubrelValidate(t *testing.T) {
-	pk := newPacket(Pubrel).(*PubrelPacket)
-	pk.FixedHeader.decode(expectedPackets[Pubrel][0].rawBytes[0])
+	pk := &PubrelPacket{FixedHeader: FixedHeader{Type: Pubrel, Qos: 1}}
+	pk.FixedHeader.Decode(expectedPackets[Pubrel][0].rawBytes[0])
 
 	b, err := pk.Validate()
 	require.NoError(t, err)
@@ -93,8 +93,8 @@ func TestPubrelValidate(t *testing.T) {
 }
 
 func BenchmarkPubrelValidate(b *testing.B) {
-	pk := newPacket(Pubrel).(*PubrelPacket)
-	pk.FixedHeader.decode(expectedPackets[Pubrel][0].rawBytes[0])
+	pk := &PubrelPacket{FixedHeader: FixedHeader{Type: Pubrel, Qos: 1}}
+	pk.FixedHeader.Decode(expectedPackets[Pubrel][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()

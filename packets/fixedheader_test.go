@@ -149,7 +149,7 @@ var fixedHeaderExpected = []fixedHeaderTable{
 func TestFixedHeaderEncode(t *testing.T) {
 	for i, wanted := range fixedHeaderExpected {
 		buf := new(bytes.Buffer)
-		wanted.header.encode(buf)
+		wanted.header.Encode(buf)
 		if wanted.flagError == false {
 			require.Equal(t, len(wanted.rawBytes), len(buf.Bytes()), "Mismatched fixedheader length [i:%d] %v", i, wanted.rawBytes)
 			require.EqualValues(t, wanted.rawBytes, buf.Bytes(), "Mismatched byte values [i:%d] %v", i, wanted.rawBytes)
@@ -160,14 +160,14 @@ func TestFixedHeaderEncode(t *testing.T) {
 func BenchmarkFixedHeaderEncode(b *testing.B) {
 	buf := new(bytes.Buffer)
 	for n := 0; n < b.N; n++ {
-		fixedHeaderExpected[0].header.encode(buf)
+		fixedHeaderExpected[0].header.Encode(buf)
 	}
 }
 
 func TestFixedHeaderDecode(t *testing.T) {
 	for i, wanted := range fixedHeaderExpected {
 		fh := new(FixedHeader)
-		err := fh.decode(wanted.rawBytes[0])
+		err := fh.Decode(wanted.rawBytes[0])
 		if wanted.flagError {
 			require.Error(t, err, "Expected error reading fixedheader [i:%d] %v", i, wanted.rawBytes)
 		} else {
@@ -183,7 +183,7 @@ func TestFixedHeaderDecode(t *testing.T) {
 func BenchmarkFixedHeaderDecode(b *testing.B) {
 	fh := new(FixedHeader)
 	for n := 0; n < b.N; n++ {
-		err := fh.decode(fixedHeaderExpected[0].rawBytes[0])
+		err := fh.Decode(fixedHeaderExpected[0].rawBytes[0])
 		if err != nil {
 			panic(err)
 		}

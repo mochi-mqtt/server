@@ -57,7 +57,7 @@ func TestConnackDecode(t *testing.T) {
 
 		require.Equal(t, uint8(2), Connack, "Incorrect Packet Type [i:%d] %s", i, wanted.desc)
 
-		pk := newPacket(Connack).(*ConnackPacket)
+		pk := &ConnackPacket{FixedHeader: FixedHeader{Type: Connack}}
 		err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
@@ -73,8 +73,8 @@ func TestConnackDecode(t *testing.T) {
 }
 
 func BenchmarkConnackDecode(b *testing.B) {
-	pk := newPacket(Connack).(*ConnackPacket)
-	pk.FixedHeader.decode(expectedPackets[Connack][0].rawBytes[0])
+	pk := &ConnackPacket{FixedHeader: FixedHeader{Type: Connack}}
+	pk.FixedHeader.Decode(expectedPackets[Connack][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Connack][0].rawBytes[2:])
@@ -82,8 +82,8 @@ func BenchmarkConnackDecode(b *testing.B) {
 }
 
 func TestConnackValidate(t *testing.T) {
-	pk := newPacket(Connack).(*ConnackPacket)
-	pk.FixedHeader.decode(expectedPackets[Connack][0].rawBytes[0])
+	pk := &ConnackPacket{FixedHeader: FixedHeader{Type: Connack}}
+	pk.FixedHeader.Decode(expectedPackets[Connack][0].rawBytes[0])
 
 	b, err := pk.Validate()
 	require.NoError(t, err)
@@ -92,8 +92,8 @@ func TestConnackValidate(t *testing.T) {
 }
 
 func BenchmarkConnackValidate(b *testing.B) {
-	pk := newPacket(Connack).(*ConnackPacket)
-	pk.FixedHeader.decode(expectedPackets[Connack][0].rawBytes[0])
+	pk := &ConnackPacket{FixedHeader: FixedHeader{Type: Connack}}
+	pk.FixedHeader.Decode(expectedPackets[Connack][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()

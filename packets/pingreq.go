@@ -11,7 +11,7 @@ type PingreqPacket struct {
 
 // Encode encodes and writes the packet data values to the buffer.
 func (pk *PingreqPacket) Encode(buf *bytes.Buffer) error {
-	pk.FixedHeader.encode(buf)
+	pk.FixedHeader.Encode(buf)
 	return nil
 }
 

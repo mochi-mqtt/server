@@ -17,7 +17,7 @@ func (pk *SubackPacket) Encode(buf *bytes.Buffer) error {
 
 	packetID := encodeUint16(pk.PacketID)
 	pk.FixedHeader.Remaining = len(packetID) + len(pk.ReturnCodes) // Set length.
-	pk.FixedHeader.encode(buf)
+	pk.FixedHeader.Encode(buf)
 
 	buf.Write(packetID)       // Encode Packet ID.
 	buf.Write(pk.ReturnCodes) // Encode granted QOS flags.

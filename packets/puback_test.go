@@ -55,7 +55,7 @@ func TestPubackDecode(t *testing.T) {
 
 		require.Equal(t, uint8(4), Puback, "Incorrect Packet Type [i:%d] %s", i, wanted.desc)
 
-		pk := newPacket(Puback).(*PubackPacket)
+		pk := &PubackPacket{FixedHeader: FixedHeader{Type: Puback}}
 		err := pk.Decode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 
 		if wanted.failFirst != nil {
@@ -71,8 +71,8 @@ func TestPubackDecode(t *testing.T) {
 }
 
 func BenchmarkPubackDecode(b *testing.B) {
-	pk := newPacket(Puback).(*PubackPacket)
-	pk.FixedHeader.decode(expectedPackets[Puback][0].rawBytes[0])
+	pk := &PubackPacket{FixedHeader: FixedHeader{Type: Puback}}
+	pk.FixedHeader.Decode(expectedPackets[Puback][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Decode(expectedPackets[Puback][0].rawBytes[2:])
@@ -80,8 +80,8 @@ func BenchmarkPubackDecode(b *testing.B) {
 }
 
 func TestPubackValidate(t *testing.T) {
-	pk := newPacket(Puback).(*PubackPacket)
-	pk.FixedHeader.decode(expectedPackets[Puback][0].rawBytes[0])
+	pk := &PubackPacket{FixedHeader: FixedHeader{Type: Puback}}
+	pk.FixedHeader.Decode(expectedPackets[Puback][0].rawBytes[0])
 
 	b, err := pk.Validate()
 	require.NoError(t, err)
@@ -90,8 +90,8 @@ func TestPubackValidate(t *testing.T) {
 }
 
 func BenchmarkPubackValidate(b *testing.B) {
-	pk := newPacket(Puback).(*PubackPacket)
-	pk.FixedHeader.decode(expectedPackets[Puback][0].rawBytes[0])
+	pk := &PubackPacket{FixedHeader: FixedHeader{Type: Puback}}
+	pk.FixedHeader.Decode(expectedPackets[Puback][0].rawBytes[0])
 
 	for n := 0; n < b.N; n++ {
 		pk.Validate()
