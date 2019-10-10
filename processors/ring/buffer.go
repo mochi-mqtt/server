@@ -7,10 +7,8 @@ import (
 	"sync/atomic"
 )
 
-// (b.Beg + b.Readable) % b.N == relative position in buffer
-
-const (
-	blockSize = 4
+var (
+	blockSize int64 = 4
 )
 
 // Buffer is a ring-style byte buffer.
@@ -63,17 +61,13 @@ func (b *Buffer) awaitCapacity(n int64) (int64, error) {
 	wrapped := next - b.size
 	//fmt.Println(tail, head, next, wrapped)
 
-	//if wrapped > tail || (tail > head && next > tail && wrapped < 0) {
 	for ; wrapped > tail || (tail > head && next > tail && wrapped < 0); tail = atomic.LoadInt64(&b.tail) {
 		/*
 			fmt.Println("\t",
-				wrapped, ">", tail,
-				wrapped > tail,
+				wrapped, ">", tail, wrapped > tail,
 				"||",
-				tail, ">", head, "&&", next, ">", tail, "&&", wrapped, "<", 0,
-				(tail > head && next > tail && wrapped < 0))
+				tail, ">", head, "&&", next, ">", tail, "&&", wrapped, "<", 0, (tail > head && next > tail && wrapped < 0))
 		*/
-
 		b.rcond.L.Lock()
 		b.rcond.Wait()
 		b.rcond.L.Unlock()
@@ -83,7 +77,48 @@ func (b *Buffer) awaitCapacity(n int64) (int64, error) {
 			return 0, io.EOF
 		}
 	}
-	//}
 
 	return head, nil
+}
+
+// ReadFrom reads bytes from an io.Reader and commits them to the buffer when
+// there is sufficient capacity to do so.
+func (b *Buffer) ReadFrom(r io.Reader) (totalBytes int64, err error) {
+	for {
+		if atomic.LoadInt64(&b.done) == 1 {
+			return 0, io.EOF
+		}
+
+		// Wait until there's enough capacity in the buffer.
+		st, err := b.awaitCapacity(blockSize)
+		if err != nil {
+			return 0, err
+		}
+
+		// Find the start and end indexes within the buffer.
+		start := st & (b.size - 1)
+		end := start + blockSize
+
+		// If we've overrun, just fill up to the end and then collect
+		// the rest on the next pass.
+		if end > b.size {
+			end = b.size
+		}
+
+		// Read into the buffer between the start and end indexes only.
+		n, err := r.Read(b.buffer[start:end])
+		if err != nil {
+			return int64(n), err
+		}
+
+		totalBytes += int64(n)
+
+		// st, err := b.awaitCapacity(n)
+
+		// Move the head forward.
+		atomic.StoreInt64(&b.head, start+int64(n))
+
+		// Broadcast write condition
+		// ...
+	}
 }

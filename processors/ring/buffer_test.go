@@ -1,13 +1,19 @@
 package ring
 
 import (
-	//"fmt"
+	"bytes"
+	"fmt"
+	"io"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	blockSize = 4
+}
 
 func TestNewBuffer(t *testing.T) {
 	var size int64 = 256
@@ -18,18 +24,7 @@ func TestNewBuffer(t *testing.T) {
 	require.Equal(t, size, buf.size)
 }
 
-/*
-func TestReadFromIO(t *testing.T) {
-	buf := NewBuffer(128)
-	in := bytes.Repeat([]byte{'-'}, 32)
-	n, err := buf.Read(bytes.NewReader(in))
-	require.Equal(t, 3, n)
-	require.Equal(t, err, io.EOF)
-}
-*/
-
 func TestAwaitCapacity(t *testing.T) {
-
 	tt := []struct {
 		tail  int64
 		head  int64
@@ -42,6 +37,7 @@ func TestAwaitCapacity(t *testing.T) {
 		{12, 16, 4, 0, "OK 16, 4"},
 		{16, 12, 4, 0, "OK 16 16"},
 		{3, 6, 4, 0, "OK 3, 10"},
+		{12, 0, 4, 0, "OK 16, 0"},
 		{1, 16, 4, 4, "next is more than tail, wait for tail incr"},
 		{7, 5, 4, 2, "tail is great than head, wrapped and caught up with tail, wait for tail incr"},
 	}
@@ -76,33 +72,37 @@ func TestAwaitCapacity(t *testing.T) {
 		require.Equal(t, check.head, done[0].(int64), "Head-Start mismatch [i:%d] %s", i, check.desc)
 		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, check.desc)
 	}
+}
 
-	/*buf.tail, buf.head = 0, 0 // OK 4, 0
-	start, err := buf.awaitCapacity(4)
-	require.NoError(t, err)
+func TestReadFrom(t *testing.T) {
+	buf := NewBuffer(16)
 
-	buf.tail, buf.head = 6, 6 // OK 6, 10
-	start, err := buf.awaitCapacity(4)
-	require.NoError(t, err)
+	b4 := bytes.Repeat([]byte{'-'}, 4)
+	br := bytes.NewReader(b4)
+	_, err := buf.ReadFrom(br)
+	require.Equal(t, err, io.EOF)
+	require.Equal(t, bytes.Repeat([]byte{'-'}, 4), buf.buffer[:4])
+	require.Equal(t, int64(4), buf.head)
 
-	buf.tail, buf.head = 12, 16 // OK 16, 4
-	buf.awaitCapacity(4)
+	br.Reset(b4)
+	_, err = buf.ReadFrom(br)
+	require.Equal(t, int64(8), buf.head)
 
-	buf.tail, buf.head = 16, 12 // OK 16, 16
-	buf.awaitCapacity(4)
+	br.Reset(b4)
+	_, err = buf.ReadFrom(br)
+	require.Equal(t, int64(12), buf.head)
 
-	// Plenty of room for next block
-	buf.tail, buf.head = 3, 6 // OK 3, 10
-	buf.awaitCapacity(4)
+	br.Reset([]byte{'-', '-', '-', '-', '/', '/', '/', '/'})
+	o := make(chan error)
+	go func() {
+		_, err := buf.ReadFrom(br)
+		o <- err
+	}()
 
-	fmt.Println("---")
+	atomic.StoreInt64(&buf.tail, 4)
+	<-o
+	require.Equal(t, int64(4), buf.head)
 
-	// head + n > tail wait will wrap and overrun the tail! 4...4
-	buf.tail, buf.head = 1, 16
-	buf.awaitCapacity(4)
+	fmt.Printf(" %+v\n", buf)
 
-	// Tail is greater than head - we've wrapped and caught up to the tail. 9...9
-	buf.tail, buf.head = 7, 5
-	buf.awaitCapacity(4)
-	*/
 }
