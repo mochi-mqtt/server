@@ -3,8 +3,8 @@ package ring
 import (
 	"fmt"
 	"io"
+	"sync"
 	"sync/atomic"
-	"time"
 )
 
 // (b.Beg + b.Readable) % b.N == relative position in buffer
@@ -33,45 +33,57 @@ type Buffer struct {
 	// tail is the committed position in the sequence, I.E. where we
 	// have successfully consumed and processed to.
 	tail int64
+
+	// rcond is the sync condition for the reader.
+	rcond *sync.Cond
+
+	// done indicates that the buffer is closed.
+	done int64
+
+	// wcond is the sync condition for the writer.
+	//wcond *sync.Cond
 }
 
 // NewBuffer returns a pointer to a new instance of Buffer.
 func NewBuffer(size int64) *Buffer {
 	return &Buffer{
-		size:     size,
-		sizeMask: size - 1,
-		buffer:   make([]byte, size),
+		size: size,
+		//	sizeMask: size - 1,
+		buffer: make([]byte, size),
+		rcond:  sync.NewCond(new(sync.Mutex)),
+		//wcond:  sync.NewCond(new(sync.Mutex)),
 	}
 }
 
 // awaitCapacity will hold until there are n bytes free in the buffer.
-func (b *Buffer) awaitCapacity(n int64) {
+func (b *Buffer) awaitCapacity(n int64) (int64, error) {
 	tail := atomic.LoadInt64(&b.tail)
 	head := atomic.LoadInt64(&b.head)
 	next := head + n
 	wrapped := next - b.size
+	//fmt.Println(tail, head, next, wrapped)
 
-	fmt.Printf("\ntail: %d, head: %d, next: %d, wrapped: %d\n", tail, head, next, wrapped)
-
-DONE:
-	for {
-		tail = atomic.LoadInt64(&b.tail)
-
-		if wrapped > tail || (tail > head && next > tail && wrapped < 0) {
-
-			atomic.AddInt64(&b.tail, 1)
-			fmt.Println(".",
+	//if wrapped > tail || (tail > head && next > tail && wrapped < 0) {
+	for ; wrapped > tail || (tail > head && next > tail && wrapped < 0); tail = atomic.LoadInt64(&b.tail) {
+		/*
+			fmt.Println("\t",
 				wrapped, ">", tail,
 				wrapped > tail,
-				"||", next, ">", tail, "&&", wrapped, "<", 0,
-				(next > tail && wrapped < 0))
-			time.Sleep(time.Second)
-		} else {
-			break DONE
+				"||",
+				tail, ">", head, "&&", next, ">", tail, "&&", wrapped, "<", 0,
+				(tail > head && next > tail && wrapped < 0))
+		*/
+
+		b.rcond.L.Lock()
+		b.rcond.Wait()
+		b.rcond.L.Unlock()
+
+		if atomic.LoadInt64(&b.done) == 1 {
+			fmt.Println("ending")
+			return 0, io.EOF
 		}
 	}
+	//}
 
-	fmt.Println("\n\tcapacity ok")
-	fmt.Println(b.head, b.tail)
-
+	return head, nil
 }
