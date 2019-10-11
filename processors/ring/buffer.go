@@ -1,6 +1,7 @@
 package ring
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -9,18 +10,19 @@ import (
 
 var (
 	blockSize int64 = 4
+
+	ErrInsufficientBytes = errors.New("Insufficient bytes to return")
 )
+
+//   _______________________________________________________________________
+//   | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
+//   -----------------------------------------------------------------------
 
 // Buffer is a ring-style byte buffer.
 type Buffer struct {
 
 	// size is the size of the buffer.
 	size int64
-
-	// sizeMask is size-1, and is used as a cheaper alternative to modulo.
-	// instead of calculating `(start+next) % size`, we can apply the mask
-	// and use `(start+next) & sizeMask`.
-	//sizeMask int64
 
 	// buffer is the circular byte buffer.
 	buffer []byte
@@ -39,17 +41,16 @@ type Buffer struct {
 	done int64
 
 	// wcond is the sync condition for the writer.
-	//wcond *sync.Cond
+	wcond *sync.Cond
 }
 
 // NewBuffer returns a pointer to a new instance of Buffer.
 func NewBuffer(size int64) *Buffer {
 	return &Buffer{
-		size: size,
-		//	sizeMask: size - 1,
+		size:   size,
 		buffer: make([]byte, size),
 		rcond:  sync.NewCond(new(sync.Mutex)),
-		//wcond:  sync.NewCond(new(sync.Mutex)),
+		wcond:  sync.NewCond(new(sync.Mutex)),
 	}
 }
 
@@ -59,31 +60,24 @@ func (b *Buffer) awaitCapacity(n int64) (int64, error) {
 	head := atomic.LoadInt64(&b.head)
 	next := head + n
 	wrapped := next - b.size
-	//fmt.Println(tail, head, next, wrapped)
 
+	b.rcond.L.Lock()
 	for ; wrapped > tail || (tail > head && next > tail && wrapped < 0); tail = atomic.LoadInt64(&b.tail) {
-		/*
-			fmt.Println("\t",
-				wrapped, ">", tail, wrapped > tail,
-				"||",
-				tail, ">", head, "&&", next, ">", tail, "&&", wrapped, "<", 0, (tail > head && next > tail && wrapped < 0))
-		*/
-		b.rcond.L.Lock()
+		//	fmt.Println("\t", 	wrapped, ">", tail, wrapped > tail, "||", tail, ">", head, "&&", next, ">", tail, "&&", wrapped, "<", 0, (tail > head && next > tail && wrapped < 0))
 		b.rcond.Wait()
-		b.rcond.L.Unlock()
-
 		if atomic.LoadInt64(&b.done) == 1 {
 			fmt.Println("ending")
 			return 0, io.EOF
 		}
 	}
+	b.rcond.L.Unlock()
 
 	return head, nil
 }
 
 // ReadFrom reads bytes from an io.Reader and commits them to the buffer when
 // there is sufficient capacity to do so.
-func (b *Buffer) ReadFrom(r io.Reader) (totalBytes int64, err error) {
+func (b *Buffer) ReadFrom(r io.Reader) (total int64, err error) {
 	for {
 		if atomic.LoadInt64(&b.done) == 1 {
 			return 0, io.EOF
@@ -111,14 +105,70 @@ func (b *Buffer) ReadFrom(r io.Reader) (totalBytes int64, err error) {
 			return int64(n), err
 		}
 
-		totalBytes += int64(n)
+		total += int64(n) // incr total bytes read.
 
 		// st, err := b.awaitCapacity(n)
-
 		// Move the head forward.
 		atomic.StoreInt64(&b.head, start+int64(n))
 
 		// Broadcast write condition
 		// ...
 	}
+
+	return
+}
+
+// WriteTo writes the contents of the buffer to an io.Writer.
+func (b *Buffer) WriteTo(w io.Writer) (total int64, err error) {
+	for {
+		if atomic.LoadInt64(&b.done) == 1 {
+			return 0, io.EOF
+		}
+	}
+
+	return
+}
+
+// Peek returns the next n bytes without advancing the reader.
+/*
+	T5 H7 : T+N > H
+	T14 H1 : Wrapped> 0 && N % S > H
+*/
+func (b *Buffer) Peek(n int64) ([]byte, error) {
+	var tmp []byte
+	tail := atomic.LoadInt64(&b.tail)
+	head := atomic.LoadInt64(&b.head)
+
+	// Wait until there's at least 1 byte of data.
+	b.wcond.L.Lock()
+	for ; head == tail; head = atomic.LoadInt64(&b.head) {
+		if atomic.LoadInt64(&b.done) == 1 {
+			fmt.Println("ending")
+			return nil, io.EOF
+		}
+		b.wcond.Wait()
+	}
+	b.wcond.L.Unlock()
+
+	// Figure out if we can get all n bytes.
+	start := tail
+	end := tail + n
+	fmt.Println(start, end)
+	if head > tail && tail+n > head || head < tail && b.size-tail+head < n {
+		fmt.Println("row wanted overran capacity")
+		return nil, ErrInsufficientBytes
+	}
+
+	if head < tail {
+		fmt.Println("alt logic, wrapped")
+		tmp = append(tmp, b.buffer[start:b.size]...)
+		tmp = append(tmp, b.buffer[:n-(end-start)]...)
+		fmt.Println("#", string(tmp))
+		return tmp, nil
+	} else {
+		fmt.Println("*", string(b.buffer[start:end]))
+		return b.buffer[start:end], nil
+	}
+
+	return nil, nil
 }

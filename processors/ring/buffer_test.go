@@ -2,8 +2,9 @@ package ring
 
 import (
 	"bytes"
-	"fmt"
 	"io"
+	//"net"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -102,7 +103,84 @@ func TestReadFrom(t *testing.T) {
 	atomic.StoreInt64(&buf.tail, 4)
 	<-o
 	require.Equal(t, int64(4), buf.head)
+	require.Equal(t, []byte{'/', '/', '/', '/', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'}, buf.buffer)
+}
 
-	fmt.Printf(" %+v\n", buf)
+func TestPeek(t *testing.T) {
+
+	buf := NewBuffer(16)
+	buf.buffer = []byte{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p'}
+
+	// Peek 0,0 > 0,1
+	/*go func() {
+		bs, err := buf.Peek(int64(1))
+		o <- []interface{}{bs, err}
+	}()
+	time.Sleep(time.Millisecond * 10)
+	atomic.StoreInt64(&buf.head, 1)
+
+	buf.wcond.L.Lock()
+	buf.wcond.Broadcast()
+	buf.wcond.L.Unlock()
+	res := <-o
+	fmt.Println(res)
+	require.Nil(t, res[1])
+	*/
+	// Peek 15,15 > 15,3
+	/*
+		buf.tail, buf.head = 15, 15
+		go func() {
+			bs, err := buf.Peek(int64(3))
+			o <- []interface{}{bs, err}
+		}()
+		time.Sleep(time.Millisecond * 10)
+		atomic.StoreInt64(&buf.head, 3)
+		buf.wcond.L.Lock()
+		buf.wcond.Broadcast()
+		buf.wcond.L.Unlock()
+		res := <-o
+		fmt.Println(res)
+		require.Nil(t, res[1])
+	*/
+
+	tests := []struct {
+		tail int64
+		head int64
+		want int
+		desc string
+	}{
+		//{0, 6, 4, "OK 0, 0"},
+		//{0, 3, 4, "OK 0, 0"},
+		{14, 5, 6, "OK 0, 0"},
+		{14, 1, 6, "OK 0, 0"},
+		//{0, 0, 1, "OK 0, 0"},
+		//{15, 15, 1, "OK 0, 0"},
+		//	{14, 15, 6, "OK 0, 0"},
+		//{14, 4, 5, "OK 0, 0"},
+	}
+
+	for i, tt := range tests {
+		buf.tail, buf.head = tt.tail, tt.head
+		o := make(chan []interface{})
+		go func() {
+			bs, err := buf.Peek(int64(tt.want))
+			o <- []interface{}{bs, err}
+		}()
+
+		time.Sleep(time.Millisecond)
+		atomic.StoreInt64(&buf.head, buf.head+int64(tt.want))
+
+		time.Sleep(time.Millisecond * 10)
+
+		buf.wcond.L.Lock()
+		buf.wcond.Broadcast()
+		buf.wcond.L.Unlock()
+
+		time.Sleep(time.Millisecond) // wait for await capacity to actually exit
+		done := <-o
+		fmt.Println("done", done)
+		//require.Equal(t, tt.want, len(done[0].([]byte)), "Peeked bytes mismatch [i:%d] %s", i, tt.desc)
+		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
+	}
 
 }
