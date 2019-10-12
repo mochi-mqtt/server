@@ -60,7 +60,6 @@ DONE:
 		b.wcond.L.Lock()
 		b.wcond.Broadcast()
 		b.wcond.L.Unlock()
-
 	}
 
 	return
@@ -98,8 +97,15 @@ func (b *Reader) Peek(n int64) ([]byte, error) {
 	return nil, nil
 }
 
-// Read reads the next len(p) bytes from the buffer.
+// Read reads the next len(p) bytes from the buffer. If len(p) bytes are not
+// available, read will wait until there is enough.
 func (b *Reader) Read(p []byte) (n int, err error) {
+
+	// Wait until there's at least len(p) bytes to read.
+	_, err = b.awaitCapacity(int64(len(p)))
+	if err != nil {
+		return
+	}
 
 	return
 }

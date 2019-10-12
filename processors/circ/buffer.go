@@ -53,22 +53,41 @@ func newBuffer(size int64) buffer {
 
 // awaitCapacity will hold until there are n bytes free in the buffer, blocking
 // until there are at least n bytes to write without overrunning the tail.
-func (b *buffer) awaitCapacity(n int64) (int64, error) {
-	tail := atomic.LoadInt64(&b.tail)
-	head := atomic.LoadInt64(&b.head)
+func (b *buffer) awaitCapacity(n int64) (head int64, err error) {
+	head = atomic.LoadInt64(&b.head)
 	next := head + n
 	wrapped := next - b.size
+	tail := atomic.LoadInt64(&b.tail)
 
 	b.rcond.L.Lock()
 	for ; wrapped > tail || (tail > head && next > tail && wrapped < 0); tail = atomic.LoadInt64(&b.tail) {
 		//fmt.Println("\t", wrapped, ">", tail, wrapped > tail, "||", tail, ">", head, "&&", next, ">", tail, "&&", wrapped, "<", 0, (tail > head && next > tail && wrapped < 0))
-		b.rcond.Wait()
 		if atomic.LoadInt64(&b.done) == 1 {
 			fmt.Println("ending")
 			return 0, io.EOF
 		}
+		b.rcond.Wait()
 	}
 	b.rcond.L.Unlock()
 
-	return head, nil
+	return
+}
+
+// awaitFilled will hold until there are at least n bytes waiting between the
+// tail and head, before returning
+func (b *buffer) awaitFilled(n int64) (tail int64, err error) {
+	head := atomic.LoadInt64(&b.head)
+	tail = atomic.LoadInt64(&b.tail)
+
+	b.wcond.L.Lock()
+	for ; head > tail && tail+n > head || head < tail && b.size-tail+head < n; head = atomic.LoadInt64(&b.head) {
+		if atomic.LoadInt64(&b.done) == 1 {
+			fmt.Println("ending")
+			return 0, io.EOF
+		}
+		b.wcond.Wait()
+	}
+	b.wcond.L.Unlock()
+
+	return
 }

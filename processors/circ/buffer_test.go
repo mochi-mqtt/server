@@ -24,26 +24,25 @@ func TestNewBuffer(t *testing.T) {
 }
 
 func TestAwaitCapacity(t *testing.T) {
-	tt := []struct {
+	tests := []struct {
 		tail  int64
 		head  int64
-		need  int64
 		await int
 		desc  string
 	}{
-		{0, 0, 4, 0, "OK 4, 0"},
-		{6, 6, 4, 0, "OK 6, 10"},
-		{12, 16, 4, 0, "OK 16, 4"},
-		{16, 12, 4, 0, "OK 16 16"},
-		{3, 6, 4, 0, "OK 3, 10"},
-		{12, 0, 4, 0, "OK 16, 0"},
-		{1, 16, 4, 4, "next is more than tail, wait for tail incr"},
-		{7, 5, 4, 2, "tail is great than head, wrapped and caught up with tail, wait for tail incr"},
+		{0, 0, 0, "OK 4, 0"},
+		{6, 6, 0, "OK 6, 10"},
+		{12, 16, 0, "OK 16, 4"},
+		{16, 12, 0, "OK 16 16"},
+		{3, 6, 0, "OK 3, 10"},
+		{12, 0, 0, "OK 16, 0"},
+		{1, 16, 4, "next is more than tail, wait for tail incr"},
+		{7, 5, 2, "tail is great than head, wrapped and caught up with tail, wait for tail incr"},
 	}
 
 	buf := newBuffer(16)
-	for i, check := range tt {
-		buf.tail, buf.head = check.tail, check.head
+	for i, tt := range tests {
+		buf.tail, buf.head = tt.tail, tt.head
 		o := make(chan []interface{})
 		var start int64 = -1
 		var err error
@@ -52,8 +51,8 @@ func TestAwaitCapacity(t *testing.T) {
 			o <- []interface{}{start, err}
 		}()
 
-		time.Sleep(time.Millisecond) // atomic updates are super fast so wait a bit
-		for i := 0; i < check.await; i++ {
+		time.Sleep(time.Millisecond)
+		for j := 0; j < tt.await; j++ {
 			atomic.AddInt64(&buf.tail, 1)
 			buf.rcond.L.Lock()
 			buf.rcond.Broadcast()
@@ -68,7 +67,47 @@ func TestAwaitCapacity(t *testing.T) {
 			buf.rcond.L.Unlock()
 		}
 		done := <-o
-		require.Equal(t, check.head, done[0].(int64), "Head-Start mismatch [i:%d] %s", i, check.desc)
-		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, check.desc)
+		require.Equal(t, tt.head, done[0].(int64), "Head-Start mismatch [i:%d] %s", i, tt.desc)
+		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
+	}
+}
+
+func TestAwaitFilled(t *testing.T) {
+	tests := []struct {
+		tail  int64
+		head  int64
+		await int
+		desc  string
+	}{
+		{0, 4, 0, "OK 0, 4"},
+		{6, 10, 0, "OK 6, 10"},
+		{14, 2, 0, "OK 14, 2 wrapped"},
+		{6, 8, 2, "Wait 6, 8"},
+		{14, 1, 3, "Wait 14, 1 wrapped"},
+	}
+
+	buf := newBuffer(16)
+	for _, tt := range tests {
+		buf.tail, buf.head = tt.tail, tt.head
+		o := make(chan []interface{})
+		var start int64 = -1
+		var err error
+		go func() {
+			start, err = buf.awaitFilled(4)
+			o <- []interface{}{start, err}
+		}()
+
+		time.Sleep(time.Millisecond)
+		for j := 0; j < tt.await; j++ {
+			atomic.AddInt64(&buf.head, 1)
+			buf.wcond.L.Lock()
+			buf.wcond.Broadcast()
+			buf.wcond.L.Unlock()
+		}
+
+		//done :=
+		<-o
+		//require.Equal(t, tt.head, done[0].(int64), "Head-Start mismatch [i:%d] %s", i, tt.desc)
+		//require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
 	}
 }
