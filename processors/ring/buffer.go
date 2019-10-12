@@ -84,15 +84,19 @@ func (b *Buffer) awaitCapacity(n int64) (int64, error) {
 // ReadFrom reads bytes from an io.Reader and commits them to the buffer when
 // there is sufficient capacity to do so.
 func (b *Buffer) ReadFrom(r io.Reader) (total int64, err error) {
+DONE:
 	for {
 		if atomic.LoadInt64(&b.done) == 1 {
-			return 0, io.EOF
+			err = io.EOF
+			break DONE
+			//return 0, io.EOF
 		}
 
 		// Wait until there's enough capacity in the buffer.
 		st, err := b.awaitCapacity(blockSize)
 		if err != nil {
-			return 0, err
+			break DONE
+			//return 0, err
 		}
 
 		// Find the start and end indexes within the buffer.
@@ -107,8 +111,10 @@ func (b *Buffer) ReadFrom(r io.Reader) (total int64, err error) {
 
 		// Read into the buffer between the start and end indexes only.
 		n, err := r.Read(b.buffer[start:end])
+		total += int64(n) // incr total bytes read.
 		if err != nil {
-			return int64(n), err
+			break DONE
+			//return int64(n), err
 		}
 
 		// Move the head forward.
@@ -119,7 +125,6 @@ func (b *Buffer) ReadFrom(r io.Reader) (total int64, err error) {
 		b.wcond.Broadcast()
 		b.wcond.L.Unlock()
 
-		total += int64(n) // incr total bytes read.
 	}
 
 	return
@@ -136,6 +141,7 @@ DONE:
 			break DONE
 		}
 
+		// Peek until there's bytes to write.
 		p, err = b.Peek(blockSize)
 		if err != nil {
 			break DONE
@@ -147,6 +153,7 @@ DONE:
 			break DONE
 		}
 
+		// Move the tail forward the bytes written.
 		end := (atomic.LoadInt64(&b.tail) + int64(n)) % b.size
 		atomic.StoreInt64(&b.tail, end)
 		b.rcond.L.Lock()
@@ -166,7 +173,6 @@ func (b *Buffer) Peek(n int64) ([]byte, error) {
 	b.wcond.L.Lock()
 	for ; head == tail; head = atomic.LoadInt64(&b.head) {
 		if atomic.LoadInt64(&b.done) == 1 {
-			fmt.Println("ending")
 			return nil, io.EOF
 		}
 		b.wcond.Wait()
@@ -177,19 +183,15 @@ func (b *Buffer) Peek(n int64) ([]byte, error) {
 	start := tail
 	end := tail + n
 	if head > tail && tail+n > head || head < tail && b.size-tail+head < n {
-		//fmt.Println("row wanted overran capacity")
 		return nil, ErrInsufficientBytes
 	}
 
+	// If we've wrapped, get the bytes from the end and start.
 	if head < tail {
-		//fmt.Println("alt logic, wrapped", start, ":", b.size, "---", 0, ":", n-(end-start), "//", end%b.size)
-		//tmp = append(tmp, b.buffer[start:b.size]...)
 		b.tmp = b.buffer[start:b.size]
-		b.tmp = append(b.tmp, b.buffer[:(end%b.size)]...) //tmp = append(tmp, b.buffer[:n-(end-start)]...)
-		fmt.Println("#", string(b.tmp))
+		b.tmp = append(b.tmp, b.buffer[:(end%b.size)]...)
 		return b.tmp, nil
 	} else {
-		//fmt.Println("*", string(b.buffer[start:end]))
 		return b.buffer[start:end], nil
 	}
 

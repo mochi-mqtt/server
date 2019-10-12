@@ -82,7 +82,7 @@ func TestReadFrom(t *testing.T) {
 	b4 := bytes.Repeat([]byte{'-'}, 4)
 	br := bytes.NewReader(b4)
 	_, err := buf.ReadFrom(br)
-	require.Equal(t, err, io.EOF)
+	require.NoError(t, err)
 	require.Equal(t, bytes.Repeat([]byte{'-'}, 4), buf.buffer[:4])
 	require.Equal(t, int64(4), buf.head)
 
