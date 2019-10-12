@@ -27,6 +27,9 @@ type Buffer struct {
 	// buffer is the circular byte buffer.
 	buffer []byte
 
+	// tmp is a temporary buffer.
+	tmp []byte
+
 	// head is the current position in the sequence.
 	head int64
 
@@ -49,12 +52,15 @@ func NewBuffer(size int64) *Buffer {
 	return &Buffer{
 		size:   size,
 		buffer: make([]byte, size),
+		tmp:    make([]byte, size),
 		rcond:  sync.NewCond(new(sync.Mutex)),
 		wcond:  sync.NewCond(new(sync.Mutex)),
 	}
 }
 
 // awaitCapacity will hold until there are n bytes free in the buffer.
+// awaitCapacity will block until there are at least n bytes for the head to
+// write into without overrunning the tail.
 func (b *Buffer) awaitCapacity(n int64) (int64, error) {
 	tail := atomic.LoadInt64(&b.tail)
 	head := atomic.LoadInt64(&b.head)
@@ -63,7 +69,7 @@ func (b *Buffer) awaitCapacity(n int64) (int64, error) {
 
 	b.rcond.L.Lock()
 	for ; wrapped > tail || (tail > head && next > tail && wrapped < 0); tail = atomic.LoadInt64(&b.tail) {
-		//	fmt.Println("\t", 	wrapped, ">", tail, wrapped > tail, "||", tail, ">", head, "&&", next, ">", tail, "&&", wrapped, "<", 0, (tail > head && next > tail && wrapped < 0))
+		//fmt.Println("\t", wrapped, ">", tail, wrapped > tail, "||", tail, ">", head, "&&", next, ">", tail, "&&", wrapped, "<", 0, (tail > head && next > tail && wrapped < 0))
 		b.rcond.Wait()
 		if atomic.LoadInt64(&b.done) == 1 {
 			fmt.Println("ending")
@@ -105,14 +111,15 @@ func (b *Buffer) ReadFrom(r io.Reader) (total int64, err error) {
 			return int64(n), err
 		}
 
-		total += int64(n) // incr total bytes read.
-
-		// st, err := b.awaitCapacity(n)
 		// Move the head forward.
-		atomic.StoreInt64(&b.head, start+int64(n))
+		//fmt.Println(start, end, b.buffer[start:end])
+		// fmt.Println(">>", b.head, start+int64(n), end)
+		atomic.StoreInt64(&b.head, end) //start+int64(n))
+		b.wcond.L.Lock()
+		b.wcond.Broadcast()
+		b.wcond.L.Unlock()
 
-		// Broadcast write condition
-		// ...
+		total += int64(n) // incr total bytes read.
 	}
 
 	return
@@ -120,22 +127,38 @@ func (b *Buffer) ReadFrom(r io.Reader) (total int64, err error) {
 
 // WriteTo writes the contents of the buffer to an io.Writer.
 func (b *Buffer) WriteTo(w io.Writer) (total int64, err error) {
+	var p []byte
+	var n int
+DONE:
 	for {
 		if atomic.LoadInt64(&b.done) == 1 {
-			return 0, io.EOF
+			err = io.EOF
+			break DONE
 		}
+
+		p, err = b.Peek(blockSize)
+		if err != nil {
+			break DONE
+		}
+
+		n, err = w.Write(p)
+		total += int64(n)
+		if err != nil {
+			break DONE
+		}
+
+		end := (atomic.LoadInt64(&b.tail) + int64(n)) % b.size
+		atomic.StoreInt64(&b.tail, end)
+		b.rcond.L.Lock()
+		b.rcond.Broadcast()
+		b.rcond.L.Unlock()
 	}
 
 	return
 }
 
 // Peek returns the next n bytes without advancing the reader.
-/*
-	T5 H7 : T+N > H
-	T14 H1 : Wrapped> 0 && N % S > H
-*/
 func (b *Buffer) Peek(n int64) ([]byte, error) {
-	var tmp []byte
 	tail := atomic.LoadInt64(&b.tail)
 	head := atomic.LoadInt64(&b.head)
 
@@ -153,20 +176,20 @@ func (b *Buffer) Peek(n int64) ([]byte, error) {
 	// Figure out if we can get all n bytes.
 	start := tail
 	end := tail + n
-	fmt.Println(start, end)
 	if head > tail && tail+n > head || head < tail && b.size-tail+head < n {
-		fmt.Println("row wanted overran capacity")
+		//fmt.Println("row wanted overran capacity")
 		return nil, ErrInsufficientBytes
 	}
 
 	if head < tail {
-		fmt.Println("alt logic, wrapped")
-		tmp = append(tmp, b.buffer[start:b.size]...)
-		tmp = append(tmp, b.buffer[:n-(end-start)]...)
-		fmt.Println("#", string(tmp))
-		return tmp, nil
+		//fmt.Println("alt logic, wrapped", start, ":", b.size, "---", 0, ":", n-(end-start), "//", end%b.size)
+		//tmp = append(tmp, b.buffer[start:b.size]...)
+		b.tmp = b.buffer[start:b.size]
+		b.tmp = append(b.tmp, b.buffer[:(end%b.size)]...) //tmp = append(tmp, b.buffer[:n-(end-start)]...)
+		fmt.Println("#", string(b.tmp))
+		return b.tmp, nil
 	} else {
-		fmt.Println("*", string(b.buffer[start:end]))
+		//fmt.Println("*", string(b.buffer[start:end]))
 		return b.buffer[start:end], nil
 	}
 

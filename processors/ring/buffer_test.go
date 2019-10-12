@@ -2,9 +2,10 @@ package ring
 
 import (
 	"bytes"
-	"io"
-	//"net"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func TestNewBuffer(t *testing.T) {
 	buf := NewBuffer(size)
 
 	require.NotNil(t, buf.buffer)
-	require.Equal(t, size, len(buf.buffer))
+	require.Equal(t, size, int64(len(buf.buffer)))
 	require.Equal(t, size, buf.size)
 }
 
@@ -111,52 +112,18 @@ func TestPeek(t *testing.T) {
 	buf := NewBuffer(16)
 	buf.buffer = []byte{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p'}
 
-	// Peek 0,0 > 0,1
-	/*go func() {
-		bs, err := buf.Peek(int64(1))
-		o <- []interface{}{bs, err}
-	}()
-	time.Sleep(time.Millisecond * 10)
-	atomic.StoreInt64(&buf.head, 1)
-
-	buf.wcond.L.Lock()
-	buf.wcond.Broadcast()
-	buf.wcond.L.Unlock()
-	res := <-o
-	fmt.Println(res)
-	require.Nil(t, res[1])
-	*/
-	// Peek 15,15 > 15,3
-	/*
-		buf.tail, buf.head = 15, 15
-		go func() {
-			bs, err := buf.Peek(int64(3))
-			o <- []interface{}{bs, err}
-		}()
-		time.Sleep(time.Millisecond * 10)
-		atomic.StoreInt64(&buf.head, 3)
-		buf.wcond.L.Lock()
-		buf.wcond.Broadcast()
-		buf.wcond.L.Unlock()
-		res := <-o
-		fmt.Println(res)
-		require.Nil(t, res[1])
-	*/
-
 	tests := []struct {
-		tail int64
-		head int64
-		want int
-		desc string
+		tail  int64
+		head  int64
+		want  int
+		bytes []byte
+		err   error
+		desc  string
 	}{
-		//{0, 6, 4, "OK 0, 0"},
-		//{0, 3, 4, "OK 0, 0"},
-		{14, 5, 6, "OK 0, 0"},
-		{14, 1, 6, "OK 0, 0"},
-		//{0, 0, 1, "OK 0, 0"},
-		//{15, 15, 1, "OK 0, 0"},
-		//	{14, 15, 6, "OK 0, 0"},
-		//{14, 4, 5, "OK 0, 0"},
+		{tail: 0, head: 4, want: 4, bytes: []byte{'a', 'b', 'c', 'd'}, err: nil, desc: "0,4: OK"},
+		{tail: 3, head: 15, want: 8, bytes: []byte{'d', 'e', 'f', 'g', 'h', 'i', 'j', 'k'}, err: nil, desc: "0,4: OK"},
+		{tail: 14, head: 5, want: 6, bytes: []byte{'o', 'p', 'a', 'b', 'c', 'd'}, err: nil, desc: "14,5 OK"},
+		{tail: 14, head: 1, want: 6, bytes: nil, err: ErrInsufficientBytes, desc: "14,1 insufficient bytes"},
 	}
 
 	for i, tt := range tests {
@@ -169,7 +136,6 @@ func TestPeek(t *testing.T) {
 
 		time.Sleep(time.Millisecond)
 		atomic.StoreInt64(&buf.head, buf.head+int64(tt.want))
-
 		time.Sleep(time.Millisecond * 10)
 
 		buf.wcond.L.Lock()
@@ -178,9 +144,71 @@ func TestPeek(t *testing.T) {
 
 		time.Sleep(time.Millisecond) // wait for await capacity to actually exit
 		done := <-o
-		fmt.Println("done", done)
-		//require.Equal(t, tt.want, len(done[0].([]byte)), "Peeked bytes mismatch [i:%d] %s", i, tt.desc)
-		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
+		if tt.err != nil {
+			require.Error(t, done[1].(error), "Expected Error [i:%d] %s", i, tt.desc)
+		} else {
+			require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
+		}
+
+		require.Equal(t, tt.bytes, done[0].([]byte), "Peeked bytes mismatch [i:%d] %s", i, tt.desc)
+	}
+
+	fmt.Println("done")
+
+}
+
+func TestWriteTo(t *testing.T) {
+	bb := []byte{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p'}
+
+	tests := []struct {
+		tail  int64
+		next  int64
+		head  int64
+		err   error
+		bytes []byte
+		total int64
+		desc  string
+	}{
+		{tail: 0, next: 4, head: 4, err: io.EOF, bytes: []byte{'a', 'b', 'c', 'd'}, total: 4, desc: "0, 4 OK"},
+		{tail: 14, next: 2, head: 2, err: io.EOF, bytes: []byte{'o', 'p', 'a', 'b'}, total: 4, desc: "14, 2 wrap"},
+		{tail: 0, next: 0, head: 2, err: ErrInsufficientBytes, bytes: []byte{}, total: 0, desc: "0, 2 insufficient"},
+		{tail: 14, next: 2, head: 3, err: ErrInsufficientBytes, bytes: []byte{'o', 'p', 'a', 'b'}, total: 4, desc: "0, 3 OK > insufficient wrap"},
+	}
+
+	for i, tt := range tests {
+		buf := NewBuffer(16)
+		buf.buffer = bb
+		buf.tail, buf.head = tt.tail, tt.head
+		r, w := net.Pipe()
+		go func() {
+			time.Sleep(time.Millisecond)
+			atomic.StoreInt64(&buf.done, 1)
+			buf.wcond.L.Lock()
+			buf.wcond.Broadcast()
+			buf.wcond.L.Unlock()
+			w.Close()
+		}()
+
+		recv := make(chan []byte)
+		go func() {
+			buf, err := ioutil.ReadAll(r)
+			if err != nil {
+				panic(err)
+			}
+			recv <- buf
+		}()
+
+		total, err := buf.WriteTo(w)
+		require.Equal(t, tt.next, buf.tail, "Tail placement mismatched [i:%d] %s", i, tt.desc)
+		require.Equal(t, tt.total, total, "Total bytes written mismatch [i:%d] %s", i, tt.desc)
+		if tt.err != nil {
+			require.Error(t, err, "Expected Error [i:%d] %s", i, tt.desc)
+		} else {
+			require.NoError(t, err, "Unexpected Error [i:%d] %s", i, tt.desc)
+		}
+		require.Equal(t, tt.bytes, <-recv, "Written bytes mismatch [i:%d] %s", i, tt.desc)
+
+		r.Close()
 	}
 
 }
