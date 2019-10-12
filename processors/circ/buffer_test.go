@@ -76,18 +76,19 @@ func TestAwaitFilled(t *testing.T) {
 	tests := []struct {
 		tail  int64
 		head  int64
+		next  int64
 		await int
 		desc  string
 	}{
-		{0, 4, 0, "OK 0, 4"},
-		{6, 10, 0, "OK 6, 10"},
-		{14, 2, 0, "OK 14, 2 wrapped"},
-		{6, 8, 2, "Wait 6, 8"},
-		{14, 1, 3, "Wait 14, 1 wrapped"},
+		{0, 4, 4, 0, "OK 0, 4"},
+		{6, 10, 10, 0, "OK 6, 10"},
+		{14, 2, 2, 0, "OK 14, 2 wrapped"},
+		{6, 8, 10, 2, "Wait 6, 8"},
+		{14, 1, 4, 3, "Wait 14, 1 wrapped"},
 	}
 
 	buf := newBuffer(16)
-	for _, tt := range tests {
+	for i, tt := range tests {
 		buf.tail, buf.head = tt.tail, tt.head
 		o := make(chan []interface{})
 		var start int64 = -1
@@ -105,9 +106,9 @@ func TestAwaitFilled(t *testing.T) {
 			buf.wcond.L.Unlock()
 		}
 
-		//done :=
-		<-o
-		//require.Equal(t, tt.head, done[0].(int64), "Head-Start mismatch [i:%d] %s", i, tt.desc)
-		//require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
+		done := <-o
+		require.Equal(t, tt.tail, done[0].(int64), "tail start [i:%d] %s", i, tt.desc)
+		require.Equal(t, tt.next, buf.head, "Head-next mismatch [i:%d] %s", i, tt.desc)
+		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
 	}
 }
