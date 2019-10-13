@@ -94,7 +94,6 @@ func TestPeek(t *testing.T) {
 
 		require.Equal(t, tt.bytes, done[0].([]byte), "Peeked bytes mismatch [i:%d] %s", i, tt.desc)
 	}
-
 }
 
 func TestRead(t *testing.T) {
@@ -122,9 +121,7 @@ func TestRead(t *testing.T) {
 			o <- []interface{}{bs, err}
 		}()
 
-		//	time.Sleep(time.Millisecond)
 		atomic.StoreInt64(&buf.head, buf.head+int64(tt.want))
-		//	time.Sleep(time.Millisecond * 10)
 
 		buf.wcond.L.Lock()
 		buf.wcond.Broadcast()
