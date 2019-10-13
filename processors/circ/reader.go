@@ -97,14 +97,24 @@ func (b *Reader) Peek(n int64) ([]byte, error) {
 	return nil, nil
 }
 
-// Read reads the next len(p) bytes from the buffer. If len(p) bytes are not
+// Read reads the next n bytes from the buffer. If n bytes are not
 // available, read will wait until there is enough.
-func (b *Reader) Read(p []byte) (n int, err error) {
+func (b *Reader) Read(n int64) (p []byte, err error) {
 
 	// Wait until there's at least len(p) bytes to read.
-	_, err = b.awaitCapacity(int64(len(p)))
+	tail, err := b.awaitFilled(n)
 	if err != nil {
 		return
+	}
+
+	// Once we have capacity, determine if the capacity wraps, and write it into
+	// the buffer p.
+	if atomic.LoadInt64(&b.head) < tail {
+		b.tmp = b.buf[tail:b.size]
+		b.tmp = append(b.tmp, b.buf[:(tail+n)%b.size]...)
+		return b.tmp, nil
+	} else {
+		return b.buf[tail : tail+n], nil
 	}
 
 	return
