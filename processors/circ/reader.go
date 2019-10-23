@@ -71,6 +71,40 @@ func (b *Reader) Peek(n int64) ([]byte, error) {
 	head := atomic.LoadInt64(&b.head)
 
 	// Wait until there's at least 1 byte of data.
+	/*
+		b.wcond.L.Lock()
+		for ; head == tail; head = atomic.LoadInt64(&b.head) {
+			if atomic.LoadInt64(&b.done) == 1 {
+				return nil, io.EOF
+			}
+			b.wcond.Wait()
+		}
+		b.wcond.L.Unlock()
+	*/
+
+	// Figure out if we can get all n bytes.
+	if head == tail || head > tail && tail+n > head || head < tail && b.size-tail+head < n {
+		return nil, ErrInsufficientBytes
+	}
+
+	// If we've wrapped, get the bytes from the next and start.
+	if head < tail {
+		b.tmp = b.buf[tail:b.size]
+		b.tmp = append(b.tmp, b.buf[:(tail+n)%b.size]...)
+		return b.tmp, nil
+	} else {
+		return b.buf[tail : tail+n], nil
+	}
+
+	return nil, nil
+}
+
+// PeekWait waits until their are n bytes available to return.
+func (b *Reader) PeekWait(n int64) ([]byte, error) {
+	tail := atomic.LoadInt64(&b.tail)
+	head := atomic.LoadInt64(&b.head)
+
+	// Wait until there's at least 1 byte of data.
 	b.wcond.L.Lock()
 	for ; head == tail; head = atomic.LoadInt64(&b.head) {
 		if atomic.LoadInt64(&b.done) == 1 {

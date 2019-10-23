@@ -23,6 +23,17 @@ func TestNewBuffer(t *testing.T) {
 	require.Equal(t, size, buf.size)
 }
 
+func TestSet(t *testing.T) {
+	buf := newBuffer(8)
+	require.Equal(t, make([]byte, 4), buf.buf[0:4])
+	p := []byte{'1', '2', '3', '4'}
+	buf.Set(p, 0, 4)
+	require.Equal(t, p, buf.buf[0:4])
+
+	buf.Set(p, 2, 6)
+	require.Equal(t, p, buf.buf[2:6])
+}
+
 func TestAwaitCapacity(t *testing.T) {
 	tests := []struct {
 		tail  int64

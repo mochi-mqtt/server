@@ -194,7 +194,7 @@ var fixedHeaderExpected = []fixedHeaderTable{
 }
 */
 
-func TestReadFixedHeader(t *testing.T) {
+func TestParserReadFixedHeader(t *testing.T) {
 	conn := new(MockNetConn)
 
 	// Test null data.

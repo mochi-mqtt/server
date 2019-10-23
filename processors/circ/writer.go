@@ -54,7 +54,17 @@ DONE:
 	return
 }
 
+// Write writes the buffer to the buffer p.
 func (b *Writer) Write(p []byte) (nn int, err error) {
+	if atomic.LoadInt64(&b.done) == 1 {
+		return 0, io.EOF
+	}
+
+	// Wait until there's
+	_, err = b.awaitCapacity(int64(len(p)))
+	if err != nil {
+		return
+	}
 
 	return
 }

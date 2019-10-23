@@ -51,6 +51,22 @@ func newBuffer(size int64) buffer {
 	}
 }
 
+// Set writes bytes to a byte buffer. This method should only be used for testing
+// and will panic if out of range.
+func (b *buffer) Set(p []byte, start, end int) {
+	o := 0
+	for i := start; i < end; i++ {
+		b.buf[i] = p[o]
+		o++
+	}
+}
+
+// SetPos sets the head and tail of the buffer. This method should only be
+// used for testing.
+func (b *buffer) SetPos(tail, head int64) {
+	b.tail, b.head = tail, head
+}
+
 // awaitCapacity will hold until there are n bytes free in the buffer, blocking
 // until there are at least n bytes to write without overrunning the tail.
 func (b *buffer) awaitCapacity(n int64) (head int64, err error) {

@@ -12,6 +12,7 @@ import (
 	"github.com/mochi-co/mqtt/auth"
 	"github.com/mochi-co/mqtt/listeners"
 	"github.com/mochi-co/mqtt/packets"
+	"github.com/mochi-co/mqtt/processors/circ"
 	"github.com/mochi-co/mqtt/topics"
 	"github.com/mochi-co/mqtt/topics/trie"
 )
@@ -90,7 +91,22 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 // Serve begins the event loops for establishing client connections on all
 // attached listeners.
 func (s *Server) Serve() error {
-	s.listeners.ServeAll(s.EstablishConnection)
+	s.listeners.ServeAll(s.EstablishConnection2)
+
+	return nil
+}
+
+// EstablishConnection establishes a new client connection with the broker.
+func (s *Server) EstablishConnection2(lid string, c net.Conn, ac auth.Controller) error {
+
+	p := NewProcessor(c, circ.NewReader(128), circ.NewWriter(128))
+
+	// Pull the header from the first packet and check for a CONNECT message.
+	fh := new(packets.FixedHeader)
+	err := p.ReadFixedHeader(fh)
+	if err != nil {
+		return ErrReadConnectFixedHeader
+	}
 
 	return nil
 }
