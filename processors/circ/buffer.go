@@ -51,6 +51,11 @@ func newBuffer(size int64) buffer {
 	}
 }
 
+// Get will return the tail and head positions of the buffer.
+func (b *buffer) GetPos() (int64, int64) {
+	return atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head)
+}
+
 // Set writes bytes to a byte buffer. This method should only be used for testing
 // and will panic if out of range.
 func (b *buffer) Set(p []byte, start, end int) {
@@ -90,7 +95,7 @@ func (b *buffer) awaitCapacity(n int64) (head int64, err error) {
 }
 
 // awaitFilled will hold until there are at least n bytes waiting between the
-// tail and head, before returning
+// tail and head.
 func (b *buffer) awaitFilled(n int64) (tail int64, err error) {
 	head := atomic.LoadInt64(&b.head)
 	tail = atomic.LoadInt64(&b.tail)
@@ -106,4 +111,32 @@ func (b *buffer) awaitFilled(n int64) (tail int64, err error) {
 	b.wcond.L.Unlock()
 
 	return
+}
+
+// CommitHead moves the head position of the buffer n bytes. If there is not enough
+// capacity, the method will wait until there is.
+func (b *buffer) CommitHead(n int64) error {
+	return nil
+}
+
+// CommitTail moves the tail position of the buffer n bytes, and will wait until
+// there is enough capacity for at least n bytes.
+func (b *buffer) CommitTail(n int64) error {
+	_, err := b.awaitFilled(n)
+	if err != nil {
+		return err
+	}
+
+	tail := atomic.LoadInt64(&b.tail)
+	if tail+n < b.size {
+		atomic.StoreInt64(&b.tail, tail+n)
+	} else {
+		atomic.StoreInt64(&b.tail, (tail+n)%b.size)
+	}
+
+	b.rcond.L.Lock()
+	b.rcond.Broadcast()
+	b.rcond.L.Unlock()
+
+	return nil
 }

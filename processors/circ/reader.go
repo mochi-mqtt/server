@@ -134,6 +134,10 @@ func (b *Reader) PeekWait(n int64) ([]byte, error) {
 // Read reads the next n bytes from the buffer. If n bytes are not
 // available, read will wait until there is enough.
 func (b *Reader) Read(n int64) (p []byte, err error) {
+	if n > b.size {
+		err = ErrInsufficientBytes
+		return
+	}
 
 	// Wait until there's at least len(p) bytes to read.
 	tail, err := b.awaitFilled(n)
@@ -147,7 +151,7 @@ func (b *Reader) Read(n int64) (p []byte, err error) {
 		b.tmp = b.buf[tail:b.size]
 		b.tmp = append(b.tmp, b.buf[:(tail+n)%b.size]...)
 		return b.tmp, nil
-	} else {
+	} else if tail+n < b.size {
 		return b.buf[tail : tail+n], nil
 	}
 

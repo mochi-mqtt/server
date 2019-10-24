@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"net"
 	"testing"
-	"time"
+	//"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -465,6 +465,7 @@ func TestReadPacketReadAllFail(t *testing.T) {
 	require.Error(t, err, "Expected error reading packet")
 }
 
+/*
 // MockNetConn satisfies the net.Conn interface.
 type MockNetConn struct {
 	ID       string
@@ -524,3 +525,4 @@ func (m *MockNetAddr) Network() string {
 func (m *MockNetAddr) String() string {
 	return "127.0.0.1"
 }
+*/
