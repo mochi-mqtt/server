@@ -115,9 +115,9 @@ func (b *buffer) awaitFilled(n int64) (tail int64, err error) {
 
 // CommitHead moves the head position of the buffer n bytes. If there is not enough
 // capacity, the method will wait until there is.
-func (b *buffer) CommitHead(n int64) error {
-	return nil
-}
+//func (b *buffer) CommitHead(n int64) error {
+//	return nil
+//}
 
 // CommitTail moves the tail position of the buffer n bytes, and will wait until
 // there is enough capacity for at least n bytes.

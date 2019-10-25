@@ -1,7 +1,7 @@
 package circ
 
 import (
-	//"fmt"
+	"fmt"
 	"io"
 	"sync/atomic"
 )
@@ -54,17 +54,37 @@ DONE:
 	return
 }
 
-// Write writes the buffer to the buffer p.
+// Write writes the buffer to the buffer p, returning the number of bytes written.
 func (b *Writer) Write(p []byte) (nn int, err error) {
 	if atomic.LoadInt64(&b.done) == 1 {
 		return 0, io.EOF
 	}
 
-	// Wait until there's
+	// Wait until there's enough capacity to write to the buffer.
 	_, err = b.awaitCapacity(int64(len(p)))
 	if err != nil {
 		return
 	}
 
+	// Write the outgoing bytes to the buffer, wrapping if necessary.
+	nn = b.writeBytes(p)
+
+	fmt.Println(atomic.LoadInt64(&b.tail), nn)
+
 	return
+}
+
+// writeBytes writes bytes to the buffer from the start position, and returns
+// the new head position. This function does not wait for capacity and will
+// overwrite any existing bytes.
+func (b *Writer) writeBytes(p []byte) int {
+	tail := atomic.LoadInt64(&b.tail)
+
+	var o int64
+	for i := 0; i < len(p); i++ {
+		o = (tail + int64(i)) % b.size
+		b.buf[o] = p[i]
+	}
+
+	return len(p)
 }

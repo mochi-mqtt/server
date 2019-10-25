@@ -98,8 +98,9 @@ func (s *Server) Serve() error {
 
 // EstablishConnection establishes a new client connection with the broker.
 func (s *Server) EstablishConnection2(lid string, c net.Conn, ac auth.Controller) error {
+	var size int64 = 1024 * 256
 
-	p := NewProcessor(c, circ.NewReader(128), circ.NewWriter(128))
+	p := NewProcessor(c, circ.NewReader(size), circ.NewWriter(size))
 
 	// Pull the header from the first packet and check for a CONNECT message.
 	fh := new(packets.FixedHeader)
@@ -116,11 +117,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	// Create a new packets parser which will parse all packets for this client,
 	// using buffered writers and readers.
-	p := NewParser(
-		c,
-		bufio.NewReaderSize(c, rwBufSize),
-		bufio.NewWriterSize(c, rwBufSize),
-	)
+	p := NewParser(c, bufio.NewReaderSize(c, rwBufSize), bufio.NewWriterSize(c, rwBufSize))
 
 	// Pull the header from the first packet and check for a CONNECT message.
 	fh := new(packets.FixedHeader)
@@ -128,6 +125,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	if err != nil {
 		return ErrReadConnectFixedHeader
 	}
+
 	// Read the first packet expecting a CONNECT message.
 	pk, err := p.Read()
 	if err != nil {

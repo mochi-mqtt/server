@@ -17,6 +17,35 @@ func TestNewProcessor(t *testing.T) {
 	require.NotNil(t, p.R)
 }
 
+func BenchmarkNewProcessor(b *testing.B) {
+	conn := new(MockNetConn)
+	r := circ.NewReader(16)
+	w := circ.NewWriter(16)
+
+	for n := 0; n < b.N; n++ {
+		NewProcessor(conn, r, w)
+	}
+}
+
+func TestProcessorRefreshDeadline(t *testing.T) {
+	conn := new(MockNetConn)
+	p := NewProcessor(conn, circ.NewReader(16), circ.NewWriter(16))
+
+	dl := p.Conn.(*MockNetConn).Deadline
+	p.RefreshDeadline(10)
+
+	require.NotEqual(t, dl, p.Conn.(*MockNetConn).Deadline)
+}
+
+func BenchmarkProcessorRefreshDeadline(b *testing.B) {
+	conn := new(MockNetConn)
+	p := NewProcessor(conn, circ.NewReader(16), circ.NewWriter(16))
+
+	for n := 0; n < b.N; n++ {
+		p.RefreshDeadline(10)
+	}
+}
+
 func TestProcessorReadFixedHeader(t *testing.T) {
 	conn := new(MockNetConn)
 
