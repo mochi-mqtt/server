@@ -8,23 +8,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
-	blockSize = 4
-}
-
 func TestNewBuffer(t *testing.T) {
 	var size int64 = 16
-	buf := newBuffer(size)
+	var block int64 = 4
+	buf := newBuffer(size, block)
 
 	require.NotNil(t, buf.buf)
 	require.NotNil(t, buf.rcond)
 	require.NotNil(t, buf.wcond)
 	require.Equal(t, size, int64(len(buf.buf)))
 	require.Equal(t, size, buf.size)
+	require.Equal(t, block, buf.block)
 }
 
 func TestSet(t *testing.T) {
-	buf := newBuffer(8)
+	buf := newBuffer(8, 4)
 	require.Equal(t, make([]byte, 4), buf.buf[0:4])
 	p := []byte{'1', '2', '3', '4'}
 	buf.Set(p, 0, 4)
@@ -35,7 +33,7 @@ func TestSet(t *testing.T) {
 }
 
 func TestGetPos(t *testing.T) {
-	buf := newBuffer(8)
+	buf := newBuffer(8, 4)
 	buf.tail, buf.head = 1, 3
 	tail, head := buf.GetPos()
 	require.Equal(t, int64(1), tail)
@@ -43,14 +41,14 @@ func TestGetPos(t *testing.T) {
 }
 
 func TestSetPos(t *testing.T) {
-	buf := newBuffer(8)
+	buf := newBuffer(8, 4)
 	buf.SetPos(1, 3)
 	require.Equal(t, int64(3), buf.head)
 	require.Equal(t, int64(1), buf.tail)
 }
 
 func TestCommitHead(t *testing.T) {
-	//buf := newBuffer(16)
+	//buf := newBuffer(16, 4)
 
 }
 
@@ -71,7 +69,7 @@ func TestAwaitCapacity(t *testing.T) {
 		{7, 5, 2, "tail is great than head, wrapped and caught up with tail, wait for tail incr"},
 	}
 
-	buf := newBuffer(16)
+	buf := newBuffer(16, 4)
 	for i, tt := range tests {
 		buf.tail, buf.head = tt.tail, tt.head
 		o := make(chan []interface{})
@@ -118,7 +116,7 @@ func TestAwaitFilled(t *testing.T) {
 		{14, 1, 4, 3, "Wait 14, 1 wrapped"},
 	}
 
-	buf := newBuffer(16)
+	buf := newBuffer(16, 4)
 	for i, tt := range tests {
 		buf.tail, buf.head = tt.tail, tt.head
 		o := make(chan []interface{})
@@ -159,7 +157,7 @@ func TestCommitTail(t *testing.T) {
 		{14, 1, 2, 2, "Wait 14, 1 wrapped"},
 	}
 
-	buf := newBuffer(16)
+	buf := newBuffer(16, 4)
 	for i, tt := range tests {
 		buf.tail, buf.head = tt.tail, tt.head
 		o := make(chan error)

@@ -2,6 +2,7 @@ package circ
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"sync/atomic"
 )
@@ -16,9 +17,9 @@ type Reader struct {
 }
 
 // NewReader returns a pointer to a new Circular Reader.
-func NewReader(size int64) *Reader {
+func NewReader(size, block int64) *Reader {
 	return &Reader{
-		newBuffer(size),
+		newBuffer(size, block),
 	}
 }
 
@@ -31,16 +32,16 @@ DONE:
 			err = io.EOF
 			break DONE
 		}
-
+		fmt.Println("readingfrom")
 		// Wait until there's enough capacity in the buffer.
-		st, err := b.awaitCapacity(blockSize)
+		st, err := b.awaitCapacity(b.block)
 		if err != nil {
 			break DONE
 		}
 
 		// Find the start and end indexes within the buffer.
 		start := st & (b.size - 1)
-		end := start + blockSize
+		end := start + b.block
 
 		// If we've overrun, just fill up to the end and then collect
 		// the rest on the next pass.
@@ -54,6 +55,8 @@ DONE:
 		if err != nil {
 			break DONE
 		}
+
+		fmt.Println("<", b.buf[start:end])
 
 		// Move the head forward.
 		atomic.StoreInt64(&b.head, end)

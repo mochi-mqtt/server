@@ -12,6 +12,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestNewWriter(t *testing.T) {
+	var size int64 = 16
+	var block int64 = 4
+	buf := NewWriter(size, block)
+
+	require.NotNil(t, buf.buf)
+	require.Equal(t, size, int64(len(buf.buf)))
+	require.Equal(t, size, buf.size)
+	require.Equal(t, block, buf.block)
+}
+
 func TestWriteTo(t *testing.T) {
 	bb := []byte{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p'}
 
@@ -31,7 +42,7 @@ func TestWriteTo(t *testing.T) {
 	}
 
 	for i, tt := range tests {
-		buf := NewWriter(16)
+		buf := NewWriter(16, 4)
 		buf.buf = bb
 		buf.tail, buf.head = tt.tail, tt.head
 		r, w := net.Pipe()
@@ -70,7 +81,7 @@ func TestWriteTo(t *testing.T) {
 
 func TestWrite(t *testing.T) {
 
-	buf := NewWriter(16)
+	buf := NewWriter(16, 4)
 
 	tests := []struct {
 		tail  int64
@@ -102,7 +113,7 @@ func TestWrite(t *testing.T) {
 }
 
 func TestWriteSequential(t *testing.T) {
-	buf := NewWriter(8)
+	buf := NewWriter(8, 4)
 
 	a := []byte{'a', 'b', 'c', 'd'}
 	b := []byte{'e', 'f', 'g', 'h'}
@@ -136,7 +147,7 @@ func TestWriteBytes(t *testing.T) {
 	}
 
 	for i, tt := range tests {
-		buf := NewWriter(8)
+		buf := NewWriter(8, 4)
 		buf.tail = tt.tail
 		ns := buf.writeBytes(tt.bytes)
 		require.Equal(t, tt.want, buf.buf, "Buffer mistmatch [i:%d] %s", i, tt.desc)

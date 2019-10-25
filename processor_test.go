@@ -46,6 +46,10 @@ func BenchmarkProcessorRefreshDeadline(b *testing.B) {
 	}
 }
 
+func TestProcessorStart(t *testing.T) {
+
+}
+
 func TestProcessorReadFixedHeader(t *testing.T) {
 	conn := new(MockNetConn)
 

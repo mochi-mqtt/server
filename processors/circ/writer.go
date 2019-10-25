@@ -12,9 +12,9 @@ type Writer struct {
 }
 
 // NewWriter returns a pointer to a new Circular Writer.
-func NewWriter(size int64) *Writer {
+func NewWriter(size, block int64) *Writer {
 	return &Writer{
-		newBuffer(size),
+		newBuffer(size, block),
 	}
 }
 
@@ -28,13 +28,16 @@ DONE:
 			err = io.EOF
 			break DONE
 		}
+		fmt.Println("writingto")
 
 		// Peek until there's bytes to write using the Peek method
 		// of the Reader type.
-		p, err = (*Reader)(b).Peek(blockSize)
+		p, err = (*Reader)(b).Peek(b.block)
 		if err != nil {
 			break DONE
 		}
+
+		fmt.Println(">", p)
 
 		// Write the peeked bytes to the io.Writer.
 		n, err = w.Write(p)
@@ -68,8 +71,6 @@ func (b *Writer) Write(p []byte) (nn int, err error) {
 
 	// Write the outgoing bytes to the buffer, wrapping if necessary.
 	nn = b.writeBytes(p)
-
-	fmt.Println(atomic.LoadInt64(&b.tail), nn)
 
 	return
 }

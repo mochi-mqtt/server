@@ -8,14 +8,23 @@ import (
 )
 
 var (
+
+	// blockSize is the default size of bytes per R/W block.
 	blockSize int64 = 8192
+
+	// bufferSize is the default size of the buffer.
+	bufferSize int64 = 1024 * 256
 )
 
 // buffer contains core values and methods to be included in a reader or writer.
 type buffer struct {
+	sync.RWMutex
 
 	// size is the size of the buffer.
 	size int64
+
+	// block is the size of the R/W block.
+	block int64
 
 	// buffer is the circular byte buffer.
 	buf []byte
@@ -41,9 +50,22 @@ type buffer struct {
 }
 
 // newBuffer returns a new instance of buffer.
-func newBuffer(size int64) buffer {
+func newBuffer(size, block int64) buffer {
+
+	if size == 0 {
+		size = bufferSize
+	}
+
+	if block == 0 {
+		block = blockSize
+	}
+	if size < 2*block {
+		size = 2 * block
+	}
+
 	return buffer{
 		size:  size,
+		block: block,
 		buf:   make([]byte, size),
 		tmp:   make([]byte, size),
 		rcond: sync.NewCond(new(sync.Mutex)),

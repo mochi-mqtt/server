@@ -12,15 +12,17 @@ import (
 
 func TestNewReader(t *testing.T) {
 	var size int64 = 16
-	buf := NewReader(size)
+	var block int64 = 4
+	buf := NewReader(size, block)
 
 	require.NotNil(t, buf.buf)
 	require.Equal(t, size, int64(len(buf.buf)))
 	require.Equal(t, size, buf.size)
+	require.Equal(t, block, buf.block)
 }
 
 func TestReadFrom(t *testing.T) {
-	buf := NewReader(16)
+	buf := NewReader(16, 4)
 
 	b4 := bytes.Repeat([]byte{'-'}, 4)
 	br := bytes.NewReader(b4)
@@ -51,7 +53,7 @@ func TestReadFrom(t *testing.T) {
 }
 
 func TestPeek(t *testing.T) {
-	buf := NewReader(16)
+	buf := NewReader(16, 4)
 	buf.buf = []byte{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p'}
 
 	tests := []struct {
@@ -97,7 +99,7 @@ func TestPeek(t *testing.T) {
 }
 
 func TestRead(t *testing.T) {
-	buf := NewReader(16)
+	buf := NewReader(16, 4)
 	buf.buf = []byte{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p'}
 
 	tests := []struct {
