@@ -7,20 +7,20 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/mochi-co/mqtt/circ"
 	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/processors/circ"
 )
 
 func TestNewProcessor(t *testing.T) {
 	conn := new(MockNetConn)
-	p := NewProcessor(conn, circ.NewReader(16), circ.NewWriter(16))
+	p := NewProcessor(conn, circ.NewReader(16, 4), circ.NewWriter(16, 4))
 	require.NotNil(t, p.R)
 }
 
 func BenchmarkNewProcessor(b *testing.B) {
 	conn := new(MockNetConn)
-	r := circ.NewReader(16)
-	w := circ.NewWriter(16)
+	r := circ.NewReader(16, 4)
+	w := circ.NewWriter(16, 4)
 
 	for n := 0; n < b.N; n++ {
 		NewProcessor(conn, r, w)
@@ -29,7 +29,7 @@ func BenchmarkNewProcessor(b *testing.B) {
 
 func TestProcessorRefreshDeadline(t *testing.T) {
 	conn := new(MockNetConn)
-	p := NewProcessor(conn, circ.NewReader(16), circ.NewWriter(16))
+	p := NewProcessor(conn, circ.NewReader(16, 4), circ.NewWriter(16, 4))
 
 	dl := p.Conn.(*MockNetConn).Deadline
 	p.RefreshDeadline(10)
@@ -39,21 +39,17 @@ func TestProcessorRefreshDeadline(t *testing.T) {
 
 func BenchmarkProcessorRefreshDeadline(b *testing.B) {
 	conn := new(MockNetConn)
-	p := NewProcessor(conn, circ.NewReader(16), circ.NewWriter(16))
+	p := NewProcessor(conn, circ.NewReader(16, 4), circ.NewWriter(16, 4))
 
 	for n := 0; n < b.N; n++ {
 		p.RefreshDeadline(10)
 	}
 }
 
-func TestProcessorStart(t *testing.T) {
-
-}
-
 func TestProcessorReadFixedHeader(t *testing.T) {
 	conn := new(MockNetConn)
 
-	p := NewProcessor(conn, circ.NewReader(16), circ.NewWriter(16))
+	p := NewProcessor(conn, circ.NewReader(16, 4), circ.NewWriter(16, 4))
 
 	// Test null data.
 	fh := new(packets.FixedHeader)
@@ -82,7 +78,7 @@ func TestProcessorRead(t *testing.T) {
 	conn := new(MockNetConn)
 
 	var fh packets.FixedHeader
-	p := NewProcessor(conn, circ.NewReader(32), circ.NewWriter(32))
+	p := NewProcessor(conn, circ.NewReader(32, 4), circ.NewWriter(32, 4))
 	p.R.Set([]byte{
 		byte(packets.Publish << 4), 18, // Fixed header
 		0, 5, // Topic Name - LSB+MSB
@@ -108,7 +104,7 @@ func TestProcessorRead(t *testing.T) {
 
 func TestProcessorReadFail(t *testing.T) {
 	conn := new(MockNetConn)
-	p := NewProcessor(conn, circ.NewReader(32), circ.NewWriter(32))
+	p := NewProcessor(conn, circ.NewReader(32, 4), circ.NewWriter(32, 4))
 	p.R.Set([]byte{
 		byte(packets.Publish << 4), 3, // Fixed header
 		0, 5, // Topic Name - LSB+MSB
@@ -143,7 +139,7 @@ func TestProcessorReadPacketNoOverwrite(t *testing.T) {
 		'y', 'a', 'h', 'a', 'l', 'l', 'o', // Payload
 	}
 
-	p := NewProcessor(conn, circ.NewReader(32), circ.NewWriter(32))
+	p := NewProcessor(conn, circ.NewReader(32, 4), circ.NewWriter(32, 4))
 	p.R.Set(pk1, 0, len(pk1))
 	p.R.SetPos(0, int64(len(pk1)))
 	var fh packets.FixedHeader
@@ -168,7 +164,7 @@ func TestProcessorReadPacketNoOverwrite(t *testing.T) {
 func TestProcessorReadPacketNil(t *testing.T) {
 
 	conn := new(MockNetConn)
-	p := NewProcessor(conn, circ.NewReader(32), circ.NewWriter(32))
+	p := NewProcessor(conn, circ.NewReader(32, 4), circ.NewWriter(32, 4))
 	var fh packets.FixedHeader
 
 	// Check for un-specified packet.
@@ -188,7 +184,7 @@ func TestProcessorReadPacketNil(t *testing.T) {
 
 func TestProcessorReadPacketReadOverflow(t *testing.T) {
 	conn := new(MockNetConn)
-	p := NewProcessor(conn, circ.NewReader(32), circ.NewWriter(32))
+	p := NewProcessor(conn, circ.NewReader(32, 4), circ.NewWriter(32, 4))
 	var fh packets.FixedHeader
 
 	// Check for un-specified packet.

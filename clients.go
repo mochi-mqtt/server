@@ -1,6 +1,7 @@
 package mqtt
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -77,8 +78,8 @@ func (cl *clients) getByListener(id string) []*client {
 type client struct {
 	sync.RWMutex
 
-	// p is a packets parser which reads incoming packets.
-	p *Parser
+	// p is a packets processor which reads and writes packets.
+	p *Processor
 
 	// ac is a pointer to an auth controller inherited from the listener.
 	ac auth.Controller
@@ -123,7 +124,7 @@ type client struct {
 }
 
 // newClient creates a new instance of client.
-func newClient(p *Parser, pk *packets.ConnectPacket, ac auth.Controller) *client {
+func newClient(p *Processor, pk *packets.ConnectPacket, ac auth.Controller) *client {
 	cl := &client{
 		p:    p,
 		ac:   ac,
@@ -192,11 +193,19 @@ func (c *client) forgetSubscription(filter string) {
 // close attempts to gracefully close a client connection.
 func (cl *client) close() {
 	cl.done.Do(func() {
-		close(cl.end) // Signal to stop listening for packets.
+		if cl.end != nil {
+			close(cl.end) // Signal to stop listening for packets in mqtt readClient loop.
+			fmt.Println("closed readClient end")
+		}
+
+		// Close the processor.
+		cl.p.Stop()
+		fmt.Println("signalled stop, waiting")
+		fmt.Println("all processors ended")
 
 		// Close the network connection.
-		cl.p.Conn.Close() // Error is irrelevant so can be ommitted here.
-		cl.p.Conn = nil
+		//cl.p.Conn.Close() // Error is irrelevant so can be ommitted here.
+		//cl.p.Conn = nil
 	})
 }
 

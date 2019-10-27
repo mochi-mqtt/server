@@ -2,12 +2,13 @@ package mqtt
 
 import (
 	"encoding/binary"
-	"errors"
+	"fmt"
 	"net"
+	"sync"
 	"time"
 
+	"github.com/mochi-co/mqtt/circ"
 	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/processors/circ"
 )
 
 // Processor reads and writes bytes to a network connection.
@@ -22,6 +23,12 @@ type Processor struct {
 	// W is a writer for writing outgoing bytes.
 	W *circ.Writer
 
+	// started tracks the goroutines which have been started.
+	started sync.WaitGroup
+
+	// ended tracks the goroutines which have ended.
+	ended sync.WaitGroup
+
 	// FixedHeader is the FixedHeader from the last read packet.
 	FixedHeader packets.FixedHeader
 }
@@ -33,6 +40,51 @@ func NewProcessor(c net.Conn, r *circ.Reader, w *circ.Writer) *Processor {
 		R:    r,
 		W:    w,
 	}
+
+}
+
+// Start spins up the reader and writer goroutines.
+func (p *Processor) Start() {
+	go func() {
+		defer p.ended.Done()
+		fmt.Println("starting readFrom", p.Conn)
+		p.started.Done()
+		n, err := p.R.ReadFrom(p.Conn)
+		if err != nil {
+			//
+		}
+		fmt.Println(">>> finished ReadFrom", n, err)
+	}()
+
+	go func() {
+		defer p.ended.Done()
+		fmt.Println("starting writeTo", p.Conn)
+		p.started.Done()
+		n, err := p.W.WriteTo(p.Conn)
+		if err != nil {
+			//
+		}
+
+		fmt.Println(">>> finished WriteTo", n, err)
+	}()
+
+	p.started.Add(2)
+	p.ended.Add(2)
+	p.started.Wait()
+}
+
+// Stop stops the processor goroutines.
+func (p *Processor) Stop() {
+	fmt.Println("processor stop")
+
+	p.W.Close()
+	if p.Conn != nil {
+		p.Conn.Close()
+	}
+	p.R.Close()
+
+	p.ended.Wait()
+
 }
 
 // RefreshDeadline refreshes the read/write deadline for the net.Conn connection.
@@ -99,6 +151,8 @@ func (p *Processor) ReadFixedHeader(fh *packets.FixedHeader) error {
 		return err
 	}
 
+	fmt.Println("FIXEDHEADER READ", *fh)
+
 	// Set the fixed header in the parser.
 	p.FixedHeader = *fh
 
@@ -139,7 +193,7 @@ func (p *Processor) Read() (pk packets.Packet, err error) {
 	case packets.Disconnect:
 		pk = &packets.DisconnectPacket{FixedHeader: p.FixedHeader}
 	default:
-		return pk, errors.New("No valid packet available; " + string(p.FixedHeader.Type))
+		return pk, fmt.Errorf("No valid packet available; %v", p.FixedHeader.Type)
 	}
 
 	bt, err := p.R.Read(int64(p.FixedHeader.Remaining))

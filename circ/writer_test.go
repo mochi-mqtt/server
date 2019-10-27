@@ -1,7 +1,6 @@
 package circ
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -104,7 +103,6 @@ func TestWrite(t *testing.T) {
 		}()
 
 		done := <-o
-		fmt.Println(done)
 		require.Equal(t, tt.want, done[0].(int), "Wanted written mismatch [i:%d] %s", i, tt.desc)
 		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
 

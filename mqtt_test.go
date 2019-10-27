@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"testing"
@@ -10,10 +11,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mochi-co/mqtt/auth"
+	"github.com/mochi-co/mqtt/circ"
 	"github.com/mochi-co/mqtt/listeners"
 	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/topics"
+	//"github.com/mochi-co/mqtt/topics"
 )
+
+// bufferSize is the buffer size of the processors.
+var bufferSize int64 = 512
+
+// blockSize is the block size of the processors.
+var blockSize int64 = 128
 
 type quietWriter struct {
 	b        []byte
@@ -45,9 +53,8 @@ func (q *quietWriter) Flush() error {
 
 func setupClient(id string) (s *Server, r net.Conn, w net.Conn, cl *client) {
 	s = New()
-	r, w = net.Pipe()
 	cl = newClient(
-		NewParser(r, newBufioReader(r), newBufioWriter(w)),
+		NewProcessor(new(MockNetConn), circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize)),
 		&packets.ConnectPacket{
 			ClientIdentifier: id,
 		},
@@ -178,10 +185,64 @@ func BenchmarkServerClose(b *testing.B) {
  */
 
 func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
-	r2, w2 := net.Pipe()
 	s := New()
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
+	}()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 15, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			2,     // Packet Flags - clean session
+			0, 45, // Keepalive
+			0, 3, // Client ID - MSB+LSB
+			'z', 'e', 'n', // Client ID "zen"
+		})
+		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+	}()
+
+	recv := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(w)
+		if err != nil {
+			panic(err)
+		}
+		recv <- buf
+	}()
+
+	//time.Sleep(10 * time.Millisecond)
+	s.clients.Lock()
+	for _, v := range s.clients.internal {
+		v.close()
+		break
+	}
+	s.clients.Unlock()
+
+	errx := <-o
+	require.NoError(t, errx)
+	require.Equal(t, []byte{
+		byte(packets.Connack << 4), 2,
+		0, packets.Accepted,
+	}, <-recv)
+
+	fmt.Println()
+
+	w.Close()
+}
+
+/*
+func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
+	r2, _ := net.Pipe()
+	s := New()
+	px := NewProcessor(r2, circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize))
+	px.Start()
 	s.clients.internal["zen"] = newClient(
-		NewParser(r2, newBufioReader(r2), newBufioWriter(w2)),
+		px,
 		&packets.ConnectPacket{ClientIdentifier: "zen"},
 		new(auth.Allow),
 	)
@@ -227,6 +288,8 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 	}, <-recv)
 	w.Close()
 }
+
+/*
 
 func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 	r2, w2 := net.Pipe()
@@ -496,8 +559,8 @@ func TestResendInflightWriteError(t *testing.T) {
 
  * Server Read Client
 
- */
-
+*/
+/*
 func TestServerReadClientOK(t *testing.T) {
 	s, r, w, cl := setupClient("zen")
 
@@ -603,8 +666,8 @@ func TestServerReadClientBadPacketValidation(t *testing.T) {
 
  * Server Write Client
 
- */
-
+*/
+/*
 func TestServerWriteClient(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
 	cl.p.W = new(quietWriter)
@@ -676,8 +739,8 @@ func TestServerWriteClientWriteError(t *testing.T) {
 
  * Server Close Client
 
- */
-
+*/
+/*
 func TestServerCloseClient(t *testing.T) { // as opposed to client.close
 	s, _, _, cl := setupClient("zen")
 	s.clients.add(cl)
@@ -748,8 +811,8 @@ func TestServerCloseClientLWTWriteError(t *testing.T) { // as opposed to client.
 
  * Server Process Packets
 
- */
-
+*/
+/*
 func TestServerProcessPacket(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
 	err := s.processPacket(cl, nil)
@@ -1368,3 +1431,4 @@ func TestServerProcessUnsubscribeWriteError(t *testing.T) {
 	})
 	require.Error(t, err)
 }
+*/

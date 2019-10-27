@@ -2,7 +2,6 @@ package circ
 
 import (
 	"bytes"
-	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -131,8 +130,6 @@ func TestRead(t *testing.T) {
 
 		time.Sleep(time.Millisecond) // wait for await capacity to actually exit
 		done := <-o
-		fmt.Println(done)
-		fmt.Println(string(done[0].([]byte)))
 		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
 		require.Equal(t, tt.bytes, done[0].([]byte), "Peeked bytes mismatch [i:%d] %s", i, tt.desc)
 	}

@@ -2,13 +2,13 @@ package mqtt
 
 import (
 	"log"
-	"net"
+	//"net"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/mochi-co/mqtt/auth"
+	"github.com/mochi-co/mqtt/circ"
 	"github.com/mochi-co/mqtt/packets"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewClients(t *testing.T) {
@@ -116,9 +116,7 @@ func BenchmarkClientsGetByListener(b *testing.B) {
 }
 
 func TestNewClient(t *testing.T) {
-	r, _ := net.Pipe()
-	p := NewParser(r, newBufioReader(r), newBufioWriter(r))
-	r.Close()
+	p := NewProcessor(new(MockNetConn), circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize))
 	pk := &packets.ConnectPacket{
 		FixedHeader: packets.FixedHeader{
 			Type:      packets.Connect,
@@ -153,9 +151,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewClientLWT(t *testing.T) {
-	r, _ := net.Pipe()
-	p := NewParser(r, newBufioReader(r), newBufioWriter(r))
-	r.Close()
+	p := NewProcessor(new(MockNetConn), circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize))
 	pk := &packets.ConnectPacket{
 		FixedHeader: packets.FixedHeader{
 			Type:      packets.Connect,
@@ -181,11 +177,8 @@ func TestNewClientLWT(t *testing.T) {
 }
 
 func BenchmarkNewClient(b *testing.B) {
-	r, _ := net.Pipe()
-	p := NewParser(r, newBufioReader(r), newBufioWriter(r))
-	r.Close()
+	p := NewProcessor(new(MockNetConn), circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize))
 	pk := new(packets.ConnectPacket)
-
 	for n := 0; n < b.N; n++ {
 		newClient(p, pk, new(auth.Allow))
 	}
@@ -244,15 +237,13 @@ func BenchmarkClientForgetSubscription(b *testing.B) {
 }
 
 func TestClientClose(t *testing.T) {
-	r, w := net.Pipe()
-	p := NewParser(r, newBufioReader(r), newBufioWriter(w))
+	p := NewProcessor(new(MockNetConn), circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize))
 	pk := &packets.ConnectPacket{
 		ClientIdentifier: "zen3",
 	}
 
 	client := newClient(p, pk, new(auth.Allow))
 	require.NotNil(t, client)
-
 	client.close()
 
 	var ok bool
@@ -261,8 +252,6 @@ func TestClientClose(t *testing.T) {
 	}
 	require.Equal(t, false, ok)
 	require.Nil(t, client.p.Conn)
-	r.Close()
-	w.Close()
 }
 
 func TestInFlightSet(t *testing.T) {

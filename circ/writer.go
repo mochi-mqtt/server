@@ -1,9 +1,10 @@
 package circ
 
 import (
-	"fmt"
 	"io"
 	"sync/atomic"
+
+	"github.com/mochi-co/mqtt/debug"
 )
 
 // Writer is a circular buffer for writing data to an io.Writer.
@@ -13,8 +14,10 @@ type Writer struct {
 
 // NewWriter returns a pointer to a new Circular Writer.
 func NewWriter(size, block int64) *Writer {
+	b := newBuffer(size, block)
+	b.id = "writer"
 	return &Writer{
-		newBuffer(size, block),
+		b,
 	}
 }
 
@@ -22,36 +25,45 @@ func NewWriter(size, block int64) *Writer {
 func (b *Writer) WriteTo(w io.Writer) (total int64, err error) {
 	var p []byte
 	var n int
-DONE:
 	for {
+		cd := b.capDelta(atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head))
+		debug.Println(b.id, "SPIN (tail, head, delta)", b.tail, b.head, cd)
 		if atomic.LoadInt64(&b.done) == 1 {
-			err = io.EOF
-			break DONE
+			if cd == 0 {
+				err = io.EOF
+				return total, err
+			} else {
+				debug.Println("[W] //// capDelta not reached", cd)
+			}
 		}
-		fmt.Println("writingto")
 
 		// Peek until there's bytes to write using the Peek method
 		// of the Reader type.
 		p, err = (*Reader)(b).Peek(b.block)
 		if err != nil {
-			break DONE
+			debug.Println(b.id, "[W] writeTo peek err (p, err)", p, err)
+			continue
+			//break DONE
 		}
-
-		fmt.Println(">", p)
+		debug.Println(b.id, "[W] PEEKED OK (p)", p)
 
 		// Write the peeked bytes to the io.Writer.
 		n, err = w.Write(p)
 		total += int64(n)
 		if err != nil {
-			break DONE
+			return total, err
 		}
+
+		debug.Println(b.id, "[W] SENT (n, p)", n, p)
 
 		// Move the tail forward the bytes written.
 		end := (atomic.LoadInt64(&b.tail) + int64(n)) % b.size
+		debug.Println(b.id, "[W] STORE TAIL", end)
 		atomic.StoreInt64(&b.tail, end)
 		b.rcond.L.Lock()
 		b.rcond.Broadcast()
 		b.rcond.L.Unlock()
+		debug.Println(b.id, "[W] writeTo unlocked")
 	}
 
 	return
@@ -71,6 +83,16 @@ func (b *Writer) Write(p []byte) (nn int, err error) {
 
 	// Write the outgoing bytes to the buffer, wrapping if necessary.
 	nn = b.writeBytes(p)
+	debug.Println(b.id, "[W] bytes written (nn)", nn, p)
+
+	// Move the head forward.
+	next := (atomic.LoadInt64(&b.head) + int64(nn)) % b.size
+	atomic.StoreInt64(&b.head, next)
+	debug.Println(b.id, "[W] STORE HEAD", next)
+
+	b.wcond.L.Lock()
+	b.wcond.Broadcast()
+	b.wcond.L.Unlock()
 
 	return
 }

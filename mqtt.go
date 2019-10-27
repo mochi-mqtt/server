@@ -1,18 +1,18 @@
 package mqtt
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"net"
 	"time"
 
 	//"github.com/davecgh/go-spew/spew"
 
 	"github.com/mochi-co/mqtt/auth"
+	"github.com/mochi-co/mqtt/circ"
 	"github.com/mochi-co/mqtt/listeners"
 	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/processors/circ"
 	"github.com/mochi-co/mqtt/topics"
 	"github.com/mochi-co/mqtt/topics/trie"
 )
@@ -36,9 +36,6 @@ var (
 	ErrConnectionClosed       = errors.New("Connection not open")
 	ErrNoData                 = errors.New("No data")
 	ErrACLNotAuthorized       = errors.New("ACL not authorized")
-
-	// rwBufSize is the size of client read/write buffers.
-	rwBufSize = 512
 )
 
 // Server is an MQTT broker server.
@@ -91,16 +88,19 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 // Serve begins the event loops for establishing client connections on all
 // attached listeners.
 func (s *Server) Serve() error {
-	s.listeners.ServeAll(s.EstablishConnection2)
+	s.listeners.ServeAll(s.EstablishConnection)
 
 	return nil
 }
 
 // EstablishConnection establishes a new client connection with the broker.
-func (s *Server) EstablishConnection2(lid string, c net.Conn, ac auth.Controller) error {
-	var size int64 = 1024 * 256
-
-	p := NewProcessor(c, circ.NewReader(size), circ.NewWriter(size))
+func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
+	p := NewProcessor(
+		c,
+		circ.NewReader(0, 0),
+		circ.NewWriter(0, 0),
+	)
+	p.Start()
 
 	// Pull the header from the first packet and check for a CONNECT message.
 	fh := new(packets.FixedHeader)
@@ -109,9 +109,94 @@ func (s *Server) EstablishConnection2(lid string, c net.Conn, ac auth.Controller
 		return ErrReadConnectFixedHeader
 	}
 
-	return nil
+	// Read the first packet expecting a CONNECT message.
+	pk, err := p.Read()
+	if err != nil {
+		return ErrReadConnectPacket
+	}
+
+	// Ensure first packet is a connect packet.
+	msg, ok := pk.(*packets.ConnectPacket)
+	if !ok {
+		return ErrFirstPacketInvalid
+	}
+
+	// Ensure the packet conforms to MQTT CONNECT specifications.
+	retcode, _ := msg.Validate()
+	if retcode != packets.Accepted {
+		return ErrReadConnectInvalid
+	}
+
+	// If a username and password has been provided, perform authentication.
+	if msg.Username != "" && !ac.Authenticate(msg.Username, msg.Password) {
+		retcode = packets.CodeConnectNotAuthorised
+		return ErrConnectNotAuthorized
+	}
+
+	// Create a new client with this connection.
+	client := newClient(p, msg, ac)
+	client.listener = lid // Note the listener the client is connected to.
+
+	// If it's not a clean session and a client already exists with the same
+	// id, inherit the session.
+	var sessionPresent bool
+	if existing, ok := s.clients.get(msg.ClientIdentifier); ok {
+		existing.Lock()
+		existing.close()
+		if msg.CleanSession {
+			for k := range existing.subscriptions {
+				s.topics.Unsubscribe(k, existing.id)
+			}
+		} else {
+			client.inFlight = existing.inFlight // Inherit from existing session.
+			client.subscriptions = existing.subscriptions
+			sessionPresent = true
+		}
+		existing.Unlock()
+	}
+
+	// Add the new client to the clients manager.
+	s.clients.add(client)
+
+	// Send a CONNACK back to the client.
+	err = s.writeClient(client, &packets.ConnackPacket{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Connack,
+		},
+		SessionPresent: sessionPresent,
+		ReturnCode:     retcode,
+	})
+	if err != nil {
+		fmt.Println("WRITECLIENT err", err)
+		return err
+	}
+
+	fmt.Println("----------------")
+
+	// Resend any unacknowledged QOS messages still pending for the client.
+	/*err = s.resendInflight(client)
+	if err != nil {
+		return err
+	}*/
+
+	// Block and listen for more packets, and end if an error or nil packet occurs.
+	var sendLWT bool
+	err = s.readClient(client)
+	if err != nil {
+		sendLWT = true // Only send LWT on bad disconnect [MQTT-3.14.4-3]
+	}
+
+	fmt.Println("** stop and wait", err)
+
+	// Publish last will and testament.
+	s.closeClient(client, sendLWT)
+
+	fmt.Println("stopped")
+
+	return err // capture err or nil from readClient.
 }
 
+/*
 // EstablishConnection establishes a new client connection with the broker.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
 
@@ -205,6 +290,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	return err // capture err or nil from readClient.
 }
+*/
 
 // resendInflight republishes any inflight messages to the client.
 func (s *Server) resendInflight(cl *client) error {
@@ -226,7 +312,7 @@ func (s *Server) readClient(cl *client) error {
 	var err error
 	var pk packets.Packet
 	fh := new(packets.FixedHeader)
-
+	fmt.Println("STARTING READ CLIENT LOOP")
 DONE:
 	for {
 		select {
@@ -250,14 +336,19 @@ DONE:
 
 			// If it's a disconnect packet, begin the close process.
 			if fh.Type == packets.Disconnect {
-				return nil
+				fmt.Println(" X got disconnect")
+				break DONE
 			}
 
 			// Otherwise read in the packet payload.
 			pk, err = cl.p.Read()
 			if err != nil {
-				return ErrReadPacketPayload
+				fmt.Println("RC READ ERR", err)
+				//return ErrReadPacketPayload
+				return nil
 			}
+
+			fmt.Println("READ PACKET", pk)
 
 			// Validate the packet if necessary.
 			_, err = pk.Validate()
@@ -270,6 +361,7 @@ DONE:
 		}
 	}
 
+	fmt.Println("READCLIENT COMPLETED")
 	return nil
 }
 
@@ -555,8 +647,8 @@ func (s *Server) processUnsubscribe(cl *client, pk *packets.UnsubscribePacket) e
 
 // writeClient writes packets to a client connection.
 func (s *Server) writeClient(cl *client, pk packets.Packet) error {
-	cl.p.Lock()
-	defer cl.p.Unlock()
+	cl.p.W.Lock()
+	defer cl.p.W.Unlock()
 
 	// Ensure Writer is open.
 	if cl.p.W == nil {
@@ -571,11 +663,6 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 
 	// Write packet to client.
 	_, err = buf.WriteTo(cl.p.W)
-	if err != nil {
-		return err
-	}
-
-	err = cl.p.W.Flush()
 	if err != nil {
 		return err
 	}
