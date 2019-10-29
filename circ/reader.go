@@ -62,15 +62,24 @@ DONE:
 		n, err := r.Read(b.buf[start:end])
 		total += int64(n) // incr total bytes read.
 		if err != nil {
+			debug.Println("*[R] r.READ error", err)
 			break DONE
 		}
+		debug.Println(b.id, "*[R] READ (start, end, n)", start, n, b.buf[start:start+int64(n)])
 
 		// Move the head forward.
 		debug.Println(b.id, "*[R] STORE HEAD", start+int64(n))
 		atomic.StoreInt64(&b.head, start+int64(n))
+
+		debug.Println(b.id, "##### *[R] wcond.Locking")
 		b.wcond.L.Lock()
+		debug.Println(b.id, "##### *[R] wcond.Locked")
+		debug.Println(b.id, "##### *[R] wcond.Broadcasting")
 		b.wcond.Broadcast()
+		debug.Println(b.id, "##### *[R] wcond.Broadcasted")
+		debug.Println(b.id, "##### *[R] wcond.Unlocking")
 		b.wcond.L.Unlock()
+		debug.Println(b.id, "##### *[R] wcond.Unlocked")
 	}
 
 	debug.Println(b.id, "*[R] FINISHED SPIN")
@@ -80,19 +89,33 @@ DONE:
 
 // Peek returns the next n bytes without advancing the reader.
 func (b *Reader) Peek(n int64) ([]byte, error) {
+	debug.Println(b.id, "[R] START PEEKING (n)", n)
+
 	tail := atomic.LoadInt64(&b.tail)
-	head := atomic.LoadInt64(&b.head)
+	var head int64
+	//head := atomic.LoadInt64(&b.head)
 
 	// Wait until there's at least 1 byte of data.
-	debug.Println(b.id, "[R] PEEKING (tail, head, n)", tail, head, n)
+	debug.Println(b.id, "[R] PEEKING (tail, head, n)", tail, head, n, "/", atomic.LoadInt64(&b.head))
+
+	debug.Println(b.id, "##### [R] wcond.Locking")
 	b.wcond.L.Lock()
-	for ; head == tail; head = atomic.LoadInt64(&b.head) {
+	debug.Println(b.id, "##### [R] wcond.Locked")
+	for head = atomic.LoadInt64(&b.head); head == atomic.LoadInt64(&b.tail); head = atomic.LoadInt64(&b.head) {
+		debug.Println(b.id, "[R] PEEKING insufficient (tail, head)", tail, head)
 		if atomic.LoadInt64(&b.done) == 1 {
+			debug.Println(b.id, "************ [R] PEEK caught DONE")
+			b.wcond.L.Unlock() // make sure we unlock
 			return nil, io.EOF
 		}
+		debug.Println(b.id, "##### [R] wcond.Waiting")
 		b.wcond.Wait()
+		debug.Println(b.id, "##### [R] wcond.Waited")
+
 	}
+	debug.Println(b.id, "##### [R] wcond.Unlocking")
 	b.wcond.L.Unlock()
+	debug.Println(b.id, "##### [R] wcond.Unlocked")
 	debug.Println(b.id, "[R] PEEKING available")
 
 	// Figure out if we can get all n bytes.

@@ -185,54 +185,57 @@ func BenchmarkServerClose(b *testing.B) {
  */
 
 func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
-	s := New()
-	r, w := net.Pipe()
-	o := make(chan error)
-	go func() {
-		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
-	}()
+	for x := 0; x < 10000; x++ {
+		fmt.Println("===========================", x)
+		s := New()
+		r, w := net.Pipe()
+		o := make(chan error)
+		go func() {
+			o <- s.EstablishConnection("tcp", r, new(auth.Allow))
+		}()
 
-	go func() {
-		w.Write([]byte{
-			byte(packets.Connect << 4), 15, // Fixed header
-			0, 4, // Protocol Name - MSB+LSB
-			'M', 'Q', 'T', 'T', // Protocol Name
-			4,     // Protocol Version
-			2,     // Packet Flags - clean session
-			0, 45, // Keepalive
-			0, 3, // Client ID - MSB+LSB
-			'z', 'e', 'n', // Client ID "zen"
-		})
-		w.Write([]byte{byte(packets.Disconnect << 4), 0})
-	}()
+		go func() {
+			w.Write([]byte{
+				byte(packets.Connect << 4), 15, // Fixed header
+				0, 4, // Protocol Name - MSB+LSB
+				'M', 'Q', 'T', 'T', // Protocol Name
+				4,     // Protocol Version
+				2,     // Packet Flags - clean session
+				0, 45, // Keepalive
+				0, 3, // Client ID - MSB+LSB
+				'z', 'e', 'n', // Client ID "zen"
+			})
+			w.Write([]byte{byte(packets.Disconnect << 4), 0})
+		}()
 
-	recv := make(chan []byte)
-	go func() {
-		buf, err := ioutil.ReadAll(w)
-		if err != nil {
-			panic(err)
+		recv := make(chan []byte)
+		go func() {
+			buf, err := ioutil.ReadAll(w)
+			if err != nil {
+				panic(err)
+			}
+			recv <- buf
+		}()
+
+		//time.Sleep(10 * time.Millisecond)
+		s.clients.Lock()
+		for _, v := range s.clients.internal {
+			v.close()
+			break
 		}
-		recv <- buf
-	}()
+		s.clients.Unlock()
 
-	//time.Sleep(10 * time.Millisecond)
-	s.clients.Lock()
-	for _, v := range s.clients.internal {
-		v.close()
-		break
+		errx := <-o
+		require.NoError(t, errx)
+		require.Equal(t, []byte{
+			byte(packets.Connack << 4), 2,
+			0, packets.Accepted,
+		}, <-recv)
+
+		fmt.Println()
+
+		w.Close()
 	}
-	s.clients.Unlock()
-
-	errx := <-o
-	require.NoError(t, errx)
-	require.Equal(t, []byte{
-		byte(packets.Connack << 4), 2,
-		0, packets.Accepted,
-	}, <-recv)
-
-	fmt.Println()
-
-	w.Close()
 }
 
 /*

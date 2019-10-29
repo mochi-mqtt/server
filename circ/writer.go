@@ -23,17 +23,20 @@ func NewWriter(size, block int64) *Writer {
 
 // WriteTo writes the contents of the buffer to an io.Writer.
 func (b *Writer) WriteTo(w io.Writer) (total int64, err error) {
+	debug.Println(b.id, "*[R] STARTING SPIN")
 	var p []byte
 	var n int
+DONE:
 	for {
 		cd := b.capDelta(atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head))
-		debug.Println(b.id, "SPIN (tail, head, delta)", b.tail, b.head, cd)
+		debug.Println(b.id, "* [W] SPIN (tail, head, delta)", b.tail, b.head, cd)
 		if atomic.LoadInt64(&b.done) == 1 {
 			if cd == 0 {
 				err = io.EOF
-				return total, err
+				debug.Println(b.id, "************ *[W] caught DONE")
+				break DONE
 			} else {
-				debug.Println("[W] //// capDelta not reached", cd)
+				debug.Println("*[W] //// capDelta not reached", cd)
 			}
 		}
 
@@ -41,30 +44,39 @@ func (b *Writer) WriteTo(w io.Writer) (total int64, err error) {
 		// of the Reader type.
 		p, err = (*Reader)(b).Peek(b.block)
 		if err != nil {
-			debug.Println(b.id, "[W] writeTo peek err (p, err)", p, err)
+			debug.Println(b.id, "*[W] writeTo peek err (p, err)", p, err)
 			continue
 			//break DONE
 		}
-		debug.Println(b.id, "[W] PEEKED OK (p)", p)
+		debug.Println(b.id, "*[W] PEEKED OK (p)", p)
 
 		// Write the peeked bytes to the io.Writer.
 		n, err = w.Write(p)
 		total += int64(n)
 		if err != nil {
-			return total, err
+			debug.Println(b.id, "*[W] io READ err", err)
+			break DONE
 		}
 
-		debug.Println(b.id, "[W] SENT (n, p)", n, p)
+		debug.Println(b.id, "*[W] SENT (n, p)", n, p)
 
 		// Move the tail forward the bytes written.
 		end := (atomic.LoadInt64(&b.tail) + int64(n)) % b.size
-		debug.Println(b.id, "[W] STORE TAIL", end)
+		debug.Println(b.id, "*[W] STORE TAIL", end)
 		atomic.StoreInt64(&b.tail, end)
+
+		debug.Println(b.id, "##### *[W] rcond.Locking")
 		b.rcond.L.Lock()
+		debug.Println(b.id, "##### *[W] rcond.Locked")
+		debug.Println(b.id, "##### *[W] rcond.Broadcasting")
 		b.rcond.Broadcast()
+		debug.Println(b.id, "##### *[W] rcond.Broadcasted")
+		debug.Println(b.id, "##### *[W] rcond.Unlocking")
 		b.rcond.L.Unlock()
-		debug.Println(b.id, "[W] writeTo unlocked")
+		debug.Println(b.id, "##### *[W] rcond.Unlocked")
 	}
+
+	debug.Println(b.id, "*[W] FINISHED SPIN")
 
 	return
 }
@@ -90,9 +102,15 @@ func (b *Writer) Write(p []byte) (nn int, err error) {
 	atomic.StoreInt64(&b.head, next)
 	debug.Println(b.id, "[W] STORE HEAD", next)
 
+	debug.Println(b.id, "##### [W] wcond.Locking")
 	b.wcond.L.Lock()
+	debug.Println(b.id, "##### [W] rcond.Locked")
+	debug.Println(b.id, "##### [W] rcond.Broadcasting")
 	b.wcond.Broadcast()
+	debug.Println(b.id, "##### [W] rcond.Broadcasted")
+	debug.Println(b.id, "##### [W] rcond.Unlocking")
 	b.wcond.L.Unlock()
+	debug.Println(b.id, "##### [W] rcond.Unlocked")
 
 	return
 }

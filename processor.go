@@ -24,10 +24,13 @@ type Processor struct {
 	W *circ.Writer
 
 	// started tracks the goroutines which have been started.
-	started sync.WaitGroup
+	started *sync.WaitGroup
 
-	// ended tracks the goroutines which have ended.
-	ended sync.WaitGroup
+	// endedW tracks when the writer has ended.
+	endedW *sync.WaitGroup
+
+	// endedR tracks when the reader has ended.
+	endedR *sync.WaitGroup
 
 	// FixedHeader is the FixedHeader from the last read packet.
 	FixedHeader packets.FixedHeader
@@ -36,55 +39,68 @@ type Processor struct {
 // NewProcessor returns a new instance of Processor.
 func NewProcessor(c net.Conn, r *circ.Reader, w *circ.Writer) *Processor {
 	return &Processor{
-		Conn: c,
-		R:    r,
-		W:    w,
+		Conn:    c,
+		R:       r,
+		W:       w,
+		started: new(sync.WaitGroup),
+		endedW:  new(sync.WaitGroup),
+		endedR:  new(sync.WaitGroup),
 	}
 
 }
 
 // Start spins up the reader and writer goroutines.
 func (p *Processor) Start() {
-	go func() {
-		defer p.ended.Done()
-		fmt.Println("starting readFrom", p.Conn)
-		p.started.Done()
-		n, err := p.R.ReadFrom(p.Conn)
-		if err != nil {
-			//
-		}
-		fmt.Println(">>> finished ReadFrom", n, err)
-	}()
+	p.started.Add(2)
+	fmt.Println("\t\tWG Started ADD", 2)
 
-	go func() {
-		defer p.ended.Done()
-		fmt.Println("starting writeTo", p.Conn)
+	go func(start, end *sync.WaitGroup) {
+		defer p.endedW.Done()
 		p.started.Done()
+
+		fmt.Println("starting writeTo", p.Conn)
 		n, err := p.W.WriteTo(p.Conn)
 		if err != nil {
-			//
+			// ...
 		}
 
 		fmt.Println(">>> finished WriteTo", n, err)
-	}()
+	}(p.started, p.endedW)
+	p.endedW.Add(1)
 
-	p.started.Add(2)
-	p.ended.Add(2)
+	go func(start, end *sync.WaitGroup) {
+		defer p.endedR.Done()
+		p.started.Done()
+
+		fmt.Println("starting readFrom", p.Conn)
+		n, err := p.R.ReadFrom(p.Conn)
+		if err != nil {
+			// ...
+		}
+
+		//
+		fmt.Println(">>> finished ReadFrom", n, err)
+	}(p.started, p.endedR)
+	p.endedR.Add(1)
+
+	fmt.Println("\t\tWG Started Waiting")
 	p.started.Wait()
+	fmt.Println("Started OK")
 }
 
 // Stop stops the processor goroutines.
 func (p *Processor) Stop() {
-	fmt.Println("processor stop")
-
 	p.W.Close()
+	p.endedW.Wait()
+
 	if p.Conn != nil {
 		p.Conn.Close()
+	} else {
+		fmt.Println("--// Conn is nil")
 	}
+
 	p.R.Close()
-
-	p.ended.Wait()
-
+	p.endedR.Wait()
 }
 
 // RefreshDeadline refreshes the read/write deadline for the net.Conn connection.
