@@ -52,9 +52,10 @@ func (q *quietWriter) Flush() error {
 }
 
 func setupClient(id string) (s *Server, r net.Conn, w net.Conn, cl *client) {
+	r, w = net.Pipe()
 	s = New()
-	cl = newClient(
-		NewProcessor(new(MockNetConn), circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize)),
+	cl = newClient( // new(MockNetConn)
+		NewProcessor(r, circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize)),
 		&packets.ConnectPacket{
 			ClientIdentifier: id,
 		},
@@ -176,6 +177,8 @@ func BenchmarkServerClose(b *testing.B) {
 		s.Close()
 		s.listeners.Delete("t1")
 	}
+
+	fmt.Println()
 }
 
 /*
@@ -183,75 +186,17 @@ func BenchmarkServerClose(b *testing.B) {
  * Server Establish Connection
 
  */
-
 func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
-	for x := 0; x < 10000; x++ {
-		fmt.Println("===========================", x)
-		s := New()
-		r, w := net.Pipe()
-		o := make(chan error)
-		go func() {
-			o <- s.EstablishConnection("tcp", r, new(auth.Allow))
-		}()
-
-		go func() {
-			w.Write([]byte{
-				byte(packets.Connect << 4), 15, // Fixed header
-				0, 4, // Protocol Name - MSB+LSB
-				'M', 'Q', 'T', 'T', // Protocol Name
-				4,     // Protocol Version
-				2,     // Packet Flags - clean session
-				0, 45, // Keepalive
-				0, 3, // Client ID - MSB+LSB
-				'z', 'e', 'n', // Client ID "zen"
-			})
-			w.Write([]byte{byte(packets.Disconnect << 4), 0})
-		}()
-
-		recv := make(chan []byte)
-		go func() {
-			buf, err := ioutil.ReadAll(w)
-			if err != nil {
-				panic(err)
-			}
-			recv <- buf
-		}()
-
-		//time.Sleep(10 * time.Millisecond)
-		s.clients.Lock()
-		for _, v := range s.clients.internal {
-			v.close()
-			break
-		}
-		s.clients.Unlock()
-
-		errx := <-o
-		require.NoError(t, errx)
-		require.Equal(t, []byte{
-			byte(packets.Connack << 4), 2,
-			0, packets.Accepted,
-		}, <-recv)
-
-		fmt.Println()
-
-		w.Close()
-	}
-}
-
-/*
-func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
-	r2, _ := net.Pipe()
 	s := New()
-	px := NewProcessor(r2, circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize))
-	px.Start()
 	s.clients.internal["zen"] = newClient(
-		px,
+		NewProcessor(new(MockNetConn), circ.NewReader(32, 8), circ.NewWriter(32, 8)),
 		&packets.ConnectPacket{ClientIdentifier: "zen"},
 		new(auth.Allow),
 	)
-	s.clients.internal["zen"].subscriptions = map[string]byte{
+	subs := map[string]byte{
 		"a/b/c": 1,
 	}
+	s.clients.internal["zen"].subscriptions = subs
 
 	r, w := net.Pipe()
 	o := make(chan error)
@@ -271,8 +216,6 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 			'z', 'e', 'n', // Client ID "zen"
 		})
 		w.Write([]byte{byte(packets.Disconnect << 4), 0})
-		r.Close()
-		s.clients.internal["zen"].close()
 	}()
 
 	recv := make(chan []byte)
@@ -284,21 +227,29 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 		recv <- buf
 	}()
 
-	require.NoError(t, <-o)
+	s.clients.Lock()
+	for _, v := range s.clients.internal {
+		v.close()
+		break
+	}
+	s.clients.Unlock()
+
+	errx := <-o
+	require.NoError(t, errx)
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
 		0, packets.Accepted,
 	}, <-recv)
+
+	require.Empty(t, s.clients.internal["zen"].subscriptions)
+
 	w.Close()
 }
 
-/*
-
 func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
-	r2, w2 := net.Pipe()
 	s := New()
 	s.clients.internal["zen"] = newClient(
-		NewParser(r2, newBufioReader(r2), newBufioWriter(w2)),
+		NewProcessor(new(MockNetConn), circ.NewReader(32, 8), circ.NewWriter(32, 8)),
 		&packets.ConnectPacket{ClientIdentifier: "zen"},
 		new(auth.Allow),
 	)
@@ -325,8 +276,6 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 			'z', 'e', 'n', // Client ID "zen"
 		})
 		w.Write([]byte{byte(packets.Disconnect << 4), 0})
-		r.Close()
-		s.clients.internal["zen"].close()
 	}()
 
 	recv := make(chan []byte)
@@ -347,9 +296,51 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 	w.Close()
 }
 
+func TestServerEstablishConnectionSendLWT(t *testing.T) {
+	s := New()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
+	}()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 15, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			0,     // Packet Flags
+			0, 45, // Keepalive
+			0, 3, // Client ID - MSB+LSB
+			'z', 'e', 'n', // Client ID "zen"
+		})
+	}()
+
+	go func() {
+		_, err := ioutil.ReadAll(w)
+		if err != nil {
+			fmt.Println("read closed")
+		}
+	}()
+
+	time.Sleep(time.Millisecond * 10)
+	r.Close()
+	w.Close()
+
+	s.clients.Lock()
+	for _, v := range s.clients.internal {
+		v.close()
+		break
+	}
+	s.clients.Unlock()
+
+	require.Error(t, <-o)
+}
+
 func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 	r, w := net.Pipe()
-
 	go func() {
 		w.Write([]byte{99})
 		w.Close()
@@ -361,22 +352,6 @@ func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 	r.Close()
 	require.Error(t, err)
 	require.Equal(t, ErrReadConnectFixedHeader, err)
-}
-
-func TestServerEstablishConnectionBadConnectPacket(t *testing.T) {
-	r, w := net.Pipe()
-
-	go func() {
-		w.Write([]byte{byte(packets.Connect << 4), 17})
-		w.Close()
-	}()
-
-	s := New()
-	err := s.EstablishConnection("tcp", r, new(auth.Allow))
-	r.Close()
-
-	require.Error(t, err)
-	require.Equal(t, ErrReadConnectPacket, err)
 }
 
 func TestServerEstablishConnectionNotConnectPacket(t *testing.T) {
@@ -396,29 +371,21 @@ func TestServerEstablishConnectionNotConnectPacket(t *testing.T) {
 
 	r.Close()
 	require.Error(t, err)
-	require.Equal(t, ErrFirstPacketInvalid, err)
+	require.Equal(t, ErrReadConnectInvalid, err)
 }
 
 func TestServerEstablishConnectionInvalidConnectPacket(t *testing.T) {
 	r, w := net.Pipe()
 
 	go func() {
-		w.Write([]byte{
-			byte(packets.Connect << 4), 13, // Fixed header
-			0, 2, // Protocol Name - MSB+LSB
-			'M', 'Q', // ** NON-CONFORMING Protocol Name
-			4,     // Protocol Version
-			2,     // Packet Flags
-			0, 45, // Keepalive
-			0, 3, // Client ID - MSB+LSB
-			'z', 'e', 'n', // Client ID "zen"
-		})
+		w.Write([]byte{byte(packets.Connect << 4), 17})
 		w.Close()
 	}()
 
 	s := New()
 	err := s.EstablishConnection("tcp", r, new(auth.Allow))
 	r.Close()
+
 	require.Error(t, err)
 	require.Equal(t, ErrReadConnectInvalid, err)
 }
@@ -452,75 +419,8 @@ func TestServerEstablishConnectionBadAuth(t *testing.T) {
 	require.Equal(t, ErrConnectNotAuthorized, err)
 }
 
-func TestServerEstablishConnectionWriteClientError(t *testing.T) {
-	r, w := net.Pipe()
-
-	go func() {
-		w.Write([]byte{
-			byte(packets.Connect << 4), 15, // Fixed header
-			0, 4, // Protocol Name - MSB+LSB
-			'M', 'Q', 'T', 'T', // Protocol Name
-			4,     // Protocol Version
-			0,     // Packet Flags
-			0, 60, // Keepalive
-			0, 3, // Client ID - MSB+LSB
-			'z', 'e', 'n', // Client ID "zen"
-		})
-
-	}()
-
-	o := make(chan error)
-	go func() {
-		s := New()
-		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
-	}()
-
-	time.Sleep(5 * time.Millisecond)
-
-	w.Close()
-	require.Error(t, <-o)
-	r.Close()
-}
-
-func TestServerEstablishConnectionReadClientError(t *testing.T) {
-	r, w := net.Pipe()
-
-	o := make(chan error)
-	go func() {
-		s := New()
-		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
-	}()
-
-	go func() {
-		w.Write([]byte{
-			byte(packets.Connect << 4), 15, // Fixed header
-			0, 4, // Protocol Name - MSB+LSB
-			'M', 'Q', 'T', 'T', // Protocol Name
-			4,     // Protocol Version
-			2,     // Packet Flags
-			0, 45, // Keepalive
-			0, 3, // Client ID - MSB+LSB
-			'z', 'e', 'n', // Client ID "zen"
-		})
-	}()
-
-	go func() {
-		_, err := ioutil.ReadAll(w)
-		if err != nil {
-			panic(err)
-		}
-		w.Close()
-	}()
-
-	time.Sleep(10 * time.Millisecond)
-	r.Close()
-	require.Error(t, <-o)
-}
-
 func TestResendInflight(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
-	cl.p.W = new(quietWriter)
-
 	cl.inFlight.set(1, &inFlightMessage{
 		packet: &packets.PublishPacket{
 			FixedHeader: packets.FixedHeader{
@@ -544,16 +444,16 @@ func TestResendInflight(t *testing.T) {
 		'a', '/', 'b', '/', 'c', // Topic Name
 		0, 1, // packet id from qos=1
 		'h', 'e', 'l', 'l', 'o', // Payload)
-	}, cl.p.W.(*quietWriter).f[0])
+	}, cl.p.W.Get()[:16])
 }
 
 func TestResendInflightWriteError(t *testing.T) {
 	s, _, _, cl := setupClient("zen")
-	cl.p.W = &quietWriter{errAfter: -1}
 	cl.inFlight.set(1, &inFlightMessage{
 		packet: &packets.PublishPacket{},
 	})
 
+	cl.p.W.Close()
 	err := s.resendInflight(cl)
 	require.Error(t, err)
 }
@@ -562,33 +462,33 @@ func TestResendInflightWriteError(t *testing.T) {
 
  * Server Read Client
 
-*/
-/*
+ */
+
 func TestServerReadClientOK(t *testing.T) {
 	s, r, w, cl := setupClient("zen")
 
 	go func() {
+		close(cl.end)
 		w.Write([]byte{
 			byte(packets.Publish << 4), 18, // Fixed header
 			0, 5, // Topic Name - LSB+MSB
 			'a', '/', 'b', '/', 'c', // Topic Name
 			'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload
 		})
-		close(cl.end)
-	}()
 
-	time.Sleep(10 * time.Millisecond)
+	}()
 
 	o := make(chan error)
 	go func() {
 		o <- s.readClient(cl)
 	}()
 
-	require.NoError(t, <-o)
 	w.Close()
 	r.Close()
+	require.NoError(t, <-o)
 }
 
+/*
 func TestServerReadClientNoConn(t *testing.T) {
 	s, r, _, cl := setupClient("zen")
 	cl.p.Conn.Close()

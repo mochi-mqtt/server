@@ -1,6 +1,7 @@
 package mqtt
 
 import (
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -38,8 +39,7 @@ func TestProcessorRefreshDeadline(t *testing.T) {
 }
 
 func BenchmarkProcessorRefreshDeadline(b *testing.B) {
-	conn := new(MockNetConn)
-	p := NewProcessor(conn, circ.NewReader(16, 4), circ.NewWriter(16, 4))
+	p := NewProcessor(new(MockNetConn), circ.NewReader(16, 4), circ.NewWriter(16, 4))
 
 	for n := 0; n < b.N; n++ {
 		p.RefreshDeadline(10)
@@ -47,31 +47,75 @@ func BenchmarkProcessorRefreshDeadline(b *testing.B) {
 }
 
 func TestProcessorReadFixedHeader(t *testing.T) {
-	conn := new(MockNetConn)
+	p := NewProcessor(new(MockNetConn), circ.NewReader(16, 4), circ.NewWriter(16, 4))
 
-	p := NewProcessor(conn, circ.NewReader(16, 4), circ.NewWriter(16, 4))
-
-	// Test null data.
 	fh := new(packets.FixedHeader)
-	err := p.ReadFixedHeader(fh)
-	require.Error(t, err)
-
-	// Test insufficient peeking.
-	fh = new(packets.FixedHeader)
-	p.R.Set([]byte{packets.Connect << 4}, 0, 1)
-	p.R.SetPos(0, 1)
-	err = p.ReadFixedHeader(fh)
-	require.Error(t, err)
-
-	fh = new(packets.FixedHeader)
 	p.R.Set([]byte{packets.Connect << 4, 0x00}, 0, 2)
 	p.R.SetPos(0, 2)
-	err = p.ReadFixedHeader(fh)
+	fmt.Println("c")
+	err := p.ReadFixedHeader(fh)
 	require.NoError(t, err)
 
 	tail, head := p.R.GetPos()
 	require.Equal(t, int64(2), tail)
 	require.Equal(t, int64(2), head)
+
+	p.Stop()
+}
+
+func TestProcessorReadFixedHeaderPeekError(t *testing.T) {
+	p := NewProcessor(new(MockNetConn), circ.NewReader(16, 4), circ.NewWriter(16, 4))
+
+	o := make(chan error)
+	go func() {
+		fh := new(packets.FixedHeader)
+		o <- p.ReadFixedHeader(fh)
+	}()
+	time.Sleep(time.Millisecond)
+
+	p.Stop()
+	require.Error(t, <-o)
+}
+
+func TestProcessorReadFixedHeaderDecodeError(t *testing.T) {
+	p := NewProcessor(new(MockNetConn), circ.NewReader(16, 4), circ.NewWriter(16, 4))
+
+	o := make(chan error)
+	go func() {
+		fh := new(packets.FixedHeader)
+		p.R.Set([]byte{packets.Connect<<4 | 1<<1, 0x00, 0x00}, 0, 2)
+		p.R.SetPos(0, 2)
+		o <- p.ReadFixedHeader(fh)
+	}()
+	time.Sleep(time.Millisecond)
+
+	p.Stop()
+	require.Error(t, <-o)
+}
+
+func TestProcessorReadFixedHeaderNoLengthTerminator(t *testing.T) {
+	p := NewProcessor(new(MockNetConn), circ.NewReader(16, 4), circ.NewWriter(16, 4))
+
+	fh := new(packets.FixedHeader)
+	p.R.Set([]byte{packets.Connect << 4, 0xd5, 0x86, 0xf9, 0x9e, 0x01}, 0, 5)
+	p.R.SetPos(0, 5)
+	err := p.ReadFixedHeader(fh)
+
+	require.Error(t, err)
+	require.Equal(t, packets.ErrOversizedLengthIndicator, err)
+	p.Stop()
+
+}
+
+func TestProcessorReadFixedHeaderInsufficientPeek(t *testing.T) {
+	p := NewProcessor(new(MockNetConn), circ.NewReader(16, 4), circ.NewWriter(16, 4))
+
+	fh := new(packets.FixedHeader)
+	p.R.Set([]byte{packets.Connect << 4}, 0, 1)
+	p.R.SetPos(0, 1)
+	err := p.ReadFixedHeader(fh)
+	require.Error(t, err)
+	p.Stop()
 }
 
 func TestProcessorRead(t *testing.T) {

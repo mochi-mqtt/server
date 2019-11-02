@@ -251,7 +251,7 @@ func TestClientClose(t *testing.T) {
 	case _, ok = <-client.end:
 	}
 	require.Equal(t, false, ok)
-	require.Nil(t, client.p.Conn)
+	require.Equal(t, true, client.wasClosed)
 }
 
 func TestInFlightSet(t *testing.T) {

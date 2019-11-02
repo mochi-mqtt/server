@@ -11,6 +11,12 @@ import (
 	"github.com/mochi-co/mqtt/packets"
 )
 
+var (
+	// ErrInsufficientBytes indicates that there were not enough bytes
+	// in the buffer to read/peek.
+	ErrInsufficientBytes = fmt.Errorf("Insufficient bytes in buffer")
+)
+
 // Processor reads and writes bytes to a network connection.
 type Processor struct {
 
@@ -52,54 +58,34 @@ func NewProcessor(c net.Conn, r *circ.Reader, w *circ.Writer) *Processor {
 // Start spins up the reader and writer goroutines.
 func (p *Processor) Start() {
 	p.started.Add(2)
-	fmt.Println("\t\tWG Started ADD", 2)
 
 	go func(start, end *sync.WaitGroup) {
 		defer p.endedW.Done()
 		p.started.Done()
-
-		fmt.Println("starting writeTo", p.Conn)
-		n, err := p.W.WriteTo(p.Conn)
-		if err != nil {
-			// ...
-		}
-
-		fmt.Println(">>> finished WriteTo", n, err)
+		p.W.WriteTo(p.Conn)
 	}(p.started, p.endedW)
 	p.endedW.Add(1)
 
 	go func(start, end *sync.WaitGroup) {
 		defer p.endedR.Done()
 		p.started.Done()
-
-		fmt.Println("starting readFrom", p.Conn)
-		n, err := p.R.ReadFrom(p.Conn)
-		if err != nil {
-			// ...
-		}
-
-		//
-		fmt.Println(">>> finished ReadFrom", n, err)
+		p.R.ReadFrom(p.Conn)
 	}(p.started, p.endedR)
 	p.endedR.Add(1)
 
-	fmt.Println("\t\tWG Started Waiting")
 	p.started.Wait()
 	fmt.Println("Started OK")
 }
 
 // Stop stops the processor goroutines.
 func (p *Processor) Stop() {
+	p.R.Close()
 	p.W.Close()
 	p.endedW.Wait()
 
 	if p.Conn != nil {
 		p.Conn.Close()
-	} else {
-		fmt.Println("--// Conn is nil")
 	}
-
-	p.R.Close()
 	p.endedR.Wait()
 }
 
@@ -132,7 +118,6 @@ func (p *Processor) ReadFixedHeader(fh *packets.FixedHeader) error {
 	// The remaining length value can be up to 5 bytes. Peek through each byte
 	// looking for continue values, and if found increase the peek. Otherwise
 	// decode the bytes that were legit.
-	//p.fhBuffer = p.fhBuffer[:0]
 	buf := make([]byte, 0, 6)
 	i := 1
 	var b int64 = 2 // need this var later.
@@ -143,6 +128,9 @@ func (p *Processor) ReadFixedHeader(fh *packets.FixedHeader) error {
 		}
 
 		// Add the byte to the length bytes slice.
+		if i >= len(peeked) {
+			return ErrInsufficientBytes
+		}
 		buf = append(buf, peeked[i])
 
 		// If it's not a continuation flag, end here.
@@ -150,7 +138,7 @@ func (p *Processor) ReadFixedHeader(fh *packets.FixedHeader) error {
 			break
 		}
 
-		// If i has reached 4 without a length terminator, throw a protocol violation.
+		// If i has reached 4 without a length terminator, return a protocol violation.
 		i++
 		if i == 4 {
 			return packets.ErrOversizedLengthIndicator
@@ -216,18 +204,6 @@ func (p *Processor) Read() (pk packets.Packet, err error) {
 	if err != nil {
 		return pk, err
 	}
-
-	/*
-		bt, err := p.R.Peek(p.FixedHeader.Remaining)
-		if err != nil {
-			return pk, err
-		}
-
-		err = p.R.CommitTail(p.FixedHeader.Remaining)
-		if err != nil {
-			return err
-		}
-	*/
 
 	// Decode the remaining packet values using a fresh copy of the bytes,
 	// otherwise the next packet will change the data of this one.

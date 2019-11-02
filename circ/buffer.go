@@ -80,7 +80,12 @@ func newBuffer(size, block int64) buffer {
 func (b *buffer) Close() {
 	atomic.StoreInt64(&b.done, 1)
 	debug.Println(b.id, "[B]  STORE done=1 buffer closing")
+	b.Bump()
+	debug.Println(b.id, "[B]  DONE REBROADCASTED")
+}
 
+// Bump will broadcast all sync conditions.
+func (b *buffer) Bump() {
 	debug.Println(b.id, "##### [X] wcond.Locking")
 	b.wcond.L.Lock()
 	debug.Println(b.id, "##### [X] wcond.Locked")
@@ -100,23 +105,28 @@ func (b *buffer) Close() {
 	debug.Println(b.id, "##### [Y] rcond.Unlocking")
 	b.rcond.L.Unlock()
 	debug.Println(b.id, "##### [Y] rcond.Unlocked")
-
-	debug.Println(b.id, "[B]  DONE REBROADCASTED")
 }
 
 // Get will return the tail and head positions of the buffer.
+// This method is for use with testing.
 func (b *buffer) GetPos() (int64, int64) {
 	return atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head)
 }
 
-// SetPos sets the head and tail of the buffer. This method should only be
-// used for testing.
+// Get returns the internal buffer. This method is for use with testing.
+// This method is for use with testing.
+func (b *buffer) Get() []byte {
+	return b.buf
+}
+
+// SetPos sets the head and tail of the buffer.
+// This method is for use with testing.
 func (b *buffer) SetPos(tail, head int64) {
 	b.tail, b.head = tail, head
 }
 
-// Set writes bytes to a byte buffer. This method should only be used for testing
-// and will panic if out of range.
+// Set writes bytes to a byte buffer.
+// This method is for use with testing and will panic if out of range.
 func (b *buffer) Set(p []byte, start, end int) {
 	o := 0
 	for i := start; i < end; i++ {
