@@ -229,7 +229,6 @@ DONE:
 			cl.p.RefreshDeadline(cl.keepalive)
 
 			// Read in the fixed header of the packet.
-			//fh := new(packets.FixedHeader)
 			err = cl.p.ReadFixedHeader(fh)
 			if err != nil {
 				return ErrReadFixedHeader
@@ -245,11 +244,9 @@ DONE:
 			pk, err = cl.p.Read()
 			if err != nil {
 				fmt.Println("RC READ ERR", err)
-				//return ErrReadPacketPayload
-				return nil
+				return ErrReadPacketPayload
+				//return nil
 			}
-
-			fmt.Println("READ PACKET", pk)
 
 			// Validate the packet if necessary.
 			_, err = pk.Validate()

@@ -54,13 +54,10 @@ func (q *quietWriter) Flush() error {
 func setupClient(id string) (s *Server, r net.Conn, w net.Conn, cl *client) {
 	r, w = net.Pipe()
 	s = New()
-	cl = newClient( // new(MockNetConn)
-		NewProcessor(r, circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize)),
-		&packets.ConnectPacket{
-			ClientIdentifier: id,
-		},
-		new(auth.Allow),
-	)
+	p := NewProcessor(r, circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize))
+	p.Start()
+	cl = newClient(p, &packets.ConnectPacket{ClientIdentifier: id}, new(auth.Allow))
+
 	return
 }
 
@@ -475,6 +472,78 @@ func TestServerReadClientOK(t *testing.T) {
 			'a', '/', 'b', '/', 'c', // Topic Name
 			'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload
 		})
+	}()
+
+	o := make(chan error)
+	go func() {
+		time.Sleep(time.Millisecond * 10)
+		o <- s.readClient(cl)
+	}()
+
+	w.Close()
+	r.Close()
+	require.NoError(t, <-o)
+}
+
+func TestServerReadClientNoConn(t *testing.T) {
+	s, r, _, cl := setupClient("zen")
+	cl.p.Conn.Close()
+	cl.p.Conn = nil
+	r.Close()
+
+	err := s.readClient(cl)
+	require.Error(t, err)
+	require.Equal(t, ErrConnectionClosed, err)
+}
+
+func TestServerReadClientBadFixedHeader(t *testing.T) {
+	s, r, w, cl := setupClient("zen")
+
+	go func() {
+		close(cl.end)
+		w.Write([]byte{99})
+	}()
+
+	o := make(chan error)
+	go func() {
+		time.Sleep(time.Millisecond * 10)
+		o <- s.readClient(cl)
+	}()
+
+	w.Close()
+	r.Close()
+	require.NoError(t, <-o)
+}
+
+func TestServerReadClientDisconnect(t *testing.T) {
+	s, r, w, cl := setupClient("zen")
+
+	go func() {
+		w.Write([]byte{packets.Disconnect << 4, 0})
+		close(cl.end)
+	}()
+
+	o := make(chan error)
+	go func() {
+		time.Sleep(time.Millisecond * 10)
+		o <- s.readClient(cl)
+	}()
+
+	w.Close()
+	r.Close()
+	require.NoError(t, <-o)
+}
+
+func TestServerReadClientBadPacketPayload(t *testing.T) {
+	s, r, w, cl := setupClient("zen")
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Publish << 4), 6, // Fixed header
+			0, 5, // Topic Name - LSB+MSB
+			'a', '/',
+			0, 11, // Packet ID - LSB+MSB, // malformed packet id.
+		})
 
 	}()
 
@@ -483,9 +552,39 @@ func TestServerReadClientOK(t *testing.T) {
 		o <- s.readClient(cl)
 	}()
 
+	err := <-o
+	require.Error(t, err)
+	require.Equal(t, ErrReadPacketPayload, err)
 	w.Close()
 	r.Close()
-	require.NoError(t, <-o)
+
+}
+
+func TestServerReadClientBadPacketValidation(t *testing.T) {
+	s, r, w, cl := setupClient("zen")
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Publish<<4) | 2, 14, // Fixed header
+			0, 5, // Topic Name - LSB+MSB
+			'a', '/', 'b', '/', 'c', // Topic Name
+			0, 0, // Packet ID - LSB+MSB
+			'h', 'e', 'l', 'l', 'o', // Payload
+		})
+
+	}()
+
+	o := make(chan error)
+	go func() {
+		o <- s.readClient(cl)
+	}()
+
+	err := <-o
+	require.Error(t, err)
+	require.Equal(t, ErrReadPacketValidation, err)
+
+	w.Close()
+	r.Close()
 }
 
 /*

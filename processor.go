@@ -72,6 +72,7 @@ func (p *Processor) Start() {
 		p.R.ReadFrom(p.Conn)
 	}(p.started, p.endedR)
 	p.endedR.Add(1)
+	fmt.Println("Starting processor...")
 
 	p.started.Wait()
 	fmt.Println("Started OK")
