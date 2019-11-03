@@ -23,20 +23,19 @@ func NewWriter(size, block int64) *Writer {
 
 // WriteTo writes the contents of the buffer to an io.Writer.
 func (b *Writer) WriteTo(w io.Writer) (total int64, err error) {
-	debug.Println(b.id, "*[R] STARTING SPIN")
 	var p []byte
 	var n int
 DONE:
 	for {
-		cd := b.capDelta(atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head))
-		debug.Println(b.id, "* [W] SPIN (tail, head, delta)", b.tail, b.head, cd)
+		debug.Println(b.id, "\033[1;36m*[W]----------- SPIN --------- ", "\033[0m")
+		debug.Println(b.id, "\033[1;36m", atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head), b.buf[atomic.LoadInt64(&b.tail):atomic.LoadInt64(&b.head)], "\033[0m")
 		if atomic.LoadInt64(&b.done) == 1 {
-			if cd == 0 {
+			if b.CapDelta() == 0 {
 				err = io.EOF
-				debug.Println(b.id, "************ *[W] caught DONE")
+				debug.Println(b.id, "\033[1;30m*[W] WriteTo caught b.done=1", err, "\033[0m")
 				break DONE
 			} else {
-				debug.Println("*[W] //// capDelta not reached", cd)
+				debug.Println(b.id, "\033[1;30m*[W] ---- capDelta not met", err, "\033[0m")
 			}
 		}
 
@@ -44,39 +43,31 @@ DONE:
 		// of the Reader type.
 		p, err = (*Reader)(b).Peek(b.block)
 		if err != nil {
-			debug.Println(b.id, "*[W] writeTo peek err (p, err)", p, err)
 			continue
 			//break DONE
 		}
-		debug.Println(b.id, "*[W] PEEKED OK (p)", p)
+		debug.Println(b.id, "\033[1;32m*[W] PEEK OK", n, string(p), "\033[0m")
 
 		// Write the peeked bytes to the io.Writer.
 		n, err = w.Write(p)
 		total += int64(n)
 		if err != nil {
-			debug.Println(b.id, "*[W] io READ err", err)
+			debug.Println(b.id, "\033[1;35m*[W] w.Write err", err, "\033[0m")
 			break DONE
 		}
 
-		debug.Println(b.id, "*[W] SENT (n, p)", n, p)
+		debug.Println(b.id, "\033[1;31m*[W] SENT (n, p)", n, string(p), "\033[0m")
+		debug.Println(b.id, "\033[0;35m*[W]", p, "\033[0m")
+		debug.Println(b.id, "\033[0;35m*[W]", b.buf[:total], "\033[0m")
 
 		// Move the tail forward the bytes written.
 		end := (atomic.LoadInt64(&b.tail) + int64(n)) % b.size
-		debug.Println(b.id, "*[W] STORE TAIL", end)
 		atomic.StoreInt64(&b.tail, end)
 
-		debug.Println(b.id, "##### *[W] rcond.Locking")
 		b.rcond.L.Lock()
-		debug.Println(b.id, "##### *[W] rcond.Locked")
-		debug.Println(b.id, "##### *[W] rcond.Broadcasting")
 		b.rcond.Broadcast()
-		debug.Println(b.id, "##### *[W] rcond.Broadcasted")
-		debug.Println(b.id, "##### *[W] rcond.Unlocking")
 		b.rcond.L.Unlock()
-		debug.Println(b.id, "##### *[W] rcond.Unlocked")
 	}
-
-	debug.Println(b.id, "*[W] FINISHED SPIN")
 
 	return
 }
@@ -84,7 +75,12 @@ DONE:
 // Write writes the buffer to the buffer p, returning the number of bytes written.
 func (b *Writer) Write(p []byte) (nn int, err error) {
 	if atomic.LoadInt64(&b.done) == 1 {
-		return 0, io.EOF
+		if b.CapDelta() == 0 {
+			debug.Println(b.id, "\033[1;31m[W] Write caught b.done=1", err, "\033[0m")
+			return 0, io.EOF
+		} else {
+			debug.Println(b.id, "\033[1;31m[W] capDelta not met", err, "\033[0m")
+		}
 	}
 
 	// Wait until there's enough capacity to write to the buffer.
@@ -95,22 +91,14 @@ func (b *Writer) Write(p []byte) (nn int, err error) {
 
 	// Write the outgoing bytes to the buffer, wrapping if necessary.
 	nn = b.writeBytes(p)
-	debug.Println(b.id, "[W] bytes written (nn)", nn, p)
 
 	// Move the head forward.
 	next := (atomic.LoadInt64(&b.head) + int64(nn)) % b.size
 	atomic.StoreInt64(&b.head, next)
-	debug.Println(b.id, "[W] STORE HEAD", next)
 
-	debug.Println(b.id, "##### [W] wcond.Locking")
 	b.wcond.L.Lock()
-	debug.Println(b.id, "##### [W] rcond.Locked")
-	debug.Println(b.id, "##### [W] rcond.Broadcasting")
 	b.wcond.Broadcast()
-	debug.Println(b.id, "##### [W] rcond.Broadcasted")
-	debug.Println(b.id, "##### [W] rcond.Unlocking")
 	b.wcond.L.Unlock()
-	debug.Println(b.id, "##### [W] rcond.Unlocked")
 
 	return
 }
@@ -119,11 +107,15 @@ func (b *Writer) Write(p []byte) (nn int, err error) {
 // the new head position. This function does not wait for capacity and will
 // overwrite any existing bytes.
 func (b *Writer) writeBytes(p []byte) int {
-	tail := atomic.LoadInt64(&b.tail)
+	//tail := atomic.LoadInt64(&b.tail)
+	head := atomic.LoadInt64(&b.head)
+
+	debug.Println(b.id, "\033[1;31m[W] writing to byte buffer", "\033[0m")
 
 	var o int64
 	for i := 0; i < len(p); i++ {
-		o = (tail + int64(i)) % b.size
+		o = (head + int64(i)) % b.size
+		debug.Println(b.id, "\033[1;31m[W]", o, p[i], "\033[0m")
 		b.buf[o] = p[i]
 	}
 

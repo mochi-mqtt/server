@@ -3,7 +3,6 @@ package mqtt
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"net"
 	"time"
 
@@ -15,6 +14,8 @@ import (
 	"github.com/mochi-co/mqtt/packets"
 	"github.com/mochi-co/mqtt/topics"
 	"github.com/mochi-co/mqtt/topics/trie"
+
+	"github.com/mochi-co/mqtt/debug"
 )
 
 const (
@@ -88,28 +89,24 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 // attached listeners.
 func (s *Server) Serve() error {
 	s.listeners.ServeAll(s.EstablishConnection)
-
 	return nil
 }
 
 // EstablishConnection establishes a new client connection with the broker.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
-	p := NewProcessor(
-		c,
-		circ.NewReader(0, 0),
-		circ.NewWriter(0, 0),
-	)
-	p.Start()
+	client := newClient(c, circ.NewReader(0, 0), circ.NewWriter(0, 0))
+	client.start()
+	debug.Println("establishing connection", lid)
 
 	// Pull the header from the first packet and check for a CONNECT message.
 	fh := new(packets.FixedHeader)
-	err := p.ReadFixedHeader(fh)
+	err := client.readFixedHeader(fh)
 	if err != nil {
 		return ErrReadConnectFixedHeader
 	}
 
 	// Read the first packet expecting a CONNECT message.
-	pk, err := p.Read()
+	pk, err := client.readPacket()
 	if err != nil {
 		return ErrReadConnectPacket
 	}
@@ -132,9 +129,10 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		return ErrConnectNotAuthorized
 	}
 
-	// Create a new client with this connection.
-	client := newClient(p, msg, ac)
-	client.listener = lid // Note the listener the client is connected to.
+	// Identify the new client with this connection and listener id.
+	client.identify(lid, msg, ac)
+	debug.Println(client.id, "identified")
+	debug.Printf("%s %+v\n", client.id, msg)
 
 	// If it's not a clean session and a client already exists with the same
 	// id, inherit the session.
@@ -143,10 +141,12 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		existing.Lock()
 		existing.close()
 		if msg.CleanSession {
+			debug.Println(client.id, "creating clean session")
 			for k := range existing.subscriptions {
 				s.topics.Unsubscribe(k, existing.id)
 			}
 		} else {
+			debug.Println(client.id, "inherit session")
 			client.inFlight = existing.inFlight // Inherit from existing session.
 			client.subscriptions = existing.subscriptions
 			sessionPresent = true
@@ -169,96 +169,27 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		return err
 	}
 
-	//	fmt.Println("----------------")
-
 	// Resend any unacknowledged QOS messages still pending for the client.
 	err = s.resendInflight(client)
 	if err != nil {
 		return err
 	}
 
+	debug.Println("----------------")
+
 	// Block and listen for more packets, and end if an error or nil packet occurs.
 	var sendLWT bool
-	err = s.readClient(client)
+	err = client.read(s.processPacket)
 	if err != nil {
 		sendLWT = true // Only send LWT on bad disconnect [MQTT-3.14.4-3]
 	}
-	fmt.Println("** stop and wait", err)
+	debug.Println(client.id, "^^ STOP AND WAIT", err)
 
 	// Publish last will and testament.
 	s.closeClient(client, sendLWT)
+	debug.Println(client.id, "^^ CLIENT STOPPED")
 
-	fmt.Println("stopped", err)
-
-	return err // capture err or nil from readClient.
-}
-
-// resendInflight republishes any inflight messages to the client.
-func (s *Server) resendInflight(cl *client) error {
-	cl.RLock()
-	msgs := cl.inFlight.internal
-	cl.RUnlock()
-	for _, msg := range msgs {
-		err := s.writeClient(cl, msg.packet)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// readClient reads new packets from a client connection.
-func (s *Server) readClient(cl *client) error {
-	var err error
-	var pk packets.Packet
-	fh := new(packets.FixedHeader)
-DONE:
-	for {
-		select {
-		case <-cl.end:
-			break DONE
-
-		default:
-			if cl.p.Conn == nil {
-				return ErrConnectionClosed
-			}
-
-			// Reset the keepalive read deadline.
-			cl.p.RefreshDeadline(cl.keepalive)
-
-			// Read in the fixed header of the packet.
-			err = cl.p.ReadFixedHeader(fh)
-			if err != nil {
-				return ErrReadFixedHeader
-			}
-
-			fmt.Println("READ FH", cl.id, fh)
-			// If it's a disconnect packet, begin the close process.
-			if fh.Type == packets.Disconnect {
-				break DONE
-			}
-
-			// Otherwise read in the packet payload.
-			pk, err = cl.p.Read()
-			if err != nil {
-				fmt.Println("RC READ ERR", err)
-				return ErrReadPacketPayload
-				//return nil
-			}
-
-			// Validate the packet if necessary.
-			_, err = pk.Validate()
-			if err != nil {
-				return ErrReadPacketValidation
-			}
-
-			// Process inbound packet.
-			s.processPacket(cl, pk)
-		}
-	}
-
-	return nil
+	return err
 }
 
 // processPacket processes an inbound packet for a client. Since the method is
@@ -267,6 +198,9 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 
 	// Log read stats for $SYS.
 	// @TODO ...
+
+	debug.Println(cl.id, "\033[1;32mPROCESSING PACKET", "\033[0m")
+	debug.Printf("%s %+v\n", cl.id, pk)
 
 	// Process the packet depending on the detected type.
 	switch msg := pk.(type) {
@@ -299,6 +233,21 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 
 	case *packets.UnsubscribePacket:
 		return s.processUnsubscribe(cl, msg)
+	}
+
+	return nil
+}
+
+// resendInflight republishes any inflight messages to the client.
+func (s *Server) resendInflight(cl *client) error {
+	cl.RLock()
+	msgs := cl.inFlight.internal
+	cl.RUnlock()
+	for _, msg := range msgs {
+		err := s.writeClient(cl, msg.packet)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -543,11 +492,11 @@ func (s *Server) processUnsubscribe(cl *client, pk *packets.UnsubscribePacket) e
 
 // writeClient writes packets to a client connection.
 func (s *Server) writeClient(cl *client, pk packets.Packet) error {
-	cl.p.W.Lock()
-	defer cl.p.W.Unlock()
+	cl.w.Lock()
+	defer cl.w.Unlock()
 
 	// Ensure Writer is open.
-	if cl.p.W == nil {
+	if cl.w == nil {
 		return ErrConnectionClosed
 	}
 
@@ -557,14 +506,18 @@ func (s *Server) writeClient(cl *client, pk packets.Packet) error {
 		return err
 	}
 
+	debug.Println(cl.id, "\033[1;32m>>>>> WRITING", string(buf.Bytes()), "\033[0m")
+
 	// Write packet to client.
-	_, err = buf.WriteTo(cl.p.W)
+	//cl.w.Write(buf.Bytes())
+	_, err = buf.WriteTo(cl.w)
 	if err != nil {
+		debug.Println("\033[1;31mWRITE TO ERROR", err, "\033[0m")
 		return err
 	}
 
 	// Refresh deadline to keep the connection alive.
-	cl.p.RefreshDeadline(cl.keepalive)
+	cl.refreshDeadline(cl.keepalive)
 
 	// Log $SYS stats.
 	// @TODO ...

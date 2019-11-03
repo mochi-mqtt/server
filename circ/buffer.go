@@ -81,30 +81,16 @@ func (b *buffer) Close() {
 	atomic.StoreInt64(&b.done, 1)
 	debug.Println(b.id, "[B]  STORE done=1 buffer closing")
 	b.Bump()
-	debug.Println(b.id, "[B]  DONE REBROADCASTED")
 }
 
 // Bump will broadcast all sync conditions.
 func (b *buffer) Bump() {
-	debug.Println(b.id, "##### [X] wcond.Locking")
 	b.wcond.L.Lock()
-	debug.Println(b.id, "##### [X] wcond.Locked")
-	debug.Println(b.id, "##### [X] wcond.Broadcasting")
 	b.wcond.Broadcast()
-	debug.Println(b.id, "##### [X] wcond.Broadcasted")
-	debug.Println(b.id, "##### [X] wcond.Unlocking")
 	b.wcond.L.Unlock()
-	debug.Println(b.id, "##### [X] wcond.Unlocked")
-
-	debug.Println(b.id, "##### [Y] rcond.Locking")
 	b.rcond.L.Lock()
-	debug.Println(b.id, "##### [Y] rcond.Locked")
-	debug.Println(b.id, "##### [Y] rcond.Broadcasting")
 	b.rcond.Broadcast()
-	debug.Println(b.id, "##### [Y] rcond.Broadcasted")
-	debug.Println(b.id, "##### [Y] rcond.Unlocking")
 	b.rcond.L.Unlock()
-	debug.Println(b.id, "##### [Y] rcond.Unlocked")
 }
 
 // Get will return the tail and head positions of the buffer.
@@ -135,39 +121,31 @@ func (b *buffer) Set(p []byte, start, end int) {
 	}
 }
 
+// SetID sets id of the buffer.
+func (b *buffer) SetID(id string) {
+	b.id = id
+}
+
 // awaitCapacity will hold until there are n bytes free in the buffer, blocking
 // until there are at least n bytes to write without overrunning the tail.
 func (b *buffer) awaitCapacity(n int64) (head int64, err error) {
 	head = atomic.LoadInt64(&b.head)
 	next := head + n
 	wrapped := next - b.size
-	//tail := atomic.LoadInt64(&b.tail)
-	var tail int64
+	tail := atomic.LoadInt64(&b.tail)
+	//var tail int64
 
-	debug.Println(b.id, "[B]  awaiting capacity (n)", n)
-	debug.Println(b.id, "##### [B] rcond.Locking")
-	b.rcond.L.Lock()
-	debug.Println(b.id, "##### [B] rcond.Locked")
 	for tail = atomic.LoadInt64(&b.tail); wrapped > tail || (tail > head && next > tail && wrapped < 0); tail = atomic.LoadInt64(&b.tail) {
-		debug.Println(b.id, "[B] iter no capacity")
-
 		//fmt.Println("\t", wrapped, ">", tail, wrapped > tail, "||", tail, ">", head, "&&", next, ">", tail, "&&", wrapped, "<", 0, (tail > head && next > tail && wrapped < 0))
 		if atomic.LoadInt64(&b.done) == 1 {
-			debug.Println(b.id, "************ [B] awaitCap caught DONE")
-			b.rcond.L.Unlock() // Make sure we unlock
+			//	b.rcond.L.Unlock() // Make sure we unlock
 			return 0, io.EOF
 		}
 
-		debug.Println(b.id, "[B] iter no capacity waiting")
-		debug.Println(b.id, "##### [B] rcond.Wating")
+		b.rcond.L.Lock()
 		b.rcond.Wait()
-		debug.Println(b.id, "##### [B] rcond.Waited")
+		b.rcond.L.Unlock()
 	}
-	debug.Println(b.id, "##### [B] rcond.Unlocked")
-	b.rcond.L.Unlock()
-	debug.Println(b.id, "##### [B] rcond.Unlocked")
-
-	debug.Println(b.id, "[B]  capacity unlocked (tail)", tail)
 
 	return
 }
@@ -179,28 +157,16 @@ func (b *buffer) awaitFilled(n int64) (tail int64, err error) {
 	var head int64
 	tail = atomic.LoadInt64(&b.tail)
 
-	debug.Println(b.id, "[B]  awaiting filled (tail, head)", tail, head)
-	debug.Println(b.id, "##### [B] wcond.Locking")
-	b.wcond.L.Lock()
-	debug.Println(b.id, "##### [B] rcond.Locked")
 	for head = atomic.LoadInt64(&b.head); head > tail && tail+n > head || head < tail && b.size-tail+head < n; head = atomic.LoadInt64(&b.head) {
-		debug.Println(b.id, "[B] iter no fill")
-
 		if atomic.LoadInt64(&b.done) == 1 {
-			debug.Println(b.id, "************ [B] awaitFilled caught DONE")
-			b.wcond.L.Unlock() // Make sure we unlock
+			//	b.wcond.L.Unlock() // Make sure we unlock
 			return 0, io.EOF
 		}
 
-		debug.Println(b.id, "[B] iter no fill waiting")
-		debug.Println(b.id, "##### [B] rcond.Waiting")
+		b.wcond.L.Lock()
 		b.wcond.Wait()
-		debug.Println(b.id, "##### [B] rcond.Waited")
+		b.wcond.L.Unlock()
 	}
-	debug.Println(b.id, "##### [B] rcond.Unlocking")
-	b.wcond.L.Unlock()
-	debug.Println(b.id, "##### [B] rcond.Unlocked")
-	debug.Println(b.id, "[B]  filled (head)", head)
 
 	return
 }
@@ -214,20 +180,16 @@ func (b *buffer) awaitFilled(n int64) (tail int64, err error) {
 // CommitTail moves the tail position of the buffer n bytes, and will wait until
 // there is enough capacity for at least n bytes.
 func (b *buffer) CommitTail(n int64) error {
-	debug.Println(b.id, "[B]  commit/discard (n)", n)
 	_, err := b.awaitFilled(n)
 	if err != nil {
 		return err
 	}
-	debug.Println(b.id, "[B]  commit/discard unlocked")
 
 	tail := atomic.LoadInt64(&b.tail)
 	if tail+n < b.size {
 		atomic.StoreInt64(&b.tail, tail+n)
-		debug.Println(b.id, "[B]  STORE TAIL", tail+n)
 	} else {
 		atomic.StoreInt64(&b.tail, (tail+n)%b.size)
-		debug.Println(b.id, "[B]  STORE TAIL (wrapped)", (tail+n)%b.size)
 	}
 
 	b.rcond.L.Lock()
@@ -237,13 +199,12 @@ func (b *buffer) CommitTail(n int64) error {
 	return nil
 }
 
-// capDelta returns the difference between the head and tail.
-func (b *buffer) capDelta(tail, head int64) int64 {
+// CapDelta returns the difference between the head and tail.
+func (b *buffer) CapDelta() int64 {
+	tail, head := atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head)
 	if head < tail {
-		debug.Println(b.id, "[B]  capdelta (tail, head, v)", tail, head, b.size-tail+head)
 		return b.size - tail + head
 	}
 
-	debug.Println(b.id, "[B]  capdelta (tail, head, v)", tail, head, head-tail)
 	return head - tail
 }

@@ -1,20 +1,426 @@
 package mqtt
 
 import (
+	"encoding/binary"
 	"fmt"
+	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/rs/xid"
 
 	"github.com/mochi-co/mqtt/auth"
+	"github.com/mochi-co/mqtt/circ"
 	"github.com/mochi-co/mqtt/packets"
+
+	"github.com/mochi-co/mqtt/debug"
 )
 
 var (
 	// defaultClientKeepalive is the default keepalive time in seconds.
 	defaultClientKeepalive uint16 = 60
+
+	// ErrInsufficientBytes indicates that there were not enough bytes
+	// in the buffer to read/peek.
+	ErrInsufficientBytes = fmt.Errorf("Insufficient bytes in buffer")
 )
+
+// Client contains information about a client known by the broker.
+type client struct {
+	sync.RWMutex
+
+	// ac is a pointer to an auth controller inherited from the listener.
+	ac auth.Controller
+
+	// inFlight is a map of messages which are in-flight,awaiting completiong of
+	// a QoS pattern.
+	inFlight inFlight
+
+	// subscriptions is a map of the subscription filters a client maintains.
+	subscriptions map[string]byte
+
+	// p is a packets processor which reads and writes packets.
+	//p *Processor
+
+	// state is the state of the client
+	state clientState
+
+	// conn is the net.Conn used to establish the connection.
+	conn net.Conn
+
+	// R is a reader for reading incoming bytes.
+	r *circ.Reader
+
+	// W is a writer for writing outgoing bytes.
+	w *circ.Writer
+
+	// fh is the FixedHeader from the last read packet.
+	fh packets.FixedHeader
+
+	// id is the client id.
+	id string
+
+	// listener is the id of the listener the client is connected to.
+	listener string
+
+	// user is the username the client authenticated with.
+	user string
+
+	// keepalive is the number of seconds the connection can stay open without
+	// receiving a message from the client.
+	keepalive uint16
+
+	// cleanSession indicates if the client expects a cleansession.
+	cleanSession bool
+
+	// packetID is the current highest packetID.
+	packetID uint32
+
+	// lwt contains the last will and testament for the client.
+	lwt lwt
+}
+
+// clientState tracks the state of the client.
+type clientState struct {
+	// started tracks the goroutines which have been started.
+	started *sync.WaitGroup
+
+	// endedW tracks when the writer has ended.
+	endedW *sync.WaitGroup
+
+	// endedR tracks when the reader has ended.
+	endedR *sync.WaitGroup
+
+	// end is a channel that indicates the client should be halted.
+	end chan struct{}
+
+	// done indicates that the client has closed.
+	done int64
+
+	// endOnce is called to ensure the close methods are only called once.
+	endOnce *sync.Once
+
+	// wasClosed indicates that the connection was closed deliberately.
+	wasClosed bool
+}
+
+// newClient creates a new instance of client.
+func newClient(c net.Conn, r *circ.Reader, w *circ.Writer) *client {
+	cl := &client{
+		conn: c,
+		r:    r,
+		w:    w,
+
+		inFlight: inFlight{
+			internal: make(map[uint16]*inFlightMessage),
+		},
+		subscriptions: make(map[string]byte),
+
+		state: clientState{
+			started: new(sync.WaitGroup),
+			endedW:  new(sync.WaitGroup),
+			endedR:  new(sync.WaitGroup),
+			end:     make(chan struct{}),
+			endOnce: new(sync.Once),
+		},
+	}
+
+	return cl
+}
+
+func (cl *client) identify(lid string, pk *packets.ConnectPacket, ac auth.Controller) {
+	cl.listener = lid
+	cl.ac = ac
+	cl.id = strings.Replace(pk.ClientIdentifier, "Jonathans-MacBook-Pro.local-worker0", "", -1)
+	cl.user = pk.Username
+	cl.keepalive = pk.Keepalive
+	cl.cleanSession = pk.CleanSession
+
+	if strings.Contains(cl.id, "sub") {
+		cl.id = "\t\033[0;34m" + cl.id + "\033[0m"
+	}
+
+	cl.r.SetID(cl.id + " READER")
+	cl.w.SetID(cl.id + " WRITER")
+
+	// If no client id was provided, generate a new one.
+	if cl.id == "" {
+		cl.id = xid.New().String()
+	}
+
+	// if no deadline value was provided, set it to the default seconds.
+	if cl.keepalive == 0 {
+		cl.keepalive = defaultClientKeepalive
+	}
+
+	// If a last will and testament has been provided, record it.
+	if pk.WillFlag {
+		cl.lwt = lwt{
+			topic:   pk.WillTopic,
+			message: pk.WillMessage,
+			qos:     pk.WillQos,
+			retain:  pk.WillRetain,
+		}
+	}
+}
+
+// start begins the client goroutines reading and writing packets.
+func (cl *client) start() {
+	cl.state.started.Add(2)
+
+	go func() {
+		cl.state.started.Done()
+		_, err := cl.w.WriteTo(cl.conn)
+		debug.Println(cl.id, "\033[1;36mWriteTo ended", err, "\033[0m")
+		cl.state.endedW.Done()
+		cl.close()
+	}()
+	cl.state.endedW.Add(1)
+
+	go func() {
+		cl.state.started.Done()
+		_, err := cl.r.ReadFrom(cl.conn)
+		debug.Println(cl.id, "\033[1;36mReadFrom ended", err, "\033[0m")
+		cl.state.endedR.Done()
+		cl.close()
+	}()
+	cl.state.endedR.Add(1)
+
+	cl.state.started.Wait()
+}
+
+// close instructs the client to shut down all processing goroutines and disconnect.
+func (cl *client) close() {
+	if atomic.LoadInt64(&cl.state.done) == 1 {
+		return
+	}
+
+	// Signal the reading and writing buffers to stop.
+	atomic.StoreInt64(&cl.state.done, 1)
+	cl.r.Close()
+
+	// Cut off the connection if it's still up.
+	if cl.conn != nil {
+		debug.Println(cl.id, "closing conn")
+		cl.conn.Close()
+	}
+
+	// Wait for the reading buffer to close.
+	cl.state.endedR.Wait()
+	cl.w.Close()
+	debug.Println(cl.id, "client close issued")
+}
+
+// readFixedHeader reads in the values of the next packet's fixed header.
+func (cl *client) readFixedHeader(fh *packets.FixedHeader) error {
+
+	// Peek the maximum message type and flags, and length.
+	peeked, err := cl.r.Peek(1)
+	if err != nil {
+		return err
+	}
+
+	// Unpack message type and flags from byte 1.
+	err = fh.Decode(peeked[0])
+	if err != nil {
+
+		// @SPEC [MQTT-2.2.2-2]
+		// If invalid flags are received, the receiver MUST close the Network Connection.
+		return packets.ErrInvalidFlags
+	}
+
+	// The remaining length value can be up to 5 bytes. Peek through each byte
+	// looking for continue values, and if found increase the peek. Otherwise
+	// decode the bytes that were legit.
+	buf := make([]byte, 0, 6)
+	i := 1
+	var b int64 = 2 // need this var later.
+	for ; b < 6; b++ {
+		peeked, err = cl.r.Peek(b)
+		if err != nil {
+			return err
+		}
+
+		// Add the byte to the length bytes slice.
+		if i >= len(peeked) {
+			return ErrInsufficientBytes
+		}
+		buf = append(buf, peeked[i])
+
+		// If it's not a continuation flag, end here.
+		if peeked[i] < 128 {
+			break
+		}
+
+		// If i has reached 4 without a length terminator, return a protocol violation.
+		i++
+		if i == 4 {
+			return packets.ErrOversizedLengthIndicator
+		}
+	}
+
+	// Calculate and store the remaining length.
+	rem, _ := binary.Uvarint(buf)
+	fh.Remaining = int(rem)
+
+	// Skip the number of used length bytes + first byte.
+	err = cl.r.CommitTail(b)
+	if err != nil {
+		return err
+	}
+
+	// Set the fixed header in the parser.
+	cl.fh = *fh
+
+	return nil
+}
+
+// read reads new packets from a client connection.
+func (cl *client) read(handler func(*client, packets.Packet) error) error {
+	var err error
+	var pk packets.Packet
+	fh := new(packets.FixedHeader)
+DONE:
+	for {
+		cd := cl.r.CapDelta()
+		if atomic.LoadInt64(&cl.state.done) == 1 {
+			if cd == 0 {
+				break DONE
+			} else {
+				//fmt.Println("/////", cl.id, "reader capDelta not met", cd)
+			}
+		}
+
+		if cl.conn == nil {
+			return ErrConnectionClosed
+		}
+
+		// Reset the keepalive read deadline.
+		cl.refreshDeadline(cl.keepalive)
+
+		// Read in the fixed header of the packet.
+		err = cl.readFixedHeader(fh)
+		if err != nil {
+			return ErrReadFixedHeader
+		}
+
+		// If it's a disconnect packet, begin the close process.
+		if fh.Type == packets.Disconnect {
+			debug.Println(cl.id, "read loop caught disconnect")
+			break DONE
+		}
+
+		// Otherwise read in the packet payload.
+		pk, err = cl.readPacket()
+		if err != nil {
+			return ErrReadPacketPayload
+		}
+
+		// Validate the packet if necessary.
+		_, err = pk.Validate()
+		if err != nil {
+			return ErrReadPacketValidation
+		}
+
+		// Process inbound packet.
+		handler(cl, pk)
+	}
+
+	debug.Println(cl.id, "read loop finished")
+	return nil
+}
+
+// readPacket reads the remaining buffer into an MQTT packet.
+func (cl *client) readPacket() (pk packets.Packet, err error) {
+
+	switch cl.fh.Type {
+	case packets.Connect:
+		pk = &packets.ConnectPacket{FixedHeader: cl.fh}
+	case packets.Connack:
+		pk = &packets.ConnackPacket{FixedHeader: cl.fh}
+	case packets.Publish:
+		pk = &packets.PublishPacket{FixedHeader: cl.fh}
+	case packets.Puback:
+		pk = &packets.PubackPacket{FixedHeader: cl.fh}
+	case packets.Pubrec:
+		pk = &packets.PubrecPacket{FixedHeader: cl.fh}
+	case packets.Pubrel:
+		pk = &packets.PubrelPacket{FixedHeader: cl.fh}
+	case packets.Pubcomp:
+		pk = &packets.PubcompPacket{FixedHeader: cl.fh}
+	case packets.Subscribe:
+		pk = &packets.SubscribePacket{FixedHeader: cl.fh}
+	case packets.Suback:
+		pk = &packets.SubackPacket{FixedHeader: cl.fh}
+	case packets.Unsubscribe:
+		pk = &packets.UnsubscribePacket{FixedHeader: cl.fh}
+	case packets.Unsuback:
+		pk = &packets.UnsubackPacket{FixedHeader: cl.fh}
+	case packets.Pingreq:
+		pk = &packets.PingreqPacket{FixedHeader: cl.fh}
+	case packets.Pingresp:
+		pk = &packets.PingrespPacket{FixedHeader: cl.fh}
+	case packets.Disconnect:
+		pk = &packets.DisconnectPacket{FixedHeader: cl.fh}
+	default:
+		return pk, fmt.Errorf("No valid packet available; %v", cl.fh.Type)
+	}
+
+	bt, err := cl.r.Read(int64(cl.fh.Remaining))
+	if err != nil {
+		return pk, err
+	}
+
+	// Decode the remaining packet values using a fresh copy of the bytes,
+	// otherwise the next packet will change the data of this one.
+	// ----
+	// This line is super important. If the bytes being decoded are not
+	// in their own memory space, packets will get corrupted all over the place.
+	err = pk.Decode(append([]byte{}, bt[:]...)) // <--- This MUST be a copy.
+	if err != nil {
+		return pk, err
+	}
+
+	debug.Println(cl.id, "\033[1;33mDECODED", pk, "\033[0m")
+
+	return
+}
+
+// refreshDeadline refreshes the read/write deadline for the net.Conn connection.
+func (cl *client) refreshDeadline(keepalive uint16) {
+	if cl.conn != nil {
+		expiry := time.Duration(keepalive+(keepalive/2)) * time.Second
+		cl.conn.SetDeadline(time.Now().Add(expiry))
+	}
+}
+
+// nextPacketID returns the next packet id for a client, looping back to 0
+// if the maximum ID has been reached.
+func (cl *client) nextPacketID() uint32 {
+	i := atomic.LoadUint32(&cl.packetID)
+	if i == uint32(65535) || i == uint32(0) {
+		atomic.StoreUint32(&cl.packetID, 1)
+		return 1
+	}
+
+	return atomic.AddUint32(&cl.packetID, 1)
+}
+
+// noteSubscription makes a note of a subscription for the client.
+func (c *client) noteSubscription(filter string, qos byte) {
+	c.Lock()
+	c.subscriptions[filter] = qos
+	c.Unlock()
+}
+
+// forgetSubscription forgests a subscription note for the client.
+func (c *client) forgetSubscription(filter string) {
+	c.Lock()
+	delete(c.subscriptions, filter)
+	c.Unlock()
+}
 
 // clients contains a map of the clients known by the broker.
 type clients struct {
@@ -72,138 +478,6 @@ func (cl *clients) getByListener(id string) []*client {
 	}
 	cl.RUnlock()
 	return clients
-}
-
-// Client contains information about a client known by the broker.
-type client struct {
-	sync.RWMutex
-
-	// p is a packets processor which reads and writes packets.
-	p *Processor
-
-	// ac is a pointer to an auth controller inherited from the listener.
-	ac auth.Controller
-
-	// end is a channel that indicates the client should be halted.
-	end chan struct{}
-
-	// done can be called to ensure the close methods are only called once.
-	done *sync.Once
-
-	// id is the client id.
-	id string
-
-	// listener is the id of the listener the client is connected to.
-	listener string
-
-	// user is the username the client authenticated with.
-	user string
-
-	// keepalive is the number of seconds the connection can stay open without
-	// receiving a message from the client.
-	keepalive uint16
-
-	// cleanSession indicates if the client expects a cleansession.
-	cleanSession bool
-
-	// packetID is the current highest packetID.
-	packetID uint32
-
-	// lwt contains the last will and testament for the client.
-	lwt lwt
-
-	// inFlight is a map of messages which are in-flight,awaiting completiong of
-	// a QoS pattern.
-	inFlight inFlight
-
-	// subscriptions is a map of the subscription filters a client maintains.
-	subscriptions map[string]byte
-
-	// wasClosed indicates that the connection was closed deliberately.
-	wasClosed bool
-}
-
-// newClient creates a new instance of client.
-func newClient(p *Processor, pk *packets.ConnectPacket, ac auth.Controller) *client {
-	cl := &client{
-		p:    p,
-		ac:   ac,
-		end:  make(chan struct{}),
-		done: new(sync.Once),
-
-		id:           pk.ClientIdentifier,
-		user:         pk.Username,
-		keepalive:    pk.Keepalive,
-		cleanSession: pk.CleanSession,
-		inFlight: inFlight{
-			internal: make(map[uint16]*inFlightMessage),
-		},
-		subscriptions: make(map[string]byte),
-	}
-
-	// If no client id was provided, generate a new one.
-	if cl.id == "" {
-		cl.id = xid.New().String()
-	}
-
-	// if no deadline value was provided, set it to the default seconds.
-	if cl.keepalive == 0 {
-		cl.keepalive = defaultClientKeepalive
-	}
-
-	// If a last will and testament has been provided, record it.
-	if pk.WillFlag {
-		cl.lwt = lwt{
-			topic:   pk.WillTopic,
-			message: pk.WillMessage,
-			qos:     pk.WillQos,
-			retain:  pk.WillRetain,
-		}
-	}
-
-	return cl
-}
-
-// nextPacketID returns the next packet id for a client, looping back to 0
-// if the maximum ID has been reached.
-func (cl *client) nextPacketID() uint32 {
-	i := atomic.LoadUint32(&cl.packetID)
-	if i == uint32(65535) || i == uint32(0) {
-		atomic.StoreUint32(&cl.packetID, 1)
-		return 1
-	}
-
-	return atomic.AddUint32(&cl.packetID, 1)
-}
-
-// noteSubscription makes a note of a subscription for the client.
-func (c *client) noteSubscription(filter string, qos byte) {
-	c.Lock()
-	c.subscriptions[filter] = qos
-	c.Unlock()
-}
-
-// forgetSubscription forgests a subscription note for the client.
-func (c *client) forgetSubscription(filter string) {
-	c.Lock()
-	delete(c.subscriptions, filter)
-	c.Unlock()
-}
-
-// close attempts to gracefully close a client connection.
-func (cl *client) close() {
-	cl.done.Do(func() {
-		if cl.end != nil {
-			close(cl.end) // Signal to stop listening for packets in mqtt readClient loop.
-			fmt.Println("closed readClient end", cl.id)
-		}
-
-		// Close the processor.
-		cl.p.Stop()
-		fmt.Println("signalled stop, waiting", cl.id)
-		fmt.Println("client ended", cl.id)
-		cl.wasClosed = true
-	})
 }
 
 // lwt contains the last will and testament details for a client connection.

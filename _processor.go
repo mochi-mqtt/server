@@ -13,7 +13,9 @@ import (
 )
 
 var (
-
+	// ErrInsufficientBytes indicates that there were not enough bytes
+	// in the buffer to read/peek.
+	ErrInsufficientBytes = fmt.Errorf("Insufficient bytes in buffer")
 )
 
 // Processor reads and writes bytes to a network connection.

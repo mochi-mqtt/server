@@ -1,5 +1,6 @@
 package mqtt
 
+/*
 import (
 	"fmt"
 	"net"
@@ -306,3 +307,4 @@ func (m *MockNetAddr) Network() string {
 func (m *MockNetAddr) String() string {
 	return "127.0.0.1"
 }
+*/
