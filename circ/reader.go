@@ -82,7 +82,7 @@ DONE:
 		debug.Println(b.id, "##### *[R] wcond.Unlocked")
 	}
 
-	debug.Println(b.id, "*[R] FINISHED SPIN")
+	debug.Println(b.id, "*[R] FINISHED SPIN", err)
 
 	return
 }

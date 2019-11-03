@@ -169,7 +169,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		return err
 	}
 
-	fmt.Println("----------------")
+	//	fmt.Println("----------------")
 
 	// Resend any unacknowledged QOS messages still pending for the client.
 	err = s.resendInflight(client)
@@ -183,7 +183,6 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	if err != nil {
 		sendLWT = true // Only send LWT on bad disconnect [MQTT-3.14.4-3]
 	}
-
 	fmt.Println("** stop and wait", err)
 
 	// Publish last will and testament.
@@ -234,9 +233,9 @@ DONE:
 				return ErrReadFixedHeader
 			}
 
+			fmt.Println("READ FH", cl.id, fh)
 			// If it's a disconnect packet, begin the close process.
 			if fh.Type == packets.Disconnect {
-				fmt.Println(" X got disconnect")
 				break DONE
 			}
 
@@ -259,7 +258,6 @@ DONE:
 		}
 	}
 
-	fmt.Println("READCLIENT COMPLETED")
 	return nil
 }
 

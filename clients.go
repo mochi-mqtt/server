@@ -195,13 +195,13 @@ func (cl *client) close() {
 	cl.done.Do(func() {
 		if cl.end != nil {
 			close(cl.end) // Signal to stop listening for packets in mqtt readClient loop.
-			fmt.Println("closed readClient end", cl.end)
+			fmt.Println("closed readClient end", cl.id)
 		}
 
 		// Close the processor.
 		cl.p.Stop()
-		fmt.Println("signalled stop, waiting")
-		fmt.Println("all processors ended")
+		fmt.Println("signalled stop, waiting", cl.id)
+		fmt.Println("client ended", cl.id)
 		cl.wasClosed = true
 	})
 }

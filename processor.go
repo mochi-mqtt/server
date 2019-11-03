@@ -63,6 +63,7 @@ func (p *Processor) Start() {
 		defer p.endedW.Done()
 		p.started.Done()
 		p.W.WriteTo(p.Conn)
+		fmt.Println("Closing client from Writer end")
 	}(p.started, p.endedW)
 	p.endedW.Add(1)
 
@@ -70,12 +71,11 @@ func (p *Processor) Start() {
 		defer p.endedR.Done()
 		p.started.Done()
 		p.R.ReadFrom(p.Conn)
+		fmt.Println("Closing client from Reader end")
 	}(p.started, p.endedR)
 	p.endedR.Add(1)
-	fmt.Println("Starting processor...")
 
 	p.started.Wait()
-	fmt.Println("Started OK")
 }
 
 // Stop stops the processor goroutines.
@@ -88,6 +88,7 @@ func (p *Processor) Stop() {
 		p.Conn.Close()
 	}
 	p.endedR.Wait()
+	fmt.Println("processor stopped")
 }
 
 // RefreshDeadline refreshes the read/write deadline for the net.Conn connection.
@@ -156,7 +157,7 @@ func (p *Processor) ReadFixedHeader(fh *packets.FixedHeader) error {
 		return err
 	}
 
-	fmt.Println("FIXEDHEADER READ", *fh)
+	//fmt.Println("FIXEDHEADER READ", *fh)
 
 	// Set the fixed header in the parser.
 	p.FixedHeader = *fh
