@@ -232,3 +232,12 @@ func TestCommitTailEnded(t *testing.T) {
 
 	require.Error(t, <-o)
 }
+
+func TestCapDelta(t *testing.T) {
+	buf := NewBuffer(16, 4)
+
+	require.Equal(t, 0, buf.CapDelta())
+
+	buf.SetPos(10, 15)
+	require.Equal(t, 5, buf.CapDelta())
+}

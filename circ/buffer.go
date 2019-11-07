@@ -190,3 +190,8 @@ func (b *Buffer) CommitTail(n int) error {
 
 	return nil
 }
+
+// CapDelta returns the difference between the head and tail.
+func (b *Buffer) CapDelta() int {
+	return int(atomic.LoadInt64(&b.head) - atomic.LoadInt64(&b.tail))
+}
