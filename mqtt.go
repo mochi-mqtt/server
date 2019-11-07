@@ -96,7 +96,6 @@ func (s *Server) Serve() error {
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
 	client := newClient(c, circ.NewReader(0, 0), circ.NewWriter(0, 0))
 	client.start()
-	debug.Println("establishing connection", lid)
 
 	// Pull the header from the first packet and check for a CONNECT message.
 	fh := new(packets.FixedHeader)
@@ -131,8 +130,6 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	// Identify the new client with this connection and listener id.
 	client.identify(lid, msg, ac)
-	debug.Println(client.id, "identified")
-	debug.Printf("%s %+v\n", client.id, msg)
 
 	// If it's not a clean session and a client already exists with the same
 	// id, inherit the session.
@@ -141,12 +138,10 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		existing.Lock()
 		existing.close()
 		if msg.CleanSession {
-			debug.Println(client.id, "creating clean session")
 			for k := range existing.subscriptions {
 				s.topics.Unsubscribe(k, existing.id)
 			}
 		} else {
-			debug.Println(client.id, "inherit session")
 			client.inFlight = existing.inFlight // Inherit from existing session.
 			client.subscriptions = existing.subscriptions
 			sessionPresent = true
@@ -175,21 +170,55 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		return err
 	}
 
-	debug.Println("----------------")
-
 	// Block and listen for more packets, and end if an error or nil packet occurs.
 	var sendLWT bool
 	err = client.read(s.processPacket)
 	if err != nil {
 		sendLWT = true // Only send LWT on bad disconnect [MQTT-3.14.4-3]
 	}
-	debug.Println(client.id, "^^ STOP AND WAIT", err)
 
-	// Publish last will and testament.
+	debug.Println(client.id, "^^ CLIENT READ ENDED, ENDING", err)
+	//debug.Println(client.id, "FINAL BUF", string(client.r.Get()))
+
+	// Publish last will and testament then close.
 	s.closeClient(client, sendLWT)
 	debug.Println(client.id, "^^ CLIENT STOPPED")
 
 	return err
+}
+
+// writeClient writes packets to a client connection.
+func (s *Server) writeClient(cl *client, pk packets.Packet) error {
+	cl.w.Lock()
+	defer cl.w.Unlock()
+
+	if cl.w == nil {
+		return ErrConnectionClosed
+	}
+
+	buf := new(bytes.Buffer)
+	err := pk.Encode(buf)
+	if err != nil {
+		return err
+	}
+
+	// Write packet to client.
+	//time.Sleep(time.Millisecond * 500)
+	//debug.Printf("%s \033[1;33mWRITING PACKET %+v \033[0m\n", cl.id, pk)
+	debug.Printf("%s \033[1;33mWRITING BYTES %s\033[0m\n", cl.id, string(buf.Bytes()))
+	_, err = cl.w.Write(buf.Bytes())
+	//_, err = buf.WriteTo(cl.w)
+	if err != nil {
+		return err
+	}
+
+	// Refresh deadline to keep the connection alive.
+	cl.refreshDeadline(cl.keepalive)
+
+	// Log $SYS stats.
+	// @TODO ...
+
+	return nil
 }
 
 // processPacket processes an inbound packet for a client. Since the method is
@@ -198,9 +227,6 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 
 	// Log read stats for $SYS.
 	// @TODO ...
-
-	debug.Println(cl.id, "\033[1;32mPROCESSING PACKET", "\033[0m")
-	debug.Printf("%s %+v\n", cl.id, pk)
 
 	// Process the packet depending on the detected type.
 	switch msg := pk.(type) {
@@ -214,6 +240,7 @@ func (s *Server) processPacket(cl *client, pk packets.Packet) error {
 		return s.processPingreq(cl, msg)
 
 	case *packets.PublishPacket:
+		debug.Printf("%s \033[1;32mPROCESSING PUB PACKET %+v\033[0m\n", cl.id, string(pk.(*packets.PublishPacket).Payload))
 		return s.processPublish(cl, msg)
 
 	case *packets.PubackPacket:
@@ -490,47 +517,9 @@ func (s *Server) processUnsubscribe(cl *client, pk *packets.UnsubscribePacket) e
 	return nil
 }
 
-// writeClient writes packets to a client connection.
-func (s *Server) writeClient(cl *client, pk packets.Packet) error {
-	cl.w.Lock()
-	defer cl.w.Unlock()
-
-	// Ensure Writer is open.
-	if cl.w == nil {
-		return ErrConnectionClosed
-	}
-
-	buf := new(bytes.Buffer)
-	err := pk.Encode(buf)
-	if err != nil {
-		return err
-	}
-
-	debug.Println(cl.id, "\033[1;32m>>>>> WRITING", string(buf.Bytes()), "\033[0m")
-
-	// Write packet to client.
-	//cl.w.Write(buf.Bytes())
-	_, err = buf.WriteTo(cl.w)
-	if err != nil {
-		debug.Println("\033[1;31mWRITE TO ERROR", err, "\033[0m")
-		return err
-	}
-
-	// Refresh deadline to keep the connection alive.
-	cl.refreshDeadline(cl.keepalive)
-
-	// Log $SYS stats.
-	// @TODO ...
-
-	return nil
-}
-
 // Close attempts to gracefully shutdown the server, all listeners, and clients.
 func (s *Server) Close() error {
-
-	// Close all listeners.
 	s.listeners.CloseAll(s.closeListenerClients)
-
 	return nil
 }
 
@@ -538,7 +527,6 @@ func (s *Server) Close() error {
 func (s *Server) closeListenerClients(listener string) {
 	clients := s.clients.getByListener(listener)
 	for _, client := range clients {
-		// LWT send will be triggered by connection EOF.
 		s.closeClient(client, false) // omit errors
 	}
 
@@ -547,7 +535,10 @@ func (s *Server) closeListenerClients(listener string) {
 // closeClient closes a client connection and publishes any LWT messages.
 func (s *Server) closeClient(cl *client, sendLWT bool) error {
 
+	debug.Println(cl.id, "SERVER STOPS ISSUED >> ")
+
 	// If an LWT message is set, publish it to the topic subscribers.
+	/* // this currently loops forever on broken connection
 	if sendLWT && cl.lwt.topic != "" {
 		err := s.processPublish(cl, &packets.PublishPacket{
 			FixedHeader: packets.FixedHeader{
@@ -562,6 +553,7 @@ func (s *Server) closeClient(cl *client, sendLWT bool) error {
 			return err
 		}
 	}
+	*/
 
 	// Stop listening for new packets.
 	cl.close()

@@ -1,33 +1,39 @@
 package circ
 
 import (
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
-
-	"github.com/mochi-co/mqtt/debug"
+	//"github.com/mochi-co/mqtt/debug"
 )
 
 var (
-	// bufferSize is the default size of the buffer.
-	bufferSize int64 = 1024 * 256
+	// DefaultBufferSize is the default size of the buffer.
+	DefaultBufferSize int = 2048
 
-	// blockSize is the default size of bytes per R/W block.
-	blockSize int64 = 2048
+	// DefaultBlockSize is the default size of bytes per R/W block.
+	DefaultBlockSize int = 128
+
+	// ErrOutOfRange indicates that the supplied indexes were out of range.
+	ErrOutOfRange = fmt.Errorf("Indexes out of range")
 )
 
 // buffer contains core values and methods to be included in a reader or writer.
-type buffer struct {
-	sync.RWMutex
+type Buffer struct {
+	mu sync.RWMutex
 
-	// id is the identifier of the buffer. This is used in debug output.
-	id string
+	// ID is the identifier of the buffer. This is used in debug output.
+	ID string
 
 	// size is the size of the buffer.
-	size int64
+	size int
+
+	// mask is a bitmask of the buffer size (size-1).
+	mask int
 
 	// block is the size of the R/W block.
-	block int64
+	block int
 
 	// buffer is the circular byte buffer.
 	buf []byte
@@ -36,38 +42,42 @@ type buffer struct {
 	tmp []byte
 
 	// head is the current position in the sequence.
+	// head is a forever increasing index.
 	head int64
 
-	// tail is the committed position in the sequence, I.E. where we
+	// tail is the committed position in the sequence, typically where we
 	// have successfully consumed and processed to.
+	// tail is a forever increasing index.
 	tail int64
 
 	// rcond is the sync condition for the reader.
 	rcond *sync.Cond
 
-	// done indicates that the buffer is closed.
-	done int64
-
 	// wcond is the sync condition for the writer.
 	wcond *sync.Cond
+
+	// done indicates that the buffer is closed.
+	done int64
 }
 
-// newBuffer returns a new instance of buffer.
-func newBuffer(size, block int64) buffer {
+// NewBuffer returns a new instance of buffer. You should call NewReader or
+// NewWriter instead of this function.
+func NewBuffer(size, block int) Buffer {
 
 	if size == 0 {
-		size = bufferSize
+		size = DefaultBufferSize
 	}
 
 	if block == 0 {
-		block = blockSize
+		block = DefaultBlockSize
 	}
 	if size < 2*block {
 		size = 2 * block
 	}
 
-	return buffer{
+	return Buffer{
 		size:  size,
+		mask:  size - 1,
 		block: block,
 		buf:   make([]byte, size),
 		tmp:   make([]byte, size),
@@ -76,135 +86,107 @@ func newBuffer(size, block int64) buffer {
 	}
 }
 
-// Close notifies the buffer event loops to stop.
-func (b *buffer) Close() {
-	atomic.StoreInt64(&b.done, 1)
-	debug.Println(b.id, "[B]  STORE done=1 buffer closing")
-	b.Bump()
-}
-
-// Bump will broadcast all sync conditions.
-func (b *buffer) Bump() {
-	b.wcond.L.Lock()
-	b.wcond.Broadcast()
-	b.wcond.L.Unlock()
-	b.rcond.L.Lock()
-	b.rcond.Broadcast()
-	b.rcond.L.Unlock()
-}
-
 // Get will return the tail and head positions of the buffer.
 // This method is for use with testing.
-func (b *buffer) GetPos() (int64, int64) {
+func (b *Buffer) GetPos() (int64, int64) {
 	return atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head)
 }
 
-// Get returns the internal buffer. This method is for use with testing.
-// This method is for use with testing.
-func (b *buffer) Get() []byte {
+// SetPos sets the head and tail of the buffer.
+func (b *Buffer) SetPos(tail, head int64) {
+	atomic.StoreInt64(&b.tail, tail)
+	atomic.StoreInt64(&b.head, head)
+}
+
+// Get returns the internal buffer.
+func (b *Buffer) Get() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return b.buf
 }
 
-// SetPos sets the head and tail of the buffer.
-// This method is for use with testing.
-func (b *buffer) SetPos(tail, head int64) {
-	b.tail, b.head = tail, head
-}
+// Set writes bytes to a range of indexes in the byte buffer.
+func (b *Buffer) Set(p []byte, start, end int) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
-// Set writes bytes to a byte buffer.
-// This method is for use with testing and will panic if out of range.
-func (b *buffer) Set(p []byte, start, end int) {
+	if end > b.size || start > b.size {
+		return ErrOutOfRange
+	}
+
 	o := 0
 	for i := start; i < end; i++ {
 		b.buf[i] = p[o]
 		o++
 	}
+
+	return nil
 }
 
-// SetID sets id of the buffer.
-func (b *buffer) SetID(id string) {
-	b.id = id
+// Index returns the buffer-relative index of an integer.
+func (b *Buffer) Index(i int64) int {
+	return b.mask & int(i)
 }
 
-// awaitCapacity will hold until there are n bytes free in the buffer, blocking
-// until there are at least n bytes to write without overrunning the tail.
-func (b *buffer) awaitCapacity(n int64) (head int64, err error) {
-	head = atomic.LoadInt64(&b.head)
-	next := head + n
-	wrapped := next - b.size
+// awaitCapacity will block until there is at least n bytes between
+// the head and the tail (looking forward).
+func (b *Buffer) awaitCapacity(n int) error {
+	head := atomic.LoadInt64(&b.head)
 	tail := atomic.LoadInt64(&b.tail)
-	//var tail int64
+	next := head + int64(n)
 
-	for tail = atomic.LoadInt64(&b.tail); wrapped > tail || (tail > head && next > tail && wrapped < 0); tail = atomic.LoadInt64(&b.tail) {
-		//fmt.Println("\t", wrapped, ">", tail, wrapped > tail, "||", tail, ">", head, "&&", next, ">", tail, "&&", wrapped, "<", 0, (tail > head && next > tail && wrapped < 0))
+	// If the head has wrapped behind the tail, and next will overrun tail,
+	// then wait until tail has moved.
+	b.rcond.L.Lock()
+	for tail = atomic.LoadInt64(&b.tail); b.Index(head) < b.Index(tail) && b.Index(next) > b.Index(tail); tail = atomic.LoadInt64(&b.tail) {
 		if atomic.LoadInt64(&b.done) == 1 {
-			//	b.rcond.L.Unlock() // Make sure we unlock
-			return 0, io.EOF
+			b.rcond.L.Unlock()
+			return io.EOF
 		}
-
-		b.rcond.L.Lock()
 		b.rcond.Wait()
-		b.rcond.L.Unlock()
 	}
+	b.rcond.L.Unlock()
 
-	return
+	return nil
 }
 
-// awaitFilled will hold until there are at least n bytes waiting between the
-// tail and head.
-func (b *buffer) awaitFilled(n int64) (tail int64, err error) {
-	//head := atomic.LoadInt64(&b.head)
-	var head int64
-	tail = atomic.LoadInt64(&b.tail)
+// awaitFilled will block until there are at least n bytes between the
+// tail and the head (looking forward).
+func (b *Buffer) awaitFilled(n int) error {
+	head := atomic.LoadInt64(&b.head)
+	tail := atomic.LoadInt64(&b.tail)
 
-	for head = atomic.LoadInt64(&b.head); head > tail && tail+n > head || head < tail && b.size-tail+head < n; head = atomic.LoadInt64(&b.head) {
-		if atomic.LoadInt64(&b.done) == 1 {
-			//	b.wcond.L.Unlock() // Make sure we unlock
-			return 0, io.EOF
-		}
-
+	// Because awaitCapacity prevents the head from overrunning the t
+	// able on write, we can simply ensure there is enough space
+	// the forever-incrementing tail and head integers.
+	if tail+int64(n) > head {
 		b.wcond.L.Lock()
-		b.wcond.Wait()
+		for head = atomic.LoadInt64(&b.head); tail+int64(n) > head; head = atomic.LoadInt64(&b.head) {
+			if atomic.LoadInt64(&b.done) == 1 {
+				b.wcond.L.Unlock()
+				return io.EOF
+			}
+			b.wcond.Wait()
+		}
 		b.wcond.L.Unlock()
 	}
 
-	return
+	return nil
 }
 
-// CommitHead moves the head position of the buffer n bytes. If there is not enough
-// capacity, the method will wait until there is.
-//func (b *buffer) CommitHead(n int64) error {
-//	return nil
-//}
-
-// CommitTail moves the tail position of the buffer n bytes, and will wait until
-// there is enough capacity for at least n bytes.
-func (b *buffer) CommitTail(n int64) error {
-	_, err := b.awaitFilled(n)
+// CommitTail moves the tail position of the buffer n bytes, waiting
+// until there is enough capacity for at least n bytes.
+func (b *Buffer) CommitTail(n int) error {
+	err := b.awaitFilled(n)
 	if err != nil {
 		return err
 	}
 
-	tail := atomic.LoadInt64(&b.tail)
-	if tail+n < b.size {
-		atomic.StoreInt64(&b.tail, tail+n)
-	} else {
-		atomic.StoreInt64(&b.tail, (tail+n)%b.size)
-	}
+	atomic.AddInt64(&b.tail, int64(n))
 
 	b.rcond.L.Lock()
 	b.rcond.Broadcast()
 	b.rcond.L.Unlock()
 
 	return nil
-}
-
-// CapDelta returns the difference between the head and tail.
-func (b *buffer) CapDelta() int64 {
-	tail, head := atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head)
-	if head < tail {
-		return b.size - tail + head
-	}
-
-	return head - tail
 }

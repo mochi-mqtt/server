@@ -2,12 +2,15 @@ package circ
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"sync/atomic"
+	//"time"
+	//"fmt"
 
 	"github.com/mochi-co/mqtt/debug"
 )
+
+//	debug.Printf("%s \033[1;35mREAD PACKET %d:%d n%d %+v \033[0m\n", b.id, start, end, n, string(b.buf[start:end]))
 
 var (
 	ErrInsufficientBytes = errors.New("Insufficient bytes to return")
@@ -34,7 +37,6 @@ DONE:
 	for {
 		if atomic.LoadInt64(&b.done) == 1 {
 			err = io.EOF
-			debug.Println(b.id, "*[R] DONE BREAK")
 			break DONE
 		}
 
@@ -58,17 +60,15 @@ DONE:
 		n, err := r.Read(b.buf[start:end])
 		total += int64(n) // incr total bytes read.
 		if err != nil {
-			debug.Println(b.id, "*[R] READ ERR", err)
 			break DONE
 		}
 
-		debug.Println(b.id, "RECV", n, start, end)
-		debug.Println(b.id, "RECVBUF", b.buf[:end])
+		next := start + int64(n)
+
+		//time.Sleep(time.Millisecond * 100)
 
 		// Move the head forward.
-		atomic.StoreInt64(&b.head, start+int64(n))
-
-		debug.Println(b.id, "RECVHEAD", atomic.LoadInt64(&b.head))
+		atomic.StoreInt64(&b.head, next)
 
 		b.wcond.L.Lock()
 		b.wcond.Broadcast()
@@ -80,23 +80,19 @@ DONE:
 
 // Peek returns the next n bytes without advancing the reader.
 func (b *Reader) Peek(n int64) ([]byte, error) {
-	debug.Println(b.id, "\033[1;35m[R] n", n, "\033[0m")
-
 	tail := atomic.LoadInt64(&b.tail)
 	head := atomic.LoadInt64(&b.head)
 
 	// Wait until there's at least 1 byte of data.
-	debug.Println(b.id, "\033[1;34m[R] BEGIN PEEKING ", tail, head, "\033[0m")
+	b.wcond.L.Lock()
 	for head = atomic.LoadInt64(&b.head); head == atomic.LoadInt64(&b.tail); head = atomic.LoadInt64(&b.head) {
 		if atomic.LoadInt64(&b.done) == 1 {
-			//b.wcond.L.Unlock() // make sure we unlock
+			b.wcond.L.Unlock() // make sure we unlock
 			return nil, io.EOF
 		}
-		b.wcond.L.Lock()
 		b.wcond.Wait()
-		b.wcond.L.Unlock()
 	}
-	debug.Println(b.id, "\033[1;34m[R] Peek unlocked", tail, head, "\033[0m")
+	b.wcond.L.Unlock()
 
 	// Figure out if we can get all n bytes.
 	//if head == tail || head > tail && tail+n > head || head < tail && b.size-tail+head < n {
@@ -116,23 +112,15 @@ func (b *Reader) Peek(n int64) ([]byte, error) {
 		d = n
 	}
 
-	debug.Println(b.id, "\033[1;35m[R] d", d, "\033[0m")
-
 	// If we've wrapped, get the bytes from the next and start.
 	if head < tail {
 		b.tmp = b.buf[tail:b.size]
 		b.tmp = append(b.tmp, b.buf[:(tail+d)%b.size]...)
-		debug.Println(b.id, "\033[1;35m[R] PEEKED WRAP", tail, (tail+d)%b.size, "\033[0m")
-
+		//fmt.Println(b.id, "PEEKBUFWRP", b.tmp)
 		return b.tmp, nil
 	}
-
-	debug.Println(b.id, "\033[1;35m[R] PEEKED", tail, tail+d, "\033[0m")
-	debug.Println(b.id, "\033[1;35m[R] BUFFER", b.buf[tail:tail+d], "\033[0m")
-	debug.Println(b.id, "\033[1;35m[R] SBUF", string(b.buf[tail:tail+d]), "\033[0m")
-
+	//fmt.Println(b.id, "PEEKBUFFER", b.buf[tail:tail+d])
 	return b.buf[tail : tail+d], nil
-
 }
 
 // Read reads the next n bytes from the buffer. If n bytes are not
@@ -143,24 +131,23 @@ func (b *Reader) Read(n int64) (p []byte, err error) {
 		return
 	}
 
-	// Wait until there's at least len(p) bytes to read.
+	// Wait until there's at least n bytes to read.
 	tail, err := b.awaitFilled(n)
 	if err != nil {
 		return
 	}
 
-	// Once we have capacity, determine if the capacity wraps, and write it into
-	// the buffer p.
-	if atomic.LoadInt64(&b.head) < tail {
+	// Once we have capacity, determine if the capacity wraps,
+	// and write it into the buffer p.
+	next := tail + n
+	if next > b.size {
 		b.tmp = b.buf[tail:b.size]
-		b.tmp = append(b.tmp, b.buf[:(tail+n)%b.size]...)
-		atomic.StoreInt64(&b.tail, (tail+n)%b.size)
+		b.tmp = append(b.tmp, b.buf[:next%b.size]...)
+		atomic.StoreInt64(&b.tail, next%b.size)
 		return b.tmp, nil
-	} else if tail+n < b.size {
-		atomic.StoreInt64(&b.tail, tail+n)
-		return b.buf[tail : tail+n], nil
 	} else {
-		return p, fmt.Errorf("next byte extended size")
+		atomic.StoreInt64(&b.tail, next)
+		return b.buf[tail:next], nil
 	}
 
 	return

@@ -9,75 +9,152 @@ import (
 )
 
 func TestNewBuffer(t *testing.T) {
-	var size int64 = 16
-	var block int64 = 4
-	buf := newBuffer(size, block)
+	var size int = 16
+	var block int = 4
+	buf := NewBuffer(size, block)
 
 	require.NotNil(t, buf.buf)
 	require.NotNil(t, buf.rcond)
 	require.NotNil(t, buf.wcond)
-	require.Equal(t, size, int64(len(buf.buf)))
+	require.Equal(t, size, len(buf.buf))
 	require.Equal(t, size, buf.size)
 	require.Equal(t, block, buf.block)
 }
 
-func TestSet(t *testing.T) {
-	buf := newBuffer(8, 4)
-	require.Equal(t, make([]byte, 4), buf.buf[0:4])
-	p := []byte{'1', '2', '3', '4'}
-	buf.Set(p, 0, 4)
-	require.Equal(t, p, buf.buf[0:4])
+func TestNewBuffer0Size(t *testing.T) {
+	buf := NewBuffer(0, 0)
+	require.NotNil(t, buf.buf)
+	require.Equal(t, DefaultBufferSize, buf.size)
+	require.Equal(t, DefaultBlockSize, buf.block)
+}
 
-	buf.Set(p, 2, 6)
-	require.Equal(t, p, buf.buf[2:6])
+func TestNewBufferUndersize(t *testing.T) {
+	buf := NewBuffer(DefaultBlockSize+10, DefaultBlockSize)
+	require.NotNil(t, buf.buf)
+	require.Equal(t, DefaultBlockSize*2, buf.size)
+	require.Equal(t, DefaultBlockSize, buf.block)
 }
 
 func TestGetPos(t *testing.T) {
-	buf := newBuffer(8, 4)
-	buf.tail, buf.head = 1, 3
+	buf := NewBuffer(16, 4)
 	tail, head := buf.GetPos()
-	require.Equal(t, int64(1), tail)
-	require.Equal(t, int64(3), head)
+	require.Equal(t, int64(0), tail)
+	require.Equal(t, int64(0), head)
+
+	buf.tail = 3
+	buf.head = 11
+
+	tail, head = buf.GetPos()
+	require.Equal(t, int64(3), tail)
+	require.Equal(t, int64(11), head)
+}
+
+func TestGet(t *testing.T) {
+	buf := NewBuffer(16, 4)
+	require.Equal(t, make([]byte, 16), buf.Get())
+
+	buf.buf[0] = 1
+	buf.buf[15] = 1
+	require.Equal(t, []byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, buf.Get())
 }
 
 func TestSetPos(t *testing.T) {
-	buf := newBuffer(8, 4)
-	buf.SetPos(1, 3)
-	require.Equal(t, int64(3), buf.head)
-	require.Equal(t, int64(1), buf.tail)
+	buf := NewBuffer(16, 4)
+	require.Equal(t, int64(0), buf.tail)
+	require.Equal(t, int64(0), buf.head)
+
+	buf.SetPos(4, 8)
+	require.Equal(t, int64(4), buf.tail)
+	require.Equal(t, int64(8), buf.head)
 }
 
-func TestCommitHead(t *testing.T) {
-	//buf := newBuffer(16, 4)
+func TestSet(t *testing.T) {
+	buf := NewBuffer(16, 4)
+	err := buf.Set([]byte{1, 1, 1, 1}, 17, 19)
+	require.Error(t, err)
 
+	err = buf.Set([]byte{1, 1, 1, 1}, 4, 8)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0}, buf.buf)
+}
+
+func TestIndex(t *testing.T) {
+	buf := NewBuffer(1024, 4)
+	require.Equal(t, 512, buf.Index(512))
+	require.Equal(t, 0, buf.Index(1024))
+	require.Equal(t, 6, buf.Index(1030))
+	require.Equal(t, 6, buf.Index(61446))
+}
+
+func TestAwaitFilled(t *testing.T) {
+	tests := []struct {
+		tail  int64
+		head  int64
+		n     int
+		await int
+		desc  string
+	}{
+		{tail: 0, head: 4, n: 4, await: 0, desc: "OK 0, 4"},
+		{tail: 8, head: 11, n: 4, await: 1, desc: "OK 8, 11"},
+		{tail: 102, head: 103, n: 4, await: 3, desc: "OK 102, 103"},
+	}
+
+	for i, tt := range tests {
+		buf := NewBuffer(16, 4)
+		buf.SetPos(tt.tail, tt.head)
+		o := make(chan error)
+		go func() {
+			o <- buf.awaitFilled(4)
+		}()
+
+		time.Sleep(time.Millisecond)
+		for j := 0; j < tt.await; j++ {
+			atomic.AddInt64(&buf.head, 1)
+			buf.wcond.L.Lock()
+			buf.wcond.Broadcast()
+			buf.wcond.L.Unlock()
+		}
+
+		require.NoError(t, <-o, "Unexpected Error [i:%d] %s", i, tt.desc)
+	}
+}
+
+func TestAwaitFilledEnded(t *testing.T) {
+	buf := NewBuffer(16, 4)
+	o := make(chan error)
+	go func() {
+		o <- buf.awaitFilled(4)
+	}()
+	time.Sleep(time.Millisecond)
+	atomic.StoreInt64(&buf.done, 1)
+	buf.wcond.L.Lock()
+	buf.wcond.Broadcast()
+	buf.wcond.L.Unlock()
+
+	require.Error(t, <-o)
 }
 
 func TestAwaitCapacity(t *testing.T) {
 	tests := []struct {
 		tail  int64
 		head  int64
+		n     int
 		await int
 		desc  string
 	}{
-		{0, 0, 0, "OK 4, 0"},
-		{6, 6, 0, "OK 6, 10"},
-		{12, 16, 0, "OK 16, 4"},
-		{16, 12, 0, "OK 16 16"},
-		{3, 6, 0, "OK 3, 10"},
-		{12, 0, 0, "OK 16, 0"},
-		{1, 16, 4, "next is more than tail, wait for tail incr"},
-		{7, 5, 2, "tail is great than head, wrapped and caught up with tail, wait for tail incr"},
+		{tail: 0, head: 0, n: 4, await: 0, desc: "OK 0, 0"},
+		{tail: 0, head: 5, n: 4, await: 0, desc: "OK 0, 5"},
+		{tail: 0, head: 3, n: 6, await: 0, desc: "OK 0, 3"},
+		{tail: 0, head: 10, n: 6, await: 2, desc: "OK 0, 0"},
+		{tail: 2, head: 14, n: 4, await: 2, desc: "OK 2, 14"},
 	}
 
-	buf := newBuffer(16, 4)
 	for i, tt := range tests {
-		buf.tail, buf.head = tt.tail, tt.head
-		o := make(chan []interface{})
-		var start int64 = -1
-		var err error
+		buf := NewBuffer(16, 4)
+		buf.SetPos(tt.tail, tt.head)
+		o := make(chan error)
 		go func() {
-			start, err = buf.awaitCapacity(4)
-			o <- []interface{}{start, err}
+			o <- buf.awaitCapacity(4)
 		}()
 
 		time.Sleep(time.Millisecond)
@@ -88,81 +165,45 @@ func TestAwaitCapacity(t *testing.T) {
 			buf.rcond.L.Unlock()
 		}
 
-		time.Sleep(time.Millisecond) // wait for await capacity to actually exit
-		if start == -1 {
-			atomic.StoreInt64(&buf.done, 1)
-			buf.rcond.L.Lock()
-			buf.rcond.Broadcast()
-			buf.rcond.L.Unlock()
-		}
-		done := <-o
-		require.Equal(t, tt.head, done[0].(int64), "Head-Start mismatch [i:%d] %s", i, tt.desc)
-		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
+		require.NoError(t, <-o, "Unexpected Error [i:%d] %s", i, tt.desc)
 	}
 }
 
-func TestAwaitFilled(t *testing.T) {
-	tests := []struct {
-		tail  int64
-		head  int64
-		next  int64
-		await int
-		desc  string
-	}{
-		{0, 4, 4, 0, "OK 0, 4"},
-		{6, 10, 10, 0, "OK 6, 10"},
-		{14, 2, 2, 0, "OK 14, 2 wrapped"},
-		{6, 8, 10, 2, "Wait 6, 8"},
-		{14, 1, 4, 3, "Wait 14, 1 wrapped"},
-	}
+func TestAwaitCapacityEnded(t *testing.T) {
+	buf := NewBuffer(16, 4)
+	buf.SetPos(10, 8)
+	o := make(chan error)
+	go func() {
+		o <- buf.awaitCapacity(4)
+	}()
+	time.Sleep(time.Millisecond)
+	atomic.StoreInt64(&buf.done, 1)
+	buf.rcond.L.Lock()
+	buf.rcond.Broadcast()
+	buf.rcond.L.Unlock()
 
-	buf := newBuffer(16, 4)
-	for i, tt := range tests {
-		buf.tail, buf.head = tt.tail, tt.head
-		o := make(chan []interface{})
-		var start int64 = -1
-		var err error
-		go func() {
-			start, err = buf.awaitFilled(4)
-			o <- []interface{}{start, err}
-		}()
-
-		time.Sleep(time.Millisecond)
-		for j := 0; j < tt.await; j++ {
-			atomic.AddInt64(&buf.head, 1)
-			buf.wcond.L.Lock()
-			buf.wcond.Broadcast()
-			buf.wcond.L.Unlock()
-		}
-
-		done := <-o
-		require.Equal(t, tt.tail, done[0].(int64), "tail start [i:%d] %s", i, tt.desc)
-		require.Equal(t, tt.next, buf.head, "Head-next mismatch [i:%d] %s", i, tt.desc)
-		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
-	}
+	require.Error(t, <-o)
 }
 
 func TestCommitTail(t *testing.T) {
 	tests := []struct {
 		tail  int64
 		head  int64
+		n     int
 		next  int64
 		await int
 		desc  string
 	}{
-		{0, 5, 4, 0, "OK 0, 4"},
-		{6, 10, 10, 0, "OK 6, 10"},
-		{14, 2, 2, 0, "OK 14, 2 wrapped"},
-		{6, 8, 10, 2, "Wait 6, 8"},
-		{14, 1, 2, 2, "Wait 14, 1 wrapped"},
+		{tail: 0, head: 5, n: 4, next: 4, await: 0, desc: "OK 0, 4"},
+		{tail: 0, head: 5, n: 6, next: 6, await: 1, desc: "OK 0, 5"},
 	}
 
-	buf := newBuffer(16, 4)
 	for i, tt := range tests {
-		buf.tail, buf.head = tt.tail, tt.head
+		buf := NewBuffer(16, 4)
+		buf.SetPos(tt.tail, tt.head)
 		o := make(chan error)
 		go func() {
-			o <- buf.CommitTail(4)
+			o <- buf.CommitTail(tt.n)
 		}()
 
 		time.Sleep(time.Millisecond)
@@ -173,6 +214,21 @@ func TestCommitTail(t *testing.T) {
 			buf.wcond.L.Unlock()
 		}
 		require.NoError(t, <-o, "Unexpected Error [i:%d] %s", i, tt.desc)
-		require.Equal(t, tt.next, buf.tail, "Tail-next mismatch [i:%d] %s", i, tt.desc)
+		require.Equal(t, tt.next, buf.tail, "Next tail mismatch [i:%d] %s", i, tt.desc)
 	}
+}
+
+func TestCommitTailEnded(t *testing.T) {
+	buf := NewBuffer(16, 4)
+	o := make(chan error)
+	go func() {
+		o <- buf.CommitTail(5)
+	}()
+	time.Sleep(time.Millisecond)
+	atomic.StoreInt64(&buf.done, 1)
+	buf.wcond.L.Lock()
+	buf.wcond.Broadcast()
+	buf.wcond.L.Unlock()
+
+	require.Error(t, <-o)
 }

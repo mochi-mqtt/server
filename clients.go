@@ -13,9 +13,8 @@ import (
 
 	"github.com/mochi-co/mqtt/auth"
 	"github.com/mochi-co/mqtt/circ"
-	"github.com/mochi-co/mqtt/packets"
-
 	"github.com/mochi-co/mqtt/debug"
+	"github.com/mochi-co/mqtt/packets"
 )
 
 var (
@@ -172,19 +171,21 @@ func (cl *client) start() {
 
 	go func() {
 		cl.state.started.Done()
-		_, err := cl.w.WriteTo(cl.conn)
-		debug.Println(cl.id, "\033[1;36mWriteTo ended", err, "\033[0m")
+		cl.w.WriteTo(cl.conn)
 		cl.state.endedW.Done()
-		cl.close()
+		debug.Printf("%s \033[1;33mGR WriteTo ended\033[0m\n", cl.id)
+
+		//cl.close()
 	}()
 	cl.state.endedW.Add(1)
 
 	go func() {
 		cl.state.started.Done()
-		_, err := cl.r.ReadFrom(cl.conn)
-		debug.Println(cl.id, "\033[1;36mReadFrom ended", err, "\033[0m")
+		cl.r.ReadFrom(cl.conn)
 		cl.state.endedR.Done()
-		cl.close()
+
+		debug.Printf("%s \033[1;33mGR ReadFrom ended\033[0m\n", cl.id)
+		//cl.close()
 	}()
 	cl.state.endedR.Add(1)
 
@@ -193,24 +194,50 @@ func (cl *client) start() {
 
 // close instructs the client to shut down all processing goroutines and disconnect.
 func (cl *client) close() {
-	if atomic.LoadInt64(&cl.state.done) == 1 {
-		return
-	}
 
-	// Signal the reading and writing buffers to stop.
-	atomic.StoreInt64(&cl.state.done, 1)
+	// Signal the incoming read loop to stop.
+	//atomic.StoreInt64(&cl.state.done, 1)
+	/*
+		debug.Println(cl.id, "SIGNALLING READER TO CLOSE")
+		cl.r.Close()
+
+		debug.Println(cl.id, "WAITING FOR READER TO CLOSE")
+		cl.state.endedR.Wait()
+
+		debug.Println(cl.id, "SIGNALLING WRITER TO CLOSE")
+		//cl.w.Close()
+		debug.Println(cl.id, "WAITING FOR WRITER TO CLOSE")
+		//cl.state.endedW.Wait()
+		rt, rh := cl.r.GetPos()
+		debug.Println(cl.id, "WRITER CLOSED", rt, rh)
+
+		// Cut off the connection if it's still up.
+		if cl.conn != nil {
+			//debug.Println(cl.id, "CLOSING CONNECTION")
+			//	cl.conn.Close()
+		}
+
+		//cl.state.endedW.Wait()
+	*/
+
+	debug.Println(cl.id, "SIGNALLING READER TO CLOSE")
 	cl.r.Close()
+	debug.Println(cl.id, "READER CLOSE SENT")
+
+	// Wait for the writing buffer to finish.
+	debug.Println(cl.id, "SIGNALLING WRITER TO CLOSE")
+	cl.w.Close()
+	cl.state.endedW.Wait()
 
 	// Cut off the connection if it's still up.
 	if cl.conn != nil {
-		debug.Println(cl.id, "closing conn")
 		cl.conn.Close()
 	}
 
 	// Wait for the reading buffer to close.
 	cl.state.endedR.Wait()
-	cl.w.Close()
-	debug.Println(cl.id, "client close issued")
+	//cl.w.Close()
+
 }
 
 // readFixedHeader reads in the values of the next packet's fixed header.
@@ -222,13 +249,15 @@ func (cl *client) readFixedHeader(fh *packets.FixedHeader) error {
 		return err
 	}
 
+	fmt.Println(cl.id, "READFH PEEKED", peeked)
+
 	// Unpack message type and flags from byte 1.
 	err = fh.Decode(peeked[0])
 	if err != nil {
-
 		// @SPEC [MQTT-2.2.2-2]
 		// If invalid flags are received, the receiver MUST close the Network Connection.
-		return packets.ErrInvalidFlags
+		return err
+		//return packets.ErrInvalidFlags
 	}
 
 	// The remaining length value can be up to 5 bytes. Peek through each byte
@@ -284,16 +313,12 @@ func (cl *client) read(handler func(*client, packets.Packet) error) error {
 	fh := new(packets.FixedHeader)
 DONE:
 	for {
-		cd := cl.r.CapDelta()
-		if atomic.LoadInt64(&cl.state.done) == 1 {
-			if cd == 0 {
-				break DONE
-			} else {
-				//fmt.Println("/////", cl.id, "reader capDelta not met", cd)
-			}
+		if atomic.LoadInt64(&cl.state.done) == 1 && cl.r.CapDelta() == 0 {
+			break DONE
 		}
 
 		if cl.conn == nil {
+			debug.Printf("%s \033[1;32mRR connection closed\033[0m\n", cl.id)
 			return ErrConnectionClosed
 		}
 
@@ -303,24 +328,28 @@ DONE:
 		// Read in the fixed header of the packet.
 		err = cl.readFixedHeader(fh)
 		if err != nil {
+			debug.Printf("%s \033[1;32mRR bad fixed header: %v\033[0m\n", cl.id, err)
+			fmt.Printf("%+v\n", fh)
 			return ErrReadFixedHeader
 		}
 
 		// If it's a disconnect packet, begin the close process.
 		if fh.Type == packets.Disconnect {
-			debug.Println(cl.id, "read loop caught disconnect")
+			debug.Printf("%s \033[1;32mRR got disconnect %v\033[0m\n", cl.id)
 			break DONE
 		}
 
 		// Otherwise read in the packet payload.
 		pk, err = cl.readPacket()
 		if err != nil {
+			debug.Printf("%s \033[1;32mRR bad read packet: %v\033[0m\n", cl.id, err)
 			return ErrReadPacketPayload
 		}
 
 		// Validate the packet if necessary.
 		_, err = pk.Validate()
 		if err != nil {
+			debug.Printf("%s \033[1;32mRR validation failure: %v\033[0m\n", cl.id, err)
 			return ErrReadPacketValidation
 		}
 
@@ -328,7 +357,6 @@ DONE:
 		handler(cl, pk)
 	}
 
-	debug.Println(cl.id, "read loop finished")
 	return nil
 }
 
@@ -382,8 +410,6 @@ func (cl *client) readPacket() (pk packets.Packet, err error) {
 	if err != nil {
 		return pk, err
 	}
-
-	debug.Println(cl.id, "\033[1;33mDECODED", pk, "\033[0m")
 
 	return
 }
