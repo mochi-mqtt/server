@@ -15,8 +15,8 @@ var (
 	// DefaultBlockSize is the default size of bytes per R/W block.
 	DefaultBlockSize int = 128
 
-	// ErrOutOfRange indicates that the supplied indexes were out of range.
-	ErrOutOfRange = fmt.Errorf("Indexes out of range")
+	ErrOutOfRange        = fmt.Errorf("Indexes out of range")
+	ErrInsufficientBytes = fmt.Errorf("Insufficient bytes to return")
 )
 
 // buffer contains core values and methods to be included in a reader or writer.
@@ -143,6 +143,7 @@ func (b *Buffer) awaitCapacity(n int) error {
 			b.rcond.L.Unlock()
 			return io.EOF
 		}
+		fmt.Println("waiting")
 		b.rcond.Wait()
 	}
 	b.rcond.L.Unlock()
