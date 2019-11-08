@@ -60,50 +60,25 @@ func (b *Reader) ReadFrom(r io.Reader) (total int64, err error) {
 	}
 }
 
-/*
-func (b *Reader) ReadFrom(r io.Reader) (total int64, err error) {
-DONE:
-	for {
-		if atomic.LoadInt64(&b.done) == 1 {
-			err = io.EOF
-			break DONE
-		}
-
-		// Wait until there's enough capacity in the buffer.
-		st, err := b.awaitCapacity(b.block)
-		if err != nil {
-			continue
-		}
-
-		// Find the start and end indexes within the buffer.
-		start := st & (b.size - 1)
-		end := start + b.block
-
-		// If we've overrun, just fill up to the end and then collect
-		// the rest on the next pass.
-		if end > b.size {
-			end = b.size
-		}
-
-		// Read into the buffer between the start and end indexes only.
-		n, err := r.Read(b.buf[start:end])
-		total += int64(n) // incr total bytes read.
-		if err != nil {
-			break DONE
-		}
-
-		next := start + int64(n)
-
-		//time.Sleep(time.Millisecond * 100)
-
-		// Move the head forward.
-		atomic.StoreInt64(&b.head, next)
-
-		b.wcond.L.Lock()
-		b.wcond.Broadcast()
-		b.wcond.L.Unlock()
+// Read reads n bytes from the buffer, and will block until at n bytes
+// exist in the buffer to read.
+func (b *Buffer) Read(n int) (p []byte, err error) {
+	err = b.awaitFilled(n)
+	if err != nil {
+		return
 	}
 
-	return
+	tail := atomic.LoadInt64(&b.tail)
+	next := tail + int64(n)
+
+	// If the read overruns the buffer, get everything until the end
+	// and then whatever is left from the start.
+	if b.Index(tail) > b.Index(next) {
+		b.tmp = b.buf[b.Index(tail):]
+		b.tmp = append(b.tmp, b.buf[:b.Index(next)]...)
+		return b.tmp, nil
+	}
+
+	// Otherwise, simple tail:next read.
+	return b.buf[b.Index(tail):b.Index(next)], nil
 }
-*/

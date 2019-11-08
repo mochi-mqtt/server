@@ -160,17 +160,16 @@ func (b *Buffer) awaitFilled(n int) error {
 	// Because awaitCapacity prevents the head from overrunning the t
 	// able on write, we can simply ensure there is enough space
 	// the forever-incrementing tail and head integers.
-	if tail+int64(n) > head {
-		b.wcond.L.Lock()
-		for head = atomic.LoadInt64(&b.head); tail+int64(n) > head; head = atomic.LoadInt64(&b.head) {
-			if atomic.LoadInt64(&b.done) == 1 {
-				b.wcond.L.Unlock()
-				return io.EOF
-			}
-			b.wcond.Wait()
+	b.wcond.L.Lock()
+	for head = atomic.LoadInt64(&b.head); tail+int64(n) > head; head = atomic.LoadInt64(&b.head) {
+		if atomic.LoadInt64(&b.done) == 1 {
+			b.wcond.L.Unlock()
+			return io.EOF
 		}
-		b.wcond.L.Unlock()
+		fmt.Println(tail+int64(n) > head, tail+int64(n), head)
+		b.wcond.Wait()
 	}
+	b.wcond.L.Unlock()
 
 	return nil
 }
