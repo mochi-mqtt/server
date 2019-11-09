@@ -143,7 +143,6 @@ func (b *Buffer) awaitCapacity(n int) error {
 			b.rcond.L.Unlock()
 			return io.EOF
 		}
-		fmt.Println("waiting")
 		b.rcond.Wait()
 	}
 	b.rcond.L.Unlock()
@@ -166,7 +165,7 @@ func (b *Buffer) awaitFilled(n int) error {
 			b.wcond.L.Unlock()
 			return io.EOF
 		}
-		fmt.Println(tail+int64(n) > head, tail+int64(n), head)
+
 		b.wcond.Wait()
 	}
 	b.wcond.L.Unlock()
