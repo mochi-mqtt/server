@@ -1,6 +1,7 @@
 package circ
 
 import (
+	"fmt"
 	"io"
 	"sync/atomic"
 )
@@ -34,15 +35,16 @@ func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
 
 		// Get all the bytes between the tail and head, wrapping if necessary.
 		tail := atomic.LoadInt64(&b.tail)
-		head := atomic.LoadInt64(&b.head)
+		rTail := b.Index(tail)
+		rHead := b.Index(atomic.LoadInt64(&b.head))
 		n := b.CapDelta()
 		p := make([]byte, 0, n)
 
-		if b.Index(tail) > b.Index(head) {
-			p = append(p, b.buf[b.Index(tail):]...)
-			p = append(p, b.buf[:b.Index(head)]...)
+		if rTail > rHead {
+			p = append(p, b.buf[rTail:]...)
+			p = append(p, b.buf[:rHead]...)
 		} else {
-			p = append(p, b.buf[b.Index(tail):b.Index(head)]...)
+			p = append(p, b.buf[rTail:rHead]...)
 		}
 
 		// Write capDelta n bytes to the io.Writer.
@@ -58,4 +60,38 @@ func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
 		b.rcond.Broadcast()
 		b.rcond.L.Unlock()
 	}
+}
+
+// Write writes the buffer to the buffer p, returning the number of bytes written.
+func (b *Writer) Write(p []byte) (total int, err error) {
+	err = b.awaitEmpty(len(p))
+	if err != nil {
+		return
+	}
+	fmt.Println("awaited", len(p), b.tail, b.head, b.Index(b.tail), b.Index(b.head))
+
+	total = b.writeBytes(p)
+
+	atomic.AddInt64(&b.head, int64(total))
+
+	b.wcond.L.Lock()
+	b.wcond.Broadcast()
+	b.wcond.L.Unlock()
+
+	return
+}
+
+// writeBytes writes bytes to the buffer from the start position, and returns
+// the new head position. This function does not wait for capacity and will
+// overwrite any existing bytes.
+func (b *Writer) writeBytes(p []byte) int {
+	var o int
+	var n int
+	for i := 0; i < len(p); i++ {
+		o = b.Index(atomic.LoadInt64(&b.head) + int64(i))
+		b.buf[o] = p[i]
+		n++
+	}
+
+	return n
 }

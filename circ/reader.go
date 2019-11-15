@@ -29,7 +29,7 @@ func (b *Reader) ReadFrom(r io.Reader) (total int64, err error) {
 
 		// Wait until there's enough capacity in the buffer before
 		// trying to read more bytes from the io.Reader.
-		err := b.awaitCapacity(b.block)
+		err := b.awaitEmpty(b.block)
 		if err != nil {
 			// b.done is the only error condition for awaitCapacity
 			// so loop around and return properly.

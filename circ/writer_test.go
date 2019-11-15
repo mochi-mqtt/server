@@ -84,3 +84,65 @@ func TestWriteToBadWriter(t *testing.T) {
 	require.Error(t, err)
 	r.Close()
 }
+
+func TestWrite(t *testing.T) {
+	tests := []struct {
+		tail  int64
+		head  int64
+		rHead int64
+		bytes []byte
+		want  []byte
+		desc  string
+	}{
+		{tail: 0, head: 0, rHead: 4, bytes: []byte{'a', 'b', 'c', 'd'}, want: []byte{'a', 'b', 'c', 'd', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, desc: "0>4 OK"},
+		{tail: 4, head: 14, rHead: 2, bytes: []byte{'a', 'b', 'c', 'd'}, want: []byte{'c', 'd', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'a', 'b'}, desc: "14>2 OK"},
+	}
+
+	for i, tt := range tests {
+		buf := NewWriter(16, 4)
+		buf.SetPos(tt.tail, tt.head)
+
+		o := make(chan []interface{})
+		go func() {
+			nn, err := buf.Write(tt.bytes)
+			o <- []interface{}{nn, err}
+		}()
+
+		done := <-o
+		require.Equal(t, tt.want, buf.buf, "Wanted written mismatch [i:%d] %s", i, tt.desc)
+		require.Nil(t, done[1], "Unexpected Error [i:%d] %s", i, tt.desc)
+	}
+}
+
+func TestWriteEnded(t *testing.T) {
+	buf := NewWriter(16, 4)
+	buf.SetPos(15, 30)
+	buf.done = 1
+
+	_, err := buf.Write([]byte{'a', 'b', 'c', 'd'})
+	require.Error(t, err)
+}
+
+func TestWriteBytes(t *testing.T) {
+	tests := []struct {
+		tail  int64
+		head  int64
+		bytes []byte
+		want  []byte
+		start int
+		desc  string
+	}{
+		{tail: 0, head: 0, bytes: []byte{'a', 'b', 'c', 'd'}, want: []byte{'a', 'b', 'c', 'd', 0, 0, 0, 0}, desc: "0,4 OK"},
+		{tail: 6, head: 6, bytes: []byte{'a', 'b', 'c', 'd'}, want: []byte{'c', 'd', 0, 0, 0, 0, 'a', 'b'}, desc: "6,2 OK wrapped"},
+	}
+
+	for i, tt := range tests {
+		buf := NewWriter(8, 4)
+		buf.SetPos(tt.tail, tt.head)
+		n := buf.writeBytes(tt.bytes)
+
+		require.Equal(t, tt.want, buf.buf, "Buffer mistmatch [i:%d] %s", i, tt.desc)
+		require.Equal(t, len(tt.bytes), n)
+	}
+
+}

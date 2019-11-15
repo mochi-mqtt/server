@@ -1,6 +1,7 @@
 package circ
 
 import (
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -94,12 +95,13 @@ func TestAwaitFilled(t *testing.T) {
 		await int
 		desc  string
 	}{
-		{tail: 0, head: 4, n: 4, await: 0, desc: "OK 0, 4"},
+		{tail: 0, head: 4, n: 4, await: 1, desc: "OK 0, 4"},
 		{tail: 8, head: 11, n: 4, await: 1, desc: "OK 8, 11"},
 		{tail: 102, head: 103, n: 4, await: 3, desc: "OK 102, 103"},
 	}
 
 	for i, tt := range tests {
+		fmt.Println(i)
 		buf := NewBuffer(16, 4)
 		buf.SetPos(tt.tail, tt.head)
 		o := make(chan error)
@@ -108,12 +110,10 @@ func TestAwaitFilled(t *testing.T) {
 		}()
 
 		time.Sleep(time.Millisecond)
-		for j := 0; j < tt.await; j++ {
-			atomic.AddInt64(&buf.head, 1)
-			buf.wcond.L.Lock()
-			buf.wcond.Broadcast()
-			buf.wcond.L.Unlock()
-		}
+		atomic.AddInt64(&buf.head, int64(tt.await))
+		buf.wcond.L.Lock()
+		buf.wcond.Broadcast()
+		buf.wcond.L.Unlock()
 
 		require.NoError(t, <-o, "Unexpected Error [i:%d] %s", i, tt.desc)
 	}
@@ -134,19 +134,21 @@ func TestAwaitFilledEnded(t *testing.T) {
 	require.Error(t, <-o)
 }
 
-func TestAwaitCapacity(t *testing.T) {
+func TestAwaitEmptyOK(t *testing.T) {
 	tests := []struct {
 		tail  int64
 		head  int64
-		n     int
 		await int
 		desc  string
 	}{
-		{tail: 0, head: 0, n: 4, await: 0, desc: "OK 0, 0"},
-		{tail: 0, head: 5, n: 4, await: 0, desc: "OK 0, 5"},
-		{tail: 0, head: 3, n: 6, await: 0, desc: "OK 0, 3"},
-		{tail: 0, head: 10, n: 6, await: 2, desc: "OK 0, 0"},
-		{tail: 2, head: 14, n: 4, await: 2, desc: "OK 2, 14"},
+		{tail: 0, head: 0, await: 0, desc: "OK 0, 0"},
+		{tail: 0, head: 5, await: 0, desc: "OK 0, 5"},
+		//	{tail: 0, head: 14, await: 3, desc: "OK wrap 0, 14 "},
+		//	{tail: 22, head: 35, await: 2, desc: "OK wrap 0, 14 "},
+
+		//{tail: 15, head: 17, await: 7, desc: "OK 0, 0"},
+		//{tail: 0, head: 10, await: 2, desc: "OK 0, 0"},
+		//{tail: 2, head: 14,  await: 2, desc: "OK 2, 14"},
 	}
 
 	for i, tt := range tests {
@@ -154,27 +156,25 @@ func TestAwaitCapacity(t *testing.T) {
 		buf.SetPos(tt.tail, tt.head)
 		o := make(chan error)
 		go func() {
-			o <- buf.awaitCapacity(4)
+			o <- buf.awaitEmpty(4)
 		}()
 
 		time.Sleep(time.Millisecond)
-		for j := 0; j < tt.await; j++ {
-			atomic.AddInt64(&buf.tail, 1)
-			buf.rcond.L.Lock()
-			buf.rcond.Broadcast()
-			buf.rcond.L.Unlock()
-		}
+		atomic.AddInt64(&buf.tail, int64(tt.await))
+		buf.rcond.L.Lock()
+		buf.rcond.Broadcast()
+		buf.rcond.L.Unlock()
 
 		require.NoError(t, <-o, "Unexpected Error [i:%d] %s", i, tt.desc)
 	}
 }
 
-func TestAwaitCapacityEnded(t *testing.T) {
+func TestAwaitEmptyEnded(t *testing.T) {
 	buf := NewBuffer(16, 4)
 	buf.SetPos(10, 8)
 	o := make(chan error)
 	go func() {
-		o <- buf.awaitCapacity(4)
+		o <- buf.awaitEmpty(4)
 	}()
 	time.Sleep(time.Millisecond)
 	atomic.StoreInt64(&buf.done, 1)
@@ -183,6 +183,50 @@ func TestAwaitCapacityEnded(t *testing.T) {
 	buf.rcond.L.Unlock()
 
 	require.Error(t, <-o)
+}
+
+func TestCheckEmpty(t *testing.T) {
+	buf := NewBuffer(16, 4)
+
+	tests := []struct {
+		head int64
+		tail int64
+		want bool
+		desc string
+	}{
+		{tail: 0, head: 0, want: true, desc: "0, 0 true"},
+		{tail: 3, head: 4, want: true, desc: "4, 3 true"},
+		{tail: 15, head: 17, want: true, desc: "15, 17(1) true"},
+
+		{tail: 1, head: 30, want: false, desc: "1, 30(14) false"},
+		{tail: 15, head: 30, want: false, desc: "15, 30(14) false; head has caught up to tail"},
+	}
+	for i, tt := range tests {
+		buf.SetPos(tt.tail, tt.head)
+		require.Equal(t, tt.want, buf.checkEmpty(4), "Mismatched bool wanted [i:%d] %s", i, tt.desc)
+	}
+}
+
+func TestCheckFilled(t *testing.T) {
+	buf := NewBuffer(16, 4)
+
+	tests := []struct {
+		head int64
+		tail int64
+		want bool
+		desc string
+	}{
+		{tail: 0, head: 0, want: false, desc: "0, 0 false"},
+		{tail: 0, head: 4, want: true, desc: "0, 4 true"},
+		{tail: 14, head: 16, want: false, desc: "14,16 false"},
+		{tail: 14, head: 18, want: true, desc: "14,16 true"},
+	}
+
+	for i, tt := range tests {
+		buf.SetPos(tt.tail, tt.head)
+		require.Equal(t, tt.want, buf.checkFilled(4), "Mismatched bool wanted [i:%d] %s", i, tt.desc)
+	}
+
 }
 
 func TestCommitTail(t *testing.T) {

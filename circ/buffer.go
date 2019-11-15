@@ -128,22 +128,20 @@ func (b *Buffer) Index(i int64) int {
 	return b.mask & int(i)
 }
 
-// awaitCapacity will block until there is at least n bytes between
+// awaitEmpty will block until there is at least n bytes between
 // the head and the tail (looking forward).
-func (b *Buffer) awaitCapacity(n int) error {
-	head := atomic.LoadInt64(&b.head)
-	tail := atomic.LoadInt64(&b.tail)
-	next := head + int64(n)
-
+func (b *Buffer) awaitEmpty(n int) error {
 	// If the head has wrapped behind the tail, and next will overrun tail,
 	// then wait until tail has moved.
 	b.rcond.L.Lock()
-	for tail = atomic.LoadInt64(&b.tail); b.Index(head) < b.Index(tail) && b.Index(next) > b.Index(tail); tail = atomic.LoadInt64(&b.tail) {
+	for !b.checkEmpty(n) {
+		fmt.Println("awaiting empty")
 		if atomic.LoadInt64(&b.done) == 1 {
 			b.rcond.L.Unlock()
 			return io.EOF
 		}
 		b.rcond.Wait()
+		fmt.Println("waited empty")
 	}
 	b.rcond.L.Unlock()
 
@@ -153,14 +151,11 @@ func (b *Buffer) awaitCapacity(n int) error {
 // awaitFilled will block until there are at least n bytes between the
 // tail and the head (looking forward).
 func (b *Buffer) awaitFilled(n int) error {
-	head := atomic.LoadInt64(&b.head)
-	tail := atomic.LoadInt64(&b.tail)
-
 	// Because awaitCapacity prevents the head from overrunning the t
 	// able on write, we can simply ensure there is enough space
 	// the forever-incrementing tail and head integers.
 	b.wcond.L.Lock()
-	for head = atomic.LoadInt64(&b.head); tail+int64(n) > head; head = atomic.LoadInt64(&b.head) {
+	for !b.checkFilled(n) {
 		if atomic.LoadInt64(&b.done) == 1 {
 			b.wcond.L.Unlock()
 			return io.EOF
@@ -171,6 +166,30 @@ func (b *Buffer) awaitFilled(n int) error {
 	b.wcond.L.Unlock()
 
 	return nil
+}
+
+// checkEmpty returns true if there are at least n bytes between the head and
+// the tail.
+func (b *Buffer) checkEmpty(n int) bool {
+	head := atomic.LoadInt64(&b.head)
+	next := head + int64(n)
+	tail := atomic.LoadInt64(&b.tail)
+	if next-tail > int64(b.size) {
+		return false
+	}
+
+	return true
+}
+
+// checkFilled returns true if there are at least n bytes between the tail and
+// the head.
+func (b *Buffer) checkFilled(n int) bool {
+	fmt.Println(n, "t", atomic.LoadInt64(&b.tail), "h", atomic.LoadInt64(&b.head), atomic.LoadInt64(&b.tail)+int64(n) <= atomic.LoadInt64(&b.head))
+	if atomic.LoadInt64(&b.tail)+int64(n) <= atomic.LoadInt64(&b.head) {
+		return true
+	}
+
+	return false
 }
 
 // CommitTail moves the tail position of the buffer n bytes, waiting
