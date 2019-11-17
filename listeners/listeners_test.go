@@ -71,25 +71,25 @@ func TestMockListenerClose(t *testing.T) {
 	require.Equal(t, true, closed)
 }
 
-func TestNewListeners(t *testing.T) {
-	l := NewListeners()
+func TestNew(t *testing.T) {
+	l := New()
 	require.NotNil(t, l.internal)
 }
 
 func BenchmarkNewListeners(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		NewListeners()
+		New()
 	}
 }
 
 func TestAddListener(t *testing.T) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	require.Contains(t, l.internal, "t1")
 }
 
 func BenchmarkAddListener(b *testing.B) {
-	l := NewListeners()
+	l := New()
 	mocked := NewMockListener("t1", ":1882")
 	for n := 0; n < b.N; n++ {
 		l.Add(mocked)
@@ -97,7 +97,7 @@ func BenchmarkAddListener(b *testing.B) {
 }
 
 func TestGetListener(t *testing.T) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
 	require.Contains(t, l.internal, "t1")
@@ -109,7 +109,7 @@ func TestGetListener(t *testing.T) {
 }
 
 func BenchmarkGetListener(b *testing.B) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	for n := 0; n < b.N; n++ {
 		l.Get("t1")
@@ -117,7 +117,7 @@ func BenchmarkGetListener(b *testing.B) {
 }
 
 func TestLenListener(t *testing.T) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
 	require.Contains(t, l.internal, "t1")
@@ -126,7 +126,7 @@ func TestLenListener(t *testing.T) {
 }
 
 func BenchmarkLenListener(b *testing.B) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	for n := 0; n < b.N; n++ {
 		l.Len()
@@ -134,7 +134,7 @@ func BenchmarkLenListener(b *testing.B) {
 }
 
 func TestDeleteListener(t *testing.T) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	require.Contains(t, l.internal, "t1")
 
@@ -145,7 +145,7 @@ func TestDeleteListener(t *testing.T) {
 }
 
 func BenchmarkDeleteListener(b *testing.B) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	for n := 0; n < b.N; n++ {
 		l.Delete("t1")
@@ -153,7 +153,7 @@ func BenchmarkDeleteListener(b *testing.B) {
 }
 
 func TestServeListener(t *testing.T) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Serve("t1", MockEstablisher)
 	time.Sleep(time.Millisecond)
@@ -164,7 +164,7 @@ func TestServeListener(t *testing.T) {
 }
 
 func BenchmarkServeListener(b *testing.B) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	for n := 0; n < b.N; n++ {
 		l.Serve("t1", MockEstablisher)
@@ -172,7 +172,7 @@ func BenchmarkServeListener(b *testing.B) {
 }
 
 func TestServeAllListeners(t *testing.T) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
 	l.Add(NewMockListener("t3", ":1882"))
@@ -193,7 +193,7 @@ func TestServeAllListeners(t *testing.T) {
 }
 
 func BenchmarkServeAllListeners(b *testing.B) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1883"))
 	l.Add(NewMockListener("t3", ":1884"))
@@ -203,7 +203,7 @@ func BenchmarkServeAllListeners(b *testing.B) {
 }
 
 func TestCloseListener(t *testing.T) {
-	l := NewListeners()
+	l := New()
 	mocked := NewMockListener("t1", ":1882")
 	l.Add(mocked)
 	l.Serve("t1", MockEstablisher)
@@ -216,7 +216,7 @@ func TestCloseListener(t *testing.T) {
 }
 
 func BenchmarkCloseListener(b *testing.B) {
-	l := NewListeners()
+	l := New()
 	mocked := NewMockListener("t1", ":1882")
 	l.Add(mocked)
 	l.Serve("t1", MockEstablisher)
@@ -227,7 +227,7 @@ func BenchmarkCloseListener(b *testing.B) {
 }
 
 func TestCloseAllListeners(t *testing.T) {
-	l := NewListeners()
+	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
 	l.Add(NewMockListener("t3", ":1882"))
@@ -250,7 +250,7 @@ func TestCloseAllListeners(t *testing.T) {
 }
 
 func BenchmarkCloseAllListeners(b *testing.B) {
-	l := NewListeners()
+	l := New()
 	mocked := NewMockListener("t1", ":1882")
 	l.Add(mocked)
 	l.Serve("t1", MockEstablisher)

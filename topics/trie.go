@@ -1,12 +1,9 @@
-package trie
+package topics
 
 import (
 	"fmt"
-	"strings"
-	//	"sync"
 	sync "github.com/sasha-s/go-deadlock"
-
-	//"github.com/davecgh/go-spew/spew"
+	"strings"
 
 	"github.com/mochi-co/mqtt/packets"
 	"github.com/mochi-co/mqtt/topics"
@@ -21,8 +18,7 @@ func ReLeaf(m string, leaf *Leaf, d int) {
 
 // Index is a prefix/trie tree containing topic subscribers and retained messages.
 type Index struct {
-	mu sync.RWMutex
-	//	sync.RWMutex
+	mu   sync.RWMutex
 	Root *Leaf
 }
 
@@ -46,7 +42,6 @@ func (x *Index) RetainMessage(msg *packets.PublishPacket) {
 	} else {
 		x.unpoperate(msg.TopicName, "", true)
 	}
-	//spew.Dump(x.Root)
 }
 
 // Subscribe creates a subscription filter for a client.
@@ -56,7 +51,6 @@ func (x *Index) Subscribe(filter, client string, qos byte) {
 	n := x.poperate(filter)
 	n.Clients[client] = qos
 	n.Filter = filter
-	//ReLeaf("sub", x.Root, 0)
 }
 
 // Unsubscribe removes a subscription filter for a client. Returns true if an

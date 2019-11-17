@@ -44,13 +44,10 @@ type Listeners struct {
 
 	// internal is a map of active listeners.
 	internal map[string]Listener
-
-	// Errors is a channel of errors sent by listeners.
-	//Errors chan error
 }
 
-// NewListeners returns a new instance of Listeners.
-func NewListeners() Listeners {
+// New returns a new instance of Listeners.
+func New() Listeners {
 	return Listeners{
 		internal: map[string]Listener{},
 	}

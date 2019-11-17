@@ -143,12 +143,11 @@ func TestAwaitEmptyOK(t *testing.T) {
 	}{
 		{tail: 0, head: 0, await: 0, desc: "OK 0, 0"},
 		{tail: 0, head: 5, await: 0, desc: "OK 0, 5"},
-		//	{tail: 0, head: 14, await: 3, desc: "OK wrap 0, 14 "},
-		//	{tail: 22, head: 35, await: 2, desc: "OK wrap 0, 14 "},
-
-		//{tail: 15, head: 17, await: 7, desc: "OK 0, 0"},
-		//{tail: 0, head: 10, await: 2, desc: "OK 0, 0"},
-		//{tail: 2, head: 14,  await: 2, desc: "OK 2, 14"},
+		{tail: 0, head: 14, await: 3, desc: "OK wrap 0, 14 "},
+		{tail: 22, head: 35, await: 2, desc: "OK wrap 0, 14 "},
+		{tail: 15, head: 17, await: 7, desc: "OK 15,2"},
+		{tail: 0, head: 10, await: 2, desc: "OK 0, 10"},
+		{tail: 1, head: 15, await: 4, desc: "OK 2, 14"},
 	}
 
 	for i, tt := range tests {
@@ -171,7 +170,7 @@ func TestAwaitEmptyOK(t *testing.T) {
 
 func TestAwaitEmptyEnded(t *testing.T) {
 	buf := NewBuffer(16, 4)
-	buf.SetPos(10, 8)
+	buf.SetPos(1, 15)
 	o := make(chan error)
 	go func() {
 		o <- buf.awaitEmpty(4)
@@ -197,7 +196,6 @@ func TestCheckEmpty(t *testing.T) {
 		{tail: 0, head: 0, want: true, desc: "0, 0 true"},
 		{tail: 3, head: 4, want: true, desc: "4, 3 true"},
 		{tail: 15, head: 17, want: true, desc: "15, 17(1) true"},
-
 		{tail: 1, head: 30, want: false, desc: "1, 30(14) false"},
 		{tail: 15, head: 30, want: false, desc: "15, 30(14) false; head has caught up to tail"},
 	}

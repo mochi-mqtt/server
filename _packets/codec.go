@@ -6,9 +6,9 @@ import (
 	"unsafe"
 )
 
-// bytesToString provides a zero-alloc, no-copy byte to string conversion.
+// byteSlice2String provides a zero-alloc, no-copy byte to string conversion.
 // via https://github.com/golang/go/issues/25484#issuecomment-391415660
-func bytesToString(bs []byte) string {
+func byteSlice2String(bs []byte) string {
 	return *(*string)(unsafe.Pointer(&bs))
 }
 
@@ -21,6 +21,24 @@ func decodeUint16(buf []byte, offset int) (uint16, int, error) {
 	return binary.BigEndian.Uint16(buf[offset : offset+2]), offset + 2, nil
 }
 
+// decodeString extracts a string from a byte array, beginning at an offset.
+func decodeString(buf []byte, offset int) (string, int, error) {
+	length, next, err := decodeUint16(buf, offset)
+	if err != nil {
+		return "", 0, err
+	}
+
+	if next+int(length) > len(buf) {
+		return "", 0, ErrOffsetStrOutOfRange
+	}
+
+	if !validUTF8(buf[next : next+int(length)]) {
+		return "", 0, ErrOffsetStrInvalidUTF8
+	}
+
+	return byteSlice2String(buf[next : next+int(length)]), next + int(length), nil
+}
+
 // decodeBytes extracts a byte array from a byte array, beginning at an offset. Used primarily for message payloads.
 func decodeBytes(buf []byte, offset int) ([]byte, int, error) {
 	length, next, err := decodeUint16(buf, offset)
@@ -30,10 +48,6 @@ func decodeBytes(buf []byte, offset int) ([]byte, int, error) {
 
 	if next+int(length) > len(buf) {
 		return make([]byte, 0, 0), 0, ErrOffsetStrOutOfRange
-	}
-
-	if !validUTF8(buf[next : next+int(length)]) {
-		return make([]byte, 0, 0), 0, ErrOffsetStrInvalidUTF8
 	}
 
 	return buf[next : next+int(length)], next + int(length), nil
@@ -92,6 +106,7 @@ func encodeString(val string) []byte {
 // validUTF8 checks if the byte array contains valid UTF-8 characters, specifically
 // conforming to the MQTT specification requirements.
 func validUTF8(b []byte) bool {
+
 	// [MQTT-1.4.0-1] The character data in a UTF-8 encoded string MUST be well-formed UTF-8...
 	if !utf8.Valid(b) {
 		return false

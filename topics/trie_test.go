@@ -1,9 +1,7 @@
-package trie
+package topics
 
 import (
 	"testing"
-
-	//"github.com/davecgh/go-spew/spew"
 
 	"github.com/stretchr/testify/require"
 

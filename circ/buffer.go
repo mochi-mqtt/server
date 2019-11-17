@@ -135,13 +135,11 @@ func (b *Buffer) awaitEmpty(n int) error {
 	// then wait until tail has moved.
 	b.rcond.L.Lock()
 	for !b.checkEmpty(n) {
-		fmt.Println("awaiting empty")
 		if atomic.LoadInt64(&b.done) == 1 {
 			b.rcond.L.Unlock()
 			return io.EOF
 		}
 		b.rcond.Wait()
-		fmt.Println("waited empty")
 	}
 	b.rcond.L.Unlock()
 
@@ -184,7 +182,6 @@ func (b *Buffer) checkEmpty(n int) bool {
 // checkFilled returns true if there are at least n bytes between the tail and
 // the head.
 func (b *Buffer) checkFilled(n int) bool {
-	fmt.Println(n, "t", atomic.LoadInt64(&b.tail), "h", atomic.LoadInt64(&b.head), atomic.LoadInt64(&b.tail)+int64(n) <= atomic.LoadInt64(&b.head))
 	if atomic.LoadInt64(&b.tail)+int64(n) <= atomic.LoadInt64(&b.head) {
 		return true
 	}
