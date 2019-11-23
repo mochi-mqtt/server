@@ -163,6 +163,15 @@ func TestServeListener(t *testing.T) {
 	require.Equal(t, false, l.internal["t1"].(*MockListener).IsServing)
 }
 
+func TestServeListenerFailure(t *testing.T) {
+	l := New()
+	m := NewMockListener("t1", ":1882")
+	m.errListen = true
+	l.Add(m)
+	err := l.Serve("t1", MockEstablisher)
+	require.Error(t, err)
+}
+
 func BenchmarkServeListener(b *testing.B) {
 	l := New()
 	l.Add(NewMockListener("t1", ":1882"))
@@ -176,7 +185,8 @@ func TestServeAllListeners(t *testing.T) {
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
 	l.Add(NewMockListener("t3", ":1882"))
-	l.ServeAll(MockEstablisher)
+	err := l.ServeAll(MockEstablisher)
+	require.NoError(t, err)
 	time.Sleep(time.Millisecond)
 
 	require.Equal(t, true, l.internal["t1"].(*MockListener).IsServing)
@@ -190,6 +200,15 @@ func TestServeAllListeners(t *testing.T) {
 	require.Equal(t, false, l.internal["t1"].(*MockListener).IsServing)
 	require.Equal(t, false, l.internal["t2"].(*MockListener).IsServing)
 	require.Equal(t, false, l.internal["t3"].(*MockListener).IsServing)
+}
+
+func TestServeAllListenersFailure(t *testing.T) {
+	l := New()
+	m := NewMockListener("t1", ":1882")
+	m.errListen = true
+	l.Add(m)
+	err := l.ServeAll(MockEstablisher)
+	require.Error(t, err)
 }
 
 func BenchmarkServeAllListeners(b *testing.B) {

@@ -1,6 +1,7 @@
 package listeners
 
 import (
+	"fmt"
 	"net"
 	"sync"
 
@@ -146,24 +147,13 @@ func MockEstablisher(id string, c net.Conn, ac auth.Controller) error {
 // MockListener is a mock listener for establishing client connections.
 type MockListener struct {
 	sync.RWMutex
-
-	// id is the internal id of the listener.
-	id string
-
-	// Config contains configuration values for the listener.
-	Config *Config
-
-	// address is the address to bind to.
-	address string
-
-	// IsListening indicates that the listener is listening.
+	id          string
+	Config      *Config
+	address     string
 	IsListening bool
-
-	// IsServing indicates that the listener is serving.
-	IsServing bool
-
-	// done is sent when the mock listener should close.
-	done chan bool
+	IsServing   bool
+	done        chan bool
+	errListen   bool
 }
 
 // NewMockListener returns a new instance of MockListener
@@ -191,6 +181,10 @@ DONE:
 
 // SetConfig sets the configuration values of the mock listener.
 func (l *MockListener) Listen() error {
+	if l.errListen {
+		return fmt.Errorf("listen failure")
+	}
+
 	l.Lock()
 	l.IsListening = true
 	l.Unlock()
