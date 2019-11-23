@@ -21,6 +21,16 @@ func decodeUint16(buf []byte, offset int) (uint16, int, error) {
 	return binary.BigEndian.Uint16(buf[offset : offset+2]), offset + 2, nil
 }
 
+// decodeString extracts a string from a byte array, beginning at an offset.
+func decodeString(buf []byte, offset int) (string, int, error) {
+	b, n, err := decodeBytes(buf, offset)
+	if err != nil {
+		return "", 0, err
+	}
+
+	return bytesToString(b), n, nil
+}
+
 // decodeBytes extracts a byte array from a byte array, beginning at an offset. Used primarily for message payloads.
 func decodeBytes(buf []byte, offset int) ([]byte, int, error) {
 	length, next, err := decodeUint16(buf, offset)

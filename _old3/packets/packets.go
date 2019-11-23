@@ -92,7 +92,7 @@ type Packet struct {
 	ReservedBit      byte
 	Keepalive        uint16
 	ClientIdentifier []byte
-	WillTopic        []byte
+	WillTopic        string
 	WillMessage      []byte
 	Username         []byte
 	Password         []byte
@@ -102,11 +102,11 @@ type Packet struct {
 	ReturnCode     byte
 
 	// Publish
-	TopicName []byte
+	TopicName string
 	Payload   []byte
 
 	// Subscribe, Unsubscribe
-	Topics [][]byte
+	Topics []string
 	Qoss   []byte
 
 	ReturnCodes []byte // Suback
@@ -114,7 +114,6 @@ type Packet struct {
 
 // ConnectEncode encodes a connect packet.
 func (pk *Packet) ConnectEncode(buf *bytes.Buffer) error {
-
 	protoName := encodeBytes(pk.ProtocolName)
 	protoVersion := pk.ProtocolVersion
 	flag := encodeBool(pk.CleanSession)<<1 | encodeBool(pk.WillFlag)<<2 | pk.WillQos<<3 | encodeBool(pk.WillRetain)<<5 | encodeBool(pk.PasswordFlag)<<6 | encodeBool(pk.UsernameFlag)<<7
@@ -125,7 +124,7 @@ func (pk *Packet) ConnectEncode(buf *bytes.Buffer) error {
 
 	// If will flag is set, add topic and message.
 	if pk.WillFlag {
-		willTopic = encodeBytes(pk.WillTopic)
+		willTopic = encodeString(pk.WillTopic)
 		willFlag = encodeBytes(pk.WillMessage)
 	}
 
@@ -203,7 +202,7 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 
 	// Get Last Will and Testament topic and message if applicable.
 	if pk.WillFlag {
-		pk.WillTopic, offset, err = decodeBytes(buf, offset)
+		pk.WillTopic, offset, err = decodeString(buf, offset)
 		if err != nil {
 			return ErrMalformedWillTopic
 		}
@@ -359,7 +358,7 @@ func (pk *Packet) PubcompDecode(buf []byte) error {
 
 // PublishEncode encodes a Publish packet.
 func (pk *Packet) PublishEncode(buf *bytes.Buffer) error {
-	topicName := encodeBytes(pk.TopicName)
+	topicName := encodeString(pk.TopicName)
 	var packetID []byte
 
 	// Add PacketID if QOS is set.
@@ -388,7 +387,7 @@ func (pk *Packet) PublishDecode(buf []byte) error {
 	var offset int
 	var err error
 
-	pk.TopicName, offset, err = decodeBytes(buf, 0)
+	pk.TopicName, offset, err = decodeString(buf, 0)
 	if err != nil {
 		return ErrMalformedTopic
 	}
@@ -517,7 +516,7 @@ func (pk *Packet) SubscribeEncode(buf *bytes.Buffer) error {
 	// Count topics lengths and associated QOS flags.
 	var topicsLen int
 	for _, topic := range pk.Topics {
-		topicsLen += len(encodeBytes(topic)) + 1
+		topicsLen += len(encodeString(topic)) + 1
 	}
 
 	pk.FixedHeader.Remaining = len(packetID) + topicsLen
@@ -526,7 +525,7 @@ func (pk *Packet) SubscribeEncode(buf *bytes.Buffer) error {
 
 	// Add all provided topic names and associated QOS flags.
 	for i, topic := range pk.Topics {
-		buf.Write(encodeBytes(topic))
+		buf.Write(encodeString(topic))
 		buf.WriteByte(pk.Qoss[i])
 	}
 
@@ -548,8 +547,8 @@ func (pk *Packet) SubscribeDecode(buf []byte) error {
 	for offset < len(buf) {
 
 		// Decode Topic Name.
-		var topic []byte
-		topic, offset, err = decodeBytes(buf, offset)
+		var topic string
+		topic, offset, err = decodeString(buf, offset)
 		if err != nil {
 			return ErrMalformedTopic
 		}
@@ -617,7 +616,7 @@ func (pk *Packet) UnsubscribeEncode(buf *bytes.Buffer) error {
 	// Count topics lengths.
 	var topicsLen int
 	for _, topic := range pk.Topics {
-		topicsLen += len(encodeBytes(topic))
+		topicsLen += len(encodeString(topic))
 	}
 
 	pk.FixedHeader.Remaining = len(packetID) + topicsLen
@@ -626,7 +625,7 @@ func (pk *Packet) UnsubscribeEncode(buf *bytes.Buffer) error {
 
 	// Add all provided topic names.
 	for _, topic := range pk.Topics {
-		buf.Write(encodeBytes(topic))
+		buf.Write(encodeString(topic))
 	}
 
 	return nil
@@ -645,8 +644,8 @@ func (pk *Packet) UnsubscribeDecode(buf []byte) error {
 
 	// Keep decoding until there's no space left.
 	for offset < len(buf) {
-		var t []byte
-		t, offset, err = decodeBytes(buf, offset) // Decode Topic Name.
+		var t string
+		t, offset, err = decodeString(buf, offset) // Decode Topic Name.
 		if err != nil {
 			return ErrMalformedTopic
 		}

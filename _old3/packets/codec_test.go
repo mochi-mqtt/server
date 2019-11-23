@@ -11,6 +11,105 @@ func TestBytesToString(t *testing.T) {
 	require.Equal(t, "abc", bytesToString(b))
 }
 
+func BenchmarkBytesToString(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		bytesToString([]byte{'a', 'b', 'c'})
+	}
+}
+
+func TestDecodeString(t *testing.T) {
+	expect := []struct {
+		rawBytes   []byte
+		result     []string
+		offset     int
+		shouldFail bool
+	}{
+		{
+			offset:   0,
+			rawBytes: []byte{0, 7, 97, 47, 98, 47, 99, 47, 100, 97},
+			result:   []string{"a/b/c/d", "a"},
+		},
+		{
+			offset: 14,
+			rawBytes: []byte{
+				byte(Connect << 4), 17, // Fixed header
+				0, 6, // Protocol Name - MSB+LSB
+				'M', 'Q', 'I', 's', 'd', 'p', // Protocol Name
+				3,     // Protocol Version
+				0,     // Packet Flags
+				0, 30, // Keepalive
+				0, 3, // Client ID - MSB+LSB
+				'h', 'e', 'y', // Client ID "zen"},
+			},
+			result: []string{"hey"},
+		},
+
+		{
+			offset:   2,
+			rawBytes: []byte{0, 0, 0, 23, 49, 47, 50, 47, 51, 47, 52, 47, 97, 47, 98, 47, 99, 47, 100, 47, 101, 47, 94, 47, 64, 47, 33, 97},
+			result:   []string{"1/2/3/4/a/b/c/d/e/^/@/!", "a"},
+		},
+		{
+			offset:   0,
+			rawBytes: []byte{0, 5, 120, 47, 121, 47, 122, 33, 64, 35, 36, 37, 94, 38},
+			result:   []string{"x/y/z", "!@#$%^&"},
+		},
+		{
+			offset:     0,
+			rawBytes:   []byte{0, 9, 'a', '/', 'b', '/', 'c', '/', 'd', 'z'},
+			result:     []string{"a/b/c/d", "z"},
+			shouldFail: true,
+		},
+		{
+			offset:     5,
+			rawBytes:   []byte{0, 7, 97, 47, 98, 47, 'x'},
+			result:     []string{"a/b/c/d", "x"},
+			shouldFail: true,
+		},
+		{
+			offset:     9,
+			rawBytes:   []byte{0, 7, 97, 47, 98, 47, 'y'},
+			result:     []string{"a/b/c/d", "y"},
+			shouldFail: true,
+		},
+		{
+			offset: 17,
+			rawBytes: []byte{
+				byte(Connect << 4), 0, // Fixed header
+				0, 4, // Protocol Name - MSB+LSB
+				'M', 'Q', 'T', 'T', // Protocol Name
+				4,     // Protocol Version
+				0,     // Flags
+				0, 20, // Keepalive
+				0, 3, // Client ID - MSB+LSB
+				'z', 'e', 'n', // Client ID "zen"
+				0, 6, // Will Topic - MSB+LSB
+				'l',
+			},
+			result:     []string{"lwt"},
+			shouldFail: true,
+		},
+	}
+
+	for i, wanted := range expect {
+		result, _, err := decodeString(wanted.rawBytes, wanted.offset)
+		if wanted.shouldFail {
+			require.Error(t, err, "Expected error decoding string [i:%d]", i)
+			continue
+		}
+
+		require.NoError(t, err, "Error decoding string [i:%d]", i)
+		require.Equal(t, wanted.result[0], result, "Incorrect decoded value [i:%d]", i)
+	}
+}
+
+func BenchmarkDecodeString(b *testing.B) {
+	in := []byte{0, 7, 97, 47, 98, 47, 99, 47, 100, 97}
+	for n := 0; n < b.N; n++ {
+		decodeString(in, 0)
+	}
+}
+
 func TestDecodeBytes(t *testing.T) {
 	expect := []struct {
 		rawBytes   []byte

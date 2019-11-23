@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/mochi-co/mqtt/packets"
+	"github.com/mochi-co/mqtt/internal/packets"
 )
 
 func TestNew(t *testing.T) {
@@ -47,12 +47,12 @@ func TestUnpoperate(t *testing.T) {
 	index.Subscribe("path/to/another/mqtt", "client-1", 0)
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
 
-	pk := &packets.PublishPacket{TopicName: "path/to/retained/message", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
+	pk := &packets.Packet{TopicName: "path/to/retained/message", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
 	index.RetainMessage(pk)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["retained"].Leaves["message"])
 	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["retained"].Leaves["message"].Message)
 
-	pk2 := &packets.PublishPacket{TopicName: "path/to/my/mqtt", Payload: []byte{'s', 'h', 'a', 'r', 'e', 'd'}}
+	pk2 := &packets.Packet{TopicName: "path/to/my/mqtt", Payload: []byte{'s', 'h', 'a', 'r', 'e', 'd'}}
 	index.RetainMessage(pk2)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
 	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
@@ -79,8 +79,8 @@ func BenchmarkUnpoperate(b *testing.B) {
 }
 
 func TestRetainMessage(t *testing.T) {
-	pk := &packets.PublishPacket{TopicName: "path/to/my/mqtt", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
-	pk2 := &packets.PublishPacket{TopicName: "path/to/another/mqtt", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
+	pk := &packets.Packet{TopicName: "path/to/my/mqtt", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
+	pk2 := &packets.Packet{TopicName: "path/to/another/mqtt", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
 
 	index := New()
 	index.RetainMessage(pk)
@@ -97,7 +97,7 @@ func TestRetainMessage(t *testing.T) {
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
 
 	// Delete retained
-	pk3 := &packets.PublishPacket{TopicName: "path/to/another/mqtt", Payload: []byte{}}
+	pk3 := &packets.Packet{TopicName: "path/to/another/mqtt", Payload: []byte{}}
 	index.RetainMessage(pk3)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
 	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
@@ -107,7 +107,7 @@ func TestRetainMessage(t *testing.T) {
 
 func BenchmarkRetainMessage(b *testing.B) {
 	index := New()
-	pk := &packets.PublishPacket{TopicName: "path/to/another/mqtt"}
+	pk := &packets.Packet{TopicName: "path/to/another/mqtt"}
 	for n := 0; n < b.N; n++ {
 		index.RetainMessage(pk)
 	}
@@ -327,47 +327,47 @@ func BenchmarkIsolateParticle(b *testing.B) {
 func TestMessagesPattern(t *testing.T) {
 
 	tt := []struct {
-		packet *packets.PublishPacket
+		packet *packets.Packet
 		filter string
 		len    int
 	}{
 		{
-			&packets.PublishPacket{TopicName: "a/b/c/d", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
+			&packets.Packet{TopicName: "a/b/c/d", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"a/b/c/d",
 			1,
 		},
 		{
-			&packets.PublishPacket{TopicName: "a/b/c/e", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
+			&packets.Packet{TopicName: "a/b/c/e", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"a/+/c/+",
 			2,
 		},
 		{
-			&packets.PublishPacket{TopicName: "a/b/d/f", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
+			&packets.Packet{TopicName: "a/b/d/f", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"+/+/+/+",
 			3,
 		},
 		{
-			&packets.PublishPacket{TopicName: "q/w/e/r/t/y", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
+			&packets.Packet{TopicName: "q/w/e/r/t/y", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"q/w/e/#",
 			1,
 		},
 		{
-			&packets.PublishPacket{TopicName: "q/w/x/r/t/x", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
+			&packets.Packet{TopicName: "q/w/x/r/t/x", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"q/#",
 			2,
 		},
 		{
-			&packets.PublishPacket{TopicName: "asd", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
+			&packets.Packet{TopicName: "asd", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"asd",
 			1,
 		},
 		{
-			&packets.PublishPacket{TopicName: "asd/fgh/jkl", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
+			&packets.Packet{TopicName: "asd/fgh/jkl", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"#",
 			8,
 		},
 		{
-			&packets.PublishPacket{TopicName: "stuff/asdadsa/dsfdsafdsadfsa/dsfdsf/sdsadas", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
+			&packets.Packet{TopicName: "stuff/asdadsa/dsfdsafdsadfsa/dsfdsf/sdsadas", Payload: []byte{'h', 'e', 'l', 'l', 'o'}},
 			"stuff/#/things", // indexer will ignore trailing /things
 			1,
 		},
@@ -386,8 +386,8 @@ func TestMessagesPattern(t *testing.T) {
 
 func TestMessagesFind(t *testing.T) {
 	index := New()
-	index.RetainMessage(&packets.PublishPacket{TopicName: "a/a", Payload: []byte{'a'}})
-	index.RetainMessage(&packets.PublishPacket{TopicName: "a/b", Payload: []byte{'b'}})
+	index.RetainMessage(&packets.Packet{TopicName: "a/a", Payload: []byte{'a'}})
+	index.RetainMessage(&packets.Packet{TopicName: "a/b", Payload: []byte{'b'}})
 	messages := index.Messages("a/a")
 	require.Equal(t, 1, len(messages))
 
@@ -397,11 +397,11 @@ func TestMessagesFind(t *testing.T) {
 
 func BenchmarkMessages(b *testing.B) {
 	index := New()
-	index.RetainMessage(&packets.PublishPacket{TopicName: "path/to/my/mqtt"})
-	index.RetainMessage(&packets.PublishPacket{TopicName: "path/to/another/mqtt"})
-	index.RetainMessage(&packets.PublishPacket{TopicName: "path/a/some/mqtt"})
-	index.RetainMessage(&packets.PublishPacket{TopicName: "what/is"})
-	index.RetainMessage(&packets.PublishPacket{TopicName: "q/w/e/r/t/y"})
+	index.RetainMessage(&packets.Packet{TopicName: "path/to/my/mqtt"})
+	index.RetainMessage(&packets.Packet{TopicName: "path/to/another/mqtt"})
+	index.RetainMessage(&packets.Packet{TopicName: "path/a/some/mqtt"})
+	index.RetainMessage(&packets.Packet{TopicName: "what/is"})
+	index.RetainMessage(&packets.Packet{TopicName: "q/w/e/r/t/y"})
 
 	for n := 0; n < b.N; n++ {
 		index.Messages("path/to/+/mqtt")

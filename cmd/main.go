@@ -10,7 +10,7 @@ import (
 	"github.com/logrusorgru/aurora"
 
 	"github.com/mochi-co/mqtt"
-	"github.com/mochi-co/mqtt/listeners"
+	"github.com/mochi-co/mqtt/internal/listeners"
 )
 
 func main() {

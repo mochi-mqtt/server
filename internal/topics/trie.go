@@ -1,20 +1,25 @@
 package topics
 
 import (
-	"fmt"
-	sync "github.com/sasha-s/go-deadlock"
+	//sync "github.com/sasha-s/go-deadlock"
 	"strings"
+	"sync"
 
-	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/topics"
+	"github.com/mochi-co/mqtt/internal/packets"
 )
 
+// ReLeaf is a dev function for showing the trie leafs.
+/*
 func ReLeaf(m string, leaf *Leaf, d int) {
 	for k, v := range leaf.Leaves {
 		fmt.Println(m, d, strings.Repeat("  ", d), k)
 		ReLeaf(m, v, d+1)
 	}
 }
+*/
+
+// Subscriptions is a map of subscriptions keyed on client.
+type Subscriptions map[string]byte
 
 // Index is a prefix/trie tree containing topic subscribers and retained messages.
 type Index struct {
@@ -33,7 +38,7 @@ func New() *Index {
 }
 
 // RetainMessage saves a message payload to the end of a topic branch.
-func (x *Index) RetainMessage(msg *packets.PublishPacket) {
+func (x *Index) RetainMessage(msg *packets.Packet) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if len(msg.Payload) > 0 {
@@ -146,18 +151,18 @@ func (x *Index) poperate(topic string) *Leaf {
 }
 
 // Subscribers returns a map of clients who are subscribed to matching filters.
-func (x *Index) Subscribers(topic string) topics.Subscriptions {
+func (x *Index) Subscribers(topic string) Subscriptions {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
-	return x.Root.scanSubscribers(topic, 0, make(topics.Subscriptions))
+	return x.Root.scanSubscribers(topic, 0, make(Subscriptions))
 }
 
 // Messages returns a slice of retained topic messages which match a filter.
-func (x *Index) Messages(filter string) []*packets.PublishPacket {
+func (x *Index) Messages(filter string) []*packets.Packet {
 	// ReLeaf("messages", x.Root, 0)
 	x.mu.RLock()
 	defer x.mu.RUnlock()
-	return x.Root.scanMessages(filter, 0, make([]*packets.PublishPacket, 0, 32))
+	return x.Root.scanMessages(filter, 0, make([]*packets.Packet, 0, 32))
 }
 
 // Leaf is a child node on the tree.
@@ -179,12 +184,12 @@ type Leaf struct {
 	Filter string
 
 	// Message is a message which has been retained for a specific topic.
-	Message *packets.PublishPacket
+	Message *packets.Packet
 }
 
 // scanSubscribers recursively steps through a branch of leaves finding clients who
 // have subscription filters matching a topic, and their highest QoS byte.
-func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions) topics.Subscriptions {
+func (l *Leaf) scanSubscribers(topic string, d int, clients Subscriptions) Subscriptions {
 	part, hasNext := isolateParticle(topic, d)
 
 	// For either the topic part, a +, or a #, follow the branch.
@@ -232,7 +237,7 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients topics.Subscriptions
 // scanMessages recursively steps through a branch of leaves finding retained messages
 // that match a topic filter. Setting `d` to -1 will enable wildhash mode, and will
 // recursively check ALL child leaves in every subsequent branch.
-func (l *Leaf) scanMessages(filter string, d int, messages []*packets.PublishPacket) []*packets.PublishPacket {
+func (l *Leaf) scanMessages(filter string, d int, messages []*packets.Packet) []*packets.Packet {
 
 	// If a wildhash mode has been set, continue recursively checking through all
 	// child leaves regardless of their particle key.
