@@ -3,6 +3,7 @@ package clients
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -14,569 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func genClient() *Client {
-	c, _ := net.Pipe()
-	return NewClient(c, circ.NewReader(128, 8), circ.NewWriter(128, 8))
-}
-
-func TestNewClients(t *testing.T) {
-	cl := New()
-	require.NotNil(t, cl.internal)
-}
-
-func BenchmarkNewClients(b *testing.B) {
-	for n := 0; n < b.N; n++ {
-		New()
-	}
-}
-
-func TestClientsAdd(t *testing.T) {
-	cl := New()
-	cl.Add(&Client{id: "t1"})
-	require.Contains(t, cl.internal, "t1")
-}
-
-func BenchmarkClientsAdd(b *testing.B) {
-	cl := New()
-	client := &Client{id: "t1"}
-	for n := 0; n < b.N; n++ {
-		cl.Add(client)
-	}
-}
-
-func TestClientsGet(t *testing.T) {
-	cl := New()
-	cl.Add(&Client{id: "t1"})
-	cl.Add(&Client{id: "t2"})
-	require.Contains(t, cl.internal, "t1")
-	require.Contains(t, cl.internal, "t2")
-
-	client, ok := cl.Get("t1")
-	require.Equal(t, true, ok)
-	require.Equal(t, "t1", client.id)
-}
-
-func BenchmarkClientsGet(b *testing.B) {
-	cl := New()
-	cl.Add(&Client{id: "t1"})
-	for n := 0; n < b.N; n++ {
-		cl.Get("t1")
-	}
-}
-
-func TestClientsLen(t *testing.T) {
-	cl := New()
-	cl.Add(&Client{id: "t1"})
-	cl.Add(&Client{id: "t2"})
-	require.Contains(t, cl.internal, "t1")
-	require.Contains(t, cl.internal, "t2")
-	require.Equal(t, 2, cl.Len())
-}
-
-func BenchmarkClientsLen(b *testing.B) {
-	cl := New()
-	cl.Add(&Client{id: "t1"})
-	for n := 0; n < b.N; n++ {
-		cl.Len()
-	}
-}
-
-func TestClientsDelete(t *testing.T) {
-	cl := New()
-	cl.Add(&Client{id: "t1"})
-	require.Contains(t, cl.internal, "t1")
-
-	cl.Delete("t1")
-	_, ok := cl.Get("t1")
-	require.Equal(t, false, ok)
-	require.Nil(t, cl.internal["t1"])
-}
-
-func BenchmarkClientsDelete(b *testing.B) {
-	cl := New()
-	cl.Add(&Client{id: "t1"})
-	for n := 0; n < b.N; n++ {
-		cl.Delete("t1")
-	}
-}
-
-func TestClientsGetByListener(t *testing.T) {
-	cl := New()
-	cl.Add(&Client{id: "t1", listener: "tcp1"})
-	cl.Add(&Client{id: "t2", listener: "ws1"})
-	require.Contains(t, cl.internal, "t1")
-	require.Contains(t, cl.internal, "t2")
-
-	clients := cl.GetByListener("tcp1")
-	require.NotEmpty(t, clients)
-	require.Equal(t, 1, len(clients))
-	require.Equal(t, "tcp1", clients[0].listener)
-}
-
-func BenchmarkClientsGetByListener(b *testing.B) {
-	cl := New()
-	cl.Add(&Client{id: "t1", listener: "tcp1"})
-	cl.Add(&Client{id: "t2", listener: "ws1"})
-	for n := 0; n < b.N; n++ {
-		cl.GetByListener("tcp1")
-	}
-}
-
-func TestNewClient(t *testing.T) {
-	cl := genClient()
-
-	require.NotNil(t, cl)
-	require.NotNil(t, cl.inFlight.internal)
-	require.NotNil(t, cl.subscriptions)
-	require.NotNil(t, cl.r)
-	require.NotNil(t, cl.w)
-	require.NotNil(t, cl.state.started)
-	require.NotNil(t, cl.state.endedW)
-	require.NotNil(t, cl.state.endedR)
-	require.NotNil(t, cl.state.end)
-	require.NotNil(t, cl.state.endOnce)
-}
-
-func BenchmarkNewClient(b *testing.B) {
-	c, _ := net.Pipe()
-	for n := 0; n < b.N; n++ {
-		NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4))
-	}
-}
-
-func TestClientIdentify(t *testing.T) {
-	cl := genClient()
-
-	pk := &packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
-			Remaining: 16,
-		},
-		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
-		ProtocolVersion:  4,
-		CleanSession:     true,
-		Keepalive:        60,
-		ClientIdentifier: "mochi",
-	}
-
-	cl.Identify("tcp1", pk, new(auth.Allow))
-	require.Equal(t, pk.Keepalive, cl.keepalive)
-	require.Equal(t, pk.CleanSession, cl.cleanSession)
-	require.Equal(t, pk.ClientIdentifier, cl.id)
-}
-
-func BenchmarkClientIdentify(b *testing.B) {
-	cl := genClient()
-
-	pk := &packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
-			Remaining: 16,
-		},
-		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
-		ProtocolVersion:  4,
-		CleanSession:     true,
-		Keepalive:        60,
-		ClientIdentifier: "mochi",
-	}
-
-	for n := 0; n < b.N; n++ {
-		cl.Identify("tcp1", pk, new(auth.Allow))
-	}
-}
-
-func TestClientIdentifyNoID(t *testing.T) {
-	cl := genClient()
-
-	pk := &packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
-			Remaining: 16,
-		},
-		ProtocolName:    []byte{'M', 'Q', 'T', 'T'},
-		ProtocolVersion: 4,
-		CleanSession:    true,
-		Keepalive:       60,
-	}
-
-	cl.Identify("tcp1", pk, new(auth.Allow))
-	require.NotEmpty(t, cl.id)
-}
-
-func TestClientIdentifyNoKeepalive(t *testing.T) {
-	cl := genClient()
-
-	pk := &packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
-			Remaining: 16,
-		},
-		ProtocolName:    []byte{'M', 'Q', 'T', 'T'},
-		ProtocolVersion: 4,
-		CleanSession:    true,
-	}
-
-	cl.Identify("tcp1", pk, new(auth.Allow))
-	require.Equal(t, defaultKeepalive, cl.keepalive)
-}
-
-func TestClientIdentifyLWT(t *testing.T) {
-	cl := genClient()
-
-	pk := &packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
-			Remaining: 16,
-		},
-		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
-		ProtocolVersion:  4,
-		CleanSession:     true,
-		Keepalive:        60,
-		ClientIdentifier: "mochi",
-		WillFlag:         true,
-		WillTopic:        "lwt",
-		WillMessage:      []byte("lol gg"),
-		WillQos:          1,
-		WillRetain:       false,
-	}
-
-	cl.Identify("tcp1", pk, new(auth.Allow))
-	require.Equal(t, pk.WillTopic, cl.lwt.topic)
-	require.Equal(t, pk.WillMessage, cl.lwt.message)
-	require.Equal(t, pk.WillQos, cl.lwt.qos)
-	require.Equal(t, pk.WillRetain, cl.lwt.retain)
-}
-
-func TestNextPacketID(t *testing.T) {
-	cl := genClient()
-
-	require.Equal(t, uint32(1), cl.nextPacketID())
-	require.Equal(t, uint32(2), cl.nextPacketID())
-
-	cl.packetID = uint32(65534)
-	require.Equal(t, uint32(65535), cl.nextPacketID())
-	require.Equal(t, uint32(1), cl.nextPacketID())
-}
-
-func BenchmarkNextPacketID(b *testing.B) {
-	cl := genClient()
-
-	for n := 0; n < b.N; n++ {
-		cl.nextPacketID()
-	}
-}
-
-func TestClientNoteSubscription(t *testing.T) {
-	cl := genClient()
-
-	cl.noteSubscription("a/b/c", 0)
-	require.Contains(t, cl.subscriptions, "a/b/c")
-	require.Equal(t, byte(0), cl.subscriptions["a/b/c"])
-}
-
-func BenchmarkClientNoteSubscription(b *testing.B) {
-	cl := genClient()
-	for n := 0; n < b.N; n++ {
-		cl.noteSubscription("a/b/c", 0)
-	}
-}
-
-func TestClientForgetSubscription(t *testing.T) {
-	cl := genClient()
-	require.NotNil(t, cl)
-	cl.subscriptions = map[string]byte{
-		"a/b/c/": 1,
-	}
-	cl.forgetSubscription("a/b/c/")
-	require.Empty(t, cl.subscriptions["a/b/c"])
-}
-
-func BenchmarkClientForgetSubscription(b *testing.B) {
-	cl := genClient()
-	for n := 0; n < b.N; n++ {
-		cl.noteSubscription("a/b/c", 0)
-		cl.forgetSubscription("a/b/c/")
-	}
-}
-
-func TestClientRefreshDeadline(t *testing.T) {
-	cl := genClient()
-	cl.refreshDeadline(10)
-
-	// How do we check net.Conn deadline?
-	require.NotNil(t, cl.conn)
-}
-
-func BenchmarkClientRefreshDeadline(b *testing.B) {
-	cl := genClient()
-	for n := 0; n < b.N; n++ {
-		cl.refreshDeadline(10)
-	}
-}
-
-func TestClientStart(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-	time.Sleep(time.Millisecond)
-	require.Equal(t, int64(1), atomic.LoadInt64(&cl.r.State))
-	require.Equal(t, int64(2), atomic.LoadInt64(&cl.w.State))
-}
-
-func BenchmarkClientStart(b *testing.B) {
-	cl := genClient()
-	defer cl.Stop()
-
-	for n := 0; n < b.N; n++ {
-		cl.Start()
-	}
-}
-
-func TestClientStop(t *testing.T) {
-	/*
-		p := NewProcessor(new(MockNetConn), circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize))
-		pk := &packets.ConnectPacket{
-			ClientIdentifier: "zen3",
-		}
-
-		client := newClient(p, pk, new(auth.Allow))
-		require.NotNil(t, client)
-		client.close()
-
-		var ok bool
-		select {
-		case _, ok = <-client.end:
-		}
-		require.Equal(t, false, ok)
-		require.Equal(t, true, client.wasClosed)
-	*/
-}
-
-func TestClientReadFixedHeader(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-
-	cl.r.Set([]byte{packets.Connect << 4, 0x00}, 0, 2)
-	cl.r.SetPos(0, 2)
-
-	fh := new(packets.FixedHeader)
-	err := cl.ReadFixedHeader(fh)
-	require.NoError(t, err)
-
-	tail, head := cl.r.GetPos()
-	require.Equal(t, int64(2), tail)
-	require.Equal(t, int64(2), head)
-}
-
-func TestClientReadFixedHeaderDecodeError(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-
-	o := make(chan error)
-	go func() {
-		fh := new(packets.FixedHeader)
-		cl.r.Set([]byte{packets.Connect<<4 | 1<<1, 0x00, 0x00}, 0, 2)
-		cl.r.SetPos(0, 2)
-		o <- cl.ReadFixedHeader(fh)
-	}()
-	time.Sleep(time.Millisecond)
-	require.Error(t, <-o)
-}
-
-func TestClientReadFixedHeaderReadEOF(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-
-	o := make(chan error)
-	go func() {
-		fh := new(packets.FixedHeader)
-		cl.r.Set([]byte{packets.Connect << 4, 0x00}, 0, 2)
-		cl.r.SetPos(0, 1)
-		o <- cl.ReadFixedHeader(fh)
-	}()
-	time.Sleep(time.Millisecond)
-	cl.r.Stop()
-	err := <-o
-	require.Error(t, err)
-	require.Equal(t, io.EOF, err)
-}
-
-func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-
-	o := make(chan error)
-	go func() {
-		fh := new(packets.FixedHeader)
-		err := cl.r.Set([]byte{packets.Connect << 4, 0xd5, 0x86, 0xf9, 0x9e, 0x01}, 0, 5)
-		require.NoError(t, err)
-		cl.r.SetPos(0, 5)
-		o <- cl.ReadFixedHeader(fh)
-	}()
-	time.Sleep(time.Millisecond)
-	require.Error(t, <-o)
-}
-
-func TestClientReadOK(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-
-	// Two packets in a row...
-	b := []byte{
-		byte(packets.Publish << 4), 18, // Fixed header
-		0, 5, // Topic Name - LSB+MSB
-		'a', '/', 'b', '/', 'c', // Topic Name
-		'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload,
-		byte(packets.Publish << 4), 11, // Fixed header
-		0, 5, // Topic Name - LSB+MSB
-		'd', '/', 'e', '/', 'f', // Topic Name
-		'y', 'e', 'a', 'h', // Payload
-	}
-
-	err := cl.r.Set(b, 0, len(b))
-	require.NoError(t, err)
-	cl.r.SetPos(0, int64(len(b)))
-
-	o := make(chan error)
-	var pks []packets.Packet
-	go func() {
-		o <- cl.Read(func(cl *Client, pk packets.Packet) error {
-			pks = append(pks, pk)
-			return nil
-		})
-	}()
-
-	time.Sleep(time.Millisecond)
-	cl.r.Stop()
-
-	err = <-o
-	require.Error(t, err)
-	require.Equal(t, io.EOF, err)
-	require.Equal(t, 2, len(pks))
-	require.Equal(t, pks, []packets.Packet{
-		{
-			FixedHeader: packets.FixedHeader{
-				Type:      packets.Publish,
-				Remaining: 18,
-			},
-			TopicName: "a/b/c",
-			Payload:   []byte("hello mochi"),
-		},
-		{
-			FixedHeader: packets.FixedHeader{
-				Type:      packets.Publish,
-				Remaining: 11,
-			},
-			TopicName: "d/e/f",
-			Payload:   []byte("yeah"),
-		},
-	})
-
-}
-
-func TestClientReadDone(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-	cl.state.done = 1
-
-	err := cl.Read(func(cl *Client, pk packets.Packet) error {
-		return nil
-	})
-
-	require.NoError(t, err)
-}
-
-func TestClientReadNilConn(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-	cl.conn = nil
-
-	err := cl.Read(func(cl *Client, pk packets.Packet) error {
-		return nil
-	})
-
-	require.Error(t, err)
-	require.Equal(t, ErrConnectionClosed, err)
-}
-
-func TestClientReadDisconnect(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-	cl.state.done = 1
-
-	err := cl.r.Set([]byte{
-		byte(packets.Disconnect << 4), 0, // Fixed header
-	}, 0, 2)
-	require.NoError(t, err)
-	cl.r.SetPos(0, 2)
-
-	err = cl.Read(func(cl *Client, pk packets.Packet) error {
-		return nil
-	})
-
-	require.NoError(t, err)
-}
-
-func TestClientReadUnknown(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-	cl.state.done = 1
-
-	err := cl.r.Set([]byte{0, 0}, 0, 2)
-	require.NoError(t, err)
-	cl.r.SetPos(0, 2)
-
-	err = cl.Read(func(cl *Client, pk packets.Packet) error {
-		return nil
-	})
-
-	require.Error(t, err)
-	fmt.Println()
-}
-
-func TestReadPacketOK(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-
-	err := cl.r.Set([]byte{
-		byte(packets.Publish << 4), 11, // Fixed header
-		0, 5,
-		'd', '/', 'e', '/', 'f',
-		'y', 'e', 'a', 'h',
-	}, 0, 13)
-	require.NoError(t, err)
-	cl.r.SetPos(0, 13)
-
-	fh := new(packets.FixedHeader)
-	err = cl.ReadFixedHeader(fh)
-	require.NoError(t, err)
-
-	pk, err := cl.readPacket(*fh)
-	require.NoError(t, err)
-	require.NotNil(t, pk)
-
-	require.Equal(t, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Publish,
-			Remaining: 11,
-		},
-		TopicName: "d/e/f",
-		Payload:   []byte("yeah"),
-	}, pk)
-}
-
-func TestReadPacket(t *testing.T) {
-	tests := []struct {
+var (
+	pkTable = []struct {
 		bytes  []byte
 		packet *packets.Packet
 	}{
@@ -811,12 +251,579 @@ func TestReadPacket(t *testing.T) {
 			},
 		},
 	}
+)
 
+func genClient() *Client {
+	c, _ := net.Pipe()
+	return NewClient(c, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+}
+
+func TestNewClients(t *testing.T) {
+	cl := New()
+	require.NotNil(t, cl.internal)
+}
+
+func BenchmarkNewClients(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		New()
+	}
+}
+
+func TestClientsAdd(t *testing.T) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	require.Contains(t, cl.internal, "t1")
+}
+
+func BenchmarkClientsAdd(b *testing.B) {
+	cl := New()
+	client := &Client{ID: "t1"}
+	for n := 0; n < b.N; n++ {
+		cl.Add(client)
+	}
+}
+
+func TestClientsGet(t *testing.T) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{ID: "t2"})
+	require.Contains(t, cl.internal, "t1")
+	require.Contains(t, cl.internal, "t2")
+
+	client, ok := cl.Get("t1")
+	require.Equal(t, true, ok)
+	require.Equal(t, "t1", client.ID)
+}
+
+func BenchmarkClientsGet(b *testing.B) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	for n := 0; n < b.N; n++ {
+		cl.Get("t1")
+	}
+}
+
+func TestClientsLen(t *testing.T) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{ID: "t2"})
+	require.Contains(t, cl.internal, "t1")
+	require.Contains(t, cl.internal, "t2")
+	require.Equal(t, 2, cl.Len())
+}
+
+func BenchmarkClientsLen(b *testing.B) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	for n := 0; n < b.N; n++ {
+		cl.Len()
+	}
+}
+
+func TestClientsDelete(t *testing.T) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	require.Contains(t, cl.internal, "t1")
+
+	cl.Delete("t1")
+	_, ok := cl.Get("t1")
+	require.Equal(t, false, ok)
+	require.Nil(t, cl.internal["t1"])
+}
+
+func BenchmarkClientsDelete(b *testing.B) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	for n := 0; n < b.N; n++ {
+		cl.Delete("t1")
+	}
+}
+
+func TestClientsGetByListener(t *testing.T) {
+	cl := New()
+	cl.Add(&Client{ID: "t1", Listener: "tcp1"})
+	cl.Add(&Client{ID: "t2", Listener: "ws1"})
+	require.Contains(t, cl.internal, "t1")
+	require.Contains(t, cl.internal, "t2")
+
+	clients := cl.GetByListener("tcp1")
+	require.NotEmpty(t, clients)
+	require.Equal(t, 1, len(clients))
+	require.Equal(t, "tcp1", clients[0].Listener)
+}
+
+func BenchmarkClientsGetByListener(b *testing.B) {
+	cl := New()
+	cl.Add(&Client{ID: "t1", Listener: "tcp1"})
+	cl.Add(&Client{ID: "t2", Listener: "ws1"})
+	for n := 0; n < b.N; n++ {
+		cl.GetByListener("tcp1")
+	}
+}
+
+func TestNewClient(t *testing.T) {
+	cl := genClient()
+
+	require.NotNil(t, cl)
+	require.NotNil(t, cl.InFlight.internal)
+	require.NotNil(t, cl.Subscriptions)
+	require.NotNil(t, cl.r)
+	require.NotNil(t, cl.w)
+	require.NotNil(t, cl.state.started)
+	require.NotNil(t, cl.state.endedW)
+	require.NotNil(t, cl.state.endedR)
+	require.NotNil(t, cl.state.end)
+	require.NotNil(t, cl.state.endOnce)
+}
+
+func BenchmarkNewClient(b *testing.B) {
+	c, _ := net.Pipe()
+	for n := 0; n < b.N; n++ {
+		NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4))
+	}
+}
+
+func TestClientIdentify(t *testing.T) {
+	cl := genClient()
+
+	pk := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Connect,
+			Remaining: 16,
+		},
+		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
+		ProtocolVersion:  4,
+		CleanSession:     true,
+		Keepalive:        60,
+		ClientIdentifier: "mochi",
+	}
+
+	cl.Identify("tcp1", pk, new(auth.Allow))
+	require.Equal(t, pk.Keepalive, cl.keepalive)
+	require.Equal(t, pk.CleanSession, cl.cleanSession)
+	require.Equal(t, pk.ClientIdentifier, cl.ID)
+}
+
+func BenchmarkClientIdentify(b *testing.B) {
+	cl := genClient()
+
+	pk := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Connect,
+			Remaining: 16,
+		},
+		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
+		ProtocolVersion:  4,
+		CleanSession:     true,
+		Keepalive:        60,
+		ClientIdentifier: "mochi",
+	}
+
+	for n := 0; n < b.N; n++ {
+		cl.Identify("tcp1", pk, new(auth.Allow))
+	}
+}
+
+func TestClientIdentifyNoID(t *testing.T) {
+	cl := genClient()
+
+	pk := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Connect,
+			Remaining: 16,
+		},
+		ProtocolName:    []byte{'M', 'Q', 'T', 'T'},
+		ProtocolVersion: 4,
+		CleanSession:    true,
+		Keepalive:       60,
+	}
+
+	cl.Identify("tcp1", pk, new(auth.Allow))
+	require.NotEmpty(t, cl.ID)
+}
+
+/*
+func TestClientIdentifyNoKeepalive(t *testing.T) {
+	cl := genClient()
+
+	pk := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Connect,
+			Remaining: 16,
+		},
+		ProtocolName:    []byte{'M', 'Q', 'T', 'T'},
+		ProtocolVersion: 4,
+		CleanSession:    true,
+	}
+
+	cl.Identify("tcp1", pk, new(auth.Allow))
+	require.Equal(t, defaultKeepalive, cl.keepalive)
+}
+*/
+
+func TestClientIdentifyLWT(t *testing.T) {
+	cl := genClient()
+
+	pk := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Connect,
+			Remaining: 16,
+		},
+		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
+		ProtocolVersion:  4,
+		CleanSession:     true,
+		Keepalive:        60,
+		ClientIdentifier: "mochi",
+		WillFlag:         true,
+		WillTopic:        "lwt",
+		WillMessage:      []byte("lol gg"),
+		WillQos:          1,
+		WillRetain:       false,
+	}
+
+	cl.Identify("tcp1", pk, new(auth.Allow))
+	require.Equal(t, pk.WillTopic, cl.lwt.topic)
+	require.Equal(t, pk.WillMessage, cl.lwt.message)
+	require.Equal(t, pk.WillQos, cl.lwt.qos)
+	require.Equal(t, pk.WillRetain, cl.lwt.retain)
+}
+
+func TestNextPacketID(t *testing.T) {
+	cl := genClient()
+
+	require.Equal(t, uint32(1), cl.nextPacketID())
+	require.Equal(t, uint32(2), cl.nextPacketID())
+
+	cl.packetID = uint32(65534)
+	require.Equal(t, uint32(65535), cl.nextPacketID())
+	require.Equal(t, uint32(1), cl.nextPacketID())
+}
+
+func BenchmarkNextPacketID(b *testing.B) {
+	cl := genClient()
+
+	for n := 0; n < b.N; n++ {
+		cl.nextPacketID()
+	}
+}
+
+func TestClientNoteSubscription(t *testing.T) {
+	cl := genClient()
+
+	cl.noteSubscription("a/b/c", 0)
+	require.Contains(t, cl.Subscriptions, "a/b/c")
+	require.Equal(t, byte(0), cl.Subscriptions["a/b/c"])
+}
+
+func BenchmarkClientNoteSubscription(b *testing.B) {
+	cl := genClient()
+	for n := 0; n < b.N; n++ {
+		cl.noteSubscription("a/b/c", 0)
+	}
+}
+
+func TestClientForgetSubscription(t *testing.T) {
+	cl := genClient()
+	require.NotNil(t, cl)
+	cl.Subscriptions = map[string]byte{
+		"a/b/c/": 1,
+	}
+	cl.forgetSubscription("a/b/c/")
+	require.Empty(t, cl.Subscriptions["a/b/c"])
+}
+
+func BenchmarkClientForgetSubscription(b *testing.B) {
+	cl := genClient()
+	for n := 0; n < b.N; n++ {
+		cl.noteSubscription("a/b/c", 0)
+		cl.forgetSubscription("a/b/c/")
+	}
+}
+
+func TestClientRefreshDeadline(t *testing.T) {
+	cl := genClient()
+	cl.refreshDeadline(10)
+
+	// How do we check net.Conn deadline?
+	require.NotNil(t, cl.conn)
+}
+
+func BenchmarkClientRefreshDeadline(b *testing.B) {
+	cl := genClient()
+	for n := 0; n < b.N; n++ {
+		cl.refreshDeadline(10)
+	}
+}
+
+func TestClientStart(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+	time.Sleep(time.Millisecond)
+	require.Equal(t, int64(1), atomic.LoadInt64(&cl.r.State))
+	require.Equal(t, int64(2), atomic.LoadInt64(&cl.w.State))
+}
+
+func BenchmarkClientStart(b *testing.B) {
+	cl := genClient()
+	defer cl.Stop()
+
+	for n := 0; n < b.N; n++ {
+		cl.Start()
+	}
+}
+
+func TestClientStop(t *testing.T) {
+	/*
+		p := NewProcessor(c, circ.NewReader(bufferSize, blockSize), circ.NewWriter(bufferSize, blockSize))
+		pk := &packets.ConnectPacket{
+			ClientIdentifier: "zen3",
+		}
+
+		client := newClient(p, pk, new(auth.Allow))
+		require.NotNil(t, client)
+		client.close()
+
+		var ok bool
+		select {
+		case _, ok = <-client.end:
+		}
+		require.Equal(t, false, ok)
+		require.Equal(t, true, client.wasClosed)
+	*/
+}
+
+func TestClientReadFixedHeader(t *testing.T) {
 	cl := genClient()
 	cl.Start()
 	defer cl.Stop()
 
-	for i, tt := range tests {
+	cl.r.Set([]byte{packets.Connect << 4, 0x00}, 0, 2)
+	cl.r.SetPos(0, 2)
+
+	fh := new(packets.FixedHeader)
+	err := cl.ReadFixedHeader(fh)
+	require.NoError(t, err)
+
+	tail, head := cl.r.GetPos()
+	require.Equal(t, int64(2), tail)
+	require.Equal(t, int64(2), head)
+}
+
+func TestClientReadFixedHeaderDecodeError(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+
+	o := make(chan error)
+	go func() {
+		fh := new(packets.FixedHeader)
+		cl.r.Set([]byte{packets.Connect<<4 | 1<<1, 0x00, 0x00}, 0, 2)
+		cl.r.SetPos(0, 2)
+		o <- cl.ReadFixedHeader(fh)
+	}()
+	time.Sleep(time.Millisecond)
+	require.Error(t, <-o)
+}
+
+func TestClientReadFixedHeaderReadEOF(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+
+	o := make(chan error)
+	go func() {
+		fh := new(packets.FixedHeader)
+		cl.r.Set([]byte{packets.Connect << 4, 0x00}, 0, 2)
+		cl.r.SetPos(0, 1)
+		o <- cl.ReadFixedHeader(fh)
+	}()
+	time.Sleep(time.Millisecond)
+	cl.r.Stop()
+	err := <-o
+	require.Error(t, err)
+	require.Equal(t, io.EOF, err)
+}
+
+func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+
+	o := make(chan error)
+	go func() {
+		fh := new(packets.FixedHeader)
+		err := cl.r.Set([]byte{packets.Connect << 4, 0xd5, 0x86, 0xf9, 0x9e, 0x01}, 0, 5)
+		require.NoError(t, err)
+		cl.r.SetPos(0, 5)
+		o <- cl.ReadFixedHeader(fh)
+	}()
+	time.Sleep(time.Millisecond)
+	require.Error(t, <-o)
+}
+
+func TestClientReadOK(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+
+	// Two packets in a row...
+	b := []byte{
+		byte(packets.Publish << 4), 18, // Fixed header
+		0, 5, // Topic Name - LSB+MSB
+		'a', '/', 'b', '/', 'c', // Topic Name
+		'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload,
+		byte(packets.Publish << 4), 11, // Fixed header
+		0, 5, // Topic Name - LSB+MSB
+		'd', '/', 'e', '/', 'f', // Topic Name
+		'y', 'e', 'a', 'h', // Payload
+	}
+
+	err := cl.r.Set(b, 0, len(b))
+	require.NoError(t, err)
+	cl.r.SetPos(0, int64(len(b)))
+
+	o := make(chan error)
+	var pks []packets.Packet
+	go func() {
+		o <- cl.Read(func(cl *Client, pk packets.Packet) error {
+			pks = append(pks, pk)
+			return nil
+		})
+	}()
+
+	time.Sleep(time.Millisecond)
+	cl.r.Stop()
+
+	err = <-o
+	require.Error(t, err)
+	require.Equal(t, io.EOF, err)
+	require.Equal(t, 2, len(pks))
+	require.Equal(t, pks, []packets.Packet{
+		{
+			FixedHeader: packets.FixedHeader{
+				Type:      packets.Publish,
+				Remaining: 18,
+			},
+			TopicName: "a/b/c",
+			Payload:   []byte("hello mochi"),
+		},
+		{
+			FixedHeader: packets.FixedHeader{
+				Type:      packets.Publish,
+				Remaining: 11,
+			},
+			TopicName: "d/e/f",
+			Payload:   []byte("yeah"),
+		},
+	})
+
+}
+
+func TestClientReadDone(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+	cl.state.done = 1
+
+	err := cl.Read(func(cl *Client, pk packets.Packet) error {
+		return nil
+	})
+
+	require.NoError(t, err)
+}
+
+func TestClientReadNilConn(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+	cl.conn.Close()
+	cl.conn = nil
+
+	err := cl.Read(func(cl *Client, pk packets.Packet) error {
+		return nil
+	})
+
+	fmt.Println("err,", err)
+
+	require.Error(t, err)
+	require.Equal(t, ErrConnectionClosed, err)
+}
+
+func TestClientReadDisconnect(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+	cl.state.done = 1
+
+	err := cl.r.Set([]byte{
+		byte(packets.Disconnect << 4), 0, // Fixed header
+	}, 0, 2)
+	require.NoError(t, err)
+	cl.r.SetPos(0, 2)
+
+	err = cl.Read(func(cl *Client, pk packets.Packet) error {
+		return nil
+	})
+
+	require.NoError(t, err)
+}
+
+func TestClientReadUnknown(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+	cl.state.done = 1
+
+	err := cl.r.Set([]byte{0, 0}, 0, 2)
+	require.NoError(t, err)
+	cl.r.SetPos(0, 2)
+
+	err = cl.Read(func(cl *Client, pk packets.Packet) error {
+		return nil
+	})
+
+	require.Error(t, err)
+}
+
+func TestReadPacketOK(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+
+	err := cl.r.Set([]byte{
+		byte(packets.Publish << 4), 11, // Fixed header
+		0, 5,
+		'd', '/', 'e', '/', 'f',
+		'y', 'e', 'a', 'h',
+	}, 0, 13)
+	require.NoError(t, err)
+	cl.r.SetPos(0, 13)
+
+	fh := new(packets.FixedHeader)
+	err = cl.ReadFixedHeader(fh)
+	require.NoError(t, err)
+
+	pk, err := cl.ReadPacket(fh)
+	require.NoError(t, err)
+	require.NotNil(t, pk)
+
+	require.Equal(t, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Publish,
+			Remaining: 11,
+		},
+		TopicName: "d/e/f",
+		Payload:   []byte("yeah"),
+	}, pk)
+}
+
+func TestReadPacket(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	defer cl.Stop()
+
+	for i, tt := range pkTable {
 		err := cl.r.Set(tt.bytes, 0, len(tt.bytes))
 		require.NoError(t, err)
 		cl.r.SetPos(0, int64(len(tt.bytes)))
@@ -825,7 +832,7 @@ func TestReadPacket(t *testing.T) {
 		err = cl.ReadFixedHeader(fh)
 		require.NoError(t, err)
 
-		pk, err := cl.readPacket(*fh)
+		pk, err := cl.ReadPacket(fh)
 		require.NoError(t, err)
 		require.NotNil(t, pk)
 
@@ -839,63 +846,108 @@ func TestReadPacketReadError(t *testing.T) {
 	defer cl.Stop()
 	cl.r.Stop()
 
-	_, err := cl.readPacket(packets.FixedHeader{
+	_, err := cl.ReadPacket(&packets.FixedHeader{
 		Remaining: 1,
 	})
 	require.Error(t, err)
 	require.Equal(t, io.EOF, err)
 }
 
+func TestWritePacket(t *testing.T) {
+	for i, tt := range pkTable {
+		r, w := net.Pipe()
+		cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+		cl.Start()
+
+		o := make(chan []byte)
+		go func() {
+			buf, err := ioutil.ReadAll(w)
+			require.NoError(t, err)
+			o <- buf
+		}()
+
+		n, err := cl.WritePacket(tt.packet)
+		require.NoError(t, err, "Error [i:%d] %d", i, tt.packet)
+		require.Equal(t, len(tt.bytes), n, "Mismatched written [i:%d] %d", i, tt.packet)
+
+		time.Sleep(time.Millisecond)
+		r.Close()
+
+		require.Equal(t, tt.bytes, <-o, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
+		cl.Stop()
+	}
+}
+
+func TestWritePacketWriteError(t *testing.T) {
+	c, _ := net.Pipe()
+	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4))
+	cl.w.SetPos(0, 16)
+
+	cl.Stop()
+	_, err := cl.WritePacket(pkTable[1].packet)
+	require.Error(t, err)
+	require.Equal(t, io.EOF, err)
+}
+
+func TestWritePacketInvalidPacket(t *testing.T) {
+	c, _ := net.Pipe()
+	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4))
+	cl.Start()
+
+	_, err := cl.WritePacket(new(packets.Packet))
+	require.Error(t, err)
+}
+
 /////
 
 func TestInFlightSet(t *testing.T) {
 	cl := genClient()
-	cl.inFlight.set(1, &inFlightMessage{packet: new(packets.Packet), sent: 0})
-	require.NotNil(t, cl.inFlight.internal[1])
-	require.NotEqual(t, 0, cl.inFlight.internal[1].sent)
+	cl.InFlight.Set(1, &InFlightMessage{Packet: new(packets.Packet), Sent: 0})
+	require.NotNil(t, cl.InFlight.internal[1])
+	require.NotEqual(t, 0, cl.InFlight.internal[1].Sent)
 }
 
 func BenchmarkInFlightSet(b *testing.B) {
 	cl := genClient()
-	in := &inFlightMessage{packet: new(packets.Packet), sent: 0}
+	in := &InFlightMessage{Packet: new(packets.Packet), Sent: 0}
 	for n := 0; n < b.N; n++ {
-		cl.inFlight.set(1, in)
+		cl.InFlight.Set(1, in)
 	}
 }
 
 func TestInFlightGet(t *testing.T) {
 	cl := genClient()
-	cl.inFlight.set(2, &inFlightMessage{packet: new(packets.Packet), sent: 0})
+	cl.InFlight.Set(2, &InFlightMessage{Packet: new(packets.Packet), Sent: 0})
 
-	msg, ok := cl.inFlight.get(2)
+	msg, ok := cl.InFlight.Get(2)
 	require.Equal(t, true, ok)
-	require.NotEqual(t, 0, msg.sent)
+	require.NotEqual(t, 0, msg.Sent)
 }
 
 func BenchmarkInFlightGet(b *testing.B) {
 	cl := genClient()
-	cl.inFlight.set(2, &inFlightMessage{packet: new(packets.Packet), sent: 0})
+	cl.InFlight.Set(2, &InFlightMessage{Packet: new(packets.Packet), Sent: 0})
 	for n := 0; n < b.N; n++ {
-		cl.inFlight.get(2)
+		cl.InFlight.Get(2)
 	}
 }
 
 func TestInFlightDelete(t *testing.T) {
 	cl := genClient()
-	cl.inFlight.set(3, &inFlightMessage{packet: new(packets.Packet), sent: 0})
-	require.NotNil(t, cl.inFlight.internal[3])
+	cl.InFlight.Set(3, &InFlightMessage{Packet: new(packets.Packet), Sent: 0})
+	require.NotNil(t, cl.InFlight.internal[3])
 
-	cl.inFlight.delete(3)
-	require.Nil(t, cl.inFlight.internal[3])
+	cl.InFlight.Delete(3)
+	require.Nil(t, cl.InFlight.internal[3])
 
-	_, ok := cl.inFlight.get(3)
+	_, ok := cl.InFlight.Get(3)
 	require.Equal(t, false, ok)
 }
 
 func BenchmarkInFlightDelete(b *testing.B) {
 	cl := genClient()
 	for n := 0; n < b.N; n++ {
-		cl.inFlight.set(4, &inFlightMessage{packet: new(packets.Packet), sent: 0})
-		cl.inFlight.delete(4)
+		cl.InFlight.Set(4, &InFlightMessage{Packet: new(packets.Packet), Sent: 0})
+		cl.InFlight.Delete(4)
 	}
 }

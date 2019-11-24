@@ -17,7 +17,7 @@ var (
 
 // buffer contains core values and methods to be included in a reader or writer.
 type Buffer struct {
-	mu sync.RWMutex
+	Mu sync.RWMutex
 
 	ID    string     // the identifier of the buffer. This is used in debug output.
 	size  int        // the size of the buffer.
@@ -36,7 +36,6 @@ type Buffer struct {
 // NewBuffer returns a new instance of buffer. You should call NewReader or
 // NewWriter instead of this function.
 func NewBuffer(size, block int) Buffer {
-
 	if size == 0 {
 		size = DefaultBufferSize
 	}
@@ -73,15 +72,15 @@ func (b *Buffer) SetPos(tail, head int64) {
 
 // Get returns the internal buffer.
 func (b *Buffer) Get() []byte {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	b.Mu.Lock()
+	defer b.Mu.Unlock()
 	return b.buf
 }
 
 // Set writes bytes to a range of indexes in the byte buffer.
 func (b *Buffer) Set(p []byte, start, end int) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	b.Mu.Lock()
+	defer b.Mu.Unlock()
 
 	if end > b.size || start > b.size {
 		return ErrOutOfRange
@@ -164,13 +163,7 @@ func (b *Buffer) checkFilled(n int) bool {
 
 // CommitTail moves the tail position of the buffer n bytes.
 func (b *Buffer) CommitTail(n int) {
-	//err := b.awaitFilled(n)
-	//if err != nil {
-	//	return err
-	//}
-
 	atomic.AddInt64(&b.tail, int64(n))
-
 	b.rcond.L.Lock()
 	b.rcond.Broadcast()
 	b.rcond.L.Unlock()

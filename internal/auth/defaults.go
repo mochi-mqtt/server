@@ -5,7 +5,7 @@ type Allow struct{}
 
 // Auth returns true if a username and password are acceptable. Allow always
 // returns true.
-func (a *Allow) Authenticate(user, password string) bool {
+func (a *Allow) Authenticate(user, password []byte) bool {
 	return true
 }
 
@@ -20,7 +20,7 @@ type Disallow struct{}
 
 // Auth returns true if a username and password are acceptable. Disallow always
 // returns false.
-func (d *Disallow) Authenticate(user, password string) bool {
+func (d *Disallow) Authenticate(user, password []byte) bool {
 	return false
 }
 

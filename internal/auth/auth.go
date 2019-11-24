@@ -5,7 +5,7 @@ type Controller interface {
 
 	// Authenticate authenticates a user on CONNECT and returns true if a user is
 	// allowed to join the server.
-	Authenticate(user string, password string) bool
+	Authenticate(user, password []byte) bool
 
 	// ACL returns true if a user has read or write access to a given topic.
 	ACL(user string, topic string, write bool) bool

@@ -1,7 +1,9 @@
 package clients
 
 import (
+	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -10,19 +12,19 @@ import (
 
 	"github.com/rs/xid"
 
+	dbg "github.com/mochi-co/debug"
 	"github.com/mochi-co/mqtt/internal/auth"
 	"github.com/mochi-co/mqtt/internal/circ"
-	"github.com/mochi-co/mqtt/internal/topics"
-	//"github.com/mochi-co/mqtt/internal/debug"
 	"github.com/mochi-co/mqtt/internal/packets"
+	"github.com/mochi-co/mqtt/internal/topics"
 )
 
 var (
-	defaultKeepalive uint16 = 60 // in seconds.
+	defaultKeepalive uint16 = 30 // in seconds.
 
-	ErrInsufficientBytes    = fmt.Errorf("Insufficient bytes in buffer")
-	ErrReadPacketValidation = fmt.Errorf("Error validating packet")
-	ErrConnectionClosed     = fmt.Errorf("Connection not open")
+	ErrInsufficientBytes    = errors.New("Insufficient bytes in buffer")
+	ErrReadPacketValidation = errors.New("Error validating packet")
+	ErrConnectionClosed     = errors.New("Connection not open")
 )
 
 // Clients contains a map of the clients known by the broker.
@@ -41,7 +43,7 @@ func New() Clients {
 // Add adds a new client to the clients map, keyed on client id.
 func (cl *Clients) Add(val *Client) {
 	cl.Lock()
-	cl.internal[val.id] = val
+	cl.internal[val.ID] = val
 	cl.Unlock()
 }
 
@@ -73,7 +75,7 @@ func (cl *Clients) GetByListener(id string) []*Client {
 	clients := make([]*Client, 0, cl.Len())
 	cl.RLock()
 	for _, v := range cl.internal {
-		if v.listener == id {
+		if v.Listener == id {
 			clients = append(clients, v)
 		}
 	}
@@ -84,21 +86,21 @@ func (cl *Clients) GetByListener(id string) []*Client {
 // Client contains information about a client known by the broker.
 type Client struct {
 	sync.RWMutex
-	ac            auth.Controller      // an auth controller inherited from the listener.
-	inFlight      inFlight             // a map of in-flight qos messages.
-	subscriptions topics.Subscriptions // a map of the subscription filters a client maintains.
-	state         clientState          // the operational state of the client.
 	conn          net.Conn             // the net.Conn used to establish the connection.
 	r             *circ.Reader         // a reader for reading incoming bytes.
 	w             *circ.Writer         // a writer for writing outgoing bytes.
-	fh            packets.FixedHeader  // the FixedHeader from the last read packet.
-	id            string               // the client id.
-	listener      string               // the id of the listener the client is connected to.
+	ID            string               // the client id.
+	AC            auth.Controller      // an auth controller inherited from the listener.
+	Subscriptions topics.Subscriptions // a map of the subscription filters a client maintains.
+	Listener      string               // the id of the listener the client is connected to.
+	InFlight      InFlight             // a map of in-flight qos messages.
 	user          []byte               // the username the client authenticated with.
 	keepalive     uint16               // the number of seconds the connection can wait.
 	cleanSession  bool                 // indicates if the client expects a clean-session.
 	packetID      uint32               // the current highest packetID.
 	lwt           LWT                  // the last will and testament for the client.
+	state         clientState          // the operational state of the client.
+	//fh            packets.FixedHeader  // the FixedHeader from the last read packet.
 }
 
 // clientState tracks the state of the client.
@@ -119,10 +121,11 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer) *Client {
 		r:    r,
 		w:    w,
 
-		inFlight: inFlight{
-			internal: make(map[uint16]*inFlightMessage),
+		keepalive: defaultKeepalive,
+		InFlight: InFlight{
+			internal: make(map[uint16]*InFlightMessage),
 		},
-		subscriptions: make(map[string]byte),
+		Subscriptions: make(map[string]byte),
 
 		state: clientState{
 			started: new(sync.WaitGroup),
@@ -132,34 +135,29 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer) *Client {
 			endOnce: new(sync.Once),
 		},
 	}
-
 	return cl
 }
 
 // Identify sets the identification values of a client instance.
-func (cl *Client) Identify(lid string, pk *packets.Packet, ac auth.Controller) {
-	cl.listener = lid
-	cl.ac = ac
-	cl.id = pk.ClientIdentifier
+func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
+	cl.Listener = lid
+	cl.AC = ac
+	cl.ID = pk.ClientIdentifier
 
 	// TBR
 	//cl.id = strings.Replace(pk.ClientIdentifier, "Jonathans-MacBook-Pro.local-worker0", "", -1)
 	//if strings.Contains(cl.id, "sub") {
 	//	cl.id = "\t\033[0;34m" + cl.id + "\033[0m"
 	//}
-	cl.r.ID = cl.id + " READER"
-	cl.w.ID = cl.id + " WRITER"
+	cl.r.ID = cl.ID + " READER"
+	cl.w.ID = cl.ID + " WRITER"
 
 	cl.user = pk.Username
 	cl.keepalive = pk.Keepalive
 	cl.cleanSession = pk.CleanSession
 
-	if cl.id == "" {
-		cl.id = xid.New().String()
-	}
-
-	if cl.keepalive == 0 {
-		cl.keepalive = defaultKeepalive
+	if cl.ID == "" {
+		cl.ID = xid.New().String()
 	}
 
 	if pk.WillFlag {
@@ -195,14 +193,14 @@ func (cl *Client) nextPacketID() uint32 {
 // noteSubscription makes a note of a subscription for the client.
 func (cl *Client) noteSubscription(filter string, qos byte) {
 	cl.Lock()
-	cl.subscriptions[filter] = qos
+	cl.Subscriptions[filter] = qos
 	cl.Unlock()
 }
 
 // forgetSubscription forgests a subscription note for the client.
 func (cl *Client) forgetSubscription(filter string) {
 	cl.Lock()
-	delete(cl.subscriptions, filter)
+	delete(cl.Subscriptions, filter)
 	cl.Unlock()
 }
 
@@ -212,45 +210,38 @@ func (cl *Client) Start() {
 
 	go func() {
 		cl.state.started.Done()
-		cl.w.WriteTo(cl.conn)
+		_, err := cl.w.WriteTo(cl.conn)
+		dbg.Println(dbg.HiRed, cl.ID, "WriteTo stopped", err)
 		cl.state.endedW.Done()
-		//debug.Printf("%s \033[1;33mGR WriteTo ended\033[0m\n", cl.id)
 		//cl.close()
 	}()
 	cl.state.endedW.Add(1)
 
 	go func() {
 		cl.state.started.Done()
-		cl.r.ReadFrom(cl.conn)
+		_, err := cl.r.ReadFrom(cl.conn)
+		dbg.Println(dbg.HiRed, cl.ID, "ReadFrom stopped", err)
 		cl.state.endedR.Done()
-		//debug.Printf("%s \033[1;33mGR ReadFrom ended\033[0m\n", cl.id)
 		//cl.close()
 	}()
 	cl.state.endedR.Add(1)
 	cl.state.started.Wait()
+
 }
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
 func (cl *Client) Stop() {
-	/*
-	   debug.Println(cl.id, "SIGNALLING READER TO CLOSE")
-	   	cl.r.Close()
-	   	debug.Println(cl.id, "READER CLOSE SENT")
+	dbg.Println(dbg.HiRed+"CLIENT stop called...", dbg.Underline+cl.ID)
+	cl.r.Stop()
+	cl.w.Stop()
+	cl.state.endedW.Wait()
 
-	   	// Wait for the writing buffer to finish.
-	   	debug.Println(cl.id, "SIGNALLING WRITER TO CLOSE")
-	   	cl.w.Close()
-	   	cl.state.endedW.Wait()
+	if cl.conn != nil {
+		cl.conn.Close()
+	}
 
-	   	// Cut off the connection if it's still up.
-	   	if cl.conn != nil {
-	   		cl.conn.Close()
-	   	}
-
-	   	// Wait for the reading buffer to close.
-	   	cl.state.endedR.Wait()
-	   	//cl.w.Close()
-	*/
+	cl.state.endedR.Wait()
+	dbg.Println(dbg.HiRed+"CLIENT stopped", dbg.Underline+cl.ID)
 }
 
 // readFixedHeader reads in the values of the next packet's fixed header.
@@ -298,7 +289,6 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	// Calculate and store the remaining length of the packet payload.
 	rem, _ := binary.Uvarint(buf)
 	fh.Remaining = int(rem)
-	//cl.fh = *fh
 
 	// Having successfully read n bytes, commit the tail forward.
 	cl.r.CommitTail(n)
@@ -319,8 +309,8 @@ func (cl *Client) Read(handler func(*Client, packets.Packet) error) error {
 
 		cl.refreshDeadline(cl.keepalive)
 
-		var fh packets.FixedHeader
-		err := cl.ReadFixedHeader(&fh)
+		fh := new(packets.FixedHeader)
+		err := cl.ReadFixedHeader(fh)
 		if err != nil {
 			return err
 		}
@@ -329,27 +319,18 @@ func (cl *Client) Read(handler func(*Client, packets.Packet) error) error {
 			return nil
 		}
 
-		pk, err := cl.readPacket(fh)
+		pk, err := cl.ReadPacket(fh)
 		if err != nil {
 			return err
 		}
-
-		/*
-			_, err = pk.Validate()
-			if err != nil {
-				return ErrReadPacketValidation
-			}
-		*/
-
-		cl.r.CommitTail(pk.FixedHeader.Remaining)
 
 		handler(cl, pk) // Process inbound packet.
 	}
 }
 
-// readPacket reads the remaining buffer into an MQTT packet.
-func (cl *Client) readPacket(fh packets.FixedHeader) (pk packets.Packet, err error) {
-	pk.FixedHeader = fh
+// ReadPacket reads the remaining buffer into an MQTT packet.
+func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err error) {
+	pk.FixedHeader = *fh
 
 	p, err := cl.r.Read(pk.FixedHeader.Remaining)
 	if err != nil {
@@ -362,7 +343,7 @@ func (cl *Client) readPacket(fh packets.FixedHeader) (pk packets.Packet, err err
 
 	switch pk.FixedHeader.Type {
 	case packets.Connect:
-		pk.ConnectDecode(px)
+		err = pk.ConnectDecode(px)
 	case packets.Connack:
 		err = pk.ConnackDecode(px)
 	case packets.Publish:
@@ -390,8 +371,62 @@ func (cl *Client) readPacket(fh packets.FixedHeader) (pk packets.Packet, err err
 	case packets.Disconnect:
 	//	err = pk.DisconnectDecode(px)
 	default:
-		err = fmt.Errorf("No valid packet available; %v", cl.fh.Type)
+		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
 	}
+
+	cl.r.CommitTail(pk.FixedHeader.Remaining)
+
+	return
+}
+
+// WritePacket encodes and writes a packet to the client.
+func (cl *Client) WritePacket(pk *packets.Packet) (n int, err error) {
+	cl.w.Mu.Lock()
+	defer cl.w.Mu.Unlock()
+
+	buf := new(bytes.Buffer)
+	switch pk.FixedHeader.Type {
+	case packets.Connect:
+		err = pk.ConnectEncode(buf)
+	case packets.Connack:
+		err = pk.ConnackEncode(buf)
+	case packets.Publish:
+		err = pk.PublishEncode(buf)
+	case packets.Puback:
+		err = pk.PubackEncode(buf)
+	case packets.Pubrec:
+		err = pk.PubrecEncode(buf)
+	case packets.Pubrel:
+		err = pk.PubrelEncode(buf)
+	case packets.Pubcomp:
+		err = pk.PubcompEncode(buf)
+	case packets.Subscribe:
+		err = pk.SubscribeEncode(buf)
+	case packets.Suback:
+		err = pk.SubackEncode(buf)
+	case packets.Unsubscribe:
+		err = pk.UnsubscribeEncode(buf)
+	case packets.Unsuback:
+		err = pk.UnsubackEncode(buf)
+	case packets.Pingreq:
+		err = pk.PingreqEncode(buf)
+	case packets.Pingresp:
+		err = pk.PingrespEncode(buf)
+	case packets.Disconnect:
+		err = pk.DisconnectEncode(buf)
+	default:
+		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
+	}
+	if err != nil {
+		return
+	}
+
+	n, err = cl.w.Write(buf.Bytes())
+	if err != nil {
+		return
+	}
+
+	cl.refreshDeadline(cl.keepalive)
 
 	return
 }
@@ -404,27 +439,27 @@ type LWT struct {
 	retain  bool   // indicates whether the will message should be retained
 }
 
-// inFlightMessage contains data about a packet which is currently in-flight.
-type inFlightMessage struct {
-	packet *packets.Packet // the packet currently in-flight.
-	sent   int64           // the last time the message was sent (for retries) in unixtime.
+// InFlightMessage contains data about a packet which is currently in-flight.
+type InFlightMessage struct {
+	Packet *packets.Packet // the packet currently in-flight.
+	Sent   int64           // the last time the message was sent (for retries) in unixtime.
 }
 
-// inFlight is a map of inFlightMessage keyed on packet id.
-type inFlight struct {
+// InFlight is a map of InFlightMessage keyed on packet id.
+type InFlight struct {
 	sync.RWMutex
-	internal map[uint16]*inFlightMessage // internal contains the inflight messages.
+	internal map[uint16]*InFlightMessage // internal contains the inflight messages.
 }
 
 // set stores the packet of an in-flight message, keyed on message id.
-func (i *inFlight) set(key uint16, in *inFlightMessage) {
+func (i *InFlight) Set(key uint16, in *InFlightMessage) {
 	i.Lock()
 	i.internal[key] = in
 	i.Unlock()
 }
 
 // get returns the value of an in-flight message if it exists.
-func (i *inFlight) get(key uint16) (*inFlightMessage, bool) {
+func (i *InFlight) Get(key uint16) (*InFlightMessage, bool) {
 	i.RLock()
 	val, ok := i.internal[key]
 	i.RUnlock()
@@ -432,7 +467,7 @@ func (i *inFlight) get(key uint16) (*inFlightMessage, bool) {
 }
 
 // delete removes an in-flight message from the map.
-func (i *inFlight) delete(key uint16) {
+func (i *InFlight) Delete(key uint16) {
 	i.Lock()
 	delete(i.internal, key)
 	i.Unlock()

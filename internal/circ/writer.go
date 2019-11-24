@@ -1,7 +1,6 @@
 package circ
 
 import (
-	//"fmt"
 	"io"
 	"sync/atomic"
 )
@@ -49,7 +48,6 @@ func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
 			p = append(p, b.buf[rTail:rHead]...)
 		}
 
-		// Write capDelta n bytes to the io.Writer.
 		n, err = w.Write(p)
 		total += n
 		if err != nil {
@@ -70,12 +68,9 @@ func (b *Writer) Write(p []byte) (total int, err error) {
 	if err != nil {
 		return
 	}
-	//fmt.Println("awaited", len(p), b.tail, b.head, b.Index(b.tail), b.Index(b.head))
 
 	total = b.writeBytes(p)
-
 	atomic.AddInt64(&b.head, int64(total))
-
 	b.wcond.L.Lock()
 	b.wcond.Broadcast()
 	b.wcond.L.Unlock()
