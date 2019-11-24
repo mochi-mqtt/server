@@ -8,5 +8,5 @@ type Controller interface {
 	Authenticate(user, password []byte) bool
 
 	// ACL returns true if a user has read or write access to a given topic.
-	ACL(user string, topic string, write bool) bool
+	ACL(user []byte, topic string, write bool) bool
 }

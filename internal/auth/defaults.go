@@ -11,7 +11,7 @@ func (a *Allow) Authenticate(user, password []byte) bool {
 
 // ACL returns true if a user has access permissions to read or write on a topic.
 // Allow always returns true.
-func (a *Allow) ACL(user, topic string, write bool) bool {
+func (a *Allow) ACL(user []byte, topic string, write bool) bool {
 	return true
 }
 
@@ -26,6 +26,6 @@ func (d *Disallow) Authenticate(user, password []byte) bool {
 
 // ACL returns true if a user has access permissions to read or write on a topic.
 // Disallow always returns false.
-func (d *Disallow) ACL(user, topic string, write bool) bool {
+func (d *Disallow) ACL(user []byte, topic string, write bool) bool {
 	return false
 }

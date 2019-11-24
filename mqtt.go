@@ -1,7 +1,6 @@
 package mqtt
 
 import (
-	"bytes"
 	"errors"
 	"net"
 
@@ -150,7 +149,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		retcode = packets.CodeConnectNotAuthorised
 	}
 
-	dbg.Printf("%s %+v\n", dbg.Bold+">> Connect Validated\n  "+dbg.Reset, pk)
+	dbg.Printf("%s %+v\n", dbg.Bold+">> Connect Validated"+dbg.Reset, pk)
 
 	var sessionPresent bool
 	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
@@ -172,7 +171,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	s.Clients.Add(client)
 
 	// Send a CONNACK back to the client.
-	/*err = s.writeClient(client, &packets.ConnackPacket{
+	err = s.writeClient(client, &packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Connack,
 		},
@@ -182,7 +181,6 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	if err != nil {
 		return err
 	}
-	*/
 
 	if retcode != packets.Accepted {
 		return nil
@@ -211,7 +209,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 }
 
 // writeClient writes packets to a client connection.
-func (s *Server) writeClient(cl *client, pk packets.Packet) error {
+func (s *Server) writeClient(cl *clients.Client, pk *packets.Packet) error {
 	_, err := cl.WritePacket(pk)
 	if err != nil {
 		return err

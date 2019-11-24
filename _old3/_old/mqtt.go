@@ -178,7 +178,6 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	}
 
 	debug.Println(client.id, "^^ CLIENT READ ENDED, ENDING", err)
-	//debug.Println(client.id, "FINAL BUF", string(client.r.Get()))
 
 	// Publish last will and testament then close.
 	s.closeClient(client, sendLWT)
