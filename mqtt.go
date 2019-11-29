@@ -2,6 +2,7 @@ package mqtt
 
 import (
 	"errors"
+	"fmt"
 	"net"
 
 	"github.com/mochi-co/mqtt/internal/auth"
@@ -49,6 +50,7 @@ type Server struct {
 
 // New returns a new instance of an MQTT broker.
 func New() *Server {
+	fmt.Println()
 	return &Server{
 		Listeners: listeners.New(),
 		Clients:   clients.New(),
@@ -146,17 +148,15 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	client.Identify(lid, pk, ac)
 	retcode, _ := pk.ConnectValidate()
 	if !ac.Authenticate(pk.Username, pk.Password) {
-		retcode = packets.CodeConnectNotAuthorised
+		retcode = packets.CodeConnectBadAuthValues
 	}
-
-	dbg.Printf("%s %+v\n", dbg.Bold+">> Connect Validated"+dbg.Reset, pk)
-
 	var sessionPresent bool
 	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
 		existing.Lock()
 		existing.Stop()
 		if pk.CleanSession {
 			for k := range existing.Subscriptions {
+				delete(existing.Subscriptions, k)
 				s.Topics.Unsubscribe(k, existing.ID)
 			}
 		} else {
@@ -170,7 +170,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	// Add the new client to the clients manager.
 	s.Clients.Add(client)
 
-	// Send a CONNACK back to the client.
+	// Send a CONNACK back to the client with retcode.
 	err = s.writeClient(client, &packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Connack,
@@ -178,15 +178,10 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		SessionPresent: sessionPresent,
 		ReturnCode:     retcode,
 	})
-	if err != nil {
+
+	if err != nil || retcode != packets.Accepted {
 		return err
 	}
-
-	if retcode != packets.Accepted {
-		return nil
-	}
-
-	dbg.Println(retcode, sessionPresent)
 
 	// Resend any unacknowledged QOS messages still pending for the client.
 	//err = s.ResendInflight(client)
@@ -205,7 +200,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	dbg.Println(dbg.Bold+">> Client ended"+dbg.Reset, dbg.Underline+client.ID+dbg.Reset, err)
 	s.closeClient(client, sendLWT)
 
-	return nil
+	return err
 }
 
 // writeClient writes packets to a client connection.

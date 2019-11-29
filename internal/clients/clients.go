@@ -226,7 +226,6 @@ func (cl *Client) Start() {
 	}()
 	cl.state.endedR.Add(1)
 	cl.state.started.Wait()
-
 }
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
@@ -420,7 +419,6 @@ func (cl *Client) WritePacket(pk *packets.Packet) (n int, err error) {
 	if err != nil {
 		return
 	}
-
 	n, err = cl.w.Write(buf.Bytes())
 	if err != nil {
 		return
