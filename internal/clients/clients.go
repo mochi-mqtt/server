@@ -94,7 +94,7 @@ type Client struct {
 	Subscriptions topics.Subscriptions // a map of the subscription filters a client maintains.
 	Listener      string               // the id of the listener the client is connected to.
 	InFlight      InFlight             // a map of in-flight qos messages.
-	user          []byte               // the username the client authenticated with.
+	Username      []byte               // the username the client authenticated with.
 	keepalive     uint16               // the number of seconds the connection can wait.
 	cleanSession  bool                 // indicates if the client expects a clean-session.
 	packetID      uint32               // the current highest packetID.
@@ -152,7 +152,7 @@ func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
 	cl.r.ID = cl.ID + " READER"
 	cl.w.ID = cl.ID + " WRITER"
 
-	cl.user = pk.Username
+	cl.Username = pk.Username
 	cl.keepalive = pk.Keepalive
 	cl.cleanSession = pk.CleanSession
 
@@ -190,15 +190,15 @@ func (cl *Client) nextPacketID() uint32 {
 	return atomic.AddUint32(&cl.packetID, 1)
 }
 
-// noteSubscription makes a note of a subscription for the client.
-func (cl *Client) noteSubscription(filter string, qos byte) {
+// NoteSubscription makes a note of a subscription for the client.
+func (cl *Client) NoteSubscription(filter string, qos byte) {
 	cl.Lock()
 	cl.Subscriptions[filter] = qos
 	cl.Unlock()
 }
 
-// forgetSubscription forgests a subscription note for the client.
-func (cl *Client) forgetSubscription(filter string) {
+// ForgetSubscription forgests a subscription note for the client.
+func (cl *Client) ForgetSubscription(filter string) {
 	cl.Lock()
 	delete(cl.Subscriptions, filter)
 	cl.Unlock()
@@ -237,6 +237,7 @@ func (cl *Client) Stop() {
 
 	if cl.conn != nil {
 		cl.conn.Close()
+		cl.conn = nil
 	}
 
 	cl.state.endedR.Wait()
@@ -296,7 +297,7 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 }
 
 // Read reads new packets from a client connection
-func (cl *Client) Read(handler func(*Client, packets.Packet) error) error {
+func (cl *Client) Read(h func(*Client, packets.Packet) (bool, error)) error {
 	for {
 		if atomic.LoadInt64(&cl.state.done) == 1 && cl.r.CapDelta() == 0 {
 			return nil
@@ -314,16 +315,15 @@ func (cl *Client) Read(handler func(*Client, packets.Packet) error) error {
 			return err
 		}
 
-		if fh.Type == packets.Disconnect {
-			return nil
-		}
-
 		pk, err := cl.ReadPacket(fh)
 		if err != nil {
 			return err
 		}
 
-		handler(cl, pk) // Process inbound packet.
+		close, err := h(cl, pk) // Process inbound packet.
+		if err != nil || close {
+			return err
+		}
 	}
 }
 
@@ -380,6 +380,10 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 
 // WritePacket encodes and writes a packet to the client.
 func (cl *Client) WritePacket(pk *packets.Packet) (n int, err error) {
+	if cl.conn == nil {
+		return 0, ErrConnectionClosed
+	}
+
 	cl.w.Mu.Lock()
 	defer cl.w.Mu.Unlock()
 

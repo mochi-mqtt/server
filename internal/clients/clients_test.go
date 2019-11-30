@@ -510,7 +510,7 @@ func BenchmarkNextPacketID(b *testing.B) {
 func TestClientNoteSubscription(t *testing.T) {
 	cl := genClient()
 
-	cl.noteSubscription("a/b/c", 0)
+	cl.NoteSubscription("a/b/c", 0)
 	require.Contains(t, cl.Subscriptions, "a/b/c")
 	require.Equal(t, byte(0), cl.Subscriptions["a/b/c"])
 }
@@ -518,7 +518,7 @@ func TestClientNoteSubscription(t *testing.T) {
 func BenchmarkClientNoteSubscription(b *testing.B) {
 	cl := genClient()
 	for n := 0; n < b.N; n++ {
-		cl.noteSubscription("a/b/c", 0)
+		cl.NoteSubscription("a/b/c", 0)
 	}
 }
 
@@ -528,15 +528,15 @@ func TestClientForgetSubscription(t *testing.T) {
 	cl.Subscriptions = map[string]byte{
 		"a/b/c/": 1,
 	}
-	cl.forgetSubscription("a/b/c/")
+	cl.ForgetSubscription("a/b/c/")
 	require.Empty(t, cl.Subscriptions["a/b/c"])
 }
 
 func BenchmarkClientForgetSubscription(b *testing.B) {
 	cl := genClient()
 	for n := 0; n < b.N; n++ {
-		cl.noteSubscription("a/b/c", 0)
-		cl.forgetSubscription("a/b/c/")
+		cl.NoteSubscription("a/b/c", 0)
+		cl.ForgetSubscription("a/b/c/")
 	}
 }
 
@@ -686,9 +686,9 @@ func TestClientReadOK(t *testing.T) {
 	o := make(chan error)
 	var pks []packets.Packet
 	go func() {
-		o <- cl.Read(func(cl *Client, pk packets.Packet) error {
+		o <- cl.Read(func(cl *Client, pk packets.Packet) (bool, error) {
 			pks = append(pks, pk)
-			return nil
+			return false, nil
 		})
 	}()
 
@@ -726,8 +726,8 @@ func TestClientReadDone(t *testing.T) {
 	defer cl.Stop()
 	cl.state.done = 1
 
-	err := cl.Read(func(cl *Client, pk packets.Packet) error {
-		return nil
+	err := cl.Read(func(cl *Client, pk packets.Packet) (bool, error) {
+		return false, nil
 	})
 
 	require.NoError(t, err)
@@ -740,33 +740,14 @@ func TestClientReadNilConn(t *testing.T) {
 	cl.conn.Close()
 	cl.conn = nil
 
-	err := cl.Read(func(cl *Client, pk packets.Packet) error {
-		return nil
+	err := cl.Read(func(cl *Client, pk packets.Packet) (bool, error) {
+		return false, nil
 	})
 
 	fmt.Println("err,", err)
 
 	require.Error(t, err)
 	require.Equal(t, ErrConnectionClosed, err)
-}
-
-func TestClientReadDisconnect(t *testing.T) {
-	cl := genClient()
-	cl.Start()
-	defer cl.Stop()
-	cl.state.done = 1
-
-	err := cl.r.Set([]byte{
-		byte(packets.Disconnect << 4), 0, // Fixed header
-	}, 0, 2)
-	require.NoError(t, err)
-	cl.r.SetPos(0, 2)
-
-	err = cl.Read(func(cl *Client, pk packets.Packet) error {
-		return nil
-	})
-
-	require.NoError(t, err)
 }
 
 func TestClientReadUnknown(t *testing.T) {
@@ -779,8 +760,8 @@ func TestClientReadUnknown(t *testing.T) {
 	require.NoError(t, err)
 	cl.r.SetPos(0, 2)
 
-	err = cl.Read(func(cl *Client, pk packets.Packet) error {
-		return nil
+	err = cl.Read(func(cl *Client, pk packets.Packet) (bool, error) {
+		return false, nil
 	})
 
 	require.Error(t, err)
@@ -886,7 +867,7 @@ func TestWritePacketWriteError(t *testing.T) {
 	cl.Stop()
 	_, err := cl.WritePacket(pkTable[1].packet)
 	require.Error(t, err)
-	require.Equal(t, io.EOF, err)
+	require.Equal(t, ErrConnectionClosed, err)
 }
 
 func TestWritePacketInvalidPacket(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/mochi-co/mqtt/internal/auth"
 	"github.com/mochi-co/mqtt/internal/circ"
@@ -128,7 +129,6 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
 	client := clients.NewClient(c, circ.NewReader(0, 0), circ.NewWriter(0, 0))
 	client.Start()
-	dbg.Println(dbg.Bold + ">> Establishing Connection")
 
 	fh := new(packets.FixedHeader)
 	err := client.ReadFixedHeader(fh)
@@ -197,7 +197,6 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	}
 
 	// Publish last will and testament then close.
-	dbg.Println(dbg.Bold+">> Client ended"+dbg.Reset, dbg.Underline+client.ID+dbg.Reset, err)
 	s.closeClient(client, sendLWT)
 
 	return err
@@ -218,8 +217,171 @@ func (s *Server) writeClient(cl *clients.Client, pk *packets.Packet) error {
 
 // processPacket processes an inbound packet for a client. Since the method is
 // typically called as a goroutine, errors are mostly for test checking purposes.
-func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
+func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) (close bool, err error) {
 	dbg.Printf("%s %+v\n", dbg.Green+">> Processing", pk)
 
-	return nil
+	// Process the packet depending on the detected type.
+	switch pk.FixedHeader.Type {
+	case packets.Connect:
+		return s.processConnect(cl, pk)
+	case packets.Disconnect:
+		return s.processDisconnect(cl, pk)
+	case packets.Pingreq:
+		return s.processPingreq(cl, pk)
+
+		/*
+			case *packets.PublishPacket:
+				debug.Printf("%s \033[1;32mPROCESSING PUB PACKET %+v\033[0m\n", cl.id, string(pk.(*packets.PublishPacket).Payload))
+				return s.processPublish(cl, msg)
+		*/
+	case packets.Puback:
+		return s.processPuback(cl, pk)
+	case packets.Pubrec:
+		return s.processPubrec(cl, pk)
+	case packets.Pubrel:
+		return s.processPubrel(cl, pk)
+	case packets.Pubcomp:
+		return s.processPubcomp(cl, pk)
+	case packets.Subscribe:
+		return s.processSubscribe(cl, pk)
+	case packets.Unsubscribe:
+		return s.processUnsubscribe(cl, pk)
+	default:
+		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
+	}
+
+	return
+}
+
+// processConnect processes a Connect packet. The packet cannot be used to
+// establish a new connection on an existing connection. See EstablishConnection
+// instead.
+func (s *Server) processConnect(cl *clients.Client, pk packets.Packet) (close bool, err error) {
+	s.closeClient(cl, true)
+	return
+}
+
+// processDisconnect processes a Disconnect packet.
+func (s *Server) processDisconnect(cl *clients.Client, pk packets.Packet) (close bool, err error) {
+	s.closeClient(cl, true)
+	return true, nil
+}
+
+// processPingreq processes a Pingreq packet.
+func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) (close bool, err error) {
+	err = s.writeClient(cl, &packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pingresp,
+		},
+	})
+
+	return
+}
+
+// processPuback processes a Puback packet.
+func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) (close bool, err error) {
+	cl.InFlight.Delete(pk.PacketID)
+	return
+}
+
+// processPubrec processes a Pubrec packet.
+func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) (close bool, err error) {
+	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
+		out := &packets.Packet{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Pubrel,
+				Qos:  1,
+			},
+			PacketID: pk.PacketID,
+		}
+
+		cl.InFlight.Set(out.PacketID, &clients.InFlightMessage{
+			Packet: out,
+			Sent:   time.Now().Unix(),
+		})
+		err = s.writeClient(cl, out)
+	}
+
+	return
+}
+
+// processPubrel processes a Pubrel packet.
+func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) (close bool, err error) {
+	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
+		out := &packets.Packet{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Pubcomp,
+			},
+			PacketID: pk.PacketID,
+		}
+
+		err = s.writeClient(cl, out)
+		cl.InFlight.Delete(pk.PacketID)
+	}
+	return
+}
+
+// processPubcomp processes a Pubcomp packet.
+func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) (close bool, err error) {
+	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
+		cl.InFlight.Delete(pk.PacketID)
+	}
+	return
+}
+
+// processSubscribe processes a Subscribe packet.
+func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) (close bool, err error) {
+	retCodes := make([]byte, len(pk.Topics))
+	for i := 0; i < len(pk.Topics); i++ {
+		if !cl.AC.ACL(cl.Username, pk.Topics[i], false) {
+			retCodes[i] = packets.ErrSubAckNetworkError
+		} else {
+			s.Topics.Subscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
+			cl.NoteSubscription(pk.Topics[i], pk.Qoss[i])
+			retCodes[i] = pk.Qoss[i]
+		}
+	}
+
+	err = s.writeClient(cl, &packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Suback,
+		},
+		PacketID:    pk.PacketID,
+		ReturnCodes: retCodes,
+	})
+	if err != nil {
+		return
+	}
+
+	// Publish out any retained messages matching the subscription filter.
+	for i := 0; i < len(pk.Topics); i++ {
+		for _, pkv := range s.Topics.Messages(pk.Topics[i]) {
+			err := s.writeClient(cl, pkv)
+			if err != nil {
+				return false, err
+			}
+		}
+	}
+
+	return
+}
+
+// processUnsubscribe processes an unsubscribe packet.
+func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) (close bool, err error) {
+	for i := 0; i < len(pk.Topics); i++ {
+		s.Topics.Unsubscribe(pk.Topics[i], cl.ID)
+		cl.ForgetSubscription(pk.Topics[i])
+	}
+
+	err = s.writeClient(cl, &packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Unsuback,
+		},
+		PacketID: pk.PacketID,
+	})
+	if err != nil {
+		return
+	}
+
+	return
 }

@@ -70,9 +70,7 @@ func (x *Index) Unsubscribe(filter, client string) bool {
 // nodes. If a client id is specified, it will unsubscribe a client. If message
 // is true, it will delete a retained message.
 func (x *Index) unpoperate(filter string, client string, message bool) bool {
-
-	// Walk to end leaf.
-	var d int
+	var d int // Walk to end leaf.
 	var particle string
 	var hasNext = true
 	e := x.Root
@@ -167,24 +165,12 @@ func (x *Index) Messages(filter string) []*packets.Packet {
 
 // Leaf is a child node on the tree.
 type Leaf struct {
-
-	// Key contains the key that was used to create the leaf.
-	Key string
-
-	// Parent is a pointer to the parent node for the leaf.
-	Parent *Leaf
-
-	// Leafs is a map of child nodes, keyed on particle id.
-	Leaves map[string]*Leaf
-
-	// Clients is a map of client ids subscribed to the topic.
-	Clients map[string]byte
-
-	// Filter is the path of the topic filter being matched.
-	Filter string
-
-	// Message is a message which has been retained for a specific topic.
-	Message *packets.Packet
+	Key     string           //  the key that was used to create the leaf.
+	Parent  *Leaf            //  a pointer to the parent node for the leaf.
+	Leaves  map[string]*Leaf // a map of child nodes, keyed on particle id.
+	Clients map[string]byte  // a map of client ids subscribed to the topic.
+	Filter  string           // the path of the topic filter being matched.
+	Message *packets.Packet  //  a message which has been retained for a specific topic.
 }
 
 // scanSubscribers recursively steps through a branch of leaves finding clients who
