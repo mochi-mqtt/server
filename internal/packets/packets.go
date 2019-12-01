@@ -409,8 +409,8 @@ func (pk *Packet) PublishDecode(buf []byte) error {
 // PublishCopy creates a new instance of Publish packet bearing the
 // same payload and destination topic, but with an empty header for
 // inheriting new QoS etc flags.
-func (pk *Packet) PublishCopy() *Packet {
-	return &Packet{
+func (pk *Packet) PublishCopy() Packet {
+	return Packet{
 		FixedHeader: FixedHeader{
 			Type: Publish,
 		},

@@ -172,7 +172,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	s.Clients.Add(client)
 
 	// Send a CONNACK back to the client with retcode.
-	err = s.writeClient(client, &packets.Packet{
+	err = s.writeClient(client, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Connack,
 		},
@@ -185,10 +185,11 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	}
 
 	// Resend any unacknowledged QOS messages still pending for the client.
-	//err = s.ResendInflight(client)
-	//if err != nil {
-	//	return err
-	//}
+	/*err = s.resendInflight(client)
+	if err != nil {
+		return err
+	}
+	*/
 
 	// Block and listen for more packets, and end if an error or nil packet occurs.
 	var sendLWT bool
@@ -204,7 +205,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 }
 
 // writeClient writes packets to a client connection.
-func (s *Server) writeClient(cl *clients.Client, pk *packets.Packet) error {
+func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 	_, err := cl.WritePacket(pk)
 	if err != nil {
 		return err
@@ -215,6 +216,22 @@ func (s *Server) writeClient(cl *clients.Client, pk *packets.Packet) error {
 
 	return nil
 }
+
+// resendInflight republishes any inflight messages to the client.
+/*func (s *Server) resendInflight(cl *clients.Client) error {
+	cl.RLock()
+	msgs := cl.inFlight.internal
+	cl.RUnlock()
+	for _, msg := range msgs {
+		err := s.writeClient(cl, msg.packet)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+*/
 
 // processPacket processes an inbound packet for a client. Since the method is
 // typically called as a goroutine, errors are mostly for test checking purposes.
@@ -261,7 +278,7 @@ func (s *Server) processDisconnect(cl *clients.Client, pk packets.Packet) (close
 
 // processPingreq processes a Pingreq packet.
 func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) (close bool, err error) {
-	err = s.writeClient(cl, &packets.Packet{
+	err = s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Pingresp,
 		},
@@ -277,11 +294,11 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) (close bo
 	}
 
 	if pk.FixedHeader.Retain {
-		s.Topics.RetainMessage(&pk)
+		s.Topics.RetainMessage(pk)
 	}
 
 	if pk.FixedHeader.Qos > 0 {
-		ack := &packets.Packet{
+		ack := packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type: packets.Puback,
 			},
@@ -290,7 +307,7 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) (close bo
 
 		if pk.FixedHeader.Qos == 2 {
 			ack.FixedHeader.Type = packets.Pubrec
-			cl.InFlight.Set(pk.PacketID, &clients.InFlightMessage{
+			cl.InFlight.Set(pk.PacketID, clients.InFlightMessage{
 				Packet: ack,
 				Sent:   time.Now().Unix(),
 			})
@@ -315,7 +332,7 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) (close bo
 					out.PacketID = uint16(client.NextPacketID())
 				}
 
-				client.InFlight.Set(out.PacketID, &clients.InFlightMessage{
+				client.InFlight.Set(out.PacketID, clients.InFlightMessage{
 					Packet: out,
 					Sent:   time.Now().Unix(),
 				})
@@ -338,7 +355,7 @@ func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) (close boo
 // processPubrec processes a Pubrec packet.
 func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) (close bool, err error) {
 	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
-		out := &packets.Packet{
+		out := packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type: packets.Pubrel,
 				Qos:  1,
@@ -346,7 +363,7 @@ func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) (close boo
 			PacketID: pk.PacketID,
 		}
 
-		cl.InFlight.Set(out.PacketID, &clients.InFlightMessage{
+		cl.InFlight.Set(out.PacketID, clients.InFlightMessage{
 			Packet: out,
 			Sent:   time.Now().Unix(),
 		})
@@ -359,7 +376,7 @@ func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) (close boo
 // processPubrel processes a Pubrel packet.
 func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) (close bool, err error) {
 	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
-		out := &packets.Packet{
+		out := packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type: packets.Pubcomp,
 			},
@@ -393,7 +410,7 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) (close 
 		}
 	}
 
-	err = s.writeClient(cl, &packets.Packet{
+	err = s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Suback,
 		},
@@ -424,7 +441,7 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) (clos
 		cl.ForgetSubscription(pk.Topics[i])
 	}
 
-	err = s.writeClient(cl, &packets.Packet{
+	err = s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Unsuback,
 		},

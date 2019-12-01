@@ -123,7 +123,7 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer) *Client {
 
 		keepalive: defaultKeepalive,
 		InFlight: InFlight{
-			internal: make(map[uint16]*InFlightMessage),
+			internal: make(map[uint16]InFlightMessage),
 		},
 		Subscriptions: make(map[string]byte),
 
@@ -308,7 +308,6 @@ func (cl *Client) Read(h func(*Client, packets.Packet) (bool, error)) error {
 		}
 
 		cl.refreshDeadline(cl.keepalive)
-
 		fh := new(packets.FixedHeader)
 		err := cl.ReadFixedHeader(fh)
 		if err != nil {
@@ -379,7 +378,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 }
 
 // WritePacket encodes and writes a packet to the client.
-func (cl *Client) WritePacket(pk *packets.Packet) (n int, err error) {
+func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 	if cl.conn == nil {
 		return 0, ErrConnectionClosed
 	}
@@ -443,29 +442,35 @@ type LWT struct {
 
 // InFlightMessage contains data about a packet which is currently in-flight.
 type InFlightMessage struct {
-	Packet *packets.Packet // the packet currently in-flight.
-	Sent   int64           // the last time the message was sent (for retries) in unixtime.
+	Packet packets.Packet // the packet currently in-flight.
+	Sent   int64          // the last time the message was sent (for retries) in unixtime.
 }
 
 // InFlight is a map of InFlightMessage keyed on packet id.
 type InFlight struct {
 	sync.RWMutex
-	internal map[uint16]*InFlightMessage // internal contains the inflight messages.
+	internal map[uint16]InFlightMessage // internal contains the inflight messages.
 }
 
 // set stores the packet of an in-flight message, keyed on message id.
-func (i *InFlight) Set(key uint16, in *InFlightMessage) {
+func (i *InFlight) Set(key uint16, in InFlightMessage) {
 	i.Lock()
 	i.internal[key] = in
 	i.Unlock()
 }
 
 // get returns the value of an in-flight message if it exists.
-func (i *InFlight) Get(key uint16) (*InFlightMessage, bool) {
+func (i *InFlight) Get(key uint16) (InFlightMessage, bool) {
 	i.RLock()
 	val, ok := i.internal[key]
 	i.RUnlock()
 	return val, ok
+}
+
+func (i *InFlight) GetAll() map[uint16]InFlightMessage {
+	i.RLock()
+	defer i.RUnlock()
+	return i.internal
 }
 
 // delete removes an in-flight message from the map.

@@ -348,7 +348,7 @@ func TestServerWriteClient(t *testing.T) {
 	cl.ID = "mochi"
 	defer cl.Stop()
 
-	err := s.writeClient(cl, &packets.Packet{
+	err := s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type:      packets.Pubcomp,
 			Remaining: 2,
@@ -380,7 +380,7 @@ func TestServerWriteClientError(t *testing.T) {
 	cl := clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8))
 	cl.ID = "mochi"
 
-	err := s.writeClient(cl, new(packets.Packet))
+	err := s.writeClient(cl, packets.Packet{})
 	require.Error(t, err)
 }
 
@@ -573,126 +573,9 @@ func TestServerProcessPublishWriteAckError(t *testing.T) {
 	require.Equal(t, false, close)
 }
 
-/*
-
-
-func BenchmarkServerProcessPublish(b *testing.B) {
-	s, _, _, cl := setupClient("zen")
-	cl.p.W = &quietWriter{}
-
-	pk := &packets.PublishPacket{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
-	}
-	for n := 0; n < b.N; n++ {
-		err := s.processPublish(cl, pk)
-		if err != nil {
-			panic(err)
-		}
-	}
-}
-
-func TestServerProcessPublishQOS1WriteError(t *testing.T) {
-	s, _, _, cl := setupClient("zen")
-	cl.p.W = &quietWriter{errAfter: -1}
-	err := s.processPacket(cl, &packets.PublishPacket{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
-			Qos:  1,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
-		PacketID:  12,
-	})
-
-	require.Error(t, err)
-}
-
-func TestServerProcessPublishWritePubsError(t *testing.T) {
-	s, _, _, c1 := setupClient("c1")
-	_, _, _, c2 := setupClient("c2")
-	c2.p.W = &quietWriter{errAfter: -1}
-
-	s.clients.add(c1)
-	s.clients.add(c2)
-	s.topics.Subscribe("a/b/+", c2.id, 0)
-	s.topics.Subscribe("a/+/c", c2.id, 1)
-	require.Nil(t, c1.inFlight.internal[1])
-
-	err := s.processPacket(c1, &packets.PublishPacket{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello2"),
-	})
-	require.Error(t, err)
-
-}
-func TestServerProcessPublishQOS2(t *testing.T) {
-	s, _, _, c1 := setupClient("c1")
-	_, _, _, c2 := setupClient("c2")
-	c1.p.W = new(quietWriter)
-	c2.p.W = new(quietWriter)
-
-	err := s.processPacket(c1, &packets.PublishPacket{
-		FixedHeader: packets.FixedHeader{
-			Type:   packets.Publish,
-			Qos:    2,
-			Retain: true,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
-		PacketID:  12,
-	})
-	require.NoError(t, err)
-	require.Equal(t, []byte{
-		byte(packets.Pubrec << 4), 2, // Fixed header
-		0, 12, // Packet ID - LSB+MSB
-	}, c1.p.W.(*quietWriter).f[0])
-
-}
-
-func TestServerProcessPublishQOS2WriteError(t *testing.T) {
-	s, _, _, cl := setupClient("zen")
-	cl.p.W = &quietWriter{errAfter: -1}
-	err := s.processPacket(cl, &packets.PublishPacket{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
-			Qos:  2,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
-		PacketID:  12,
-	})
-
-	require.Error(t, err)
-}
-
-func TestServerProcessPublishDisallowACL(t *testing.T) {
-	s, _, _, cl := setupClient("c1")
-	cl.p.W = new(quietWriter)
-	cl.ac = new(auth.Disallow)
-
-	err := s.processPacket(cl, &packets.PublishPacket{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
-	})
-
-	require.Error(t, err)
-	require.Equal(t, ErrACLNotAuthorized, err)
-}
-
-*/
 func TestServerProcessPuback(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.InFlight.Set(11, &clients.InFlightMessage{Packet: &packets.Packet{PacketID: 11}, Sent: 0})
+	cl.InFlight.Set(11, clients.InFlightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
 
 	close, err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -710,7 +593,7 @@ func TestServerProcessPuback(t *testing.T) {
 
 func TestServerProcessPubrec(t *testing.T) {
 	s, cl, r, w := setupClient()
-	cl.InFlight.Set(12, &clients.InFlightMessage{Packet: &packets.Packet{PacketID: 12}, Sent: 0})
+	cl.InFlight.Set(12, clients.InFlightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	recv := make(chan []byte)
 	go func() {
@@ -742,7 +625,7 @@ func TestServerProcessPubrec(t *testing.T) {
 
 func TestServerProcessPubrel(t *testing.T) {
 	s, cl, r, w := setupClient()
-	cl.InFlight.Set(10, &clients.InFlightMessage{Packet: &packets.Packet{PacketID: 10}, Sent: 0})
+	cl.InFlight.Set(10, clients.InFlightMessage{Packet: packets.Packet{PacketID: 10}, Sent: 0})
 
 	recv := make(chan []byte)
 	go func() {
@@ -773,7 +656,7 @@ func TestServerProcessPubrel(t *testing.T) {
 
 func TestServerProcessPubcomp(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.InFlight.Set(11, &clients.InFlightMessage{Packet: &packets.Packet{PacketID: 11}, Sent: 0})
+	cl.InFlight.Set(11, clients.InFlightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
 
 	close, err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -792,7 +675,7 @@ func TestServerProcessPubcomp(t *testing.T) {
 func TestServerProcessSubscribe(t *testing.T) {
 	s, cl, r, w := setupClient()
 
-	s.Topics.RetainMessage(&packets.Packet{
+	s.Topics.RetainMessage(packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type:   packets.Publish,
 			Retain: true,
@@ -847,7 +730,7 @@ func TestServerProcessSubscribe(t *testing.T) {
 func TestServerProcessSubscribeFailIssue(t *testing.T) {
 	s, cl, r, _ := setupClient()
 
-	s.Topics.RetainMessage(&packets.Packet{
+	s.Topics.RetainMessage(packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type:   0, // invalid packet, this should never happen.
 			Retain: true,

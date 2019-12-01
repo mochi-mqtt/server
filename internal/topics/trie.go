@@ -38,7 +38,7 @@ func New() *Index {
 }
 
 // RetainMessage saves a message payload to the end of a topic branch.
-func (x *Index) RetainMessage(msg *packets.Packet) {
+func (x *Index) RetainMessage(msg packets.Packet) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if len(msg.Payload) > 0 {
@@ -99,13 +99,13 @@ func (x *Index) unpoperate(filter string, client string, message bool) bool {
 				delete(e.Clients, client)
 			}
 			if message {
-				e.Message = nil
+				e.Message = packets.Packet{}
 			}
 			end = false
 		}
 
 		// If this leaf is empty, note it as orphaned.
-		orphaned = len(e.Clients) == 0 && len(e.Leaves) == 0 && e.Message == nil
+		orphaned = len(e.Clients) == 0 && len(e.Leaves) == 0 && !e.Message.FixedHeader.Retain
 
 		// Traverse up the branch.
 		e = e.Parent
@@ -156,21 +156,21 @@ func (x *Index) Subscribers(topic string) Subscriptions {
 }
 
 // Messages returns a slice of retained topic messages which match a filter.
-func (x *Index) Messages(filter string) []*packets.Packet {
+func (x *Index) Messages(filter string) []packets.Packet {
 	// ReLeaf("messages", x.Root, 0)
 	x.mu.RLock()
 	defer x.mu.RUnlock()
-	return x.Root.scanMessages(filter, 0, make([]*packets.Packet, 0, 32))
+	return x.Root.scanMessages(filter, 0, make([]packets.Packet, 0, 32))
 }
 
 // Leaf is a child node on the tree.
 type Leaf struct {
-	Key     string           //  the key that was used to create the leaf.
-	Parent  *Leaf            //  a pointer to the parent node for the leaf.
+	Key     string           // the key that was used to create the leaf.
+	Parent  *Leaf            // a pointer to the parent node for the leaf.
 	Leaves  map[string]*Leaf // a map of child nodes, keyed on particle id.
 	Clients map[string]byte  // a map of client ids subscribed to the topic.
 	Filter  string           // the path of the topic filter being matched.
-	Message *packets.Packet  //  a message which has been retained for a specific topic.
+	Message packets.Packet   // a message which has been retained for a specific topic.
 }
 
 // scanSubscribers recursively steps through a branch of leaves finding clients who
@@ -211,7 +211,6 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients Subscriptions) Subsc
 			if particle == "#" {
 				return clients
 			} else if hasNext {
-				// Otherwise continue down the branch.
 				clients = child.scanSubscribers(topic, d+1, clients)
 			}
 		}
@@ -223,13 +222,13 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients Subscriptions) Subsc
 // scanMessages recursively steps through a branch of leaves finding retained messages
 // that match a topic filter. Setting `d` to -1 will enable wildhash mode, and will
 // recursively check ALL child leaves in every subsequent branch.
-func (l *Leaf) scanMessages(filter string, d int, messages []*packets.Packet) []*packets.Packet {
+func (l *Leaf) scanMessages(filter string, d int, messages []packets.Packet) []packets.Packet {
 
 	// If a wildhash mode has been set, continue recursively checking through all
 	// child leaves regardless of their particle key.
 	if d == -1 {
 		for _, child := range l.Leaves {
-			if child.Message != nil {
+			if child.Message.FixedHeader.Retain {
 				messages = append(messages, child.Message)
 			}
 			messages = child.scanMessages(filter, -1, messages)
@@ -252,13 +251,12 @@ func (l *Leaf) scanMessages(filter string, d int, messages []*packets.Packet) []
 			// wildhash position, whereas the d == -1 block collects subsequent
 			// messages further down the branch.
 			for _, child := range l.Leaves {
-				if child.Message != nil {
+				if child.Message.FixedHeader.Retain {
 					messages = append(messages, child.Message)
 				}
 			}
 		} else if child, ok := l.Leaves[particle]; ok {
-			// If it's a specific particle, we only need the single message.
-			if child.Message != nil {
+			if child.Message.FixedHeader.Retain {
 				messages = append(messages, child.Message)
 			}
 		}
