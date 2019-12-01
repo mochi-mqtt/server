@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,9 +12,14 @@ import (
 
 	"github.com/mochi-co/mqtt"
 	"github.com/mochi-co/mqtt/internal/listeners"
+
+	_ "net/http/pprof"
 )
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)

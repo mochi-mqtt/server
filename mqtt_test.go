@@ -819,7 +819,6 @@ func TestServerProcessSubscribeWriteError(t *testing.T) {
 
 func TestServerProcessUnsubscribe(t *testing.T) {
 	s, cl, r, w := setupClient()
-
 	s.Clients.Add(cl)
 	s.Topics.Subscribe("a/b/c", cl.ID, 0)
 	s.Topics.Subscribe("d/e/f", cl.ID, 1)
@@ -880,133 +879,22 @@ func TestServerProcessUnsubscribeWriteError(t *testing.T) {
 	require.Equal(t, false, close)
 }
 
-/*
+func TestServerClose(t *testing.T) {
+	s, cl, _, _ := setupClient()
+	cl.Listener = "t1"
+	s.Clients.Add(cl)
 
-
-
-func TestServerProcessSubscribeWriteRetainedError(t *testing.T) {
-	s, _, _, cl := setupClient("zen")
-	cl.p.W = &quietWriter{errAfter: 1}
-
-	s.topics.RetainMessage(&packets.PublishPacket{
-		FixedHeader: packets.FixedHeader{
-			Type:   packets.Publish,
-			Retain: true,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
-	})
-	require.Equal(t, 1, len(s.topics.Messages("a/b/c")))
-
-	err := s.processPacket(cl, &packets.SubscribePacket{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Subscribe,
-		},
-		PacketID: 10,
-		Topics:   []string{"a/b/c", "d/e/f"},
-		Qoss:     []byte{0, 1},
-	})
-	require.Error(t, err)
-}
-
-func TestServerProcessUnsubscribe(t *testing.T) {
-	s, _, _, cl := setupClient("zen")
-	cl.p.W = new(quietWriter)
-
-	s.clients.add(cl)
-	s.topics.Subscribe("a/b/c", cl.id, 0)
-	s.topics.Subscribe("d/e/f", cl.id, 1)
-	cl.noteSubscription("a/b/c", 0)
-	cl.noteSubscription("d/e/f", 1)
-
-	err := s.processPacket(cl, &packets.UnsubscribePacket{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Unsubscribe,
-		},
-		PacketID: 12,
-		Topics:   []string{"a/b/c", "d/e/f"},
-	})
+	err := s.AddListener(listeners.NewMockListener("t1", ":1882"), nil)
 	require.NoError(t, err)
-	require.Equal(t, []byte{
-		byte(packets.Unsuback << 4), 2, // Fixed header
-		0, 12, // Packet ID - LSB+MSB
-	}, cl.p.W.(*quietWriter).f[0])
+	s.Serve()
+	time.Sleep(time.Millisecond)
+	require.Equal(t, 1, s.Listeners.Len())
 
-	require.Empty(t, s.topics.Subscribers("a/b/c"))
-	require.Empty(t, s.topics.Subscribers("d/e/f"))
-	require.NotContains(t, cl.subscriptions, "a/b/c")
-	require.NotContains(t, cl.subscriptions, "d/e/f")
+	listener, ok := s.Listeners.Get("t1")
+	require.Equal(t, true, ok)
+	require.Equal(t, true, listener.(*listeners.MockListener).IsServing)
+
+	s.Close()
+	time.Sleep(time.Millisecond)
+	require.Equal(t, false, listener.(*listeners.MockListener).IsServing)
 }
-
-func BenchmarkServerProcessUnsubscribe(b *testing.B) {
-	s, _, _, cl := setupClient("zen")
-	cl.p.W = new(quietWriter)
-
-	pk := &packets.UnsubscribePacket{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Unsubscribe,
-		},
-		PacketID: 12,
-		Topics:   []string{"a/b/c"},
-	}
-	for n := 0; n < b.N; n++ {
-		err := s.processUnsubscribe(cl, pk)
-		if err != nil {
-			panic(err)
-		}
-	}
-}
-
-func TestServerProcessUnsubscribeWriteError(t *testing.T) {
-	s, _, _, cl := setupClient("zen")
-	cl.p.W = &quietWriter{errAfter: -1}
-	err := s.processPacket(cl, &packets.UnsubscribePacket{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Unsubscribe,
-		},
-	})
-	require.Error(t, err)
-}
-*/
-
-/*
-
-func TestResendInflight(t *testing.T) {
-	s, _, _, cl := setupClient("zen")
-	cl.inFlight.set(1, &inFlightMessage{
-		packet: &packets.PublishPacket{
-			FixedHeader: packets.FixedHeader{
-				Type:   packets.Publish,
-				Qos:    1,
-				Retain: true,
-				Dup:    true,
-			},
-			TopicName: "a/b/c",
-			Payload:   []byte("hello"),
-			PacketID:  1,
-		},
-		sent: time.Now().Unix(),
-	})
-
-	err := s.resendInflight(cl)
-	require.NoError(t, err)
-	require.Equal(t, []byte{
-		byte(packets.Publish<<4 | 11), 14, // Fixed header QoS : 1
-		0, 5, // Topic Name - LSB+MSB
-		'a', '/', 'b', '/', 'c', // Topic Name
-		0, 1, // packet id from qos=1
-		'h', 'e', 'l', 'l', 'o', // Payload)
-	}, cl.p.W.Get()[:16])
-}
-
-func TestResendInflightWriteError(t *testing.T) {
-	s, _, _, cl := setupClient("zen")
-	cl.inFlight.set(1, &inFlightMessage{
-		packet: &packets.PublishPacket{},
-	})
-
-	cl.p.W.Close()
-	err := s.resendInflight(cl)
-	require.Error(t, err)
-}
-*/

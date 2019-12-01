@@ -22,6 +22,13 @@ func TestNewWriter(t *testing.T) {
 	require.Equal(t, block, buf.block)
 }
 
+func TestNewWriterFromSlice(t *testing.T) {
+	b := NewBytesPool(256)
+	buf := NewWriterFromSlice(DefaultBlockSize, b.Get())
+	require.NotNil(t, buf.buf)
+	require.Equal(t, 256, cap(buf.buf))
+}
+
 func TestWriteTo(t *testing.T) {
 	tests := []struct {
 		tail  int64

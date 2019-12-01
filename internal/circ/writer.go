@@ -19,6 +19,16 @@ func NewWriter(size, block int) *Writer {
 	}
 }
 
+// NewWriterFromSlice returns a new Circular Writer using a pre-exising
+// byte slice.
+func NewWriterFromSlice(block int, p []byte) *Writer {
+	b := NewBufferFromSlice(block, p)
+	b.ID = "writer"
+	return &Writer{
+		b,
+	}
+}
+
 // WriteTo writes the contents of the buffer to an io.Writer.
 func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
 	atomic.StoreInt64(&b.State, 2)

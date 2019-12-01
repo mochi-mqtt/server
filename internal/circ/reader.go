@@ -3,8 +3,6 @@ package circ
 import (
 	"io"
 	"sync/atomic"
-
-	dbg "github.com/mochi-co/debug"
 )
 
 // Reader is a circular buffer for reading data from an io.Reader.
@@ -12,9 +10,19 @@ type Reader struct {
 	Buffer
 }
 
-// NewReader returns a pointer to a new Circular Reader.
+// NewReader returns a new Circular Reader.
 func NewReader(size, block int) *Reader {
 	b := NewBuffer(size, block)
+	b.ID = "\treader"
+	return &Reader{
+		b,
+	}
+}
+
+// NewReaderFromSlice returns a new Circular Reader using a pre-exising
+// byte slice.
+func NewReaderFromSlice(block int, p []byte) *Reader {
+	b := NewBufferFromSlice(block, p)
 	b.ID = "\treader"
 	return &Reader{
 		b,
@@ -48,16 +56,12 @@ func (b *Reader) ReadFrom(r io.Reader) (total int64, err error) {
 			end = b.size
 		}
 
-		dbg.Println(dbg.Yellow, b.ID, "b.ReadFrom allocating", start, ":", end)
-
 		// Read into the buffer between the start and end indexes only.
 		n, err := r.Read(b.buf[start:end])
 		total += int64(n) // incr total bytes read.
 		if err != nil {
 			return total, nil
 		}
-
-		dbg.Println(dbg.HiYellow, b.ID, "b.ReadFrom received", n, b.buf[start:start+n])
 
 		// Move the head forward however many bytes were read.
 		atomic.AddInt64(&b.head, int64(n))
@@ -71,8 +75,6 @@ func (b *Reader) ReadFrom(r io.Reader) (total int64, err error) {
 // Read reads n bytes from the buffer, and will block until at n bytes
 // exist in the buffer to read.
 func (b *Buffer) Read(n int) (p []byte, err error) {
-	dbg.Println(dbg.Cyan, b.ID, "b.Read waiting for", n, "bytes")
-
 	err = b.awaitFilled(n)
 	if err != nil {
 		return
@@ -89,8 +91,6 @@ func (b *Buffer) Read(n int) (p []byte, err error) {
 	} else {
 		b.tmp = b.buf[b.Index(tail):b.Index(next)] // Otherwise, simple tail:next read.
 	}
-
-	dbg.Println(dbg.HiCyan, b.ID, "b.Read read", tail, next, b.tmp)
 
 	return b.tmp, nil
 }

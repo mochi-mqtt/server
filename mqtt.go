@@ -23,28 +23,11 @@ var (
 	ErrListenerIDExists     = errors.New("Listener id already exists")
 	ErrReadConnectInvalid   = errors.New("Connect packet was not valid")
 	ErrConnectNotAuthorized = errors.New("Connect packet was not authorized")
-
-//	ErrACLNotAuthorized     = errors.New("ACL not authorized")
 )
-
-/*
-var (
-	ErrListenerIDExists       = errors.New("Listener id already exists")
-	ErrReadConnectFixedHeader = errors.New("Error reading fixed header on CONNECT packet")
-	ErrReadConnectPacket      = errors.New("Error reading CONNECT packet")
-	ErrReadConnectInvalid     = errors.New("CONNECT packet was not valid")
-
-	ErrReadFixedHeader        = errors.New("Error reading fixed header")
-	ErrReadPacketPayload      = errors.New("Error reading packet payload")
-	ErrReadPacketValidation   = errors.New("Error validating packet")
-	ErrConnectionClosed       = errors.New("Connection not open")
-	ErrNoData                 = errors.New("No data")
-	ErrACLNotAuthorized       = errors.New("ACL not authorized")
-)
-*/
 
 // Server is an MQTT broker server.
 type Server struct {
+	bytepool  circ.BytesPool
 	Listeners listeners.Listeners // listeners listen for new connections.
 	Clients   clients.Clients     // clients known to the broker.
 	Topics    *topics.Index       // an index of topic subscriptions and retained messages.
@@ -52,8 +35,8 @@ type Server struct {
 
 // New returns a new instance of an MQTT broker.
 func New() *Server {
-	fmt.Println()
 	return &Server{
+		bytepool:  circ.NewBytesPool(circ.DefaultBufferSize),
 		Listeners: listeners.New(),
 		Clients:   clients.New(),
 		Topics:    topics.New(),
@@ -82,53 +65,14 @@ func (s *Server) Serve() error {
 	return nil
 }
 
-// Close attempts to gracefully shutdown the server, all listeners, and clients.
-func (s *Server) Close() error {
-	s.Listeners.CloseAll(s.closeListenerClients)
-	return nil
-}
-
-// closeListenerClients closes all clients on the specified listener.
-func (s *Server) closeListenerClients(listener string) {
-	clients := s.Clients.GetByListener(listener)
-	for _, client := range clients {
-		s.closeClient(client, false) // omit errors
-	}
-
-}
-
-// closeClient closes a client connection and publishes any LWT messages.
-func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
-
-	//debug.Println(cl.ID, "SERVER STOPS ISSUED >> ")
-
-	// If an LWT message is set, publish it to the topic subscribers.
-	/* // this currently loops forever on broken connection
-	if sendLWT && cl.lwt.topic != "" {
-		err := s.processPublish(cl, &packets.PublishPacket{
-			FixedHeader: packets.FixedHeader{
-				Type:   packets.Publish,
-				Retain: cl.lwt.retain,
-				Qos:    cl.lwt.qos,
-			},
-			TopicName: cl.lwt.topic,
-			Payload:   cl.lwt.message,
-		})
-		if err != nil {
-			return err
-		}
-	}
-	*/
-
-	// Stop listening for new packets.
-	cl.Stop()
-
-	return nil
-}
-
 // EstablishConnection establishes a new client connection with the broker.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
-	client := clients.NewClient(c, circ.NewReader(0, 0), circ.NewWriter(0, 0))
+	//client := clients.NewClient(c, circ.NewReader(0, 0), circ.NewWriter(0, 0))
+	client := clients.NewClient(c,
+		circ.NewReaderFromSlice(0, s.bytepool.Get()),
+		circ.NewWriterFromSlice(0, s.bytepool.Get()),
+	)
+
 	client.Start()
 
 	fh := new(packets.FixedHeader)
@@ -151,6 +95,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	if !ac.Authenticate(pk.Username, pk.Password) {
 		retcode = packets.CodeConnectBadAuthValues
 	}
+
 	var sessionPresent bool
 	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
 		existing.Lock()
@@ -168,10 +113,8 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		existing.Unlock()
 	}
 
-	// Add the new client to the clients manager.
 	s.Clients.Add(client)
 
-	// Send a CONNACK back to the client with retcode.
 	err = s.writeClient(client, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Connack,
@@ -184,21 +127,17 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		return err
 	}
 
-	// Resend any unacknowledged QOS messages still pending for the client.
-	/*err = s.resendInflight(client)
+	err = s.ResendInflight(client)
 	if err != nil {
 		return err
 	}
-	*/
 
-	// Block and listen for more packets, and end if an error or nil packet occurs.
 	var sendLWT bool
 	err = client.Read(s.processPacket)
 	if err != nil {
 		sendLWT = true // Only send LWT on bad disconnect [MQTT-3.14.4-3]
 	}
 
-	// Publish last will and testament then close.
 	s.closeClient(client, sendLWT)
 
 	return err
@@ -217,13 +156,10 @@ func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 	return nil
 }
 
-// resendInflight republishes any inflight messages to the client.
-/*func (s *Server) resendInflight(cl *clients.Client) error {
-	cl.RLock()
-	msgs := cl.inFlight.internal
-	cl.RUnlock()
-	for _, msg := range msgs {
-		err := s.writeClient(cl, msg.packet)
+// ResendInflight republishes any inflight messages to the client.
+func (s *Server) ResendInflight(cl *clients.Client) error {
+	for _, pk := range cl.InFlight.GetAll() {
+		err := s.writeClient(cl, pk.Packet)
 		if err != nil {
 			return err
 		}
@@ -231,7 +167,6 @@ func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 
 	return nil
 }
-*/
 
 // processPacket processes an inbound packet for a client. Since the method is
 // typically called as a goroutine, errors are mostly for test checking purposes.
@@ -452,4 +387,46 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) (clos
 	}
 
 	return
+}
+
+// Close attempts to gracefully shutdown the server, all listeners, and clients.
+func (s *Server) Close() error {
+	s.Listeners.CloseAll(s.closeListenerClients)
+	return nil
+}
+
+// closeListenerClients closes all clients on the specified listener.
+func (s *Server) closeListenerClients(listener string) {
+	clients := s.Clients.GetByListener(listener)
+	for _, client := range clients {
+		s.closeClient(client, false) // omit errors
+	}
+
+}
+
+// closeClient closes a client connection and publishes any LWT messages.
+func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
+	// If an LWT message is set, publish it to the topic subscribers.
+
+	/*
+		if sendLWT && cl.lwt.topic != "" {
+			err := s.processPublish(cl, &packets.PublishPacket{
+				FixedHeader: packets.FixedHeader{
+					Type:   packets.Publish,
+					Retain: cl.lwt.retain,
+					Qos:    cl.lwt.qos,
+				},
+				TopicName: cl.lwt.topic,
+				Payload:   cl.lwt.message,
+			})
+			if err != nil {
+				return err
+			}
+		}
+	*/
+
+	// Stop listening for new packets.
+	cl.Stop()
+
+	return nil
 }

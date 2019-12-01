@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	DefaultBufferSize int = 2048 // the default size of the buffer in bytes.
-	DefaultBlockSize  int = 128  // the default size per R/W block in bytes.
+	DefaultBufferSize int = 1024 * 256 // the default size of the buffer in bytes.
+	DefaultBlockSize  int = 1024 * 8   // the default size per R/W block in bytes.
 
 	ErrOutOfRange        = fmt.Errorf("Indexes out of range")
 	ErrInsufficientBytes = fmt.Errorf("Insufficient bytes to return")
@@ -43,6 +43,7 @@ func NewBuffer(size, block int) Buffer {
 	if block == 0 {
 		block = DefaultBlockSize
 	}
+
 	if size < 2*block {
 		size = 2 * block
 	}
@@ -52,10 +53,30 @@ func NewBuffer(size, block int) Buffer {
 		mask:  size - 1,
 		block: block,
 		buf:   make([]byte, size),
-		tmp:   make([]byte, size),
 		rcond: sync.NewCond(new(sync.Mutex)),
 		wcond: sync.NewCond(new(sync.Mutex)),
 	}
+}
+
+// NewBufferFromSlice returns a new instance of buffer using a
+// pre-existing byte slice.
+func NewBufferFromSlice(block int, buf []byte) Buffer {
+	l := len(buf)
+
+	if block == 0 {
+		block = DefaultBlockSize
+	}
+
+	b := Buffer{
+		size:  l,
+		mask:  l - 1,
+		block: block,
+		buf:   buf,
+		rcond: sync.NewCond(new(sync.Mutex)),
+		wcond: sync.NewCond(new(sync.Mutex)),
+	}
+
+	return b
 }
 
 // Get will return the tail and head positions of the buffer.

@@ -8,6 +8,8 @@ github.com/mochi-co/debug v0.0.0-20191124114744-82bf8b6739b8 h1:BIY2BMCLHm6hE/SU
 github.com/mochi-co/debug v0.0.0-20191124114744-82bf8b6739b8/go.mod h1:AqE7zHPhLOj61seX0vXvzpGiD9Q3Bx5LQPf/FleHKWc=
 github.com/mochi-co/debug v0.0.0-20191124131204-24fd1e001164 h1:XGYo79ZRE9pQE9B5iZCYw3VLaq88PfxcdvDf9crG+dQ=
 github.com/mochi-co/debug v0.0.0-20191124131204-24fd1e001164/go.mod h1:LfBrWXdsMaDKL0ZjcbnLjeYL48Nlo1nW4MltMDYqr44=
+github.com/pkg/profile v1.4.0 h1:uCmaf4vVbWAOZz36k1hrQD7ijGRzLwaME8Am/7a4jZI=
+github.com/pkg/profile v1.4.0/go.mod h1:NWz/XGvpEW1FyYQ7fCx4dqYBLlfTcE+A9FLAkNKqjFE=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rs/xid v1.2.1 h1:mhH9Nq+C1fY2l1XIpgxIiUOfNpRBYH1kKcr+qfKgjRc=

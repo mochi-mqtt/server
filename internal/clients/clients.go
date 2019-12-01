@@ -12,7 +12,6 @@ import (
 
 	"github.com/rs/xid"
 
-	dbg "github.com/mochi-co/debug"
 	"github.com/mochi-co/mqtt/internal/auth"
 	"github.com/mochi-co/mqtt/internal/circ"
 	"github.com/mochi-co/mqtt/internal/packets"
@@ -210,27 +209,26 @@ func (cl *Client) Start() {
 
 	go func() {
 		cl.state.started.Done()
-		_, err := cl.w.WriteTo(cl.conn)
-		dbg.Println(dbg.HiRed, cl.ID, "WriteTo stopped", err)
+		//_, err :=
+		cl.w.WriteTo(cl.conn)
 		cl.state.endedW.Done()
 		//cl.close()
 	}()
 	cl.state.endedW.Add(1)
-
 	go func() {
 		cl.state.started.Done()
-		_, err := cl.r.ReadFrom(cl.conn)
-		dbg.Println(dbg.HiRed, cl.ID, "ReadFrom stopped", err)
+		//_, err :=
+		cl.r.ReadFrom(cl.conn)
 		cl.state.endedR.Done()
 		//cl.close()
 	}()
+
 	cl.state.endedR.Add(1)
 	cl.state.started.Wait()
 }
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
 func (cl *Client) Stop() {
-	dbg.Println(dbg.HiRed+"CLIENT stop called...", dbg.Underline+cl.ID)
 	cl.r.Stop()
 	cl.w.Stop()
 	cl.state.endedW.Wait()
@@ -241,7 +239,6 @@ func (cl *Client) Stop() {
 	}
 
 	cl.state.endedR.Wait()
-	dbg.Println(dbg.HiRed+"CLIENT stopped", dbg.Underline+cl.ID)
 }
 
 // readFixedHeader reads in the values of the next packet's fixed header.

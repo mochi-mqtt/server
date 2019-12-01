@@ -36,6 +36,20 @@ func TestNewBufferUndersize(t *testing.T) {
 	require.Equal(t, DefaultBlockSize, buf.block)
 }
 
+func TestNewBufferFromSlice(t *testing.T) {
+	b := NewBytesPool(256)
+	buf := NewBufferFromSlice(DefaultBlockSize, b.Get())
+	require.NotNil(t, buf.buf)
+	require.Equal(t, 256, cap(buf.buf))
+}
+
+func TestNewBufferFromSlice0Size(t *testing.T) {
+	b := NewBytesPool(256)
+	buf := NewBufferFromSlice(0, b.Get())
+	require.NotNil(t, buf.buf)
+	require.Equal(t, 256, cap(buf.buf))
+}
+
 func TestGetPos(t *testing.T) {
 	buf := NewBuffer(16, 4)
 	tail, head := buf.GetPos()

@@ -20,6 +20,13 @@ func TestNewReader(t *testing.T) {
 	require.Equal(t, block, buf.block)
 }
 
+func TestNewReaderFromSlice(t *testing.T) {
+	b := NewBytesPool(256)
+	buf := NewReaderFromSlice(DefaultBlockSize, b.Get())
+	require.NotNil(t, buf.buf)
+	require.Equal(t, 256, cap(buf.buf))
+}
+
 func TestReadFrom(t *testing.T) {
 	buf := NewReader(16, 4)
 
