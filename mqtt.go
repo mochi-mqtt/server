@@ -12,8 +12,7 @@ import (
 	"github.com/mochi-co/mqtt/internal/listeners"
 	"github.com/mochi-co/mqtt/internal/packets"
 	"github.com/mochi-co/mqtt/internal/topics"
-
-	dbg "github.com/mochi-co/debug"
+	//dbg "github.com/mochi-co/debug"
 )
 
 const (
@@ -24,6 +23,8 @@ var (
 	ErrListenerIDExists     = errors.New("Listener id already exists")
 	ErrReadConnectInvalid   = errors.New("Connect packet was not valid")
 	ErrConnectNotAuthorized = errors.New("Connect packet was not authorized")
+
+//	ErrACLNotAuthorized     = errors.New("ACL not authorized")
 )
 
 /*
@@ -218,9 +219,6 @@ func (s *Server) writeClient(cl *clients.Client, pk *packets.Packet) error {
 // processPacket processes an inbound packet for a client. Since the method is
 // typically called as a goroutine, errors are mostly for test checking purposes.
 func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) (close bool, err error) {
-	dbg.Printf("%s %+v\n", dbg.Green+">> Processing", pk)
-
-	// Process the packet depending on the detected type.
 	switch pk.FixedHeader.Type {
 	case packets.Connect:
 		return s.processConnect(cl, pk)
@@ -228,12 +226,8 @@ func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) (close boo
 		return s.processDisconnect(cl, pk)
 	case packets.Pingreq:
 		return s.processPingreq(cl, pk)
-
-		/*
-			case *packets.PublishPacket:
-				debug.Printf("%s \033[1;32mPROCESSING PUB PACKET %+v\033[0m\n", cl.id, string(pk.(*packets.PublishPacket).Payload))
-				return s.processPublish(cl, msg)
-		*/
+	case packets.Publish:
+		return s.processPublish(cl, pk)
 	case packets.Puback:
 		return s.processPuback(cl, pk)
 	case packets.Pubrec:
@@ -247,10 +241,8 @@ func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) (close boo
 	case packets.Unsubscribe:
 		return s.processUnsubscribe(cl, pk)
 	default:
-		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
+		return false, fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
 	}
-
-	return
 }
 
 // processConnect processes a Connect packet. The packet cannot be used to
@@ -274,6 +266,65 @@ func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) (close bo
 			Type: packets.Pingresp,
 		},
 	})
+
+	return
+}
+
+// processPublish processes a Publish packet.
+func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) (close bool, err error) {
+	if !cl.AC.ACL(cl.Username, pk.TopicName, true) {
+		return
+	}
+
+	if pk.FixedHeader.Retain {
+		s.Topics.RetainMessage(&pk)
+	}
+
+	if pk.FixedHeader.Qos > 0 {
+		ack := &packets.Packet{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Puback,
+			},
+			PacketID: pk.PacketID,
+		}
+
+		if pk.FixedHeader.Qos == 2 {
+			ack.FixedHeader.Type = packets.Pubrec
+			cl.InFlight.Set(pk.PacketID, &clients.InFlightMessage{
+				Packet: ack,
+				Sent:   time.Now().Unix(),
+			})
+		}
+
+		err = s.writeClient(cl, ack)
+		if err != nil {
+			return
+		}
+	}
+
+	subs := s.Topics.Subscribers(pk.TopicName)
+	for id, qos := range subs {
+		if client, ok := s.Clients.Get(id); ok {
+			out := pk.PublishCopy()
+			if qos > out.FixedHeader.Qos { // Inherit higher desired qos values.
+				out.FixedHeader.Qos = qos
+			}
+
+			if out.FixedHeader.Qos > 0 { // If QoS required, save to inflight index.
+				if out.PacketID == 0 {
+					out.PacketID = uint16(client.NextPacketID())
+				}
+
+				client.InFlight.Set(out.PacketID, &clients.InFlightMessage{
+					Packet: out,
+					Sent:   time.Now().Unix(),
+				})
+			}
+
+			s.writeClient(client, out)
+			// omit errors; they are averted through manual packet value setting.
+		}
+	}
 
 	return
 }

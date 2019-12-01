@@ -491,19 +491,19 @@ func TestClientIdentifyLWT(t *testing.T) {
 func TestNextPacketID(t *testing.T) {
 	cl := genClient()
 
-	require.Equal(t, uint32(1), cl.nextPacketID())
-	require.Equal(t, uint32(2), cl.nextPacketID())
+	require.Equal(t, uint32(1), cl.NextPacketID())
+	require.Equal(t, uint32(2), cl.NextPacketID())
 
 	cl.packetID = uint32(65534)
-	require.Equal(t, uint32(65535), cl.nextPacketID())
-	require.Equal(t, uint32(1), cl.nextPacketID())
+	require.Equal(t, uint32(65535), cl.NextPacketID())
+	require.Equal(t, uint32(1), cl.NextPacketID())
 }
 
 func BenchmarkNextPacketID(b *testing.B) {
 	cl := genClient()
 
 	for n := 0; n < b.N; n++ {
-		cl.nextPacketID()
+		cl.NextPacketID()
 	}
 }
 

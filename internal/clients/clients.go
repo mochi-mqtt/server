@@ -178,9 +178,9 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 	}
 }
 
-// nextPacketID returns the next packet id for a client, looping back to 0
+// NextPacketID returns the next packet id for a client, looping back to 0
 // if the maximum ID has been reached.
-func (cl *Client) nextPacketID() uint32 {
+func (cl *Client) NextPacketID() uint32 {
 	i := atomic.LoadUint32(&cl.packetID)
 	if i == uint32(65535) || i == uint32(0) {
 		atomic.StoreUint32(&cl.packetID, 1)
