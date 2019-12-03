@@ -343,6 +343,74 @@ func TestServerEstablishConnectionPromptSendLWT(t *testing.T) {
 	require.Error(t, <-o)
 }
 
+func TestResendInflight(t *testing.T) {
+	s, cl, r, w := setupClient()
+
+	ack := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r)
+		if err != nil {
+			panic(err)
+		}
+		ack <- buf
+	}()
+
+	cl.InFlight.Set(1, clients.InFlightMessage{
+		Packet: packets.Packet{
+			FixedHeader: packets.FixedHeader{
+				Type:   packets.Publish,
+				Qos:    1,
+				Retain: true,
+				Dup:    true,
+			},
+			TopicName: "a/b/c",
+			Payload:   []byte("hello"),
+			PacketID:  1,
+		},
+		Sent: time.Now().Unix(),
+	})
+
+	err := s.resendInflight(cl)
+	require.NoError(t, err)
+
+	time.Sleep(time.Millisecond)
+	w.Close()
+
+	require.Equal(t, []byte{
+		byte(packets.Publish<<4 | 11), 14,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		0, 1,
+		'h', 'e', 'l', 'l', 'o',
+	}, <-ack)
+}
+
+func TestResendInflightError(t *testing.T) {
+	s, cl, _, _ := setupClient()
+
+	cl.InFlight.Set(1, clients.InFlightMessage{
+		Packet: packets.Packet{},
+	})
+
+	cl.Stop()
+	err := s.resendInflight(cl)
+	require.Error(t, err)
+}
+
+/*
+
+func TestResendInflightWriteError(t *testing.T) {
+	s, _, _, cl := setupClient("zen")
+	cl.inFlight.set(1, &inFlightMessage{
+		packet: &packets.PublishPacket{},
+	})
+
+	cl.p.W.Close()
+	err := s.resendInflight(cl)
+	require.Error(t, err)
+}
+*/
+
 func TestServerWriteClient(t *testing.T) {
 	s, cl, r, w := setupClient()
 	cl.ID = "mochi"
@@ -357,21 +425,21 @@ func TestServerWriteClient(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	recv := make(chan []byte)
+	ack := make(chan []byte)
 	go func() {
 		buf, err := ioutil.ReadAll(r)
 		if err != nil {
 			panic(err)
 		}
-		recv <- buf
+		ack <- buf
 	}()
 	time.Sleep(time.Millisecond)
 	w.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Pubcomp << 4), 2, // Fixed header
-		0, 14, // Packet ID - LSB+MSB
-	}, <-recv)
+		byte(packets.Pubcomp << 4), 2,
+		0, 14,
+	}, <-ack)
 }
 
 func TestServerWriteClientError(t *testing.T) {
@@ -439,6 +507,21 @@ func TestServerProcessPingreq(t *testing.T) {
 	require.Equal(t, []byte{
 		byte(packets.Pingresp << 4), 0,
 	}, <-recv)
+}
+
+func TestServerProcessPublishInvalid(t *testing.T) {
+	s, cl, _, _ := setupClient()
+
+	close, err := s.processPacket(cl, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+			Qos:  1,
+		},
+		PacketID: 0,
+	})
+
+	require.Error(t, err)
+	require.Equal(t, true, close)
 }
 
 func TestServerProcessPublishQoS1Retain(t *testing.T) {
@@ -672,6 +755,21 @@ func TestServerProcessPubcomp(t *testing.T) {
 	require.Equal(t, false, ok)
 }
 
+func TestServerProcessSubscribeInvalid(t *testing.T) {
+	s, cl, _, _ := setupClient()
+
+	close, err := s.processPacket(cl, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Subscribe,
+			Qos:  1,
+		},
+		PacketID: 0,
+	})
+
+	require.Error(t, err)
+	require.Equal(t, true, close)
+}
+
 func TestServerProcessSubscribe(t *testing.T) {
 	s, cl, r, w := setupClient()
 
@@ -817,6 +915,21 @@ func TestServerProcessSubscribeWriteError(t *testing.T) {
 	require.Equal(t, false, close)
 }
 
+func TestServerProcessUnsubscribeInvalid(t *testing.T) {
+	s, cl, _, _ := setupClient()
+
+	close, err := s.processPacket(cl, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Unsubscribe,
+			Qos:  1,
+		},
+		PacketID: 0,
+	})
+
+	require.Error(t, err)
+	require.Equal(t, true, close)
+}
+
 func TestServerProcessUnsubscribe(t *testing.T) {
 	s, cl, r, w := setupClient()
 	s.Clients.Add(cl)
@@ -897,4 +1010,41 @@ func TestServerClose(t *testing.T) {
 	s.Close()
 	time.Sleep(time.Millisecond)
 	require.Equal(t, false, listener.(*listeners.MockListener).IsServing)
+}
+
+func TestServerCloseClientLWT(t *testing.T) {
+	s, cl1, _, _ := setupClient()
+	cl1.Listener = "t1"
+	cl1.LWT = clients.LWT{
+		Topic:   "a/b/c",
+		Message: []byte{'h', 'e', 'l', 'l', 'o'},
+	}
+	s.Clients.Add(cl1)
+
+	_, cl2, r2, w2 := setupClient()
+	cl2.ID = "mochi2"
+	s.Clients.Add(cl2)
+
+	s.Topics.Subscribe("a/b/c", cl2.ID, 0)
+
+	ack2 := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r2)
+		if err != nil {
+			panic(err)
+		}
+		ack2 <- buf
+	}()
+
+	err := s.closeClient(cl1, true)
+	require.NoError(t, err)
+	time.Sleep(time.Millisecond)
+	w2.Close()
+
+	require.Equal(t, []byte{
+		byte(packets.Publish << 4), 12,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		'h', 'e', 'l', 'l', 'o',
+	}, <-ack2)
 }

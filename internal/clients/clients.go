@@ -97,7 +97,7 @@ type Client struct {
 	keepalive     uint16               // the number of seconds the connection can wait.
 	cleanSession  bool                 // indicates if the client expects a clean-session.
 	packetID      uint32               // the current highest packetID.
-	lwt           LWT                  // the last will and testament for the client.
+	LWT           LWT                  // the last will and testament for the client.
 	state         clientState          // the operational state of the client.
 	//fh            packets.FixedHeader  // the FixedHeader from the last read packet.
 }
@@ -160,11 +160,11 @@ func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
 	}
 
 	if pk.WillFlag {
-		cl.lwt = LWT{
-			topic:   pk.WillTopic,
-			message: pk.WillMessage,
-			qos:     pk.WillQos,
-			retain:  pk.WillRetain,
+		cl.LWT = LWT{
+			Topic:   pk.WillTopic,
+			Message: pk.WillMessage,
+			Qos:     pk.WillQos,
+			Retain:  pk.WillRetain,
 		}
 	}
 }
@@ -431,10 +431,10 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 
 // LWT contains the last will and testament details for a client connection.
 type LWT struct {
-	topic   string // the topic the will message shall be sent to.
-	message []byte // the message that shall be sent when the client disconnects.
-	qos     byte   //  the quality of service desired.
-	retain  bool   // indicates whether the will message should be retained
+	Topic   string // the topic the will message shall be sent to.
+	Message []byte // the message that shall be sent when the client disconnects.
+	Qos     byte   //  the quality of service desired.
+	Retain  bool   // indicates whether the will message should be retained
 }
 
 // InFlightMessage contains data about a packet which is currently in-flight.

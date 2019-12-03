@@ -441,25 +441,6 @@ func TestClientIdentifyNoID(t *testing.T) {
 	require.NotEmpty(t, cl.ID)
 }
 
-/*
-func TestClientIdentifyNoKeepalive(t *testing.T) {
-	cl := genClient()
-
-	pk := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
-			Remaining: 16,
-		},
-		ProtocolName:    []byte{'M', 'Q', 'T', 'T'},
-		ProtocolVersion: 4,
-		CleanSession:    true,
-	}
-
-	cl.Identify("tcp1", pk, new(auth.Allow))
-	require.Equal(t, defaultKeepalive, cl.keepalive)
-}
-*/
-
 func TestClientIdentifyLWT(t *testing.T) {
 	cl := genClient()
 
@@ -481,10 +462,10 @@ func TestClientIdentifyLWT(t *testing.T) {
 	}
 
 	cl.Identify("tcp1", pk, new(auth.Allow))
-	require.Equal(t, pk.WillTopic, cl.lwt.topic)
-	require.Equal(t, pk.WillMessage, cl.lwt.message)
-	require.Equal(t, pk.WillQos, cl.lwt.qos)
-	require.Equal(t, pk.WillRetain, cl.lwt.retain)
+	require.Equal(t, pk.WillTopic, cl.LWT.Topic)
+	require.Equal(t, pk.WillMessage, cl.LWT.Message)
+	require.Equal(t, pk.WillQos, cl.LWT.Qos)
+	require.Equal(t, pk.WillRetain, cl.LWT.Retain)
 }
 
 func TestNextPacketID(t *testing.T) {

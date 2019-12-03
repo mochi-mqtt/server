@@ -68,9 +68,11 @@ func (s *Server) Serve() error {
 // EstablishConnection establishes a new client connection with the broker.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
 	//client := clients.NewClient(c, circ.NewReader(0, 0), circ.NewWriter(0, 0))
+	xbr := s.bytepool.Get()
+	xbw := s.bytepool.Get()
 	client := clients.NewClient(c,
-		circ.NewReaderFromSlice(0, s.bytepool.Get()),
-		circ.NewWriterFromSlice(0, s.bytepool.Get()),
+		circ.NewReaderFromSlice(0, xbr),
+		circ.NewWriterFromSlice(0, xbw),
 	)
 
 	client.Start()
@@ -127,10 +129,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		return err
 	}
 
-	err = s.ResendInflight(client)
-	if err != nil {
-		return err
-	}
+	s.resendInflight(client)
 
 	var sendLWT bool
 	err = client.Read(s.processPacket)
@@ -140,6 +139,8 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	s.closeClient(client, sendLWT)
 
+	s.bytepool.Put(xbr)
+	s.bytepool.Put(xbw)
 	return err
 }
 
@@ -156,8 +157,8 @@ func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 	return nil
 }
 
-// ResendInflight republishes any inflight messages to the client.
-func (s *Server) ResendInflight(cl *clients.Client) error {
+// resendInflight republishes any inflight messages to the client.
+func (s *Server) resendInflight(cl *clients.Client) error {
 	for _, pk := range cl.InFlight.GetAll() {
 		err := s.writeClient(cl, pk.Packet)
 		if err != nil {
@@ -179,6 +180,10 @@ func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) (close boo
 	case packets.Pingreq:
 		return s.processPingreq(cl, pk)
 	case packets.Publish:
+		r, err := pk.PublishValidate()
+		if r != packets.Accepted {
+			return true, err
+		}
 		return s.processPublish(cl, pk)
 	case packets.Puback:
 		return s.processPuback(cl, pk)
@@ -189,8 +194,16 @@ func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) (close boo
 	case packets.Pubcomp:
 		return s.processPubcomp(cl, pk)
 	case packets.Subscribe:
+		r, err := pk.SubscribeValidate()
+		if r != packets.Accepted {
+			return true, err
+		}
 		return s.processSubscribe(cl, pk)
 	case packets.Unsubscribe:
+		r, err := pk.UnsubscribeValidate()
+		if r != packets.Accepted {
+			return true, err
+		}
 		return s.processUnsubscribe(cl, pk)
 	default:
 		return false, fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
@@ -406,26 +419,21 @@ func (s *Server) closeListenerClients(listener string) {
 
 // closeClient closes a client connection and publishes any LWT messages.
 func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
-	// If an LWT message is set, publish it to the topic subscribers.
-
-	/*
-		if sendLWT && cl.lwt.topic != "" {
-			err := s.processPublish(cl, &packets.PublishPacket{
-				FixedHeader: packets.FixedHeader{
-					Type:   packets.Publish,
-					Retain: cl.lwt.retain,
-					Qos:    cl.lwt.qos,
-				},
-				TopicName: cl.lwt.topic,
-				Payload:   cl.lwt.message,
-			})
-			if err != nil {
-				return err
-			}
+	if sendLWT && cl.LWT.Topic != "" {
+		_, err := s.processPublish(cl, packets.Packet{
+			FixedHeader: packets.FixedHeader{
+				Type:   packets.Publish,
+				Retain: cl.LWT.Retain,
+				Qos:    cl.LWT.Qos,
+			},
+			TopicName: cl.LWT.Topic,
+			Payload:   cl.LWT.Message,
+		})
+		if err != nil {
+			return err
 		}
-	*/
+	}
 
-	// Stop listening for new packets.
 	cl.Stop()
 
 	return nil
