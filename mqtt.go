@@ -1,155 +1,50 @@
 package mqtt
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
-	"log"
+	"fmt"
 	"net"
-	"runtime"
-	"sync"
 	"time"
 
-	//"github.com/davecgh/go-spew/spew"
-
-	"github.com/mochi-co/mqtt/auth"
-	"github.com/mochi-co/mqtt/listeners"
-	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/topics"
-	"github.com/mochi-co/mqtt/topics/trie"
+	"github.com/mochi-co/mqtt/internal/auth"
+	"github.com/mochi-co/mqtt/internal/circ"
+	"github.com/mochi-co/mqtt/internal/clients"
+	"github.com/mochi-co/mqtt/internal/listeners"
+	"github.com/mochi-co/mqtt/internal/packets"
+	"github.com/mochi-co/mqtt/internal/topics"
 )
 
 const (
-	// maxPacketID is the maximum value of a packet ID.
-	// Control Packets MUST contain a non-zero 16-bit Packet Identifier [MQTT-2.3.1-1].
-	maxPacketID = 65535
+	maxPacketID = 65535 // the maximum value of a 16-bit packet ID.
 )
 
 var (
-	ErrListenerIDExists       = errors.New("Listener id already exists")
-	ErrReadConnectFixedHeader = errors.New("Error reading fixed header on CONNECT packet")
-	ErrReadConnectPacket      = errors.New("Error reading CONNECT packet")
-	ErrFirstPacketInvalid     = errors.New("First packet was not CONNECT packet")
-	ErrReadConnectInvalid     = errors.New("CONNECT packet was not valid")
-	ErrConnectNotAuthorized   = errors.New("CONNECT packet was not authorized")
-	ErrReadFixedHeader        = errors.New("Error reading fixed header")
-	ErrReadPacketPayload      = errors.New("Error reading packet payload")
-	ErrReadPacketValidation   = errors.New("Error validating packet")
-	ErrConnectionClosed       = errors.New("Connection not open")
-	ErrNoData                 = errors.New("No data")
-	ErrACLNotAuthorized       = errors.New("ACL not authorized")
-
-	// rwBufSize is the size of client read/write buffers.
-	rwBufSize = 512
+	ErrListenerIDExists     = errors.New("Listener id already exists")
+	ErrReadConnectInvalid   = errors.New("Connect packet was not valid")
+	ErrConnectNotAuthorized = errors.New("Connect packet was not authorized")
 )
 
 // Server is an MQTT broker server.
 type Server struct {
-
-	// listeners is a map of listeners, which listen for new connections.
-	listeners listeners.Listeners
-
-	// clients is a map of clients known to the broker.
-	clients clients
-
-	// topics is an index of topic subscriptions and retained messages.
-	topics topics.Indexer
-
-	// inbound is a small worker pool which processes incoming packets.
-	inbound chan transitMsg
-
-	// outbound is a small worker pool which processes incoming packets.
-	outbound chan transitMsg
-
-	//inboundPool is a waitgroup for the inbound workers.
-	inboundPool sync.WaitGroup
+	bytepool  circ.BytesPool      // a byte pool for packet bytes.
+	Listeners listeners.Listeners // listeners listen for new connections.
+	Clients   clients.Clients     // clients known to the broker.
+	Topics    *topics.Index       // an index of topic subscriptions and retained messages.
 }
 
-// transitMsg contains data to be sent to the inbound channel.
-type transitMsg struct {
-
-	// client is the client who received or will receive the message.
-	client *client
-
-	// packet is the packet sent or received.
-	packet packets.Packet
-}
-
-// New returns a pointer to a new instance of the MQTT broker.
+// New returns a new instance of an MQTT broker.
 func New() *Server {
 	return &Server{
-		listeners: listeners.NewListeners(),
-		clients:   newClients(),
-		topics:    trie.New(),
-		inbound:   make(chan transitMsg),
-		outbound:  make(chan transitMsg),
+		bytepool:  circ.NewBytesPool(circ.DefaultBufferSize),
+		Listeners: listeners.New(),
+		Clients:   clients.New(),
+		Topics:    topics.New(),
 	}
-}
-
-func (s *Server) StartProcessing() {
-	var workers = runtime.NumCPU()
-	s.inboundPool = sync.WaitGroup{}
-
-	s.inboundPool.Add(workers)
-	for i := 0; i < workers; i++ {
-		log.Println("spawning worker", i)
-		go func(wid int) {
-			defer s.inboundPool.Done()
-			for {
-				select {
-				case v, ok := <-s.inbound:
-					if !ok {
-						log.Println("worker inbound closed", wid)
-						return
-					}
-					s.processPacket(v.client, v.packet)
-				case v, ok := <-s.outbound:
-					if !ok {
-						log.Println("worker outbound closed", wid)
-						return
-					}
-
-					err := s.writeClient(v.client, v.packet)
-					if err != nil {
-						log.Println("outbound closing client", v.client.id)
-						s.closeClient(v.client, true)
-					}
-				}
-			}
-		}(i)
-	}
-
-	s.inboundPool.Add(workers)
-	for i := 0; i < workers; i++ {
-		log.Println("spawning worker", i)
-		go func(wid int) {
-			defer s.inboundPool.Done()
-			for {
-				select {
-				case v, ok := <-s.outbound:
-					if !ok {
-						log.Println("worker outbound closed", wid)
-						return
-					}
-
-					err := s.writeClient(v.client, v.packet)
-					if err != nil {
-						log.Println("outbound closing client", v.client.id)
-						s.closeClient(v.client, true)
-					}
-				}
-			}
-		}(i)
-	}
-
-	log.Println("spawned all workers")
-
-	return
 }
 
 // AddListener adds a new network listener to the server.
 func (s *Server) AddListener(listener listeners.Listener, config *listeners.Config) error {
-	if _, ok := s.listeners.Get(listener.ID()); ok {
+	if _, ok := s.Listeners.Get(listener.ID()); ok {
 		return ErrListenerIDExists
 	}
 
@@ -157,7 +52,7 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 		listener.SetConfig(config)
 	}
 
-	s.listeners.Add(listener)
+	s.Listeners.Add(listener)
 
 	return nil
 }
@@ -165,172 +60,110 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 // Serve begins the event loops for establishing client connections on all
 // attached listeners.
 func (s *Server) Serve() error {
-	s.StartProcessing()
-	s.listeners.ServeAll(s.EstablishConnection)
-
+	s.Listeners.ServeAll(s.EstablishConnection)
 	return nil
 }
 
 // EstablishConnection establishes a new client connection with the broker.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
 
-	// Create a new packets parser which will parse all packets for this client,
-	// using buffered writers and readers.
-	p := packets.NewParser(
-		c,
-		bufio.NewReaderSize(c, rwBufSize),
-		bufio.NewWriterSize(c, rwBufSize),
+	//cl := clients.NewClient(c, circ.NewReader(0, 0), circ.NewWriter(0, 0))
+	xbr := s.bytepool.Get()
+	xbw := s.bytepool.Get()
+	cl := clients.NewClient(c,
+		circ.NewReaderFromSlice(0, xbr),
+		circ.NewWriterFromSlice(0, xbw),
 	)
 
-	// Pull the header from the first packet and check for a CONNECT message.
+	cl.Start()
+
 	fh := new(packets.FixedHeader)
-	err := p.ReadFixedHeader(fh)
+	err := cl.ReadFixedHeader(fh)
 	if err != nil {
-		return ErrReadConnectFixedHeader
-	}
-	// Read the first packet expecting a CONNECT message.
-	pk, err := p.Read()
-	if err != nil {
-		return ErrReadConnectPacket
+		return err
 	}
 
-	// Ensure first packet is a connect packet.
-	msg, ok := pk.(*packets.ConnectPacket)
-	if !ok {
-		return ErrFirstPacketInvalid
+	pk, err := cl.ReadPacket(fh)
+	if err != nil {
+		return err
 	}
 
-	// Ensure the packet conforms to MQTT CONNECT specifications.
-	retcode, _ := msg.Validate()
-	if retcode != packets.Accepted {
+	if pk.FixedHeader.Type != packets.Connect {
 		return ErrReadConnectInvalid
 	}
 
-	// If a username and password has been provided, perform authentication.
-	if msg.Username != "" && !ac.Authenticate(msg.Username, msg.Password) {
-		retcode = packets.CodeConnectNotAuthorised
-		return ErrConnectNotAuthorized
+	cl.Identify(lid, pk, ac)
+
+	retcode, _ := pk.ConnectValidate()
+	if !ac.Authenticate(pk.Username, pk.Password) {
+		retcode = packets.CodeConnectBadAuthValues
 	}
 
-	// Create a new client with this connection.
-	client := newClient(p, msg, ac)
-	client.listener = lid // Note the listener the client is connected to.
-
-	// If it's not a clean session and a client already exists with the same
-	// id, inherit the session.
 	var sessionPresent bool
-	if existing, ok := s.clients.get(msg.ClientIdentifier); ok {
+	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
 		existing.Lock()
-		existing.close()
-		if msg.CleanSession {
-			for k := range existing.subscriptions {
-				s.topics.Unsubscribe(k, existing.id)
+		existing.Stop()
+		if pk.CleanSession {
+			for k := range existing.Subscriptions {
+				delete(existing.Subscriptions, k)
+				s.Topics.Unsubscribe(k, existing.ID)
 			}
 		} else {
-			client.inFlight = existing.inFlight // Inherit from existing session.
-			client.subscriptions = existing.subscriptions
+			cl.InFlight = existing.InFlight // Inherit from existing session.
+			cl.Subscriptions = existing.Subscriptions
 			sessionPresent = true
 		}
 		existing.Unlock()
 	}
 
-	// Add the new client to the clients manager.
-	s.clients.add(client)
+	s.Clients.Add(cl) // Overwrite any existing client with the same name.
 
-	// Send a CONNACK back to the client.
-	err = s.writeClient(client, &packets.ConnackPacket{
+	err = s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Connack,
 		},
 		SessionPresent: sessionPresent,
 		ReturnCode:     retcode,
 	})
-	if err != nil {
+
+	if err != nil || retcode != packets.Accepted {
 		return err
 	}
 
-	// Resend any unacknowledged QOS messages still pending for the client.
-	err = s.resendInflight(client)
+	s.resendInflight(cl)
+
+	err = cl.Read(s.processPacket)
 	if err != nil {
-		return err
+		s.closeClient(cl, true)
 	}
 
-	// Block and listen for more packets, and end if an error or nil packet occurs.
-	var sendLWT bool
-	err = s.readClient(client)
-	if err != nil {
-		sendLWT = true // Only send LWT on bad disconnect [MQTT-3.14.4-3]
-	}
-
-	// Publish last will and testament.
-	s.closeClient(client, sendLWT)
-
-	return err // capture err or nil from readClient.
+	s.bytepool.Put(xbr)
+	s.bytepool.Put(xbw)
+	return err
 }
 
-// resendInflight republishes any inflight messages to the client.
-func (s *Server) resendInflight(cl *client) error {
-	cl.RLock()
-	msgs := cl.inFlight.internal
-	cl.RUnlock()
-	for _, msg := range msgs {
-		err := s.writeClient(cl, msg.packet)
-		if err != nil {
-			return err
-		}
+// writeClient writes packets to a client connection.
+func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
+	_, err := cl.WritePacket(pk)
+	if err != nil {
+		return err
 	}
+
+	// Log $SYS stats.
+	// @TODO ...
 
 	return nil
 }
 
-// readClient reads new packets from a client connection.
-func (s *Server) readClient(cl *client) error {
-	var err error
-	var pk packets.Packet
-	fh := new(packets.FixedHeader)
-
-DONE:
-	for {
-		select {
-		case <-cl.end:
-			break DONE
-
-		default:
-			if cl.p.Conn == nil {
-				return ErrConnectionClosed
-			}
-
-			// Reset the keepalive read deadline.
-			cl.p.RefreshDeadline(cl.keepalive)
-
-			// Read in the fixed header of the packet.
-			//fh := new(packets.FixedHeader)
-			err = cl.p.ReadFixedHeader(fh)
-			if err != nil {
-				return ErrReadFixedHeader
-			}
-
-			// If it's a disconnect packet, begin the close process.
-			if fh.Type == packets.Disconnect {
-				return nil
-			}
-
-			// Otherwise read in the packet payload.
-			pk, err = cl.p.Read()
-			if err != nil {
-				return ErrReadPacketPayload
-			}
-
-			// Validate the packet if necessary.
-			_, err = pk.Validate()
-			if err != nil {
-				return ErrReadPacketValidation
-			}
-
-			// Process inbound packet.
-			s.inbound <- transitMsg{client: cl, packet: pk}
-
-			//go s.processPacket(cl, pk)
+// resendInflight republishes any inflight messages to the client.
+func (s *Server) resendInflight(cl *clients.Client) error {
+	for _, tk := range cl.InFlight.GetAll() {
+		if tk.Packet.FixedHeader.Type == packets.Publish {
+			tk.Packet.FixedHeader.Dup = true
+		}
+		err := s.writeClient(cl, tk.Packet)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -339,70 +172,67 @@ DONE:
 
 // processPacket processes an inbound packet for a client. Since the method is
 // typically called as a goroutine, errors are mostly for test checking purposes.
-func (s *Server) processPacket(cl *client, pk packets.Packet) error {
-
-	// Log read stats for $SYS.
-	// @TODO ...
-
-	// Process the packet depending on the detected type.
-	switch msg := pk.(type) {
-	case *packets.ConnectPacket:
-		return s.processConnect(cl, msg)
-
-	case *packets.DisconnectPacket:
-		return s.processDisconnect(cl, msg)
-
-	case *packets.PingreqPacket:
-		return s.processPingreq(cl, msg)
-
-	case *packets.PublishPacket:
-		return s.processPublish(cl, msg)
-
-	case *packets.PubackPacket:
-		return s.processPuback(cl, msg)
-
-	case *packets.PubrecPacket:
-		return s.processPubrec(cl, msg)
-
-	case *packets.PubrelPacket:
-		return s.processPubrel(cl, msg)
-
-	case *packets.PubcompPacket:
-		return s.processPubcomp(cl, msg)
-
-	case *packets.SubscribePacket:
-		return s.processSubscribe(cl, msg)
-
-	case *packets.UnsubscribePacket:
-		return s.processUnsubscribe(cl, msg)
+func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
+	switch pk.FixedHeader.Type {
+	case packets.Connect:
+		return s.processConnect(cl, pk)
+	case packets.Disconnect:
+		return s.processDisconnect(cl, pk)
+	case packets.Pingreq:
+		return s.processPingreq(cl, pk)
+	case packets.Publish:
+		r, err := pk.PublishValidate()
+		if r != packets.Accepted {
+			return err
+		}
+		return s.processPublish(cl, pk)
+	case packets.Puback:
+		return s.processPuback(cl, pk)
+	case packets.Pubrec:
+		return s.processPubrec(cl, pk)
+	case packets.Pubrel:
+		return s.processPubrel(cl, pk)
+	case packets.Pubcomp:
+		return s.processPubcomp(cl, pk)
+	case packets.Subscribe:
+		r, err := pk.SubscribeValidate()
+		if r != packets.Accepted {
+			return err
+		}
+		return s.processSubscribe(cl, pk)
+	case packets.Unsubscribe:
+		r, err := pk.UnsubscribeValidate()
+		if r != packets.Accepted {
+			return err
+		}
+		return s.processUnsubscribe(cl, pk)
+	default:
+		return fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
 	}
-
-	return nil
 }
 
 // processConnect processes a Connect packet. The packet cannot be used to
 // establish a new connection on an existing connection. See EstablishConnection
 // instead.
-func (s *Server) processConnect(cl *client, pk *packets.ConnectPacket) error {
+func (s *Server) processConnect(cl *clients.Client, pk packets.Packet) error {
 	s.closeClient(cl, true)
 	return nil
 }
 
 // processDisconnect processes a Disconnect packet.
-func (s *Server) processDisconnect(cl *client, pk *packets.DisconnectPacket) error {
-	s.closeClient(cl, true)
+func (s *Server) processDisconnect(cl *clients.Client, pk packets.Packet) error {
+	s.closeClient(cl, false)
 	return nil
 }
 
 // processPingreq processes a Pingreq packet.
-func (s *Server) processPingreq(cl *client, pk *packets.PingreqPacket) error {
-	err := s.writeClient(cl, &packets.PingrespPacket{
+func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) error {
+	err := s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Pingresp,
 		},
 	})
 	if err != nil {
-		s.closeClient(cl, true)
 		return err
 	}
 
@@ -410,89 +240,58 @@ func (s *Server) processPingreq(cl *client, pk *packets.PingreqPacket) error {
 }
 
 // processPublish processes a Publish packet.
-func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
-
-	// Perform Access control check for publish (write).
-	aclOK := cl.ac.ACL(cl.user, pk.TopicName, true)
-
-	// If message is retained, add it to the retained messages index.
-	if pk.Retain && aclOK {
-		s.topics.RetainMessage(pk)
+func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
+	if !cl.AC.ACL(cl.Username, pk.TopicName, true) {
+		return nil
 	}
 
-	// Send appropriate Ack back to client. In v5 this will include a
-	// auth return code.
-	if pk.Qos == 1 {
-		err := s.writeClient(cl, &packets.PubackPacket{
+	if pk.FixedHeader.Retain {
+		s.Topics.RetainMessage(pk)
+	}
+
+	if pk.FixedHeader.Qos > 0 {
+		ack := packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type: packets.Puback,
 			},
 			PacketID: pk.PacketID,
-		})
-		if err != nil {
-			s.closeClient(cl, true)
-			return err
 		}
-	} else if pk.Qos == 2 {
-		rec := &packets.PubrecPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Pubrec,
-			},
-			PacketID: pk.PacketID,
+
+		if pk.FixedHeader.Qos == 2 {
+			ack.FixedHeader.Type = packets.Pubrec
+			cl.InFlight.Set(pk.PacketID, clients.InFlightMessage{
+				Packet: ack,
+				Sent:   time.Now().Unix(),
+			})
 		}
-		cl.inFlight.set(pk.PacketID, &inFlightMessage{
-			packet: rec,
-			sent:   time.Now().Unix(),
-		})
-		err := s.writeClient(cl, rec)
+
+		err := s.writeClient(cl, ack)
 		if err != nil {
-			s.closeClient(cl, true)
 			return err
 		}
 	}
 
-	// Don't propogate message if client has no permission to do so.
-	if !aclOK {
-		return ErrACLNotAuthorized
-	}
-
-	// Get all the clients who have a subscription matching the publish
-	// packet's topic.
-	subs := s.topics.Subscribers(pk.TopicName)
+	subs := s.Topics.Subscribers(pk.TopicName)
 	for id, qos := range subs {
-		if client, ok := s.clients.get(id); ok {
-
-			// Make a copy of the packet to send to client.
-			out := pk.Copy()
-
-			// If the client subscription has a higher qos, inherit it.
-			if qos > out.Qos {
-				out.Qos = qos
+		if client, ok := s.Clients.Get(id); ok {
+			out := pk.PublishCopy()
+			if qos > out.FixedHeader.Qos { // Inherit higher desired qos values.
+				out.FixedHeader.Qos = qos
 			}
 
-			// If QoS byte is set, save as message to inflight index so we
-			// can track delivery.
-			if out.Qos > 0 {
-				client.inFlight.set(out.PacketID, &inFlightMessage{
-					packet: out,
-					sent:   time.Now().Unix(),
-				})
-
-				// If QoS byte is set, ensure the message has an id.
+			if out.FixedHeader.Qos > 0 { // If QoS required, save to inflight index.
 				if out.PacketID == 0 {
-					out.PacketID = uint16(client.nextPacketID())
+					out.PacketID = uint16(client.NextPacketID())
 				}
+
+				client.InFlight.Set(out.PacketID, clients.InFlightMessage{
+					Packet: out,
+					Sent:   time.Now().Unix(),
+				})
 			}
 
-			// Write the publish packet out to the receiving client.
-			s.outbound <- transitMsg{client: client, packet: out}
-			/*
-				err := s.writeClient(client, out)
-				if err != nil {
-					s.closeClient(client, true)
-					return err
-				}
-			*/
+			s.writeClient(client, out)
+			// omit errors; they are averted through manual packet value setting.
 		}
 	}
 
@@ -500,15 +299,15 @@ func (s *Server) processPublish(cl *client, pk *packets.PublishPacket) error {
 }
 
 // processPuback processes a Puback packet.
-func (s *Server) processPuback(cl *client, pk *packets.PubackPacket) error {
-	cl.inFlight.delete(pk.PacketID)
+func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) error {
+	cl.InFlight.Delete(pk.PacketID)
 	return nil
 }
 
 // processPubrec processes a Pubrec packet.
-func (s *Server) processPubrec(cl *client, pk *packets.PubrecPacket) error {
-	if _, ok := cl.inFlight.get(pk.PacketID); ok {
-		out := &packets.PubrelPacket{
+func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) error {
+	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
+		out := packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type: packets.Pubrel,
 				Qos:  1,
@@ -516,23 +315,24 @@ func (s *Server) processPubrec(cl *client, pk *packets.PubrecPacket) error {
 			PacketID: pk.PacketID,
 		}
 
-		cl.inFlight.set(out.PacketID, &inFlightMessage{
-			packet: out,
-			sent:   time.Now().Unix(),
+		cl.InFlight.Set(out.PacketID, clients.InFlightMessage{
+			Packet: out,
+			Sent:   time.Now().Unix(),
 		})
+
 		err := s.writeClient(cl, out)
 		if err != nil {
-			s.closeClient(cl, true)
 			return err
 		}
 	}
+
 	return nil
 }
 
 // processPubrel processes a Pubrel packet.
-func (s *Server) processPubrel(cl *client, pk *packets.PubrelPacket) error {
-	if _, ok := cl.inFlight.get(pk.PacketID); ok {
-		out := &packets.PubcompPacket{
+func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
+	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
+		out := packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type: packets.Pubcomp,
 			},
@@ -541,73 +341,52 @@ func (s *Server) processPubrel(cl *client, pk *packets.PubrelPacket) error {
 
 		err := s.writeClient(cl, out)
 		if err != nil {
-			s.closeClient(cl, true)
 			return err
 		}
-
-		cl.inFlight.delete(pk.PacketID)
+		cl.InFlight.Delete(pk.PacketID)
 	}
 	return nil
 }
 
 // processPubcomp processes a Pubcomp packet.
-func (s *Server) processPubcomp(cl *client, pk *packets.PubcompPacket) error {
-	if _, ok := cl.inFlight.get(pk.PacketID); ok {
-		cl.inFlight.delete(pk.PacketID)
+func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
+	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
+		cl.InFlight.Delete(pk.PacketID)
 	}
 	return nil
 }
 
 // processSubscribe processes a Subscribe packet.
-func (s *Server) processSubscribe(cl *client, pk *packets.SubscribePacket) error {
+func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 	retCodes := make([]byte, len(pk.Topics))
 
 	for i := 0; i < len(pk.Topics); i++ {
-		if !cl.ac.ACL(cl.user, pk.Topics[i], false) {
+		if !cl.AC.ACL(cl.Username, pk.Topics[i], false) {
 			retCodes[i] = packets.ErrSubAckNetworkError
 		} else {
-			s.topics.Subscribe(pk.Topics[i], cl.id, pk.Qoss[i])
-			cl.noteSubscription(pk.Topics[i], pk.Qoss[i])
+			s.Topics.Subscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
+			cl.NoteSubscription(pk.Topics[i], pk.Qoss[i])
 			retCodes[i] = pk.Qoss[i]
 		}
 	}
-
-	s.outbound <- transitMsg{
-		client: cl,
-		packet: &packets.SubackPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Suback,
-			},
-			PacketID:    pk.PacketID,
-			ReturnCodes: retCodes,
+	err := s.writeClient(cl, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Suback,
 		},
+		PacketID:    pk.PacketID,
+		ReturnCodes: retCodes,
+	})
+	if err != nil {
+		return err
 	}
-	/*
-		err := s.writeClient(cl, &packets.SubackPacket{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Suback,
-			},
-			PacketID:    pk.PacketID,
-			ReturnCodes: retCodes,
-		})
-		if err != nil {
-			s.closeClient(cl, true)
-			return err
-		}
-	*/
 
 	// Publish out any retained messages matching the subscription filter.
 	for i := 0; i < len(pk.Topics); i++ {
-		messages := s.topics.Messages(pk.Topics[i])
-		for _, pkv := range messages {
-			s.outbound <- transitMsg{client: cl, packet: pkv}
-			/*
-				err := s.writeClient(cl, pkv)
-				if err != nil {
-					s.closeClient(cl, true)
-					return err
-				}
-			*/
+		for _, pkv := range s.Topics.Messages(pk.Topics[i]) {
+			err := s.writeClient(cl, pkv)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -615,107 +394,60 @@ func (s *Server) processSubscribe(cl *client, pk *packets.SubscribePacket) error
 }
 
 // processUnsubscribe processes an unsubscribe packet.
-func (s *Server) processUnsubscribe(cl *client, pk *packets.UnsubscribePacket) error {
+func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error {
 	for i := 0; i < len(pk.Topics); i++ {
-		s.topics.Unsubscribe(pk.Topics[i], cl.id)
-		cl.forgetSubscription(pk.Topics[i])
+		s.Topics.Unsubscribe(pk.Topics[i], cl.ID)
+		cl.ForgetSubscription(pk.Topics[i])
 	}
 
-	err := s.writeClient(cl, &packets.UnsubackPacket{
+	err := s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Unsuback,
 		},
 		PacketID: pk.PacketID,
 	})
 	if err != nil {
-		s.closeClient(cl, true)
 		return err
 	}
-
-	return nil
-}
-
-// writeClient writes packets to a client connection.
-func (s *Server) writeClient(cl *client, pk packets.Packet) error {
-	cl.p.Lock()
-	defer cl.p.Unlock()
-
-	// Ensure Writer is open.
-	if cl.p.W == nil {
-		return ErrConnectionClosed
-	}
-
-	buf := new(bytes.Buffer)
-	err := pk.Encode(buf)
-	if err != nil {
-		return err
-	}
-
-	// Write packet to client.
-	_, err = buf.WriteTo(cl.p.W)
-	if err != nil {
-		return err
-	}
-
-	err = cl.p.W.Flush()
-	if err != nil {
-		return err
-	}
-
-	// Refresh deadline to keep the connection alive.
-	cl.p.RefreshDeadline(cl.keepalive)
-
-	// Log $SYS stats.
-	// @TODO ...
 
 	return nil
 }
 
 // Close attempts to gracefully shutdown the server, all listeners, and clients.
 func (s *Server) Close() error {
-
-	// Close all listeners.
-	s.listeners.CloseAll(s.closeListenerClients)
-
-	// Close down waitgroups and pools.
-	close(s.inbound)
-	close(s.outbound)
-	s.inboundPool.Wait()
-
+	s.Listeners.CloseAll(s.closeListenerClients)
 	return nil
 }
 
 // closeListenerClients closes all clients on the specified listener.
 func (s *Server) closeListenerClients(listener string) {
-	clients := s.clients.getByListener(listener)
-	for _, client := range clients {
-		// LWT send will be triggered by connection EOF.
-		s.closeClient(client, false) // omit errors
+	clients := s.Clients.GetByListener(listener)
+	for _, cl := range clients {
+		s.closeClient(cl, false) // omit errors
 	}
 
 }
 
 // closeClient closes a client connection and publishes any LWT messages.
-func (s *Server) closeClient(cl *client, sendLWT bool) error {
+func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 
-	// If an LWT message is set, publish it to the topic subscribers.
-	if sendLWT && cl.lwt.topic != "" {
-		err := s.processPublish(cl, &packets.PublishPacket{
+	if sendLWT && cl.LWT.Topic != "" {
+		err := s.processPublish(cl, packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type:   packets.Publish,
-				Retain: cl.lwt.retain,
-				Qos:    cl.lwt.qos,
+				Retain: cl.LWT.Retain,
+				Qos:    cl.LWT.Qos,
 			},
-			TopicName: cl.lwt.topic,
-			Payload:   cl.lwt.message,
+			TopicName: cl.LWT.Topic,
+			Payload:   cl.LWT.Message,
 		})
+
 		if err != nil {
 			return err
 		}
 	}
 
-	// Stop listening for new packets.
-	cl.close()
+	cl.Stop()
 
 	return nil
 }
