@@ -8,6 +8,17 @@ import (
 	"github.com/mochi-co/mqtt/internal/auth"
 )
 
+// Config contains configuration values for a listener.
+type Config struct {
+	Auth auth.Controller // an authentication controller containing auth and ACL logic.
+	TLS  *TLS            // the TLS certficates and settings for the connection.
+}
+
+// TLS contains the TLS certificates and settings for the listener connection.
+type TLS struct {
+	// ...
+}
+
 // EstablishFunc is a callback function for establishing new clients.
 type EstablishFunc func(id string, c net.Conn, ac auth.Controller) error
 
@@ -17,11 +28,11 @@ type CloseFunc func(id string)
 // Listener is an interface for network listeners. A network listener listens
 // for incoming client connections and adds them to the server.
 type Listener interface {
-	SetConfig(*Config)
-	Listen() error
-	Serve(EstablishFunc)
-	ID() string
-	Close(CloseFunc)
+	SetConfig(*Config)   // set the listener config.
+	Listen() error       // open the network address.
+	Serve(EstablishFunc) // starting actively listening for new connections.
+	ID() string          // return the id of the listener.
+	Close(CloseFunc)     // stop and close the listener.
 }
 
 // Listeners contains the network listeners for the broker.

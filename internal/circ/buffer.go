@@ -1,7 +1,7 @@
 package circ
 
 import (
-	"fmt"
+	"errors"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -11,26 +11,25 @@ var (
 	DefaultBufferSize int = 1024 * 256 // the default size of the buffer in bytes.
 	DefaultBlockSize  int = 1024 * 8   // the default size per R/W block in bytes.
 
-	ErrOutOfRange        = fmt.Errorf("Indexes out of range")
-	ErrInsufficientBytes = fmt.Errorf("Insufficient bytes to return")
+	ErrOutOfRange        = errors.New("Indexes out of range")
+	ErrInsufficientBytes = errors.New("Insufficient bytes to return")
 )
 
 // buffer contains core values and methods to be included in a reader or writer.
 type Buffer struct {
-	Mu sync.RWMutex
-
-	ID    string     // the identifier of the buffer. This is used in debug output.
-	size  int        // the size of the buffer.
-	mask  int        // a bitmask of the buffer size (size-1).
-	block int        // the size of the R/W block.
-	buf   []byte     // the bytes buffer.
-	tmp   []byte     // a temporary buffer.
-	head  int64      // the current position in the sequence - a forever increasing index.
-	tail  int64      // the committed position in the sequence - a forever increasing index.
-	rcond *sync.Cond // the sync condition for the reader.
-	wcond *sync.Cond // the sync condition for the writer.
-	done  int64      // indicates that the buffer is closed.
-	State int64      //  indicates whether the buffer is reading from (1) or writing to (2).
+	Mu    sync.RWMutex // the buffer needs it's own mutex to work properly.
+	ID    string       // the identifier of the buffer. This is used in debug output.
+	size  int          // the size of the buffer.
+	mask  int          // a bitmask of the buffer size (size-1).
+	block int          // the size of the R/W block.
+	buf   []byte       // the bytes buffer.
+	tmp   []byte       // a temporary buffer.
+	head  int64        // the current position in the sequence - a forever increasing index.
+	tail  int64        // the committed position in the sequence - a forever increasing index.
+	rcond *sync.Cond   // the sync condition for the buffer reader.
+	wcond *sync.Cond   // the sync condition for the buffer writer.
+	done  int64        // indicates that the buffer is closed.
+	State int64        // indicates whether the buffer is reading from (1) or writing to (2).
 }
 
 // NewBuffer returns a new instance of buffer. You should call NewReader or

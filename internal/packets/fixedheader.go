@@ -6,11 +6,11 @@ import (
 
 // FixedHeader contains the values of the fixed header portion of the MQTT packet.
 type FixedHeader struct {
-	Type      byte // Type is the type of the packet (PUBLISH, SUBSCRIBE, etc) from bits 7 - 4 (byte 1).
-	Dup       bool // Dup indicates if the packet is a duplicate.
-	Qos       byte // Qos byte indicates the quality of service expected.
-	Retain    bool // Retain indicates whether the message should be retained.
-	Remaining int  // Remaining is the number of remaining bytes in the payload.
+	Type      byte // the type of the packet (PUBLISH, SUBSCRIBE, etc) from bits 7 - 4 (byte 1).
+	Dup       bool // indicates if the packet was already sent at an earlier time.
+	Qos       byte // indicates the quality of service expected.
+	Retain    bool // whether the message should be retained.
+	Remaining int  // the number of remaining bytes in the payload.
 }
 
 // Encode encodes the FixedHeader and returns a bytes buffer.

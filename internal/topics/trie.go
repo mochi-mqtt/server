@@ -1,7 +1,6 @@
 package topics
 
 import (
-	//sync "github.com/sasha-s/go-deadlock"
 	"strings"
 	"sync"
 
@@ -23,8 +22,8 @@ type Subscriptions map[string]byte
 
 // Index is a prefix/trie tree containing topic subscribers and retained messages.
 type Index struct {
-	mu   sync.RWMutex
-	Root *Leaf
+	mu   sync.RWMutex // a mutex for locking the whole index.
+	Root *Leaf        // a leaf containing a message and more leaves.
 }
 
 // New returns a pointer to a new instance of Index.

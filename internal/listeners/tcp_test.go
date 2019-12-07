@@ -6,27 +6,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/mochi-co/mqtt/internal/auth"
+	"github.com/stretchr/testify/require"
+)
+
+const (
+	testPort = ":22222"
 )
 
 func TestNewTCP(t *testing.T) {
-	l := NewTCP("t1", ":1883")
+	l := NewTCP("t1", testPort)
 	require.Equal(t, "t1", l.id)
-	require.Equal(t, ":1883", l.address)
+	require.Equal(t, testPort, l.address)
 	require.NotNil(t, l.end)
 	require.NotNil(t, l.done)
 }
 
 func BenchmarkNewTCP(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		NewTCP("t1", ":1883")
+		NewTCP("t1", testPort)
 	}
 }
 
 func TestTCPSetConfig(t *testing.T) {
-	l := NewTCP("t1", ":1883")
+	l := NewTCP("t1", testPort)
 
 	l.SetConfig(&Config{
 		Auth: new(auth.Allow),
@@ -43,40 +46,56 @@ func TestTCPSetConfig(t *testing.T) {
 }
 
 func BenchmarkTCPSetConfig(b *testing.B) {
-	l := NewTCP("t1", ":1883")
+	l := NewTCP("t1", testPort)
 	for n := 0; n < b.N; n++ {
 		l.SetConfig(new(Config))
 	}
 }
 
 func TestTCPID(t *testing.T) {
-	l := NewTCP("t1", ":1883")
+	l := NewTCP("t1", testPort)
 	require.Equal(t, "t1", l.ID())
 }
 
 func BenchmarkTCPID(b *testing.B) {
-	l := NewTCP("t1", ":1883")
+	l := NewTCP("t1", testPort)
 	for n := 0; n < b.N; n++ {
 		l.ID()
 	}
 }
 
 func TestTCPListen(t *testing.T) {
-	l := NewTCP("t1", ":1883")
+	l := NewTCP("t1", testPort)
 	err := l.Listen()
 	require.NoError(t, err)
 
-	// Existing bind address.
-	l2 := NewTCP("t2", ":1883")
+	l2 := NewTCP("t2", testPort)
 	err = l2.Listen()
 	require.Error(t, err)
 	l.listen.Close()
 }
 
-func TestTCPServe(t *testing.T) {
+func TestTCPServeAndClose(t *testing.T) {
+	l := NewTCP("t1", testPort)
+	err := l.Listen()
+	require.NoError(t, err)
 
-	// Close Connection.
-	l := NewTCP("t1", ":1883")
+	o := make(chan bool)
+	go func(o chan bool) {
+		l.Serve(MockEstablisher)
+		o <- true
+	}(o)
+	time.Sleep(time.Millisecond)
+	var closed bool
+	l.Close(func(id string) {
+		closed = true
+	})
+	require.Equal(t, true, closed)
+	<-o
+}
+
+func TestTCPCloseError(t *testing.T) {
+	l := NewTCP("t1", testPort)
 	err := l.Listen()
 	require.NoError(t, err)
 	o := make(chan bool)
@@ -84,46 +103,62 @@ func TestTCPServe(t *testing.T) {
 		l.Serve(MockEstablisher)
 		o <- true
 	}(o)
-	time.Sleep(time.Millisecond) // easy non-channel wait for start of serving
-	var closed bool
-	l.Close(func(id string) {
-		closed = true
-	})
-	require.Equal(t, true, closed)
-	<-o
-
-	// Close broken/closed listener.
-	l = NewTCP("t1", ":1883")
-	err = l.Listen()
-	require.NoError(t, err)
-	o = make(chan bool)
-	go func(o chan bool) {
-		l.Serve(MockEstablisher)
-		o <- true
-	}(o)
 
 	time.Sleep(time.Millisecond)
 	l.listen.Close()
 	l.Close(MockCloser)
 	<-o
+}
 
-	// Accept/Establish.
-	l = NewTCP("t1", ":1883")
-	err = l.Listen()
+func TestTCPServeEnd(t *testing.T) {
+	l := NewTCP("t1", testPort)
+	err := l.Listen()
 	require.NoError(t, err)
-	o = make(chan bool)
-	ok := make(chan bool)
-	go func(o chan bool, ok chan bool) {
+
+	l.Close(MockCloser)
+	l.Serve(func(id string, c net.Conn, ac auth.Controller) error {
+		return nil
+	})
+}
+
+func TestTCPEstablishThenError(t *testing.T) {
+	l := NewTCP("t1", testPort)
+	err := l.Listen()
+	require.NoError(t, err)
+
+	o := make(chan bool)
+	established := make(chan bool)
+	go func() {
 		l.Serve(func(id string, c net.Conn, ac auth.Controller) error {
-			ok <- true
-			return errors.New("testing")
+			established <- true
+			return errors.New("testing") // return an error to exit immediately
 		})
 		o <- true
-	}(o, ok)
+	}()
 
 	time.Sleep(time.Millisecond)
 	net.Dial(l.protocol, l.listen.Addr().String())
-	require.Equal(t, true, <-ok)
+	require.Equal(t, true, <-established)
 	l.Close(MockCloser)
+	<-o
+}
+
+func TestTCPEstablishButEnding(t *testing.T) {
+	l := NewTCP("t1", testPort)
+	err := l.Listen()
+	require.NoError(t, err)
+	l.ending = 1
+
+	o := make(chan bool)
+	go func() {
+		l.Serve(func(id string, c net.Conn, ac auth.Controller) error {
+			return nil
+		})
+		o <- true
+	}()
+
+	net.Dial(l.protocol, l.listen.Addr().String())
+
+	time.Sleep(time.Millisecond)
 	<-o
 }

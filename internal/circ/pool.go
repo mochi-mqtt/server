@@ -4,12 +4,12 @@ import (
 	"sync"
 )
 
-// BytesPool is a pool of []byte
+// BytesPool is a pool of []byte.
 type BytesPool struct {
 	pool sync.Pool
 }
 
-// NewBytesPool returns a sync.pool of []byte
+// NewBytesPool returns a sync.pool of []byte.
 func NewBytesPool(n int) BytesPool {
 	return BytesPool{
 		pool: sync.Pool{

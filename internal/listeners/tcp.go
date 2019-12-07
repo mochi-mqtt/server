@@ -3,6 +3,7 @@ package listeners
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mochi-co/mqtt/internal/auth"
 )
@@ -18,6 +19,7 @@ type TCP struct {
 	done     chan bool    //  a channel which indicates the process is done and should end.
 	start    *sync.Once   // ensure the serve methods are only called once.
 	end      *sync.Once   // ensure the close methods are only called once.
+	ending   int64        // indicates no more connections should be established.
 }
 
 // NewTCP initialises and returns a new TCP listener, listening on an address.
@@ -75,29 +77,22 @@ func (l *TCP) Listen() error {
 // establishment callback for any received.
 func (l *TCP) Serve(establish EstablishFunc) {
 	l.start.Do(func() {
-	DONE:
 		for {
 			select {
 			case <-l.done:
-				break DONE
+				return
 
 			default:
-				// Block until a new connection is available.
 				conn, err := l.listen.Accept()
 				if err != nil {
-					break // Not interested in broken connections.
+					return
 				}
 
-				// Establish connection in a new goroutine.
+				if atomic.LoadInt64(&l.ending) == 1 {
+					return
+				}
+
 				go establish(l.id, conn, l.config.Auth)
-				/*
-					go func(c net.Conn) {
-						err := establish(l.id, c, l.config.Auth)
-						if err != nil {
-							return
-						}
-					}(conn)
-				*/
 			}
 		}
 	})
@@ -109,8 +104,9 @@ func (l *TCP) Close(closeClients CloseFunc) {
 	defer l.Unlock()
 
 	l.end.Do(func() {
-		closeClients(l.id)
+		atomic.StoreInt64(&l.ending, 1)
 		close(l.done)
+		closeClients(l.id)
 	})
 
 	if l.listen != nil {
@@ -118,8 +114,5 @@ func (l *TCP) Close(closeClients CloseFunc) {
 		if err != nil {
 			return
 		}
-
-		// Shunt listener off blocking listen.Accept() loop (self-pipe trick).
-		net.Dial(l.protocol, l.listen.Addr().String())
 	}
 }
