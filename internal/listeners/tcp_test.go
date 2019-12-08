@@ -18,8 +18,6 @@ func TestNewTCP(t *testing.T) {
 	l := NewTCP("t1", testPort)
 	require.Equal(t, "t1", l.id)
 	require.Equal(t, testPort, l.address)
-	require.NotNil(t, l.end)
-	require.NotNil(t, l.done)
 }
 
 func BenchmarkNewTCP(b *testing.B) {
@@ -147,7 +145,7 @@ func TestTCPEstablishButEnding(t *testing.T) {
 	l := NewTCP("t1", testPort)
 	err := l.Listen()
 	require.NoError(t, err)
-	l.ending = 1
+	l.end = 1
 
 	o := make(chan bool)
 	go func() {

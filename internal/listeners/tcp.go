@@ -16,10 +16,13 @@ type TCP struct {
 	protocol string       // the TCP protocol to use.
 	address  string       // the network address to bind to.
 	listen   net.Listener // a net.Listener which will listen for new clients.
-	done     chan bool    //  a channel which indicates the process is done and should end.
-	start    *sync.Once   // ensure the serve methods are only called once.
-	end      *sync.Once   // ensure the close methods are only called once.
-	ending   int64        // indicates no more connections should be established.
+	start    int64        // ensure the serve methods are only called once.
+	end      int64        // ensure the close methods are only called once.
+
+	//done     chan bool    //  a channel which indicates the process is done and should end.
+	//start    *sync.Once   // ensure the serve methods are only called once.
+	//end      *sync.Once   // ensure the close methods are only called once.
+	//ending   int64        // indicates no more connections should be established.
 }
 
 // NewTCP initialises and returns a new TCP listener, listening on an address.
@@ -28,9 +31,6 @@ func NewTCP(id, address string) *TCP {
 		id:       id,
 		protocol: "tcp",
 		address:  address,
-		done:     make(chan bool),
-		start:    new(sync.Once),
-		end:      new(sync.Once),
 		config: &Config{ // default configuration.
 			Auth: new(auth.Allow),
 			TLS:  new(TLS),
@@ -76,26 +76,20 @@ func (l *TCP) Listen() error {
 // Serve starts waiting for new TCP connections, and calls the connection
 // establishment callback for any received.
 func (l *TCP) Serve(establish EstablishFunc) {
-	l.start.Do(func() {
-		for {
-			select {
-			case <-l.done:
-				return
-
-			default:
-				conn, err := l.listen.Accept()
-				if err != nil {
-					return
-				}
-
-				if atomic.LoadInt64(&l.ending) == 1 {
-					return
-				}
-
-				go establish(l.id, conn, l.config.Auth)
-			}
+	for {
+		if atomic.LoadInt64(&l.end) == 1 {
+			return
 		}
-	})
+
+		conn, err := l.listen.Accept()
+		if err != nil {
+			return
+		}
+
+		if atomic.LoadInt64(&l.end) == 0 {
+			go establish(l.id, conn, l.config.Auth)
+		}
+	}
 }
 
 // Close closes the listener and any client connections.
@@ -103,11 +97,10 @@ func (l *TCP) Close(closeClients CloseFunc) {
 	l.Lock()
 	defer l.Unlock()
 
-	l.end.Do(func() {
-		atomic.StoreInt64(&l.ending, 1)
-		close(l.done)
+	if atomic.LoadInt64(&l.end) == 0 {
+		atomic.StoreInt64(&l.end, 1)
 		closeClients(l.id)
-	})
+	}
 
 	if l.listen != nil {
 		err := l.listen.Close()

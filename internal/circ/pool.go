@@ -21,12 +21,14 @@ func NewBytesPool(n int) BytesPool {
 }
 
 // Get returns a pooled bytes.Buffer.
-func (b BytesPool) Get() []byte {
+func (b *BytesPool) Get() []byte {
 	return b.pool.Get().([]byte)
 }
 
 // Put puts the byte slice back into the pool.
-func (b BytesPool) Put(x []byte) {
-	x = x[:0]
+func (b *BytesPool) Put(x []byte) {
+	for i := range x {
+		x[i] = 0
+	}
 	b.pool.Put(x)
 }

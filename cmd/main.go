@@ -13,12 +13,28 @@ import (
 	"github.com/mochi-co/mqtt"
 	"github.com/mochi-co/mqtt/internal/listeners"
 	//	_ "net/http/pprof"
+	//	"runtime/trace"
 )
 
 func main() {
-	go func() {
-		//	log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
+	var err error
+	/*
+		go func() {
+			//	log.Println(http.ListenAndServe("localhost:6060", nil))
+		}()
+
+		f, err := os.Create("trace.out")
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+
+		err = trace.Start(f)
+		if err != nil {
+			panic(err)
+		}
+		defer trace.Stop()
+	*/
 
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
@@ -33,7 +49,7 @@ func main() {
 	server := mqtt.New()
 	tcp := listeners.NewTCP("t1", ":1883")
 	log.Println(tcp)
-	err := server.AddListener(tcp, nil)
+	err = server.AddListener(tcp, nil)
 	if err != nil {
 		panic(err)
 	}
