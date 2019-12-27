@@ -19,7 +19,9 @@ import (
 )
 
 var (
-	defaultKeepalive uint16 = 10 // in seconds.
+	defaultKeepalive uint16 = 10                                              // in seconds.
+	resendBackoff           = []int64{0, 1, 2, 10, 60, 120, 600, 3600, 21600} // <1 second to 6 hours
+	maxResends              = 6                                               // maximum number of times to retry sending QoS packets.
 
 	ErrConnectionClosed = errors.New("Connection not open")
 )
@@ -289,10 +291,6 @@ func (cl *Client) Read(h func(*Client, packets.Packet) error) error {
 			return err
 		}
 
-		//if fh.Type == packets.Disconnect {
-		//	return nil
-		//}
-
 		pk, err := cl.ReadPacket(fh)
 		if err != nil {
 			return err
@@ -302,7 +300,47 @@ func (cl *Client) Read(h func(*Client, packets.Packet) error) error {
 		if err != nil {
 			return err
 		}
+
+		// Attempt periodic resend of inflight messages (where applicable).
+		cl.ResendInflight(false)
+
 	}
+}
+
+// ResendInflight will attempt resend send any in-flight messages stored for a client.
+func (cl *Client) ResendInflight(force bool) error {
+	if cl.InFlight.Len() == 0 {
+		return nil
+	}
+
+	nt := time.Now().Unix()
+	for _, tk := range cl.InFlight.GetAll() {
+		if tk.resends >= maxResends { // After a reasonable time, drop inflight packets.
+			cl.InFlight.Delete(tk.Packet.PacketID)
+			continue
+		}
+
+		// Only continue if the resend backoff time has passed and there's a backoff time.
+		if !force && (nt-tk.Sent < resendBackoff[tk.resends] || len(resendBackoff) < tk.resends) {
+			continue
+		}
+
+		if tk.Packet.FixedHeader.Type == packets.Publish {
+			tk.Packet.FixedHeader.Dup = true
+		}
+
+		tk.resends++
+		tk.Sent = nt
+		cl.InFlight.Set(tk.Packet.PacketID, tk)
+
+		_, err := cl.WritePacket(tk.Packet)
+		//err := h(cl, tk.Packet)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // ReadPacket reads the remaining buffer into an MQTT packet.
@@ -422,8 +460,9 @@ type LWT struct {
 
 // InFlightMessage contains data about a packet which is currently in-flight.
 type InFlightMessage struct {
-	Packet packets.Packet // the packet currently in-flight.
-	Sent   int64          // the last time the message was sent (for retries) in unixtime.
+	Packet  packets.Packet // the packet currently in-flight.
+	Sent    int64          // the last time the message was sent (for retries) in unixtime.
+	resends int            // the number of times the message was attempted to be sent.
 }
 
 // InFlight is a map of InFlightMessage keyed on packet id.
@@ -432,14 +471,14 @@ type InFlight struct {
 	internal map[uint16]InFlightMessage // internal contains the inflight messages.
 }
 
-// set stores the packet of an in-flight message, keyed on message id.
+// Set stores the packet of an in-flight message, keyed on message id.
 func (i *InFlight) Set(key uint16, in InFlightMessage) {
 	i.Lock()
 	i.internal[key] = in
 	i.Unlock()
 }
 
-// get returns the value of an in-flight message if it exists.
+// Get returns the value of an in-flight message if it exists.
 func (i *InFlight) Get(key uint16) (InFlightMessage, bool) {
 	i.RLock()
 	val, ok := i.internal[key]
@@ -447,13 +486,22 @@ func (i *InFlight) Get(key uint16) (InFlightMessage, bool) {
 	return val, ok
 }
 
+// Len returns the size of the inflight messages map.
+func (i *InFlight) Len() int {
+	i.RLock()
+	v := len(i.internal)
+	i.RUnlock()
+	return v
+}
+
+// GetAll returns all the inflight messages.
 func (i *InFlight) GetAll() map[uint16]InFlightMessage {
 	i.RLock()
 	defer i.RUnlock()
 	return i.internal
 }
 
-// delete removes an in-flight message from the map.
+// Delete removes an in-flight message from the map.
 func (i *InFlight) Delete(key uint16) {
 	i.Lock()
 	delete(i.internal, key)

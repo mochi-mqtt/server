@@ -15,6 +15,8 @@ import (
 )
 
 const (
+	Version = "0.0.1" // the server version.
+
 	maxPacketID = 65535 // the maximum value of a 16-bit packet ID.
 )
 
@@ -22,6 +24,7 @@ var (
 	ErrListenerIDExists     = errors.New("Listener id already exists")
 	ErrReadConnectInvalid   = errors.New("Connect packet was not valid")
 	ErrConnectNotAuthorized = errors.New("Connect packet was not authorized")
+	ErrInvalidTopic         = errors.New("Cannot publish to $ and $SYS topics")
 )
 
 // Server is an MQTT broker server.
@@ -30,6 +33,7 @@ type Server struct {
 	Listeners listeners.Listeners // listeners listen for new connections.
 	Clients   clients.Clients     // clients known to the broker.
 	Topics    *topics.Index       // an index of topic subscriptions and retained messages.
+	System    System              // values commonly found in $SYS topics.
 }
 
 // New returns a new instance of an MQTT broker.
@@ -39,6 +43,10 @@ func New() *Server {
 		Listeners: listeners.New(),
 		Clients:   clients.New(),
 		Topics:    topics.New(),
+		System: System{
+			Version: Version,
+			Started: time.Now().Unix(),
+		},
 	}
 }
 
@@ -66,7 +74,6 @@ func (s *Server) Serve() error {
 
 // EstablishConnection establishes a new client connection with the broker.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
-
 	//cl := clients.NewClient(c, circ.NewReader(0, 0), circ.NewWriter(0, 0))
 	xbr := s.bytepool.Get()
 	xbw := s.bytepool.Get()
@@ -130,7 +137,8 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		return err
 	}
 
-	s.resendInflight(cl)
+	cl.ResendInflight(true)
+	//s.resendInflight(cl)
 
 	err = cl.Read(s.processPacket)
 	if err != nil {
@@ -151,21 +159,6 @@ func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 
 	// Log $SYS stats.
 	// @TODO ...
-
-	return nil
-}
-
-// resendInflight republishes any inflight messages to the client.
-func (s *Server) resendInflight(cl *clients.Client) error {
-	for _, tk := range cl.InFlight.GetAll() {
-		if tk.Packet.FixedHeader.Type == packets.Publish {
-			tk.Packet.FixedHeader.Dup = true
-		}
-		err := s.writeClient(cl, tk.Packet)
-		if err != nil {
-			return err
-		}
-	}
 
 	return nil
 }
@@ -241,6 +234,10 @@ func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) error {
 
 // processPublish processes a Publish packet.
 func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
+	if len(pk.TopicName) > 0 && pk.TopicName[0] == '$SYS' {
+		return nil
+	}
+
 	if !cl.AC.ACL(cl.Username, pk.TopicName, true) {
 		return nil
 	}
@@ -284,6 +281,10 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 					out.PacketID = uint16(client.NextPacketID())
 				}
 
+				// If a message has a QoS, we need to ensure it is delivered to
+				// the client at some point, one way or another. Store the publish
+				// packet in the client's inflight queue and attempt to redeliver
+				// if an appropriate ack is not received (or if the client is offline).
 				client.InFlight.Set(out.PacketID, clients.InFlightMessage{
 					Packet: out,
 					Sent:   time.Now().Unix(),
@@ -291,7 +292,6 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 			}
 
 			s.writeClient(client, out)
-			// omit errors; they are averted through manual packet value setting.
 		}
 	}
 
@@ -359,8 +359,8 @@ func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
 // processSubscribe processes a Subscribe packet.
 func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 	retCodes := make([]byte, len(pk.Topics))
-
 	for i := 0; i < len(pk.Topics); i++ {
+		
 		if !cl.AC.ACL(cl.Username, pk.Topics[i], false) {
 			retCodes[i] = packets.ErrSubAckNetworkError
 		} else {
@@ -368,6 +368,7 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 			cl.NoteSubscription(pk.Topics[i], pk.Qoss[i])
 			retCodes[i] = pk.Qoss[i]
 		}
+
 	}
 	err := s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -450,4 +451,25 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 	cl.Stop()
 
 	return nil
+}
+
+// System contains atomic counters and values for various server statistics
+// commonly found in $SYS topics.
+type System struct {
+	BytesRecv           int64  // The total number of bytes received in all packets.
+	BytesSent           int64  // The total number of bytes sent to clients.
+	ClientsConnected    int64  // The number of currently connected clients.
+	ClientsDisconnected int64  // The number of disconnected non-cleansession clients.
+	ClientsMax          int64  // The maximum number of clients that have been concurrently connected.
+	ClientsTotal        int64  // The sum of all clients, connected and disconnected.
+	MessagesRecv        int64  // The total number of packets received.
+	MessagesSent        int64  // The total number of packets sent.
+	PublishDropped      int64  // The number of in-flight publish messages which were dropped.
+	PublishRecv         int64  // The total number of received publish packets.
+	PublishSent         int64  // The total number of sent publish packets.
+	Retained            int64  // The number of messages currently retained.
+	InFlight            int64  // The number of messages currently in-flight.
+	Subscriptions       int64  // The total number of filter subscriptions.
+	Started             int64  // The time the server started in unix seconds.
+	Version             string // The current version of the server.
 }

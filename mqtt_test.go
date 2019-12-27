@@ -3,6 +3,7 @@ package mqtt
 import (
 	"io/ioutil"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
@@ -32,6 +33,8 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.Listeners)
 	require.NotNil(t, s.Clients)
 	require.NotNil(t, s.Topics)
+	require.NotEmpty(t, s.System.Version)
+	require.Equal(t, true, s.System.Started > 0)
 }
 
 func BenchmarkNew(b *testing.B) {
@@ -371,59 +374,6 @@ func TestServerEstablishConnectionReadPacketErr(t *testing.T) {
 	require.Error(t, errx)
 }
 
-func TestResendInflight(t *testing.T) {
-	s, cl, r, w := setupClient()
-
-	ack := make(chan []byte)
-	go func() {
-		buf, err := ioutil.ReadAll(r)
-		if err != nil {
-			panic(err)
-		}
-		ack <- buf
-	}()
-
-	cl.InFlight.Set(1, clients.InFlightMessage{
-		Packet: packets.Packet{
-			FixedHeader: packets.FixedHeader{
-				Type:   packets.Publish,
-				Qos:    1,
-				Retain: true,
-			},
-			TopicName: "a/b/c",
-			Payload:   []byte("hello"),
-			PacketID:  1,
-		},
-		Sent: time.Now().Unix(),
-	})
-
-	err := s.resendInflight(cl)
-	require.NoError(t, err)
-
-	time.Sleep(time.Millisecond)
-	w.Close()
-
-	require.Equal(t, []byte{
-		byte(packets.Publish<<4 | 11), 14,
-		0, 5,
-		'a', '/', 'b', '/', 'c',
-		0, 1,
-		'h', 'e', 'l', 'l', 'o',
-	}, <-ack)
-}
-
-func TestResendInflightError(t *testing.T) {
-	s, cl, _, _ := setupClient()
-
-	cl.InFlight.Set(1, clients.InFlightMessage{
-		Packet: packets.Packet{},
-	})
-
-	cl.Stop()
-	err := s.resendInflight(cl)
-	require.Error(t, err)
-}
-
 func TestServerWriteClient(t *testing.T) {
 	s, cl, r, w := setupClient()
 	cl.ID = "mochi"
@@ -636,6 +586,133 @@ func TestServerProcessPublishQoS2(t *testing.T) {
 		byte(packets.Pubrec << 4), 2, // Fixed header
 		0, 12, // Packet ID - LSB+MSB
 	}, <-ack1)
+}
+
+func TestServerProcessPublishOfflineQueuing(t *testing.T) {
+	s, cl1, r1, w1 := setupClient()
+	cl1.ID = "mochi1"
+	s.Clients.Add(cl1)
+
+	// Start and stop the receiver client
+	_, cl2, _, _ := setupClient()
+	cl2.ID = "mochi2"
+	s.Clients.Add(cl2)
+	s.Topics.Subscribe("qos0", cl2.ID, 0)
+	s.Topics.Subscribe("qos1", cl2.ID, 1)
+	s.Topics.Subscribe("qos2", cl2.ID, 2)
+	cl2.Stop()
+
+	ack1 := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r1)
+		if err != nil {
+			panic(err)
+		}
+		ack1 <- buf
+	}()
+
+	for i := 0; i < 3; i++ {
+		err := s.processPacket(cl1, packets.Packet{
+			FixedHeader: packets.FixedHeader{
+				Type: packets.Publish,
+				Qos:  byte(i),
+			},
+			TopicName: "qos" + strconv.Itoa(i),
+			Payload:   []byte("hello"),
+			PacketID:  uint16(i),
+		})
+		require.NoError(t, err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	w1.Close()
+
+	require.Equal(t, []byte{
+		byte(packets.Puback << 4), 2, // Qos1 Ack
+		0, 1,
+		byte(packets.Pubrec << 4), 2, // Qos2 Ack
+		0, 2,
+	}, <-ack1)
+
+	queued := cl2.InFlight.GetAll()
+	require.Equal(t, 2, len(queued))
+	require.Equal(t, "qos1", queued[1].Packet.TopicName)
+	require.Equal(t, "qos2", queued[2].Packet.TopicName)
+
+	// Reconnect the receiving client and get queued messages.
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
+	}()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 18, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			0,     // Packet Flags
+			0, 45, // Keepalive
+			0, 6, // Client ID - MSB+LSB
+			'm', 'o', 'c', 'h', 'i', '2', // Client ID
+		})
+		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+	}()
+
+	recv := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(w)
+		if err != nil {
+			panic(err)
+		}
+		recv <- buf
+	}()
+
+	clw, ok := s.Clients.Get("mochi2")
+	require.Equal(t, true, ok)
+	clw.Stop()
+
+	errx := <-o
+	require.NoError(t, errx)
+	ret := <-recv
+
+	wanted := []byte{
+		byte(packets.Connack << 4), 2,
+		1, packets.Accepted,
+		byte(packets.Publish<<4 | 1<<1 | 1<<3), 13,
+		0, 4,
+		'q', 'o', 's', '1',
+		0, 1,
+		'h', 'e', 'l', 'l', 'o',
+		byte(packets.Publish<<4 | 2<<1 | 1<<3), 13,
+		0, 4,
+		'q', 'o', 's', '2',
+		0, 2,
+		'h', 'e', 'l', 'l', 'o',
+	}
+
+	require.Equal(t, len(wanted), len(ret))
+	require.Equal(t, true, (ret[4] == byte(packets.Publish<<4|1<<1|1<<3) || ret[4] == byte(packets.Publish<<4|2<<1|1<<3)))
+
+	w.Close()
+
+}
+
+func TestServerProcessPublishSystemPrefix(t *testing.T) {
+	s, cl, _, _ := setupClient()
+	s.Clients.Add(cl)
+
+	err := s.processPacket(cl, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "$SYS/stuff",
+		Payload:   []byte("hello"),
+	})
+
+	require.Error(t, err)
+	require.Equal(t, ErrInvalidTopic, err)
 }
 
 func TestServerProcessPublishBadACL(t *testing.T) {

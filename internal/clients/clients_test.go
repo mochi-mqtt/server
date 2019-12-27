@@ -657,6 +657,156 @@ func TestClientWritePacketInvalidPacket(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestClientResendInflight(t *testing.T) {
+	r, w := net.Pipe()
+	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+	cl.Start()
+
+	o := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(w)
+		require.NoError(t, err)
+		o <- buf
+	}()
+
+	pk1 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+			Qos:  1,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+		PacketID:  11,
+	}
+
+	cl.InFlight.Set(pk1.PacketID, InFlightMessage{
+		Packet: pk1,
+		Sent:   time.Now().Unix(),
+	})
+
+	err := cl.ResendInflight(true)
+	require.NoError(t, err)
+
+	time.Sleep(time.Millisecond)
+	r.Close()
+
+	rcv := <-o
+	require.Equal(t, []byte{
+		byte(packets.Publish<<4 | 1<<1 | 1<<3), 14,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		0, 11,
+		'h', 'e', 'l', 'l', 'o',
+	}, rcv)
+
+	m := cl.InFlight.GetAll()
+	require.Equal(t, 1, m[11].resends) // index is packet id
+
+}
+
+func TestClientResendBackoff(t *testing.T) {
+	r, w := net.Pipe()
+	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+	cl.Start()
+
+	o := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(w)
+		require.NoError(t, err)
+		o <- buf
+	}()
+
+	pk1 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+			Qos:  1,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+		PacketID:  11,
+	}
+
+	cl.InFlight.Set(pk1.PacketID, InFlightMessage{
+		Packet:  pk1,
+		Sent:    time.Now().Unix(),
+		resends: 0,
+	})
+
+	err := cl.ResendInflight(false)
+	require.NoError(t, err)
+
+	time.Sleep(time.Millisecond)
+
+	// Attempt to send twice, but backoff should kick in stopping second resend.
+	err = cl.ResendInflight(false)
+	require.NoError(t, err)
+
+	r.Close()
+
+	rcv := <-o
+	require.Equal(t, []byte{
+		byte(packets.Publish<<4 | 1<<1 | 1<<3), 14,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		0, 11,
+		'h', 'e', 'l', 'l', 'o',
+	}, rcv)
+
+	m := cl.InFlight.GetAll()
+	require.Equal(t, 1, m[11].resends) // index is packet id
+}
+
+func TestClientResendInflightNoMessages(t *testing.T) {
+	r, _ := net.Pipe()
+	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+	out := []packets.Packet{}
+	err := cl.ResendInflight(true)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(out))
+	r.Close()
+}
+
+func TestClientResendInflightDropMessage(t *testing.T) {
+	r, _ := net.Pipe()
+	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+
+	pk1 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+			Qos:  1,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+		PacketID:  11,
+	}
+
+	cl.InFlight.Set(pk1.PacketID, InFlightMessage{
+		Packet:  pk1,
+		Sent:    time.Now().Unix(),
+		resends: maxResends,
+	})
+
+	err := cl.ResendInflight(true)
+	require.NoError(t, err)
+	r.Close()
+
+	m := cl.InFlight.GetAll()
+	require.Equal(t, 0, len(m))
+}
+
+func TestClientResendInflightError(t *testing.T) {
+	r, _ := net.Pipe()
+	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+
+	cl.InFlight.Set(1, InFlightMessage{
+		Packet: packets.Packet{},
+		Sent:   time.Now().Unix(),
+	})
+	r.Close()
+	err := cl.ResendInflight(true)
+	require.Error(t, err)
+}
+
 /////
 
 func TestInFlightSet(t *testing.T) {

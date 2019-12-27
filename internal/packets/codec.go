@@ -76,8 +76,8 @@ func encodeBool(b bool) byte {
 // encodeBytes encodes a byte array to a byte array. Used primarily for message payloads.
 func encodeBytes(val []byte) []byte {
 	// In many circumstances the number of bytes being encoded is small.
-	// Setting the cap to a low amount allows us to account for those with
-	// triggering an alloc on append unless we need to.
+	// Setting the cap to a low amount allows us to account for those without
+	// triggering allocation growth on append unless we need to.
 	buf := make([]byte, 2, 32)
 	binary.BigEndian.PutUint16(buf, uint16(len(val)))
 	return append(buf, val...)
@@ -93,7 +93,7 @@ func encodeUint16(val uint16) []byte {
 // encodeString encodes a string to a byte array.
 func encodeString(val string) []byte {
 	// Like encodeBytes, we set the cap to a small number to avoid
-	// triggering an alloc on append unless we absolutely need to.
+	// triggering allocation growth on append unless we absolutely need to.
 	buf := make([]byte, 2, 32)
 	binary.BigEndian.PutUint16(buf, uint16(len(val)))
 	return append(buf, []byte(val)...)

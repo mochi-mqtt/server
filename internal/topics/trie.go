@@ -245,6 +245,7 @@ func (l *Leaf) scanMessages(filter string, d int, messages []packets.Packet) []p
 		// Wildcards and Wildhashes must be checked first, otherwise they
 		// may be detected as standard particles, and not act properly.
 		if particle == "+" || particle == "#" {
+
 			// Otherwise, if it's a wildcard or wildhash, get messages from all
 			// the child leaves. This wildhash captures messages on the actual
 			// wildhash position, whereas the d == -1 block collects subsequent
