@@ -260,6 +260,21 @@ func TestSubscribersFind(t *testing.T) {
 			topic:  "path/to/my/mqtt",
 			len:    0,
 		},
+		{
+			filter: "$SYS/#",
+			topic:  "$SYS/info",
+			len:    1,
+		},
+		{
+			filter: "#",
+			topic:  "$SYS/info",
+			len:    0,
+		},
+		{
+			filter: "+/info",
+			topic:  "$SYS/info",
+			len:    0,
+		},
 	}
 
 	for i, check := range tt {
