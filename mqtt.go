@@ -132,13 +132,11 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		SessionPresent: sessionPresent,
 		ReturnCode:     retcode,
 	})
-
 	if err != nil || retcode != packets.Accepted {
 		return err
 	}
 
 	cl.ResendInflight(true)
-	//s.resendInflight(cl)
 
 	err = cl.Read(s.processPacket)
 	if err != nil {
@@ -262,10 +260,9 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 			})
 		}
 
-		err := s.writeClient(cl, ack)
-		if err != nil {
-			return err
-		}
+		s.writeClient(cl, ack)
+		// omit errors in case of broken connection / LWT publish. ack send failures
+		// will be handled by in-flight resending on next reconnect.
 	}
 
 	subs := s.Topics.Subscribers(pk.TopicName)
@@ -360,7 +357,6 @@ func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
 func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 	retCodes := make([]byte, len(pk.Topics))
 	for i := 0; i < len(pk.Topics); i++ {
-
 		if !cl.AC.ACL(cl.Username, pk.Topics[i], false) {
 			retCodes[i] = packets.ErrSubAckNetworkError
 		} else {
@@ -368,8 +364,8 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 			cl.NoteSubscription(pk.Topics[i], pk.Qoss[i])
 			retCodes[i] = pk.Qoss[i]
 		}
-
 	}
+
 	err := s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Suback,

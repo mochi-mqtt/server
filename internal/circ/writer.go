@@ -84,7 +84,6 @@ func (b *Writer) Write(p []byte) (total int, err error) {
 	b.wcond.L.Lock()
 	b.wcond.Broadcast()
 	b.wcond.L.Unlock()
-
 	return
 }
 

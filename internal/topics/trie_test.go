@@ -211,6 +211,11 @@ func TestSubscribersFind(t *testing.T) {
 			len:    1,
 		},
 		{
+			filter: "/a",
+			topic:  "/a",
+			len:    1,
+		},
+		{
 			filter: "path/to/my/mqtt",
 			topic:  "path/to/my/mqtt",
 			len:    1,
@@ -260,6 +265,7 @@ func TestSubscribersFind(t *testing.T) {
 			topic:  "path/to/my/mqtt",
 			len:    0,
 		},
+
 		{
 			filter: "$SYS/#",
 			topic:  "$SYS/info",

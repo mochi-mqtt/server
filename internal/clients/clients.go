@@ -107,6 +107,7 @@ type clientState struct {
 	endedW  *sync.WaitGroup // tracks when the writer has ended.
 	endedR  *sync.WaitGroup // tracks when the reader has ended.
 	done    int64           // atomic counter which indicates that the client has closed.
+	endOnce sync.Once       //
 }
 
 // NewClient returns a new instance of Client.
@@ -128,6 +129,9 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer) *Client {
 			endedR:  new(sync.WaitGroup),
 		},
 	}
+
+	cl.refreshDeadline(cl.keepalive)
+
 	return cl
 }
 
@@ -145,8 +149,8 @@ func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
 	cl.w.ID = cl.ID + " WRITER"
 
 	cl.Username = pk.Username
-	cl.keepalive = pk.Keepalive
 	cl.cleanSession = pk.CleanSession
+	cl.keepalive = pk.Keepalive
 
 	if pk.WillFlag {
 		cl.LWT = LWT{
@@ -156,13 +160,18 @@ func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
 			Retain:  pk.WillRetain,
 		}
 	}
+
+	cl.refreshDeadline(cl.keepalive)
 }
 
 // refreshDeadline refreshes the read/write deadline for the net.Conn connection.
 func (cl *Client) refreshDeadline(keepalive uint16) {
 	if cl.conn != nil {
-		expiry := time.Duration(keepalive+(keepalive/2)) * time.Second
-		cl.conn.SetDeadline(time.Now().Add(expiry))
+		var expiry time.Time // Nil time can be used to disable deadline if keepalive = 0
+		if keepalive > 0 {
+			expiry = time.Now().Add(time.Duration(keepalive+(keepalive/2)) * time.Second)
+		}
+		cl.conn.SetDeadline(expiry)
 	}
 }
 
@@ -217,7 +226,8 @@ func (cl *Client) Start() {
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
 func (cl *Client) Stop() {
-	if atomic.LoadInt64(&cl.state.done) == 0 {
+	cl.state.endOnce.Do(func() {
+		fmt.Println(cl.ID, "Signalled stop")
 		cl.r.Stop()
 		cl.w.Stop()
 		cl.state.endedW.Wait()
@@ -226,7 +236,7 @@ func (cl *Client) Stop() {
 
 		cl.state.endedR.Wait()
 		atomic.StoreInt64(&cl.state.done, 1)
-	}
+	})
 }
 
 // readFixedHeader reads in the values of the next packet's fixed header.
