@@ -234,7 +234,7 @@ func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) error {
 
 // processPublish processes a Publish packet.
 func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
-	if len(pk.TopicName) > 0 && pk.TopicName[0] == '$SYS' {
+	if len(pk.TopicName) > 0 && pk.TopicName[0:3] == "$SYS" {
 		return nil
 	}
 
@@ -360,7 +360,7 @@ func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
 func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 	retCodes := make([]byte, len(pk.Topics))
 	for i := 0; i < len(pk.Topics); i++ {
-		
+
 		if !cl.AC.ACL(cl.Username, pk.Topics[i], false) {
 			retCodes[i] = packets.ErrSubAckNetworkError
 		} else {
