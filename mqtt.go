@@ -150,6 +150,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 // writeClient writes packets to a client connection.
 func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
+	fmt.Println(">>", cl.ID, pk.FixedHeader.Type, pk.FixedHeader.Qos, pk.PacketID)
 	_, err := cl.WritePacket(pk)
 	if err != nil {
 		return err
@@ -164,6 +165,8 @@ func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 // processPacket processes an inbound packet for a client. Since the method is
 // typically called as a goroutine, errors are mostly for test checking purposes.
 func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
+
+	fmt.Println("<<", cl.ID, pk.FixedHeader.Type, pk.FixedHeader.Qos, pk.PacketID)
 	switch pk.FixedHeader.Type {
 	case packets.Connect:
 		return s.processConnect(cl, pk)
@@ -241,7 +244,7 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 	}
 
 	if pk.FixedHeader.Retain {
-		s.Topics.RetainMessage(pk)
+		s.Topics.RetainMessage(pk.PublishCopy())
 	}
 
 	if pk.FixedHeader.Qos > 0 {
@@ -254,10 +257,13 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 		if pk.FixedHeader.Qos == 2 {
 			ack.FixedHeader.Type = packets.Pubrec
-			cl.InFlight.Set(pk.PacketID, clients.InFlightMessage{
-				Packet: ack,
-				Sent:   time.Now().Unix(),
-			})
+			/*
+				cl.InFlight.Set(pk.PacketID, clients.InFlightMessage{
+					Packet: ack,
+					Sent:   time.Now().Unix(),
+				})
+				fmt.Println(cl.ID, "SETA", ack.FixedHeader.Type, ack.FixedHeader.Qos, ack.PacketID)
+			*/
 		}
 
 		s.writeClient(cl, ack)
@@ -286,6 +292,7 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 					Packet: out,
 					Sent:   time.Now().Unix(),
 				})
+				fmt.Println(client.ID, "SETB", out.FixedHeader.Type, out.FixedHeader.Qos, out.PacketID)
 			}
 
 			s.writeClient(client, out)
@@ -298,58 +305,62 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 // processPuback processes a Puback packet.
 func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) error {
 	cl.InFlight.Delete(pk.PacketID)
+	fmt.Println(cl.ID, "DEL", pk.PacketID)
 	return nil
 }
 
 // processPubrec processes a Pubrec packet.
 func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) error {
-	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
-		out := packets.Packet{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Pubrel,
-				Qos:  1,
-			},
-			PacketID: pk.PacketID,
-		}
-
+	//if _, ok := cl.InFlight.Get(pk.PacketID); ok {
+	out := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pubrel,
+			Qos:  1,
+		},
+		PacketID: pk.PacketID,
+	}
+	/*
 		cl.InFlight.Set(out.PacketID, clients.InFlightMessage{
 			Packet: out,
 			Sent:   time.Now().Unix(),
 		})
-
-		err := s.writeClient(cl, out)
-		if err != nil {
-			return err
-		}
+		fmt.Println(cl.ID, "SETC", out.FixedHeader.Type, out.FixedHeader.Qos, out.PacketID)
+	*/
+	err := s.writeClient(cl, out)
+	if err != nil {
+		return err
 	}
+	//}
 
 	return nil
 }
 
 // processPubrel processes a Pubrel packet.
 func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
-	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
-		out := packets.Packet{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Pubcomp,
-			},
-			PacketID: pk.PacketID,
-		}
 
-		err := s.writeClient(cl, out)
-		if err != nil {
-			return err
-		}
-		cl.InFlight.Delete(pk.PacketID)
+	//if _, ok := cl.InFlight.Get(pk.PacketID); ok {
+	out := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Pubcomp,
+		},
+		PacketID: pk.PacketID,
 	}
+
+	err := s.writeClient(cl, out)
+	if err != nil {
+		return err
+	}
+	cl.InFlight.Delete(pk.PacketID)
+	//}
+
 	return nil
 }
 
 // processPubcomp processes a Pubcomp packet.
 func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
-	if _, ok := cl.InFlight.Get(pk.PacketID); ok {
-		cl.InFlight.Delete(pk.PacketID)
-	}
+	//if _, ok := cl.InFlight.Get(pk.PacketID); ok {
+	cl.InFlight.Delete(pk.PacketID)
+	//}
 	return nil
 }
 
@@ -379,10 +390,13 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 
 	// Publish out any retained messages matching the subscription filter.
 	for i := 0; i < len(pk.Topics); i++ {
+		fmt.Println(cl.ID, "retained for", pk.Topics[i])
 		for _, pkv := range s.Topics.Messages(pk.Topics[i]) {
+			fmt.Println(">>", cl.ID, pkv.FixedHeader.Type, pkv.FixedHeader.Qos, pkv.PacketID)
 			err := s.writeClient(cl, pkv)
 			if err != nil {
-				return err
+				fmt.Println("writeClient got err", err)
+				//return err
 			}
 		}
 	}
@@ -427,7 +441,6 @@ func (s *Server) closeListenerClients(listener string) {
 
 // closeClient closes a client connection and publishes any LWT messages.
 func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
-
 	if sendLWT && cl.LWT.Topic != "" {
 		err := s.processPublish(cl, packets.Packet{
 			FixedHeader: packets.FixedHeader{

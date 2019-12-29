@@ -1,6 +1,7 @@
 package circ
 
 import (
+	"fmt"
 	"io"
 	"sync/atomic"
 )
@@ -58,11 +59,14 @@ func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
 			p = append(p, b.buf[rTail:rHead]...)
 		}
 
+		//fmt.Println("writing", p)
 		n, err = w.Write(p)
 		total += n
 		if err != nil {
+			fmt.Println("writing err", err)
 			return
 		}
+		//fmt.Println("written", n)
 
 		// Move the tail forward the bytes written and broadcast change.
 		atomic.StoreInt64(&b.tail, tail+int64(n))

@@ -176,9 +176,6 @@ type Leaf struct {
 // have subscription filters matching a topic, and their highest QoS byte.
 func (l *Leaf) scanSubscribers(topic string, d int, clients Subscriptions) Subscriptions {
 	part, hasNext := isolateParticle(topic, d)
-	//if len(part) == 0 {
-	//	return clients
-	//}
 
 	// For either the topic part, a +, or a #, follow the branch.
 	for _, particle := range []string{part, "+", "#"} {
