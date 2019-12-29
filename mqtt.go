@@ -257,13 +257,6 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 		if pk.FixedHeader.Qos == 2 {
 			ack.FixedHeader.Type = packets.Pubrec
-			/*
-				cl.InFlight.Set(pk.PacketID, clients.InFlightMessage{
-					Packet: ack,
-					Sent:   time.Now().Unix(),
-				})
-				fmt.Println(cl.ID, "SETA", ack.FixedHeader.Type, ack.FixedHeader.Qos, ack.PacketID)
-			*/
 		}
 
 		s.writeClient(cl, ack)
@@ -305,13 +298,11 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 // processPuback processes a Puback packet.
 func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) error {
 	cl.InFlight.Delete(pk.PacketID)
-	fmt.Println(cl.ID, "DEL", pk.PacketID)
 	return nil
 }
 
 // processPubrec processes a Pubrec packet.
 func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) error {
-	//if _, ok := cl.InFlight.Get(pk.PacketID); ok {
 	out := packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Pubrel,
@@ -319,26 +310,17 @@ func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) error {
 		},
 		PacketID: pk.PacketID,
 	}
-	/*
-		cl.InFlight.Set(out.PacketID, clients.InFlightMessage{
-			Packet: out,
-			Sent:   time.Now().Unix(),
-		})
-		fmt.Println(cl.ID, "SETC", out.FixedHeader.Type, out.FixedHeader.Qos, out.PacketID)
-	*/
+
 	err := s.writeClient(cl, out)
 	if err != nil {
 		return err
 	}
-	//}
 
 	return nil
 }
 
 // processPubrel processes a Pubrel packet.
 func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
-
-	//if _, ok := cl.InFlight.Get(pk.PacketID); ok {
 	out := packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Pubcomp,
@@ -351,16 +333,13 @@ func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
 		return err
 	}
 	cl.InFlight.Delete(pk.PacketID)
-	//}
 
 	return nil
 }
 
 // processPubcomp processes a Pubcomp packet.
 func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
-	//if _, ok := cl.InFlight.Get(pk.PacketID); ok {
 	cl.InFlight.Delete(pk.PacketID)
-	//}
 	return nil
 }
 
