@@ -231,8 +231,7 @@ func (cl *Client) Stop() {
 		cl.w.Stop()
 		cl.state.endedW.Wait()
 
-		//fmt.Println("closing conn")
-		//cl.conn.Close()
+		cl.conn.Close()
 
 		cl.state.endedR.Wait()
 		atomic.StoreInt64(&cl.state.done, 1)
@@ -322,10 +321,8 @@ func (cl *Client) ResendInflight(force bool) error {
 		return nil
 	}
 
-	fmt.Println("\n", cl.ID, "## Resending Inflight")
 	nt := time.Now().Unix()
 	for _, tk := range cl.InFlight.GetAll() {
-
 		if tk.resends >= maxResends { // After a reasonable time, drop inflight packets.
 			cl.InFlight.Delete(tk.Packet.PacketID)
 			continue
@@ -343,10 +340,7 @@ func (cl *Client) ResendInflight(force bool) error {
 		tk.resends++
 		tk.Sent = nt
 		cl.InFlight.Set(tk.Packet.PacketID, tk)
-
-		fmt.Println(cl.ID, ">", tk.Packet.FixedHeader.Type, tk.Packet.FixedHeader.Qos, tk.Packet.PacketID)
 		_, err := cl.WritePacket(tk.Packet)
-		//err := h(cl, tk.Packet)
 		if err != nil {
 			return err
 		}

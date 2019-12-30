@@ -150,7 +150,6 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 // writeClient writes packets to a client connection.
 func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
-	fmt.Println(">>", cl.ID, pk.FixedHeader.Type, pk.FixedHeader.Qos, pk.PacketID)
 	_, err := cl.WritePacket(pk)
 	if err != nil {
 		return err
@@ -165,8 +164,6 @@ func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 // processPacket processes an inbound packet for a client. Since the method is
 // typically called as a goroutine, errors are mostly for test checking purposes.
 func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
-
-	fmt.Println("<<", cl.ID, pk.FixedHeader.Type, pk.FixedHeader.Qos, pk.PacketID)
 	switch pk.FixedHeader.Type {
 	case packets.Connect:
 		return s.processConnect(cl, pk)
@@ -235,7 +232,7 @@ func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) error {
 
 // processPublish processes a Publish packet.
 func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
-	if len(pk.TopicName) > 0 && pk.TopicName[0:3] == "$SYS" {
+	if len(pk.TopicName) > 0 && pk.TopicName[0:4] == "$SYS" {
 		return nil
 	}
 
@@ -285,7 +282,6 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 					Packet: out,
 					Sent:   time.Now().Unix(),
 				})
-				fmt.Println(client.ID, "SETB", out.FixedHeader.Type, out.FixedHeader.Qos, out.PacketID)
 			}
 
 			s.writeClient(client, out)
@@ -369,14 +365,8 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 
 	// Publish out any retained messages matching the subscription filter.
 	for i := 0; i < len(pk.Topics); i++ {
-		fmt.Println(cl.ID, "retained for", pk.Topics[i])
 		for _, pkv := range s.Topics.Messages(pk.Topics[i]) {
-			fmt.Println(">>", cl.ID, pkv.FixedHeader.Type, pkv.FixedHeader.Qos, pkv.PacketID)
-			err := s.writeClient(cl, pkv)
-			if err != nil {
-				fmt.Println("writeClient got err", err)
-				//return err
-			}
+			s.writeClient(cl, pkv) // omit errors, prefer continuing.
 		}
 	}
 
@@ -421,7 +411,8 @@ func (s *Server) closeListenerClients(listener string) {
 // closeClient closes a client connection and publishes any LWT messages.
 func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 	if sendLWT && cl.LWT.Topic != "" {
-		err := s.processPublish(cl, packets.Packet{
+		// omit errors, since we're not logging and need to close the client in either case.
+		s.processPublish(cl, packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type:   packets.Publish,
 				Retain: cl.LWT.Retain,
@@ -430,10 +421,6 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 			TopicName: cl.LWT.Topic,
 			Payload:   cl.LWT.Message,
 		})
-
-		if err != nil {
-			return err
-		}
 	}
 
 	cl.Stop()

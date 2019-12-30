@@ -546,7 +546,7 @@ func TestServerProcessPublishQoS1Retain(t *testing.T) {
 	}, <-ack1)
 
 	require.Equal(t, []byte{
-		byte(packets.Publish<<4 | 2), 14,
+		byte(packets.Publish<<4 | 2 | 3), 14,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		0, 1,
@@ -711,8 +711,8 @@ func TestServerProcessPublishSystemPrefix(t *testing.T) {
 		Payload:   []byte("hello"),
 	})
 
-	require.Error(t, err)
-	require.Equal(t, ErrInvalidTopic, err)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), s.System.BytesSent)
 }
 
 func TestServerProcessPublishBadACL(t *testing.T) {
@@ -938,40 +938,6 @@ func TestServerProcessSubscribe(t *testing.T) {
 	require.Equal(t, topics.Subscriptions{cl.ID: 1}, s.Topics.Subscribers("d/e/f"))
 }
 
-func TestServerProcessSubscribeFailIssue(t *testing.T) {
-	s, cl, r, _ := setupClient()
-
-	s.Topics.RetainMessage(packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:   0, // invalid packet, this should never happen.
-			Retain: true,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
-	})
-	require.Equal(t, 1, len(s.Topics.Messages("a/b/c")))
-
-	recv := make(chan []byte)
-	go func() {
-		buf, err := ioutil.ReadAll(r)
-		if err != nil {
-			panic(err)
-		}
-		recv <- buf
-	}()
-
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Subscribe,
-		},
-		PacketID: 10,
-		Topics:   []string{"a/b/c", "d/e/f"},
-		Qoss:     []byte{0, 1},
-	})
-	require.Error(t, err)
-
-}
-
 func TestServerProcessSubscribeFailACL(t *testing.T) {
 	s, cl, r, w := setupClient()
 	cl.AC = new(auth.Disallow)
@@ -1167,5 +1133,5 @@ func TestServerCloseClientClosed(t *testing.T) {
 	cl.Stop()
 
 	err := s.closeClient(cl, true)
-	require.Error(t, err)
+	require.NoError(t, err)
 }
