@@ -5,6 +5,7 @@ package system
 type Info struct {
 	Version             string `json:"version"`              // the current version of the server.
 	Started             int64  `json:"started"`              // the time the server started in unix seconds.
+	Uptime              int64  `json:"uptime"`               // the number of seconds the server has been online.
 	BytesRecv           int64  `json:"bytes_recv"`           // the total number of bytes received in all packets.
 	BytesSent           int64  `json:"bytes_sent"`           // the total number of bytes sent to clients.
 	ClientsConnected    int64  `json:"clients_connected"`    // the number of currently connected clients.

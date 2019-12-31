@@ -628,7 +628,7 @@ func TestClientWritePacket(t *testing.T) {
 		require.NoError(t, err, "Error [i:%d] %d", i, tt.packet)
 		require.Equal(t, len(tt.bytes), n, "Mismatched written [i:%d] %d", i, tt.packet)
 
-		time.Sleep(time.Millisecond)
+		time.Sleep(2 * time.Millisecond)
 		r.Close()
 
 		require.Equal(t, tt.bytes, <-o, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])

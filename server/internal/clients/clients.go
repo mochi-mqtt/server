@@ -321,6 +321,8 @@ func (cl *Client) Read(h func(*Client, packets.Packet) error) error {
 
 // ReadPacket reads the remaining buffer into an MQTT packet.
 func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err error) {
+	atomic.AddInt64(&cl.system.MessagesRecv, 1)
+
 	pk.FixedHeader = *fh
 	if pk.FixedHeader.Remaining == 0 {
 		return
@@ -331,7 +333,6 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 		return pk, err
 	}
 	atomic.AddInt64(&cl.system.BytesRecv, int64(len(p)))
-	atomic.AddInt64(&cl.system.MessagesRecv, 1)
 
 	// Decode the remaining packet values using a fresh copy of the bytes,
 	// otherwise the next packet will change the data of this one.

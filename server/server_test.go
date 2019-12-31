@@ -116,6 +116,7 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 		"a/b/c": 1,
 	}
 	s.Clients.Add(cl)
+	s.Topics.Subscribe("a/b/c", cl.ID, 0)
 
 	r, w := net.Pipe()
 	o := make(chan error)
@@ -556,7 +557,6 @@ func TestServerProcessPublishQoS1Retain(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, <-ack2)
 
-	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.PublishRecv))
 	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.Retained))
 }
 
@@ -1080,6 +1080,18 @@ func TestServerProcessUnsubscribeWriteError(t *testing.T) {
 	})
 
 	require.Error(t, err)
+}
+
+func TestEventLoop(t *testing.T) {
+	s := New()
+	s.sysTicker = time.NewTicker(2 * time.Millisecond)
+
+	go func() {
+		s.eventLoop()
+	}()
+	time.Sleep(time.Millisecond * 3)
+	close(s.done)
+
 }
 
 func TestServerClose(t *testing.T) {

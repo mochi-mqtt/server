@@ -67,14 +67,17 @@ func TestUnpoperate(t *testing.T) {
 	index.unpoperate("path/to/retained/message", "", true) // delete retained
 	require.NotContains(t, index.Root.Leaves["path"].Leaves["to"].Leaves, "my")
 
+	index.unpoperate("path/to/whatever", "client-1", false) // unsubscribe client
+	require.Nil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"])
+
 	//require.Empty(t, index.Root.Leaves["path"])
 
 }
 
 func BenchmarkUnpoperate(b *testing.B) {
-	//index := New()
+	index := New()
 	for n := 0; n < b.N; n++ {
-		//		index.poperate("path/to/my/mqtt")
+		index.poperate("path/to/my/mqtt")
 	}
 }
 

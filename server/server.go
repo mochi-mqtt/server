@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -27,20 +28,25 @@ var (
 	ErrReadConnectInvalid   = errors.New("Connect packet was not valid")
 	ErrConnectNotAuthorized = errors.New("Connect packet was not authorized")
 	ErrInvalidTopic         = errors.New("Cannot publish to $ and $SYS topics")
+
+	SysTopicInterval time.Duration = 30000 // the default number of milliseconds between $SYS topic publishes.
 )
 
 // Server is an MQTT broker server.
 type Server struct {
+	done      chan bool            // indicate that the server is ending.
 	bytepool  circ.BytesPool       // a byte pool for packet bytes.
 	Listeners *listeners.Listeners // listeners listen for new connections.
 	Clients   *clients.Clients     // clients known to the broker.
 	Topics    *topics.Index        // an index of topic subscriptions and retained messages.
 	System    *system.Info         // values commonly found in $SYS topics.
+	sysTicker *time.Ticker         // the interval ticker for sending updating $SYS topics.
 }
 
 // New returns a new instance of an MQTT broker.
 func New() *Server {
 	s := &Server{
+		done:     make(chan bool),
 		bytepool: circ.NewBytesPool(circ.DefaultBufferSize),
 		Clients:  clients.New(),
 		Topics:   topics.New(),
@@ -48,6 +54,7 @@ func New() *Server {
 			Version: Version,
 			Started: time.Now().Unix(),
 		},
+		sysTicker: time.NewTicker(SysTopicInterval * time.Millisecond),
 	}
 
 	// Expose server stats to the listeners so it can be used in the dashboard
@@ -75,8 +82,23 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 // Serve begins the event loops for establishing client connections on all
 // attached listeners.
 func (s *Server) Serve() error {
+	go s.eventLoop()
 	s.Listeners.ServeAll(s.EstablishConnection)
+	s.publishSysTopics()
 	return nil
+}
+
+// eventLoop runs server processes at intervals.
+func (s *Server) eventLoop() {
+	for {
+		select {
+		case <-s.done:
+			s.sysTicker.Stop()
+			return
+		case <-s.sysTicker.C:
+			s.publishSysTopics()
+		}
+	}
 }
 
 // EstablishConnection establishes a new client connection with the broker.
@@ -287,6 +309,14 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 		// will be handled by in-flight resending on next reconnect.
 	}
 
+	s.publishToSubscribers(pk)
+
+	return nil
+}
+
+// publishToSubscribers publishes a publish packet to all subscribers with
+// matching topic filters.
+func (s *Server) publishToSubscribers(pk packets.Packet) {
 	subs := s.Topics.Subscribers(pk.TopicName)
 	for id, qos := range subs {
 		if client, ok := s.Clients.Get(id); ok {
@@ -316,8 +346,6 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 			s.writeClient(client, out)
 		}
 	}
-
-	return nil
 }
 
 // processPuback processes a Puback packet.
@@ -437,8 +465,53 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error
 	return nil
 }
 
+// publishSysTopics publishes the current values to the server $SYS topics.
+// Due to the int to string conversions this method is not as cheap as
+// some of the others so the publishing interval should be set appropriately.
+func (s *Server) publishSysTopics() {
+	s.System.Uptime = time.Now().Unix() - s.System.Started
+
+	pk := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type:   packets.Publish,
+			Retain: true,
+		},
+	}
+
+	topics := map[string]string{
+		"$SYS/broker/version":                   s.System.Version,
+		"$SYS/broker/uptime":                    strconv.Itoa(int(s.System.Uptime)),
+		"$SYS/broker/timestamp":                 strconv.Itoa(int(s.System.Started)),
+		"$SYS/broker/load/bytes/received":       strconv.Itoa(int(s.System.BytesRecv)),
+		"$SYS/broker/load/bytes/sent":           strconv.Itoa(int(s.System.BytesSent)),
+		"$SYS/broker/clients/connected":         strconv.Itoa(int(s.System.ClientsConnected)),
+		"$SYS/broker/clients/disconnected":      strconv.Itoa(int(s.System.ClientsDisconnected)),
+		"$SYS/broker/clients/maximum":           strconv.Itoa(int(s.System.ClientsMax)),
+		"$SYS/broker/clients/total":             strconv.Itoa(int(s.System.ClientsTotal)),
+		"$SYS/broker/connections/total":         strconv.Itoa(int(s.System.ConnectionsTotal)),
+		"$SYS/broker/messages/received":         strconv.Itoa(int(s.System.MessagesRecv)),
+		"$SYS/broker/messages/sent":             strconv.Itoa(int(s.System.MessagesSent)),
+		"$SYS/broker/messages/publish/dropped":  strconv.Itoa(int(s.System.PublishDropped)),
+		"$SYS/broker/messages/publish/received": strconv.Itoa(int(s.System.PublishRecv)),
+		"$SYS/broker/messages/publish/sent":     strconv.Itoa(int(s.System.PublishSent)),
+		"$SYS/broker/messages/retained/count":   strconv.Itoa(int(s.System.Retained)),
+		"$SYS/broker/messages/inflight":         strconv.Itoa(int(s.System.Inflight)),
+		"$SYS/broker/subscriptions/count":       strconv.Itoa(int(s.System.Subscriptions)),
+	}
+
+	for topic, payload := range topics {
+		pk.TopicName = topic
+		pk.Payload = []byte(payload)
+		q := s.Topics.RetainMessage(pk.PublishCopy())
+		atomic.AddInt64(&s.System.Retained, q)
+		s.publishToSubscribers(pk)
+	}
+
+}
+
 // Close attempts to gracefully shutdown the server, all listeners, and clients.
 func (s *Server) Close() error {
+	close(s.done)
 	s.Listeners.CloseAll(s.closeListenerClients)
 	return nil
 }
