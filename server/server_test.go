@@ -1,4 +1,4 @@
-package mqtt
+package server
 
 import (
 	"io/ioutil"
@@ -9,12 +9,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/mochi-co/mqtt/internal/auth"
-	"github.com/mochi-co/mqtt/internal/circ"
-	"github.com/mochi-co/mqtt/internal/clients"
-	"github.com/mochi-co/mqtt/internal/listeners"
-	"github.com/mochi-co/mqtt/internal/packets"
-	"github.com/mochi-co/mqtt/internal/topics"
+	"github.com/mochi-co/mqtt/server/internal/circ"
+	"github.com/mochi-co/mqtt/server/internal/clients"
+	"github.com/mochi-co/mqtt/server/internal/packets"
+	"github.com/mochi-co/mqtt/server/internal/topics"
+	"github.com/mochi-co/mqtt/server/listeners"
+	"github.com/mochi-co/mqtt/server/listeners/auth"
 )
 
 func setupClient() (s *Server, cl *clients.Client, r net.Conn, w net.Conn) {

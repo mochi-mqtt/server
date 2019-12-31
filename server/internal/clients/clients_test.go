@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mochi-co/mqtt/internal/auth"
-	"github.com/mochi-co/mqtt/internal/circ"
-	"github.com/mochi-co/mqtt/internal/packets"
+	"github.com/mochi-co/mqtt/server/internal/circ"
+	"github.com/mochi-co/mqtt/server/internal/packets"
+	"github.com/mochi-co/mqtt/server/listeners/auth"
 	"github.com/stretchr/testify/require"
 )
 

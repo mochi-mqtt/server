@@ -5,7 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/mochi-co/mqtt/internal/auth"
+	"github.com/mochi-co/mqtt/server/listeners/auth"
 )
 
 // TCP is a listener for establishing client connections on basic TCP protocol.

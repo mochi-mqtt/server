@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mochi-co/mqtt/internal/auth"
+	"github.com/mochi-co/mqtt/server/listeners/auth"
 	"github.com/stretchr/testify/require"
 )
 

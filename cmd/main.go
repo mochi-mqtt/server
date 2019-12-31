@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	//"log"
 	//	"net/http"
 	"os"
 	"os/signal"
@@ -10,8 +10,8 @@ import (
 
 	"github.com/logrusorgru/aurora"
 
-	"github.com/mochi-co/mqtt"
-	"github.com/mochi-co/mqtt/internal/listeners"
+	mqtt "github.com/mochi-co/mqtt/server"
+	"github.com/mochi-co/mqtt/server/listeners"
 	//	_ "net/http/pprof"
 	//	"runtime/trace"
 )
@@ -48,8 +48,13 @@ func main() {
 
 	server := mqtt.New()
 	tcp := listeners.NewTCP("t1", ":1883")
-	log.Println(tcp)
 	err = server.AddListener(tcp, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	stats := listeners.NewHTTPStats("stats", ":8080", server.System)
+	err = server.AddListener(stats, nil)
 	if err != nil {
 		panic(err)
 	}
