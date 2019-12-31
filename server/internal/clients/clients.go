@@ -16,6 +16,7 @@ import (
 	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/internal/topics"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt/server/system"
 )
 
 var (
@@ -74,7 +75,7 @@ func (cl *Clients) GetByListener(id string) []*Client {
 	clients := make([]*Client, 0, cl.Len())
 	cl.RLock()
 	for _, v := range cl.internal {
-		if v.Listener == id && atomic.LoadInt64(&v.state.done) == 0 {
+		if v.Listener == id && atomic.LoadInt64(&v.State.Done) == 0 {
 			clients = append(clients, v)
 		}
 	}
@@ -92,42 +93,44 @@ type Client struct {
 	AC            auth.Controller      // an auth controller inherited from the listener.
 	Subscriptions topics.Subscriptions // a map of the subscription filters a client maintains.
 	Listener      string               // the id of the listener the client is connected to.
-	InFlight      InFlight             // a map of in-flight qos messages.
+	Inflight      Inflight             // a map of in-flight qos messages.
 	Username      []byte               // the username the client authenticated with.
 	keepalive     uint16               // the number of seconds the connection can wait.
 	cleanSession  bool                 // indicates if the client expects a clean-session.
 	packetID      uint32               // the current highest packetID.
 	LWT           LWT                  // the last will and testament for the client.
-	state         clientState          // the operational state of the client.
+	State         State                // the operational state of the client.
+	system        *system.Info         // pointers to server system info.
 }
 
-// clientState tracks the state of the client.
-type clientState struct {
+// State tracks the state of the client.
+type State struct {
+	Done    int64           // atomic counter which indicates that the client has closed.
 	started *sync.WaitGroup // tracks the goroutines which have been started.
 	endedW  *sync.WaitGroup // tracks when the writer has ended.
 	endedR  *sync.WaitGroup // tracks when the reader has ended.
-	done    int64           // atomic counter which indicates that the client has closed.
 	endOnce sync.Once       //
 }
 
 // NewClient returns a new instance of Client.
-func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer) *Client {
+func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Client {
 	cl := &Client{
 		conn: c,
 		r:    r,
 		w:    w,
 
 		keepalive: defaultKeepalive,
-		InFlight: InFlight{
-			internal: make(map[uint16]InFlightMessage),
+		Inflight: Inflight{
+			internal: make(map[uint16]InflightMessage),
 		},
 		Subscriptions: make(map[string]byte),
 
-		state: clientState{
+		State: State{
 			started: new(sync.WaitGroup),
 			endedW:  new(sync.WaitGroup),
 			endedR:  new(sync.WaitGroup),
 		},
+		system: s,
 	}
 
 	cl.refreshDeadline(cl.keepalive)
@@ -203,38 +206,38 @@ func (cl *Client) ForgetSubscription(filter string) {
 
 // Start begins the client goroutines reading and writing packets.
 func (cl *Client) Start() {
-	cl.state.started.Add(2)
+	cl.State.started.Add(2)
 
 	go func() {
-		cl.state.started.Done()
+		cl.State.started.Done()
 		cl.w.WriteTo(cl.conn)
-		cl.state.endedW.Done()
+		cl.State.endedW.Done()
 		cl.Stop()
 	}()
-	cl.state.endedW.Add(1)
+	cl.State.endedW.Add(1)
 
 	go func() {
-		cl.state.started.Done()
+		cl.State.started.Done()
 		cl.r.ReadFrom(cl.conn)
-		cl.state.endedR.Done()
+		cl.State.endedR.Done()
 		cl.Stop()
 	}()
-	cl.state.endedR.Add(1)
+	cl.State.endedR.Add(1)
 
-	cl.state.started.Wait()
+	cl.State.started.Wait()
 }
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
 func (cl *Client) Stop() {
-	cl.state.endOnce.Do(func() {
+	cl.State.endOnce.Do(func() {
 		cl.r.Stop()
 		cl.w.Stop()
-		cl.state.endedW.Wait()
+		cl.State.endedW.Wait()
 
 		cl.conn.Close()
 
-		cl.state.endedR.Wait()
-		atomic.StoreInt64(&cl.state.done, 1)
+		cl.State.endedR.Wait()
+		atomic.StoreInt64(&cl.State.Done, 1)
 	})
 }
 
@@ -282,6 +285,7 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 
 	// Having successfully read n bytes, commit the tail forward.
 	cl.r.CommitTail(n)
+	atomic.AddInt64(&cl.system.BytesRecv, int64(n))
 
 	return nil
 }
@@ -289,7 +293,7 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 // Read reads new packets from a client connection
 func (cl *Client) Read(h func(*Client, packets.Packet) error) error {
 	for {
-		if atomic.LoadInt64(&cl.state.done) == 1 && cl.r.CapDelta() == 0 {
+		if atomic.LoadInt64(&cl.State.Done) == 1 && cl.r.CapDelta() == 0 {
 			return nil
 		}
 
@@ -315,40 +319,6 @@ func (cl *Client) Read(h func(*Client, packets.Packet) error) error {
 	}
 }
 
-// ResendInflight will attempt resend send any in-flight messages stored for a client.
-func (cl *Client) ResendInflight(force bool) error {
-	if cl.InFlight.Len() == 0 {
-		return nil
-	}
-
-	nt := time.Now().Unix()
-	for _, tk := range cl.InFlight.GetAll() {
-		if tk.resends >= maxResends { // After a reasonable time, drop inflight packets.
-			cl.InFlight.Delete(tk.Packet.PacketID)
-			continue
-		}
-
-		// Only continue if the resend backoff time has passed and there's a backoff time.
-		if !force && (nt-tk.Sent < resendBackoff[tk.resends] || len(resendBackoff) < tk.resends) {
-			continue
-		}
-
-		if tk.Packet.FixedHeader.Type == packets.Publish {
-			tk.Packet.FixedHeader.Dup = true
-		}
-
-		tk.resends++
-		tk.Sent = nt
-		cl.InFlight.Set(tk.Packet.PacketID, tk)
-		_, err := cl.WritePacket(tk.Packet)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // ReadPacket reads the remaining buffer into an MQTT packet.
 func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err error) {
 	pk.FixedHeader = *fh
@@ -360,6 +330,8 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 	if err != nil {
 		return pk, err
 	}
+	atomic.AddInt64(&cl.system.BytesRecv, int64(len(p)))
+	atomic.AddInt64(&cl.system.MessagesRecv, 1)
 
 	// Decode the remaining packet values using a fresh copy of the bytes,
 	// otherwise the next packet will change the data of this one.
@@ -372,6 +344,9 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 		err = pk.ConnackDecode(px)
 	case packets.Publish:
 		err = pk.PublishDecode(px)
+		if err == nil {
+			atomic.AddInt64(&cl.system.PublishRecv, 1)
+		}
 	case packets.Puback:
 		err = pk.PubackDecode(px)
 	case packets.Pubrec:
@@ -402,7 +377,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 
 // WritePacket encodes and writes a packet to the client.
 func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
-	if atomic.LoadInt64(&cl.state.done) == 1 {
+	if atomic.LoadInt64(&cl.State.Done) == 1 {
 		return 0, ErrConnectionClosed
 	}
 
@@ -417,6 +392,9 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 		err = pk.ConnackEncode(buf)
 	case packets.Publish:
 		err = pk.PublishEncode(buf)
+		if err == nil {
+			atomic.AddInt64(&cl.system.PublishSent, 1)
+		}
 	case packets.Puback:
 		err = pk.PubackEncode(buf)
 	case packets.Pubrec:
@@ -450,10 +428,49 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 	if err != nil {
 		return
 	}
+	atomic.AddInt64(&cl.system.BytesSent, int64(n))
+	atomic.AddInt64(&cl.system.MessagesSent, 1)
 
 	cl.refreshDeadline(cl.keepalive)
 
 	return
+}
+
+// ResendInflight will attempt resend send any in-flight messages stored for a client.
+func (cl *Client) ResendInflight(force bool) error {
+	if cl.Inflight.Len() == 0 {
+		return nil
+	}
+
+	nt := time.Now().Unix()
+	for _, tk := range cl.Inflight.GetAll() {
+		if tk.resends >= maxResends { // After a reasonable time, drop inflight packets.
+			cl.Inflight.Delete(tk.Packet.PacketID)
+			if tk.Packet.FixedHeader.Type == packets.Publish {
+				atomic.AddInt64(&cl.system.PublishDropped, 1)
+			}
+			continue
+		}
+
+		// Only continue if the resend backoff time has passed and there's a backoff time.
+		if !force && (nt-tk.Sent < resendBackoff[tk.resends] || len(resendBackoff) < tk.resends) {
+			continue
+		}
+
+		if tk.Packet.FixedHeader.Type == packets.Publish {
+			tk.Packet.FixedHeader.Dup = true
+		}
+
+		tk.resends++
+		tk.Sent = nt
+		cl.Inflight.Set(tk.Packet.PacketID, tk)
+		_, err := cl.WritePacket(tk.Packet)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // LWT contains the last will and testament details for a client connection.
@@ -464,52 +481,58 @@ type LWT struct {
 	Retain  bool   // indicates whether the will message should be retained
 }
 
-// InFlightMessage contains data about a packet which is currently in-flight.
-type InFlightMessage struct {
+// InflightMessage contains data about a packet which is currently in-flight.
+type InflightMessage struct {
 	Packet  packets.Packet // the packet currently in-flight.
 	Sent    int64          // the last time the message was sent (for retries) in unixtime.
 	resends int            // the number of times the message was attempted to be sent.
 }
 
-// InFlight is a map of InFlightMessage keyed on packet id.
-type InFlight struct {
+// Inflight is a map of InflightMessage keyed on packet id.
+type Inflight struct {
 	sync.RWMutex
-	internal map[uint16]InFlightMessage // internal contains the inflight messages.
+	internal map[uint16]InflightMessage // internal contains the inflight messages.
 }
 
-// Set stores the packet of an in-flight message, keyed on message id.
-func (i *InFlight) Set(key uint16, in InFlightMessage) {
+// Set stores the packet of an Inflight message, keyed on message id. Returns
+// true if the inflight message was new.
+func (i *Inflight) Set(key uint16, in InflightMessage) bool {
 	i.Lock()
+	_, ok := i.internal[key]
 	i.internal[key] = in
 	i.Unlock()
+	return !ok
 }
 
 // Get returns the value of an in-flight message if it exists.
-func (i *InFlight) Get(key uint16) (InFlightMessage, bool) {
+func (i *Inflight) Get(key uint16) (InflightMessage, bool) {
 	i.RLock()
 	val, ok := i.internal[key]
 	i.RUnlock()
 	return val, ok
 }
 
-// Len returns the size of the inflight messages map.
-func (i *InFlight) Len() int {
+// Len returns the size of the in-flight messages map.
+func (i *Inflight) Len() int {
 	i.RLock()
 	v := len(i.internal)
 	i.RUnlock()
 	return v
 }
 
-// GetAll returns all the inflight messages.
-func (i *InFlight) GetAll() map[uint16]InFlightMessage {
+// GetAll returns all the in-flight messages.
+func (i *Inflight) GetAll() map[uint16]InflightMessage {
 	i.RLock()
 	defer i.RUnlock()
 	return i.internal
 }
 
-// Delete removes an in-flight message from the map.
-func (i *InFlight) Delete(key uint16) {
+// Delete removes an in-flight message from the map. Returns true if the
+// message existed.
+func (i *Inflight) Delete(key uint16) bool {
 	i.Lock()
+	_, ok := i.internal[key]
 	delete(i.internal, key)
 	i.Unlock()
+	return ok
 }

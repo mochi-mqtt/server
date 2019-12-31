@@ -36,33 +36,54 @@ func New() *Index {
 	}
 }
 
-// RetainMessage saves a message payload to the end of a topic branch.
-func (x *Index) RetainMessage(msg packets.Packet) {
+// RetainMessage saves a message payload to the end of a topic branch. Returns
+// 1 if a retained message was added, 0 if there was no change, and -1 if the
+// retained message was removed.
+func (x *Index) RetainMessage(msg packets.Packet) int64 {
+	var q int64
+
 	x.mu.Lock()
 	defer x.mu.Unlock()
+	n := x.poperate(msg.TopicName)
 	if len(msg.Payload) > 0 {
-		n := x.poperate(msg.TopicName)
+		if n.Message.FixedHeader.Retain == false {
+			q = 1
+		}
 		n.Message = msg
 	} else {
+		if n.Message.FixedHeader.Retain == true {
+			q = -1
+		}
 		x.unpoperate(msg.TopicName, "", true)
 	}
+
+	return q
 }
 
-// Subscribe creates a subscription filter for a client.
-func (x *Index) Subscribe(filter, client string, qos byte) {
+// Subscribe creates a subscription filter for a client. Returns true if the
+// subscription was new.
+func (x *Index) Subscribe(filter, client string, qos byte) bool {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+
 	n := x.poperate(filter)
+	_, ok := n.Clients[client]
 	n.Clients[client] = qos
 	n.Filter = filter
+
+	return !ok
 }
 
 // Unsubscribe removes a subscription filter for a client. Returns true if an
-// unsubscribe action sucessful.
+// unsubscribe action successful and the subscription existed.
 func (x *Index) Unsubscribe(filter, client string) bool {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	return x.unpoperate(filter, client, false)
+
+	n := x.poperate(filter)
+	_, ok := n.Clients[client]
+
+	return x.unpoperate(filter, client, false) && ok
 }
 
 // unpoperate steps backward through a trie sequence and removes any orphaned

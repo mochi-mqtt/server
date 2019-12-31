@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ import (
 func setupClient() (s *Server, cl *clients.Client, r net.Conn, w net.Conn) {
 	s = New()
 	r, w = net.Pipe()
-	cl = clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8))
+	cl = clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
 	cl.ID = "mochi"
 	cl.AC = new(auth.Allow)
 	cl.Start()
@@ -109,7 +110,7 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 
 	// Existing conneciton with subscription.
 	c, _ := net.Pipe()
-	cl := clients.NewClient(c, circ.NewReader(256, 8), circ.NewWriter(256, 8))
+	cl := clients.NewClient(c, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
 	cl.ID = "mochi"
 	cl.Subscriptions = map[string]byte{
 		"a/b/c": 1,
@@ -165,7 +166,7 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 	s := New()
 
 	c, _ := net.Pipe()
-	cl := clients.NewClient(c, circ.NewReader(256, 8), circ.NewWriter(256, 8))
+	cl := clients.NewClient(c, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
 	cl.ID = "mochi"
 	cl.Subscriptions = map[string]byte{
 		"a/b/c": 1,
@@ -408,7 +409,7 @@ func TestServerWriteClient(t *testing.T) {
 func TestServerWriteClientError(t *testing.T) {
 	s := New()
 	w, _ := net.Pipe()
-	cl := clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8))
+	cl := clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
 	cl.ID = "mochi"
 
 	err := s.writeClient(cl, packets.Packet{})
@@ -524,6 +525,8 @@ func TestServerProcessPublishQoS1Retain(t *testing.T) {
 		ack2 <- buf
 	}()
 
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.PublishRecv))
+
 	err := s.processPacket(cl1, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type:   packets.Publish,
@@ -552,6 +555,9 @@ func TestServerProcessPublishQoS1Retain(t *testing.T) {
 		0, 1,
 		'h', 'e', 'l', 'l', 'o',
 	}, <-ack2)
+
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.PublishRecv))
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.Retained))
 }
 
 func TestServerProcessPublishQoS2(t *testing.T) {
@@ -569,9 +575,8 @@ func TestServerProcessPublishQoS2(t *testing.T) {
 
 	err := s.processPacket(cl1, packets.Packet{
 		FixedHeader: packets.FixedHeader{
-			Type:   packets.Publish,
-			Qos:    2,
-			Retain: true,
+			Type: packets.Publish,
+			Qos:  2,
 		},
 		TopicName: "a/b/c",
 		Payload:   []byte("hello"),
@@ -586,6 +591,8 @@ func TestServerProcessPublishQoS2(t *testing.T) {
 		byte(packets.Pubrec << 4), 2, // Fixed header
 		0, 12, // Packet ID - LSB+MSB
 	}, <-ack1)
+
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Retained))
 }
 
 func TestServerProcessPublishOfflineQueuing(t *testing.T) {
@@ -624,6 +631,8 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	require.Equal(t, int64(2), atomic.LoadInt64(&s.System.Inflight))
+
 	time.Sleep(10 * time.Millisecond)
 	w1.Close()
 
@@ -634,7 +643,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 		0, 2,
 	}, <-ack1)
 
-	queued := cl2.InFlight.GetAll()
+	queued := cl2.Inflight.GetAll()
 	require.Equal(t, 2, len(queued))
 	require.Equal(t, "qos1", queued[1].Packet.TopicName)
 	require.Equal(t, "qos2", queued[2].Packet.TopicName)
@@ -749,7 +758,8 @@ func TestServerProcessPublishWriteAckError(t *testing.T) {
 
 func TestServerProcessPuback(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.InFlight.Set(11, clients.InFlightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
+	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
+	atomic.AddInt64(&s.System.Inflight, 1)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -759,14 +769,16 @@ func TestServerProcessPuback(t *testing.T) {
 		PacketID: 11,
 	})
 	require.NoError(t, err)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Inflight))
 
-	_, ok := cl.InFlight.Get(11)
+	_, ok := cl.Inflight.Get(11)
 	require.Equal(t, false, ok)
 }
 
 func TestServerProcessPubrec(t *testing.T) {
 	s, cl, r, w := setupClient()
-	cl.InFlight.Set(12, clients.InFlightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
+	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
+	atomic.AddInt64(&s.System.Inflight, 1)
 
 	recv := make(chan []byte)
 	go func() {
@@ -787,6 +799,7 @@ func TestServerProcessPubrec(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond)
 	w.Close()
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.Inflight))
 
 	require.Equal(t, []byte{
 		byte(packets.Pubrel<<4) | 2, 2,
@@ -798,7 +811,7 @@ func TestServerProcessPubrec(t *testing.T) {
 func TestServerProcessPubrecError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Stop()
-	cl.InFlight.Set(12, clients.InFlightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
+	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -811,7 +824,8 @@ func TestServerProcessPubrecError(t *testing.T) {
 
 func TestServerProcessPubrel(t *testing.T) {
 	s, cl, r, w := setupClient()
-	cl.InFlight.Set(10, clients.InFlightMessage{Packet: packets.Packet{PacketID: 10}, Sent: 0})
+	cl.Inflight.Set(10, clients.InflightMessage{Packet: packets.Packet{PacketID: 10}, Sent: 0})
+	atomic.AddInt64(&s.System.Inflight, 1)
 
 	recv := make(chan []byte)
 	go func() {
@@ -830,6 +844,7 @@ func TestServerProcessPubrel(t *testing.T) {
 	})
 
 	require.NoError(t, err)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Inflight))
 	time.Sleep(10 * time.Millisecond)
 	w.Close()
 
@@ -842,7 +857,7 @@ func TestServerProcessPubrel(t *testing.T) {
 func TestServerProcessPubrelError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Stop()
-	cl.InFlight.Set(12, clients.InFlightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
+	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -855,7 +870,8 @@ func TestServerProcessPubrelError(t *testing.T) {
 
 func TestServerProcessPubcomp(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.InFlight.Set(11, clients.InFlightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
+	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
+	atomic.AddInt64(&s.System.Inflight, 1)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -865,8 +881,9 @@ func TestServerProcessPubcomp(t *testing.T) {
 		PacketID: 11,
 	})
 	require.NoError(t, err)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Inflight))
 
-	_, ok := cl.InFlight.Get(11)
+	_, ok := cl.Inflight.Get(11)
 	require.Equal(t, false, ok)
 }
 

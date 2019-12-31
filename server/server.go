@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/mochi-co/mqtt/server/internal/circ"
@@ -80,12 +81,12 @@ func (s *Server) Serve() error {
 
 // EstablishConnection establishes a new client connection with the broker.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
-	//cl := clients.NewClient(c, circ.NewReader(0, 0), circ.NewWriter(0, 0))
 	xbr := s.bytepool.Get()
 	xbw := s.bytepool.Get()
 	cl := clients.NewClient(c,
 		circ.NewReaderFromSlice(0, xbr),
 		circ.NewWriterFromSlice(0, xbw),
+		s.System,
 	)
 
 	cl.Start()
@@ -112,21 +113,35 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		retcode = packets.CodeConnectBadAuthValues
 	}
 
+	atomic.AddInt64(&s.System.ConnectionsTotal, 1)
+	atomic.AddInt64(&s.System.ClientsConnected, 1)
+
 	var sessionPresent bool
 	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
 		existing.Lock()
+		if atomic.LoadInt64(&existing.State.Done) == 1 {
+			atomic.AddInt64(&s.System.ClientsDisconnected, -1)
+		}
 		existing.Stop()
 		if pk.CleanSession {
 			for k := range existing.Subscriptions {
 				delete(existing.Subscriptions, k)
-				s.Topics.Unsubscribe(k, existing.ID)
+				q := s.Topics.Unsubscribe(k, existing.ID)
+				if q {
+					atomic.AddInt64(&s.System.Subscriptions, -1)
+				}
 			}
 		} else {
-			cl.InFlight = existing.InFlight // Inherit from existing session.
+			cl.Inflight = existing.Inflight // Inherit from existing session.
 			cl.Subscriptions = existing.Subscriptions
 			sessionPresent = true
 		}
 		existing.Unlock()
+	} else {
+		atomic.AddInt64(&s.System.ClientsTotal, 1)
+		if atomic.LoadInt64(&s.System.ClientsConnected) > atomic.LoadInt64(&s.System.ClientsMax) {
+			atomic.AddInt64(&s.System.ClientsMax, 1)
+		}
 	}
 
 	s.Clients.Add(cl) // Overwrite any existing client with the same name.
@@ -151,6 +166,10 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	s.bytepool.Put(xbr)
 	s.bytepool.Put(xbw)
+
+	atomic.AddInt64(&s.System.ClientsConnected, -1)
+	atomic.AddInt64(&s.System.ClientsDisconnected, 1)
+
 	return err
 }
 
@@ -238,7 +257,7 @@ func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) error {
 
 // processPublish processes a Publish packet.
 func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
-	if len(pk.TopicName) > 0 && pk.TopicName[0:4] == "$SYS" {
+	if len(pk.TopicName) >= 4 && pk.TopicName[0:4] == "$SYS" {
 		return nil
 	}
 
@@ -247,7 +266,8 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 	}
 
 	if pk.FixedHeader.Retain {
-		s.Topics.RetainMessage(pk.PublishCopy())
+		q := s.Topics.RetainMessage(pk.PublishCopy())
+		atomic.AddInt64(&s.System.Retained, q)
 	}
 
 	if pk.FixedHeader.Qos > 0 {
@@ -284,10 +304,13 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 				// the client at some point, one way or another. Store the publish
 				// packet in the client's inflight queue and attempt to redeliver
 				// if an appropriate ack is not received (or if the client is offline).
-				client.InFlight.Set(out.PacketID, clients.InFlightMessage{
+				q := client.Inflight.Set(out.PacketID, clients.InflightMessage{
 					Packet: out,
 					Sent:   time.Now().Unix(),
 				})
+				if q {
+					atomic.AddInt64(&s.System.Inflight, 1)
+				}
 			}
 
 			s.writeClient(client, out)
@@ -299,7 +322,10 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 // processPuback processes a Puback packet.
 func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) error {
-	cl.InFlight.Delete(pk.PacketID)
+	q := cl.Inflight.Delete(pk.PacketID)
+	if q {
+		atomic.AddInt64(&s.System.Inflight, -1)
+	}
 	return nil
 }
 
@@ -334,14 +360,20 @@ func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
 	if err != nil {
 		return err
 	}
-	cl.InFlight.Delete(pk.PacketID)
+	q := cl.Inflight.Delete(pk.PacketID)
+	if q {
+		atomic.AddInt64(&s.System.Inflight, -1)
+	}
 
 	return nil
 }
 
 // processPubcomp processes a Pubcomp packet.
 func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
-	cl.InFlight.Delete(pk.PacketID)
+	q := cl.Inflight.Delete(pk.PacketID)
+	if q {
+		atomic.AddInt64(&s.System.Inflight, -1)
+	}
 	return nil
 }
 
@@ -352,7 +384,10 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 		if !cl.AC.ACL(cl.Username, pk.Topics[i], false) {
 			retCodes[i] = packets.ErrSubAckNetworkError
 		} else {
-			s.Topics.Subscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
+			q := s.Topics.Subscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
+			if q {
+				atomic.AddInt64(&s.System.Subscriptions, 1)
+			}
 			cl.NoteSubscription(pk.Topics[i], pk.Qoss[i])
 			retCodes[i] = pk.Qoss[i]
 		}
@@ -382,7 +417,10 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 // processUnsubscribe processes an unsubscribe packet.
 func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error {
 	for i := 0; i < len(pk.Topics); i++ {
-		s.Topics.Unsubscribe(pk.Topics[i], cl.ID)
+		q := s.Topics.Unsubscribe(pk.Topics[i], cl.ID)
+		if q {
+			atomic.AddInt64(&s.System.Subscriptions, -1)
+		}
 		cl.ForgetSubscription(pk.Topics[i])
 	}
 

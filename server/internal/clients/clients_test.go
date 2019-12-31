@@ -12,12 +12,13 @@ import (
 	"github.com/mochi-co/mqtt/server/internal/circ"
 	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt/server/system"
 	"github.com/stretchr/testify/require"
 )
 
 func genClient() *Client {
 	c, _ := net.Pipe()
-	return NewClient(c, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+	return NewClient(c, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
 }
 
 func TestNewClients(t *testing.T) {
@@ -127,19 +128,19 @@ func TestNewClient(t *testing.T) {
 	cl := genClient()
 
 	require.NotNil(t, cl)
-	require.NotNil(t, cl.InFlight.internal)
+	require.NotNil(t, cl.Inflight.internal)
 	require.NotNil(t, cl.Subscriptions)
 	require.NotNil(t, cl.r)
 	require.NotNil(t, cl.w)
-	require.NotNil(t, cl.state.started)
-	require.NotNil(t, cl.state.endedW)
-	require.NotNil(t, cl.state.endedR)
+	require.NotNil(t, cl.State.started)
+	require.NotNil(t, cl.State.endedW)
+	require.NotNil(t, cl.State.endedR)
 }
 
 func BenchmarkNewClient(b *testing.B) {
 	c, _ := net.Pipe()
 	for n := 0; n < b.N; n++ {
-		NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4))
+		NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4), nil)
 	}
 }
 
@@ -325,10 +326,12 @@ func TestClientReadFixedHeader(t *testing.T) {
 	fh := new(packets.FixedHeader)
 	err := cl.ReadFixedHeader(fh)
 	require.NoError(t, err)
+	require.Equal(t, int64(2), atomic.LoadInt64(&cl.system.BytesRecv))
 
 	tail, head := cl.r.GetPos()
 	require.Equal(t, int64(2), tail)
 	require.Equal(t, int64(2), head)
+
 }
 
 func TestClientReadFixedHeaderDecodeError(t *testing.T) {
@@ -439,13 +442,16 @@ func TestClientReadOK(t *testing.T) {
 		},
 	})
 
+	require.Equal(t, int64(len(b)), atomic.LoadInt64(&cl.system.BytesRecv))
+	require.Equal(t, int64(2), atomic.LoadInt64(&cl.system.MessagesRecv))
+
 }
 
 func TestClientReadDone(t *testing.T) {
 	cl := genClient()
 	cl.Start()
 	defer cl.Stop()
-	cl.state.done = 1
+	cl.State.Done = 1
 
 	err := cl.Read(func(cl *Client, pk packets.Packet) error {
 		return nil
@@ -553,6 +559,9 @@ func TestClientReadPacket(t *testing.T) {
 		require.NotNil(t, pk)
 
 		require.Equal(t, tt.packet, pk, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
+		if tt.packet.FixedHeader.Type == packets.Publish {
+			require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.PublishRecv))
+		}
 	}
 }
 
@@ -605,7 +614,7 @@ func TestClientReadPacketReadUnknown(t *testing.T) {
 func TestClientWritePacket(t *testing.T) {
 	for i, tt := range pkTable {
 		r, w := net.Pipe()
-		cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+		cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
 		cl.Start()
 
 		o := make(chan []byte)
@@ -624,12 +633,17 @@ func TestClientWritePacket(t *testing.T) {
 
 		require.Equal(t, tt.bytes, <-o, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
 		cl.Stop()
+		require.Equal(t, int64(n), atomic.LoadInt64(&cl.system.BytesSent))
+		require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.MessagesSent))
+		if tt.packet.FixedHeader.Type == packets.Publish {
+			require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.PublishSent))
+		}
 	}
 }
 
 func TestClientWritePacketWriteNoConn(t *testing.T) {
 	c, _ := net.Pipe()
-	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4))
+	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4), new(system.Info))
 	cl.w.SetPos(0, 16)
 	cl.Stop()
 
@@ -640,7 +654,7 @@ func TestClientWritePacketWriteNoConn(t *testing.T) {
 
 func TestClientWritePacketWriteError(t *testing.T) {
 	c, _ := net.Pipe()
-	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4))
+	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4), new(system.Info))
 	cl.w.SetPos(0, 16)
 	cl.w.Stop()
 
@@ -650,7 +664,7 @@ func TestClientWritePacketWriteError(t *testing.T) {
 
 func TestClientWritePacketInvalidPacket(t *testing.T) {
 	c, _ := net.Pipe()
-	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4))
+	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4), new(system.Info))
 	cl.Start()
 
 	_, err := cl.WritePacket(packets.Packet{})
@@ -659,7 +673,7 @@ func TestClientWritePacketInvalidPacket(t *testing.T) {
 
 func TestClientResendInflight(t *testing.T) {
 	r, w := net.Pipe()
-	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
 	cl.Start()
 
 	o := make(chan []byte)
@@ -679,7 +693,7 @@ func TestClientResendInflight(t *testing.T) {
 		PacketID:  11,
 	}
 
-	cl.InFlight.Set(pk1.PacketID, InFlightMessage{
+	cl.Inflight.Set(pk1.PacketID, InflightMessage{
 		Packet: pk1,
 		Sent:   time.Now().Unix(),
 	})
@@ -699,14 +713,14 @@ func TestClientResendInflight(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, rcv)
 
-	m := cl.InFlight.GetAll()
+	m := cl.Inflight.GetAll()
 	require.Equal(t, 1, m[11].resends) // index is packet id
 
 }
 
 func TestClientResendBackoff(t *testing.T) {
 	r, w := net.Pipe()
-	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
 	cl.Start()
 
 	o := make(chan []byte)
@@ -726,7 +740,7 @@ func TestClientResendBackoff(t *testing.T) {
 		PacketID:  11,
 	}
 
-	cl.InFlight.Set(pk1.PacketID, InFlightMessage{
+	cl.Inflight.Set(pk1.PacketID, InflightMessage{
 		Packet:  pk1,
 		Sent:    time.Now().Unix(),
 		resends: 0,
@@ -752,13 +766,13 @@ func TestClientResendBackoff(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, rcv)
 
-	m := cl.InFlight.GetAll()
+	m := cl.Inflight.GetAll()
 	require.Equal(t, 1, m[11].resends) // index is packet id
 }
 
 func TestClientResendInflightNoMessages(t *testing.T) {
 	r, _ := net.Pipe()
-	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
 	out := []packets.Packet{}
 	err := cl.ResendInflight(true)
 	require.NoError(t, err)
@@ -768,7 +782,7 @@ func TestClientResendInflightNoMessages(t *testing.T) {
 
 func TestClientResendInflightDropMessage(t *testing.T) {
 	r, _ := net.Pipe()
-	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
 
 	pk1 := packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -780,7 +794,7 @@ func TestClientResendInflightDropMessage(t *testing.T) {
 		PacketID:  11,
 	}
 
-	cl.InFlight.Set(pk1.PacketID, InFlightMessage{
+	cl.Inflight.Set(pk1.PacketID, InflightMessage{
 		Packet:  pk1,
 		Sent:    time.Now().Unix(),
 		resends: maxResends,
@@ -790,15 +804,16 @@ func TestClientResendInflightDropMessage(t *testing.T) {
 	require.NoError(t, err)
 	r.Close()
 
-	m := cl.InFlight.GetAll()
+	m := cl.Inflight.GetAll()
 	require.Equal(t, 0, len(m))
+	require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.PublishDropped))
 }
 
 func TestClientResendInflightError(t *testing.T) {
 	r, _ := net.Pipe()
-	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8))
+	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
 
-	cl.InFlight.Set(1, InFlightMessage{
+	cl.Inflight.Set(1, InflightMessage{
 		Packet: packets.Packet{},
 		Sent:   time.Now().Unix(),
 	})
@@ -809,74 +824,82 @@ func TestClientResendInflightError(t *testing.T) {
 
 /////
 
-func TestInFlightSet(t *testing.T) {
+func TestInflightSet(t *testing.T) {
 	cl := genClient()
-	cl.InFlight.Set(1, InFlightMessage{Packet: packets.Packet{}, Sent: 0})
-	require.NotNil(t, cl.InFlight.internal[1])
-	require.NotEqual(t, 0, cl.InFlight.internal[1].Sent)
+	q := cl.Inflight.Set(1, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	require.Equal(t, true, q)
+	require.NotNil(t, cl.Inflight.internal[1])
+	require.NotEqual(t, 0, cl.Inflight.internal[1].Sent)
+
+	q = cl.Inflight.Set(1, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	require.Equal(t, false, q)
 }
 
-func BenchmarkInFlightSet(b *testing.B) {
+func BenchmarkInflightSet(b *testing.B) {
 	cl := genClient()
-	in := InFlightMessage{Packet: packets.Packet{}, Sent: 0}
+	in := InflightMessage{Packet: packets.Packet{}, Sent: 0}
 	for n := 0; n < b.N; n++ {
-		cl.InFlight.Set(1, in)
+		cl.Inflight.Set(1, in)
 	}
 }
 
-func TestInFlightGet(t *testing.T) {
+func TestInflightGet(t *testing.T) {
 	cl := genClient()
-	cl.InFlight.Set(2, InFlightMessage{Packet: packets.Packet{}, Sent: 0})
+	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
 
-	msg, ok := cl.InFlight.Get(2)
+	msg, ok := cl.Inflight.Get(2)
 	require.Equal(t, true, ok)
 	require.NotEqual(t, 0, msg.Sent)
 }
 
-func BenchmarkInFlightGet(b *testing.B) {
+func BenchmarkInflightGet(b *testing.B) {
 	cl := genClient()
-	cl.InFlight.Set(2, InFlightMessage{Packet: packets.Packet{}, Sent: 0})
+	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
 	for n := 0; n < b.N; n++ {
-		cl.InFlight.Get(2)
+		cl.Inflight.Get(2)
 	}
 }
 
-func TestInFlightGetAll(t *testing.T) {
+func TestInflightGetAll(t *testing.T) {
 	cl := genClient()
-	cl.InFlight.Set(2, InFlightMessage{})
+	cl.Inflight.Set(2, InflightMessage{})
 
-	m := cl.InFlight.GetAll()
-	o := map[uint16]InFlightMessage{
-		2: InFlightMessage{},
+	m := cl.Inflight.GetAll()
+	o := map[uint16]InflightMessage{
+		2: InflightMessage{},
 	}
 	require.Equal(t, o, m)
 }
 
-func BenchmarkInFlightGetAll(b *testing.B) {
+func BenchmarkInflightGetAll(b *testing.B) {
 	cl := genClient()
-	cl.InFlight.Set(2, InFlightMessage{Packet: packets.Packet{}, Sent: 0})
+	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
 	for n := 0; n < b.N; n++ {
-		cl.InFlight.Get(2)
+		cl.Inflight.Get(2)
 	}
 }
 
-func TestInFlightDelete(t *testing.T) {
+func TestInflightDelete(t *testing.T) {
 	cl := genClient()
-	cl.InFlight.Set(3, InFlightMessage{Packet: packets.Packet{}, Sent: 0})
-	require.NotNil(t, cl.InFlight.internal[3])
+	cl.Inflight.Set(3, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	require.NotNil(t, cl.Inflight.internal[3])
 
-	cl.InFlight.Delete(3)
-	require.Equal(t, int64(0), cl.InFlight.internal[3].Sent)
+	q := cl.Inflight.Delete(3)
+	require.Equal(t, true, q)
+	require.Equal(t, int64(0), cl.Inflight.internal[3].Sent)
 
-	_, ok := cl.InFlight.Get(3)
+	_, ok := cl.Inflight.Get(3)
 	require.Equal(t, false, ok)
+
+	q = cl.Inflight.Delete(3)
+	require.Equal(t, false, q)
 }
 
-func BenchmarkInFlightDelete(b *testing.B) {
+func BenchmarkInflightDelete(b *testing.B) {
 	cl := genClient()
 	for n := 0; n < b.N; n++ {
-		cl.InFlight.Set(4, InFlightMessage{Packet: packets.Packet{}, Sent: 0})
-		cl.InFlight.Delete(4)
+		cl.Inflight.Set(4, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+		cl.Inflight.Delete(4)
 	}
 }
 

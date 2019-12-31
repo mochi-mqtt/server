@@ -79,11 +79,24 @@ func BenchmarkUnpoperate(b *testing.B) {
 }
 
 func TestRetainMessage(t *testing.T) {
-	pk := packets.Packet{TopicName: "path/to/my/mqtt", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
-	pk2 := packets.Packet{TopicName: "path/to/another/mqtt", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
+	pk := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Retain: true,
+		},
+		TopicName: "path/to/my/mqtt",
+		Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
+	}
+	pk2 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Retain: true,
+		},
+		TopicName: "path/to/another/mqtt",
+		Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
+	}
 
 	index := New()
-	index.RetainMessage(pk)
+	q := index.RetainMessage(pk)
+	require.Equal(t, int64(1), q)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
 	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
 
@@ -91,14 +104,22 @@ func TestRetainMessage(t *testing.T) {
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients["client-1"])
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
 
-	index.RetainMessage(pk2)
+	q = index.RetainMessage(pk2)
+	require.Equal(t, int64(1), q)
+	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
+	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
+	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
+
+	q = index.RetainMessage(pk2) // already exsiting
+	require.Equal(t, int64(0), q)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
 	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
 
 	// Delete retained
 	pk3 := packets.Packet{TopicName: "path/to/another/mqtt", Payload: []byte{}}
-	index.RetainMessage(pk3)
+	q = index.RetainMessage(pk3)
+	require.Equal(t, int64(-1), q)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
 	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
 	require.Equal(t, false, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message.FixedHeader.Retain)
@@ -114,11 +135,24 @@ func BenchmarkRetainMessage(b *testing.B) {
 
 func TestSubscribeOK(t *testing.T) {
 	index := New()
-	index.Subscribe("path/to/my/mqtt", "client-1", 0)
-	index.Subscribe("path/to/my/mqtt", "client-2", 0)
-	index.Subscribe("path/to/another/mqtt", "client-1", 0)
-	index.Subscribe("path/+", "client-2", 0)
-	index.Subscribe("#", "client-3", 0)
+
+	q := index.Subscribe("path/to/my/mqtt", "client-1", 0)
+	require.Equal(t, true, q)
+
+	q = index.Subscribe("path/to/my/mqtt", "client-1", 0)
+	require.Equal(t, false, q)
+
+	q = index.Subscribe("path/to/my/mqtt", "client-2", 0)
+	require.Equal(t, true, q)
+
+	q = index.Subscribe("path/to/another/mqtt", "client-1", 0)
+	require.Equal(t, true, q)
+
+	q = index.Subscribe("path/+", "client-2", 0)
+	require.Equal(t, true, q)
+
+	q = index.Subscribe("#", "client-3", 0)
+	require.Equal(t, true, q)
 
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Clients, "client-1")
 	require.Equal(t, "path/to/my/mqtt", index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Filter)
@@ -152,13 +186,14 @@ func TestUnsubscribeA(t *testing.T) {
 	require.Contains(t, index.Root.Leaves["#"].Clients, "client-3")
 
 	ok := index.Unsubscribe("path/to/my/mqtt", "client-1")
-
 	require.Equal(t, true, ok)
+
 	require.Nil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"])
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["+"].Leaves["mqtt"].Clients, "client-1")
 
 	ok = index.Unsubscribe("path/to/stuff", "client-1")
 	require.Equal(t, true, ok)
+
 	require.NotContains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients, "client-1")
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["stuff"].Clients, "client-2")
 	require.Contains(t, index.Root.Leaves["#"].Clients, "client-3")

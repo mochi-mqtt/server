@@ -13,8 +13,8 @@ BenchmarkNewClient-4                  	 2598082	       461 ns/op	     448 B/op	 
 BenchmarkNextPacketID-4               	100000000	        11.6 ns/op	       0 B/op	       0 allocs/op
 BenchmarkClientNoteSubscription-4     	24480771	        46.5 ns/op	       0 B/op	       0 allocs/op
 BenchmarkClientForgetSubscription-4   	12960447	        95.5 ns/op	       0 B/op	       0 allocs/op
-BenchmarkInFlightSet-4                	17793058	        67.1 ns/op	       0 B/op	       0 allocs/op
-BenchmarkInFlightGet-4                	25092826	        46.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkInflightSet-4                	17793058	        67.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkInflightGet-4                	25092826	        46.4 ns/op	       0 B/op	       0 allocs/op
 BenchmarkNew-4                        	22918302	        44.3 ns/op	       0 B/op	       0 allocs/op
 BenchmarkServerAddListener-4          	 7614312	       160 ns/op	       0 B/op	       0 allocs/op
 BenchmarkServerServe-4                	  405841	      4993 ns/op	     556 B/op	       4 allocs/op
