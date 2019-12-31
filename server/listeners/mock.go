@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt/server/system"
 )
 
 // MockCloser is a function signature which can be used in testing.
@@ -52,7 +53,7 @@ func (l *MockListener) Serve(establisher EstablishFunc) {
 }
 
 // SetConfig sets the configuration values of the mock listener.
-func (l *MockListener) Listen() error {
+func (l *MockListener) Listen(s *system.Info) error {
 	if l.errListen {
 		return fmt.Errorf("listen failure")
 	}

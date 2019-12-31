@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt/server/system"
 )
 
 // TCP is a listener for establishing client connections on basic TCP protocol.
@@ -58,7 +59,7 @@ func (l *TCP) ID() string {
 }
 
 // Listen starts listening on the listener's network address.
-func (l *TCP) Listen() error {
+func (l *TCP) Listen(s *system.Info) error {
 	var err error
 	l.listen, err = net.Listen(l.protocol, l.address)
 	if err != nil {

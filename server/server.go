@@ -30,25 +30,30 @@ var (
 
 // Server is an MQTT broker server.
 type Server struct {
-	bytepool  circ.BytesPool      // a byte pool for packet bytes.
-	Listeners listeners.Listeners // listeners listen for new connections.
-	Clients   clients.Clients     // clients known to the broker.
-	Topics    *topics.Index       // an index of topic subscriptions and retained messages.
-	System    *system.Info        // values commonly found in $SYS topics.
+	bytepool  circ.BytesPool       // a byte pool for packet bytes.
+	Listeners *listeners.Listeners // listeners listen for new connections.
+	Clients   *clients.Clients     // clients known to the broker.
+	Topics    *topics.Index        // an index of topic subscriptions and retained messages.
+	System    *system.Info         // values commonly found in $SYS topics.
 }
 
 // New returns a new instance of an MQTT broker.
 func New() *Server {
-	return &Server{
-		bytepool:  circ.NewBytesPool(circ.DefaultBufferSize),
-		Listeners: listeners.New(),
-		Clients:   clients.New(),
-		Topics:    topics.New(),
+	s := &Server{
+		bytepool: circ.NewBytesPool(circ.DefaultBufferSize),
+		Clients:  clients.New(),
+		Topics:   topics.New(),
 		System: &system.Info{
 			Version: Version,
 			Started: time.Now().Unix(),
 		},
 	}
+
+	// Expose server stats to the listeners so it can be used in the dashboard
+	// and other experimental listeners.
+	s.Listeners = listeners.New(s.System)
+
+	return s
 }
 
 // AddListener adds a new network listener to the server.

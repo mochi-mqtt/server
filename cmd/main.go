@@ -53,7 +53,7 @@ func main() {
 		panic(err)
 	}
 
-	stats := listeners.NewHTTPStats("stats", ":8080", server.System)
+	stats := listeners.NewHTTPStats("stats", ":8080")
 	err = server.AddListener(stats, nil)
 	if err != nil {
 		panic(err)

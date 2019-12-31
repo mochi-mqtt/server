@@ -33,8 +33,8 @@ type Clients struct {
 }
 
 // New returns an instance of Clients.
-func New() Clients {
-	return Clients{
+func New() *Clients {
+	return &Clients{
 		internal: make(map[string]*Client),
 	}
 }

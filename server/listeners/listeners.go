@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt/server/system"
 )
 
 // Config contains configuration values for a listener.
@@ -27,11 +28,11 @@ type CloseFunc func(id string)
 // Listener is an interface for network listeners. A network listener listens
 // for incoming client connections and adds them to the server.
 type Listener interface {
-	SetConfig(*Config)   // set the listener config.
-	Listen() error       // open the network address.
-	Serve(EstablishFunc) // starting actively listening for new connections.
-	ID() string          // return the id of the listener.
-	Close(CloseFunc)     // stop and close the listener.
+	SetConfig(*Config)           // set the listener config.
+	Listen(s *system.Info) error // open the network address.
+	Serve(EstablishFunc)         // starting actively listening for new connections.
+	ID() string                  // return the id of the listener.
+	Close(CloseFunc)             // stop and close the listener.
 }
 
 // Listeners contains the network listeners for the broker.
@@ -39,12 +40,14 @@ type Listeners struct {
 	sync.RWMutex
 	wg       sync.WaitGroup      // a waitgroup that waits for all listeners to finish.
 	internal map[string]Listener // a map of active listeners.
+	system   *system.Info        // pointers to system info.
 }
 
 // New returns a new instance of Listeners.
-func New() Listeners {
-	return Listeners{
+func New(s *system.Info) *Listeners {
+	return &Listeners{
 		internal: map[string]Listener{},
+		system:   s,
 	}
 }
 
@@ -85,7 +88,7 @@ func (l *Listeners) Serve(id string, establisher EstablishFunc) error {
 	l.RUnlock()
 
 	// Start listening on the network address.
-	err := listener.Listen()
+	err := listener.Listen(l.system)
 	if err != nil {
 		return err
 	}

@@ -29,7 +29,7 @@ func TestNewMockListenerListen(t *testing.T) {
 	require.Equal(t, ":1882", mocked.address)
 
 	require.Equal(t, false, mocked.IsListening)
-	mocked.Listen()
+	mocked.Listen(nil)
 	require.Equal(t, true, mocked.IsListening)
 }
 
@@ -53,7 +53,7 @@ func TestMockListenerServe(t *testing.T) {
 	require.Equal(t, true, closed)
 	<-o
 
-	mocked.Listen()
+	mocked.Listen(nil)
 }
 
 func TestMockListenerSetConfig(t *testing.T) {

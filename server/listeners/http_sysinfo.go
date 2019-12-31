@@ -2,6 +2,7 @@ package listeners
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"sync"
@@ -17,18 +18,17 @@ type HTTPStats struct {
 	sync.RWMutex
 	id      string       // the internal id of the listener.
 	config  *Config      // configuration values for the listener.
+	system  *system.Info // pointers to the server data.
 	address string       // the network address to bind to.
 	listen  *http.Server // the http server.
-	system  *system.Info // a pointer to the server's system info struct.
 	end     int64        // ensure the close methods are only called once.}
 }
 
 // NewHTTPStats initialises and returns a new HTTP listener, listening on an address.
-func NewHTTPStats(id, address string, s *system.Info) *HTTPStats {
+func NewHTTPStats(id, address string) *HTTPStats {
 	return &HTTPStats{
 		id:      id,
 		address: address,
-		system:  s,
 		config: &Config{
 			Auth: new(auth.Allow),
 			TLS:  new(TLS),
@@ -61,7 +61,9 @@ func (l *HTTPStats) ID() string {
 }
 
 // Listen starts listening on the listener's network address.
-func (l *HTTPStats) Listen() error {
+func (l *HTTPStats) Listen(s *system.Info) error {
+	l.system = s
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", l.jsonHandler)
 	l.listen = &http.Server{
@@ -88,9 +90,17 @@ func (l *HTTPStats) Close(closeClients CloseFunc) {
 		defer cancel()
 		l.listen.Shutdown(ctx)
 	}
+
+	closeClients(l.id)
 }
 
 // jsonHandler is an HTTP handler which outputs the $SYS stats as JSON.
 func (l *HTTPStats) jsonHandler(w http.ResponseWriter, req *http.Request) {
-	io.WriteString(w, l.system.Version)
+	info, err := json.MarshalIndent(l.system, "", "\t")
+	if err != nil {
+		io.WriteString(w, err.Error())
+		return
+	}
+
+	w.Write(info)
 }

@@ -64,18 +64,18 @@ func BenchmarkTCPID(b *testing.B) {
 
 func TestTCPListen(t *testing.T) {
 	l := NewTCP("t1", testPort)
-	err := l.Listen()
+	err := l.Listen(nil)
 	require.NoError(t, err)
 
 	l2 := NewTCP("t2", testPort)
-	err = l2.Listen()
+	err = l2.Listen(nil)
 	require.Error(t, err)
 	l.listen.Close()
 }
 
 func TestTCPServeAndClose(t *testing.T) {
 	l := NewTCP("t1", testPort)
-	err := l.Listen()
+	err := l.Listen(nil)
 	require.NoError(t, err)
 
 	o := make(chan bool)
@@ -94,7 +94,7 @@ func TestTCPServeAndClose(t *testing.T) {
 
 func TestTCPCloseError(t *testing.T) {
 	l := NewTCP("t1", testPort)
-	err := l.Listen()
+	err := l.Listen(nil)
 	require.NoError(t, err)
 	o := make(chan bool)
 	go func(o chan bool) {
@@ -110,7 +110,7 @@ func TestTCPCloseError(t *testing.T) {
 
 func TestTCPServeEnd(t *testing.T) {
 	l := NewTCP("t1", testPort)
-	err := l.Listen()
+	err := l.Listen(nil)
 	require.NoError(t, err)
 
 	l.Close(MockCloser)
@@ -121,7 +121,7 @@ func TestTCPServeEnd(t *testing.T) {
 
 func TestTCPEstablishThenError(t *testing.T) {
 	l := NewTCP("t1", testPort)
-	err := l.Listen()
+	err := l.Listen(nil)
 	require.NoError(t, err)
 
 	o := make(chan bool)
@@ -143,7 +143,7 @@ func TestTCPEstablishThenError(t *testing.T) {
 
 func TestTCPEstablishButEnding(t *testing.T) {
 	l := NewTCP("t1", testPort)
-	err := l.Listen()
+	err := l.Listen(nil)
 	require.NoError(t, err)
 	l.end = 1
 
