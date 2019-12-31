@@ -1,95 +1,31 @@
 package listeners
 
 import (
-	"net"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/mochi-co/mqtt/internal/auth"
 )
 
-func TestMockEstablisher(t *testing.T) {
-	_, w := net.Pipe()
-	err := MockEstablisher("t1", w, new(auth.Allow))
-	require.NoError(t, err)
-	w.Close()
-}
-
-func TestNewMockListener(t *testing.T) {
-	mocked := NewMockListener("t1", ":1882")
-	require.Equal(t, "t1", mocked.id)
-	require.Equal(t, ":1882", mocked.address)
-}
-
-func TestNewMockListenerListen(t *testing.T) {
-	mocked := NewMockListener("t1", ":1882")
-	require.Equal(t, "t1", mocked.id)
-	require.Equal(t, ":1882", mocked.address)
-
-	require.Equal(t, false, mocked.IsListening)
-	mocked.Listen()
-	require.Equal(t, true, mocked.IsListening)
-}
-
-func TestMockListenerServe(t *testing.T) {
-	mocked := NewMockListener("t1", ":1882")
-	require.Equal(t, false, mocked.IsServing)
-
-	o := make(chan bool)
-	go func(o chan bool) {
-		mocked.Serve(MockEstablisher)
-		o <- true
-	}(o)
-
-	time.Sleep(time.Millisecond) // easy non-channel wait for start of serving
-	require.Equal(t, true, mocked.IsServing)
-
-	var closed bool
-	mocked.Close(func(id string) {
-		closed = true
-	})
-	require.Equal(t, true, closed)
-	<-o
-
-	mocked.Listen()
-}
-
-func TestMockListenerSetConfig(t *testing.T) {
-	mocked := NewMockListener("t1", ":1883")
-	mocked.SetConfig(new(Config))
-	require.NotNil(t, mocked.Config)
-}
-
-func TestMockListenerClose(t *testing.T) {
-	mocked := NewMockListener("t1", ":1882")
-	var closed bool
-	mocked.Close(func(id string) {
-		closed = true
-	})
-	require.Equal(t, true, closed)
-}
-
 func TestNew(t *testing.T) {
-	l := New()
+	l := New(nil)
 	require.NotNil(t, l.internal)
 }
 
 func BenchmarkNewListeners(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		New()
+		New(nil)
 	}
 }
 
 func TestAddListener(t *testing.T) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	require.Contains(t, l.internal, "t1")
 }
 
 func BenchmarkAddListener(b *testing.B) {
-	l := New()
+	l := New(nil)
 	mocked := NewMockListener("t1", ":1882")
 	for n := 0; n < b.N; n++ {
 		l.Add(mocked)
@@ -97,7 +33,7 @@ func BenchmarkAddListener(b *testing.B) {
 }
 
 func TestGetListener(t *testing.T) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
 	require.Contains(t, l.internal, "t1")
@@ -109,7 +45,7 @@ func TestGetListener(t *testing.T) {
 }
 
 func BenchmarkGetListener(b *testing.B) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	for n := 0; n < b.N; n++ {
 		l.Get("t1")
@@ -117,7 +53,7 @@ func BenchmarkGetListener(b *testing.B) {
 }
 
 func TestLenListener(t *testing.T) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
 	require.Contains(t, l.internal, "t1")
@@ -126,7 +62,7 @@ func TestLenListener(t *testing.T) {
 }
 
 func BenchmarkLenListener(b *testing.B) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	for n := 0; n < b.N; n++ {
 		l.Len()
@@ -134,7 +70,7 @@ func BenchmarkLenListener(b *testing.B) {
 }
 
 func TestDeleteListener(t *testing.T) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	require.Contains(t, l.internal, "t1")
 
@@ -145,7 +81,7 @@ func TestDeleteListener(t *testing.T) {
 }
 
 func BenchmarkDeleteListener(b *testing.B) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	for n := 0; n < b.N; n++ {
 		l.Delete("t1")
@@ -153,7 +89,7 @@ func BenchmarkDeleteListener(b *testing.B) {
 }
 
 func TestServeListener(t *testing.T) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Serve("t1", MockEstablisher)
 	time.Sleep(time.Millisecond)
@@ -164,7 +100,7 @@ func TestServeListener(t *testing.T) {
 }
 
 func TestServeListenerFailure(t *testing.T) {
-	l := New()
+	l := New(nil)
 	m := NewMockListener("t1", ":1882")
 	m.errListen = true
 	l.Add(m)
@@ -173,7 +109,7 @@ func TestServeListenerFailure(t *testing.T) {
 }
 
 func BenchmarkServeListener(b *testing.B) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	for n := 0; n < b.N; n++ {
 		l.Serve("t1", MockEstablisher)
@@ -181,7 +117,7 @@ func BenchmarkServeListener(b *testing.B) {
 }
 
 func TestServeAllListeners(t *testing.T) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
 	l.Add(NewMockListener("t3", ":1882"))
@@ -203,7 +139,7 @@ func TestServeAllListeners(t *testing.T) {
 }
 
 func TestServeAllListenersFailure(t *testing.T) {
-	l := New()
+	l := New(nil)
 	m := NewMockListener("t1", ":1882")
 	m.errListen = true
 	l.Add(m)
@@ -212,7 +148,7 @@ func TestServeAllListenersFailure(t *testing.T) {
 }
 
 func BenchmarkServeAllListeners(b *testing.B) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1883"))
 	l.Add(NewMockListener("t3", ":1884"))
@@ -222,7 +158,7 @@ func BenchmarkServeAllListeners(b *testing.B) {
 }
 
 func TestCloseListener(t *testing.T) {
-	l := New()
+	l := New(nil)
 	mocked := NewMockListener("t1", ":1882")
 	l.Add(mocked)
 	l.Serve("t1", MockEstablisher)
@@ -235,7 +171,7 @@ func TestCloseListener(t *testing.T) {
 }
 
 func BenchmarkCloseListener(b *testing.B) {
-	l := New()
+	l := New(nil)
 	mocked := NewMockListener("t1", ":1882")
 	l.Add(mocked)
 	l.Serve("t1", MockEstablisher)
@@ -246,7 +182,7 @@ func BenchmarkCloseListener(b *testing.B) {
 }
 
 func TestCloseAllListeners(t *testing.T) {
-	l := New()
+	l := New(nil)
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Add(NewMockListener("t2", ":1882"))
 	l.Add(NewMockListener("t3", ":1882"))
@@ -269,7 +205,7 @@ func TestCloseAllListeners(t *testing.T) {
 }
 
 func BenchmarkCloseAllListeners(b *testing.B) {
-	l := New()
+	l := New(nil)
 	mocked := NewMockListener("t1", ":1882")
 	l.Add(mocked)
 	l.Serve("t1", MockEstablisher)

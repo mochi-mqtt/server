@@ -8,8 +8,8 @@ import (
 
 	"github.com/logrusorgru/aurora"
 
-	"github.com/mochi-co/mqtt"
-	"github.com/mochi-co/mqtt/internal/listeners"
+	mqtt "github.com/mochi-co/mqtt/server"
+	"github.com/mochi-co/mqtt/server/listeners"
 )
 
 func main() {

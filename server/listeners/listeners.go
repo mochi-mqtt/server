@@ -1,11 +1,11 @@
 package listeners
 
 import (
-	"fmt"
 	"net"
 	"sync"
 
-	"github.com/mochi-co/mqtt/internal/auth"
+	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt/server/system"
 )
 
 // Config contains configuration values for a listener.
@@ -28,11 +28,11 @@ type CloseFunc func(id string)
 // Listener is an interface for network listeners. A network listener listens
 // for incoming client connections and adds them to the server.
 type Listener interface {
-	SetConfig(*Config)   // set the listener config.
-	Listen() error       // open the network address.
-	Serve(EstablishFunc) // starting actively listening for new connections.
-	ID() string          // return the id of the listener.
-	Close(CloseFunc)     // stop and close the listener.
+	SetConfig(*Config)           // set the listener config.
+	Listen(s *system.Info) error // open the network address.
+	Serve(EstablishFunc)         // starting actively listening for new connections.
+	ID() string                  // return the id of the listener.
+	Close(CloseFunc)             // stop and close the listener.
 }
 
 // Listeners contains the network listeners for the broker.
@@ -40,12 +40,14 @@ type Listeners struct {
 	sync.RWMutex
 	wg       sync.WaitGroup      // a waitgroup that waits for all listeners to finish.
 	internal map[string]Listener // a map of active listeners.
+	system   *system.Info        // pointers to system info.
 }
 
 // New returns a new instance of Listeners.
-func New() Listeners {
-	return Listeners{
+func New(s *system.Info) *Listeners {
+	return &Listeners{
 		internal: map[string]Listener{},
+		system:   s,
 	}
 }
 
@@ -86,7 +88,7 @@ func (l *Listeners) Serve(id string, establisher EstablishFunc) error {
 	l.RUnlock()
 
 	// Start listening on the network address.
-	err := listener.Listen()
+	err := listener.Listen(l.system)
 	if err != nil {
 		return err
 	}
@@ -95,7 +97,6 @@ func (l *Listeners) Serve(id string, establisher EstablishFunc) error {
 		defer l.wg.Done()
 		l.wg.Add(1)
 		listener.Serve(e)
-
 	}(establisher)
 
 	return nil
@@ -145,83 +146,4 @@ func (l *Listeners) CloseAll(closer CloseFunc) {
 		l.Close(id, closer)
 	}
 	l.wg.Wait()
-}
-
-// MockCloser is a function signature which can be used in testing.
-func MockCloser(id string) {}
-
-// MockEstablisher is a function signature which can be used in testing.
-func MockEstablisher(id string, c net.Conn, ac auth.Controller) error {
-	return nil
-}
-
-// MockListener is a mock listener for establishing client connections.
-type MockListener struct {
-	sync.RWMutex
-	id          string
-	Config      *Config
-	address     string
-	IsListening bool
-	IsServing   bool
-	done        chan bool
-	errListen   bool
-}
-
-// NewMockListener returns a new instance of MockListener
-func NewMockListener(id, address string) *MockListener {
-	return &MockListener{
-		id:      id,
-		address: address,
-		done:    make(chan bool),
-	}
-}
-
-// Serve serves the mock listener.
-func (l *MockListener) Serve(establisher EstablishFunc) {
-	l.Lock()
-	l.IsServing = true
-	l.Unlock()
-DONE:
-	for {
-		select {
-		case <-l.done:
-			break DONE
-		}
-	}
-}
-
-// SetConfig sets the configuration values of the mock listener.
-func (l *MockListener) Listen() error {
-	if l.errListen {
-		return fmt.Errorf("listen failure")
-	}
-
-	l.Lock()
-	l.IsListening = true
-	l.Unlock()
-	return nil
-}
-
-// SetConfig sets the configuration values of the mock listener.
-func (l *MockListener) SetConfig(config *Config) {
-	l.Lock()
-	l.Config = config
-	l.Unlock()
-}
-
-// ID returns the id of the mock listener.
-func (l *MockListener) ID() string {
-	l.RLock()
-	id := l.id
-	l.RUnlock()
-	return id
-}
-
-// Close closes the mock listener.
-func (l *MockListener) Close(closer CloseFunc) {
-	l.Lock()
-	defer l.Unlock()
-	l.IsServing = false
-	closer(l.id)
-	close(l.done)
 }

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mochi-co/mqtt/internal/packets"
+	"github.com/mochi-co/mqtt/server/internal/packets"
 )
 
 // ReLeaf is a dev function for showing the trie leafs.

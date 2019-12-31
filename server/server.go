@@ -1,4 +1,4 @@
-package mqtt
+package server
 
 import (
 	"errors"
@@ -6,16 +6,17 @@ import (
 	"net"
 	"time"
 
-	"github.com/mochi-co/mqtt/internal/auth"
-	"github.com/mochi-co/mqtt/internal/circ"
-	"github.com/mochi-co/mqtt/internal/clients"
-	"github.com/mochi-co/mqtt/internal/listeners"
-	"github.com/mochi-co/mqtt/internal/packets"
-	"github.com/mochi-co/mqtt/internal/topics"
+	"github.com/mochi-co/mqtt/server/internal/circ"
+	"github.com/mochi-co/mqtt/server/internal/clients"
+	"github.com/mochi-co/mqtt/server/internal/packets"
+	"github.com/mochi-co/mqtt/server/internal/topics"
+	"github.com/mochi-co/mqtt/server/listeners"
+	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt/server/system"
 )
 
 const (
-	Version = "0.0.1" // the server version.
+	Version = "0.1.0" // the server version.
 
 	maxPacketID = 65535 // the maximum value of a 16-bit packet ID.
 )
@@ -29,25 +30,30 @@ var (
 
 // Server is an MQTT broker server.
 type Server struct {
-	bytepool  circ.BytesPool      // a byte pool for packet bytes.
-	Listeners listeners.Listeners // listeners listen for new connections.
-	Clients   clients.Clients     // clients known to the broker.
-	Topics    *topics.Index       // an index of topic subscriptions and retained messages.
-	System    System              // values commonly found in $SYS topics.
+	bytepool  circ.BytesPool       // a byte pool for packet bytes.
+	Listeners *listeners.Listeners // listeners listen for new connections.
+	Clients   *clients.Clients     // clients known to the broker.
+	Topics    *topics.Index        // an index of topic subscriptions and retained messages.
+	System    *system.Info         // values commonly found in $SYS topics.
 }
 
 // New returns a new instance of an MQTT broker.
 func New() *Server {
-	return &Server{
-		bytepool:  circ.NewBytesPool(circ.DefaultBufferSize),
-		Listeners: listeners.New(),
-		Clients:   clients.New(),
-		Topics:    topics.New(),
-		System: System{
+	s := &Server{
+		bytepool: circ.NewBytesPool(circ.DefaultBufferSize),
+		Clients:  clients.New(),
+		Topics:   topics.New(),
+		System: &system.Info{
 			Version: Version,
 			Started: time.Now().Unix(),
 		},
 	}
+
+	// Expose server stats to the listeners so it can be used in the dashboard
+	// and other experimental listeners.
+	s.Listeners = listeners.New(s.System)
+
+	return s
 }
 
 // AddListener adds a new network listener to the server.
@@ -426,25 +432,4 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 	cl.Stop()
 
 	return nil
-}
-
-// System contains atomic counters and values for various server statistics
-// commonly found in $SYS topics.
-type System struct {
-	BytesRecv           int64  // The total number of bytes received in all packets.
-	BytesSent           int64  // The total number of bytes sent to clients.
-	ClientsConnected    int64  // The number of currently connected clients.
-	ClientsDisconnected int64  // The number of disconnected non-cleansession clients.
-	ClientsMax          int64  // The maximum number of clients that have been concurrently connected.
-	ClientsTotal        int64  // The sum of all clients, connected and disconnected.
-	MessagesRecv        int64  // The total number of packets received.
-	MessagesSent        int64  // The total number of packets sent.
-	PublishDropped      int64  // The number of in-flight publish messages which were dropped.
-	PublishRecv         int64  // The total number of received publish packets.
-	PublishSent         int64  // The total number of sent publish packets.
-	Retained            int64  // The number of messages currently retained.
-	InFlight            int64  // The number of messages currently in-flight.
-	Subscriptions       int64  // The total number of filter subscriptions.
-	Started             int64  // The time the server started in unix seconds.
-	Version             string // The current version of the server.
 }

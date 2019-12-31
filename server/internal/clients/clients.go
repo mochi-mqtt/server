@@ -12,10 +12,10 @@ import (
 
 	"github.com/rs/xid"
 
-	"github.com/mochi-co/mqtt/internal/auth"
-	"github.com/mochi-co/mqtt/internal/circ"
-	"github.com/mochi-co/mqtt/internal/packets"
-	"github.com/mochi-co/mqtt/internal/topics"
+	"github.com/mochi-co/mqtt/server/internal/circ"
+	"github.com/mochi-co/mqtt/server/internal/packets"
+	"github.com/mochi-co/mqtt/server/internal/topics"
+	"github.com/mochi-co/mqtt/server/listeners/auth"
 )
 
 var (
@@ -33,8 +33,8 @@ type Clients struct {
 }
 
 // New returns an instance of Clients.
-func New() Clients {
-	return Clients{
+func New() *Clients {
+	return &Clients{
 		internal: make(map[string]*Client),
 	}
 }
