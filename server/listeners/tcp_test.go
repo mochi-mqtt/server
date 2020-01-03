@@ -158,5 +158,7 @@ func TestTCPEstablishButEnding(t *testing.T) {
 	net.Dial(l.protocol, l.listen.Addr().String())
 
 	time.Sleep(time.Millisecond)
+	l.Close(MockCloser)
 	<-o
+
 }

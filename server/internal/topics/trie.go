@@ -279,6 +279,9 @@ func (l *Leaf) scanMessages(filter string, d int, messages []packets.Packet) []p
 			// wildhash position, whereas the d == -1 block collects subsequent
 			// messages further down the branch.
 			for _, child := range l.Leaves {
+				if d == 0 && len(child.Key) > 0 && child.Key[0] == '$' {
+					continue
+				}
 				if child.Message.FixedHeader.Retain {
 					messages = append(messages, child.Message)
 				}
@@ -295,6 +298,9 @@ func (l *Leaf) scanMessages(filter string, d int, messages []packets.Packet) []p
 		// all available if it's a wildcard, or just one if it's a specific particle.
 		if particle == "+" {
 			for _, child := range l.Leaves {
+				if d == 0 && len(child.Key) > 0 && child.Key[0] == '$' {
+					continue
+				}
 				messages = child.scanMessages(filter, d+1, messages)
 			}
 		} else if child, ok := l.Leaves[particle]; ok {
@@ -306,6 +312,9 @@ func (l *Leaf) scanMessages(filter string, d int, messages []packets.Packet) []p
 	// d value to wildhash mode.
 	if particle == "#" {
 		for _, child := range l.Leaves {
+			if d == 0 && len(child.Key) > 0 && child.Key[0] == '$' {
+				continue
+			}
 			messages = child.scanMessages(filter, -1, messages)
 		}
 	}

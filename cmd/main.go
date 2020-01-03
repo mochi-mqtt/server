@@ -53,6 +53,12 @@ func main() {
 		panic(err)
 	}
 
+	ws := listeners.NewWebsocket("ws1", ":1882")
+	err = server.AddListener(ws, nil)
+	if err != nil {
+		panic(err)
+	}
+
 	stats := listeners.NewHTTPStats("stats", ":8080")
 	err = server.AddListener(stats, nil)
 	if err != nil {

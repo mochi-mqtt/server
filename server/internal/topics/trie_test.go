@@ -303,7 +303,6 @@ func TestSubscribersFind(t *testing.T) {
 			topic:  "path/to/my/mqtt",
 			len:    0,
 		},
-
 		{
 			filter: "$SYS/#",
 			topic:  "$SYS/info",
@@ -417,6 +416,26 @@ func TestMessagesPattern(t *testing.T) {
 			packets.Packet{TopicName: "asd", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
 			"asd",
 			1,
+		},
+		{
+			packets.Packet{TopicName: "$SYS/testing", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			"#",
+			8,
+		},
+		{
+			packets.Packet{TopicName: "$SYS/test", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			"+/testing",
+			0,
+		},
+		{
+			packets.Packet{TopicName: "$SYS/info", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			"$SYS/info",
+			1,
+		},
+		{
+			packets.Packet{TopicName: "$SYS/b", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			"$SYS/#",
+			4,
 		},
 		{
 			packets.Packet{TopicName: "asd/fgh/jkl", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},

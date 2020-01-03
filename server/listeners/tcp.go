@@ -17,8 +17,8 @@ type TCP struct {
 	protocol string       // the TCP protocol to use.
 	address  string       // the network address to bind to.
 	listen   net.Listener // a net.Listener which will listen for new clients.
-	start    int64        // ensure the serve methods are only called once.
-	end      int64        // ensure the close methods are only called once.}
+	//start    int64        // ensure the serve methods are only called once.
+	end int64 // ensure the close methods are only called once.}
 }
 
 // NewTCP initialises and returns a new TCP listener, listening on an address.
