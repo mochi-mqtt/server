@@ -16,7 +16,8 @@ type Config struct {
 
 // TLS contains the TLS certificates and settings for the listener connection.
 type TLS struct {
-	// ...
+	Certificate []byte // the body of a public certificate.
+	PrivateKey  []byte // the body of a private key.
 }
 
 // EstablishFunc is a callback function for establishing new clients.

@@ -73,6 +73,34 @@ func TestHTTPStatsListen(t *testing.T) {
 	l.listen.Close()
 }
 
+func TestHTTPStatsListenTLS(t *testing.T) {
+	l := NewHTTPStats("t1", testPort)
+	l.SetConfig(&Config{
+		Auth: new(auth.Allow),
+		TLS: &TLS{
+			Certificate: testCertificate,
+			PrivateKey:  testPrivateKey,
+		},
+	})
+	err := l.Listen(new(system.Info))
+	require.NoError(t, err)
+	require.NotNil(t, l.listen.TLSConfig)
+	l.listen.Close()
+}
+
+func TestHTTPStatsListenTLSInvalid(t *testing.T) {
+	l := NewHTTPStats("t1", testPort)
+	l.SetConfig(&Config{
+		Auth: new(auth.Allow),
+		TLS: &TLS{
+			Certificate: []byte("abcde"),
+			PrivateKey:  testPrivateKey,
+		},
+	})
+	err := l.Listen(new(system.Info))
+	require.Error(t, err)
+}
+
 func TestHTTPStatsServeAndClose(t *testing.T) {
 	l := NewHTTPStats("t1", testPort)
 	err := l.Listen(&system.Info{
@@ -110,6 +138,33 @@ func TestHTTPStatsServeAndClose(t *testing.T) {
 	require.Error(t, err)
 
 	<-o
+}
+
+func TestHTTPStatsServeTLSAndClose(t *testing.T) {
+	l := NewHTTPStats("t1", testPort)
+	l.SetConfig(&Config{
+		Auth: new(auth.Allow),
+		TLS: &TLS{
+			Certificate: testCertificate,
+			PrivateKey:  testPrivateKey,
+		},
+	})
+	err := l.Listen(&system.Info{
+		Version: "test",
+	})
+	require.NoError(t, err)
+
+	o := make(chan bool)
+	go func(o chan bool) {
+		l.Serve(MockEstablisher)
+		o <- true
+	}(o)
+	time.Sleep(time.Millisecond)
+	var closed bool
+	l.Close(func(id string) {
+		closed = true
+	})
+	require.Equal(t, true, closed)
 }
 
 func TestHTTPStatsJSONHandler(t *testing.T) {

@@ -77,6 +77,34 @@ func TestWebsocketListen(t *testing.T) {
 	require.NotNil(t, l.listen)
 }
 
+func TestWebsocketListenTLS(t *testing.T) {
+	l := NewWebsocket("t1", testPort)
+	l.SetConfig(&Config{
+		Auth: new(auth.Allow),
+		TLS: &TLS{
+			Certificate: testCertificate,
+			PrivateKey:  testPrivateKey,
+		},
+	})
+	err := l.Listen(nil)
+	require.NoError(t, err)
+	require.NotNil(t, l.listen.TLSConfig)
+	l.listen.Close()
+}
+
+func TestWebsocketListenTLSInvalid(t *testing.T) {
+	l := NewWebsocket("t1", testPort)
+	l.SetConfig(&Config{
+		Auth: new(auth.Allow),
+		TLS: &TLS{
+			Certificate: []byte("abcde"),
+			PrivateKey:  testPrivateKey,
+		},
+	})
+	err := l.Listen(nil)
+	require.Error(t, err)
+}
+
 func TestWebsocketServeAndClose(t *testing.T) {
 	l := NewWebsocket("t1", testPort)
 	l.Listen(nil)
@@ -92,8 +120,33 @@ func TestWebsocketServeAndClose(t *testing.T) {
 		closed = true
 	})
 	require.Equal(t, true, closed)
-
 	<-o
+}
+
+func TestWebsocketServeTLSAndClose(t *testing.T) {
+	l := NewWebsocket("t1", testPort)
+	l.SetConfig(&Config{
+		Auth: new(auth.Allow),
+		TLS: &TLS{
+			Certificate: testCertificate,
+			PrivateKey:  testPrivateKey,
+		},
+	})
+	err := l.Listen(nil)
+	require.NoError(t, err)
+
+	o := make(chan bool)
+	go func(o chan bool) {
+		l.Serve(MockEstablisher)
+		o <- true
+	}(o)
+
+	time.Sleep(time.Millisecond)
+	var closed bool
+	l.Close(func(id string) {
+		closed = true
+	})
+	require.Equal(t, true, closed)
 }
 
 func TestWebsocketUpgrade(t *testing.T) {

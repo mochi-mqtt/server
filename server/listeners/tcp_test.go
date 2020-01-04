@@ -73,8 +73,61 @@ func TestTCPListen(t *testing.T) {
 	l.listen.Close()
 }
 
+func TestTCPListenTLS(t *testing.T) {
+	l := NewTCP("t1", testPort)
+	l.SetConfig(&Config{
+		Auth: new(auth.Allow),
+		TLS: &TLS{
+			Certificate: testCertificate,
+			PrivateKey:  testPrivateKey,
+		},
+	})
+	err := l.Listen(nil)
+	require.NoError(t, err)
+	l.listen.Close()
+}
+
+func TestTCPListenTLSInvalid(t *testing.T) {
+	l := NewTCP("t1", testPort)
+	l.SetConfig(&Config{
+		Auth: new(auth.Allow),
+		TLS: &TLS{
+			Certificate: []byte("abcde"),
+			PrivateKey:  testPrivateKey,
+		},
+	})
+	err := l.Listen(nil)
+	require.Error(t, err)
+}
+
 func TestTCPServeAndClose(t *testing.T) {
 	l := NewTCP("t1", testPort)
+	err := l.Listen(nil)
+	require.NoError(t, err)
+
+	o := make(chan bool)
+	go func(o chan bool) {
+		l.Serve(MockEstablisher)
+		o <- true
+	}(o)
+	time.Sleep(time.Millisecond)
+	var closed bool
+	l.Close(func(id string) {
+		closed = true
+	})
+	require.Equal(t, true, closed)
+	<-o
+}
+
+func TestTCPServeTLSAndClose(t *testing.T) {
+	l := NewTCP("t1", testPort)
+	l.SetConfig(&Config{
+		Auth: new(auth.Allow),
+		TLS: &TLS{
+			Certificate: testCertificate,
+			PrivateKey:  testPrivateKey,
+		},
+	})
 	err := l.Listen(nil)
 	require.NoError(t, err)
 

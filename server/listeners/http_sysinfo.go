@@ -2,6 +2,7 @@ package listeners
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -31,7 +32,6 @@ func NewHTTPStats(id, address string) *HTTPStats {
 		address: address,
 		config: &Config{
 			Auth: new(auth.Allow),
-			TLS:  new(TLS),
 		},
 	}
 }
@@ -69,12 +69,28 @@ func (l *HTTPStats) Listen(s *system.Info) error {
 		Addr:    l.address,
 		Handler: mux,
 	}
+
+	if l.config.TLS != nil && len(l.config.TLS.Certificate) > 0 && len(l.config.TLS.PrivateKey) > 0 {
+		cert, err := tls.X509KeyPair(l.config.TLS.Certificate, l.config.TLS.PrivateKey)
+		if err != nil {
+			return err
+		}
+
+		l.listen.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		}
+	}
+
 	return nil
 }
 
 // Serve starts listening for new connections and serving responses.
 func (l *HTTPStats) Serve(establish EstablishFunc) {
-	l.listen.ListenAndServe()
+	if l.listen.TLSConfig != nil {
+		l.listen.ListenAndServeTLS("", "")
+	} else {
+		l.listen.ListenAndServe()
+	}
 }
 
 // Close closes the listener and any client connections.

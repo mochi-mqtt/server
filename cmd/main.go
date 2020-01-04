@@ -12,6 +12,7 @@ import (
 
 	mqtt "github.com/mochi-co/mqtt/server"
 	"github.com/mochi-co/mqtt/server/listeners"
+	"github.com/mochi-co/mqtt/server/listeners/auth"
 	//	_ "net/http/pprof"
 	//	"runtime/trace"
 )

@@ -2,6 +2,7 @@ package listeners
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net"
 	"net/http"
@@ -119,6 +120,17 @@ func (l *Websocket) Listen(s *system.Info) error {
 		Handler: mux,
 	}
 
+	if l.config.TLS != nil && len(l.config.TLS.Certificate) > 0 && len(l.config.TLS.PrivateKey) > 0 {
+		cert, err := tls.X509KeyPair(l.config.TLS.Certificate, l.config.TLS.PrivateKey)
+		if err != nil {
+			return err
+		}
+
+		l.listen.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		}
+	}
+
 	return nil
 }
 
@@ -136,7 +148,12 @@ func (l *Websocket) handler(w http.ResponseWriter, r *http.Request) {
 // establishment callback for any received.
 func (l *Websocket) Serve(establish EstablishFunc) {
 	l.establish = establish
-	l.listen.ListenAndServe()
+
+	if l.listen.TLSConfig != nil {
+		l.listen.ListenAndServeTLS("", "")
+	} else {
+		l.listen.ListenAndServe()
+	}
 }
 
 // Close closes the listener and any client connections.
