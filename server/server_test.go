@@ -18,6 +18,8 @@ import (
 	"github.com/mochi-co/mqtt/server/listeners/auth"
 )
 
+const defaultPort = ":18882"
+
 func setupClient() (s *Server, cl *clients.Client, r net.Conn, w net.Conn) {
 	s = New()
 	r, w = net.Pipe()
@@ -47,12 +49,11 @@ func BenchmarkNew(b *testing.B) {
 func TestServerAddListener(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
-
-	err := s.AddListener(listeners.NewMockListener("t1", ":1882"), nil)
+	err := s.AddListener(listeners.NewMockListener("t1", defaultPort), nil)
 	require.NoError(t, err)
 
 	// Add listener with config.
-	err = s.AddListener(listeners.NewMockListener("t2", ":1882"), &listeners.Config{
+	err = s.AddListener(listeners.NewMockListener("t2", defaultPort), &listeners.Config{
 		Auth: new(auth.Disallow),
 	})
 	require.NoError(t, err)
@@ -64,6 +65,15 @@ func TestServerAddListener(t *testing.T) {
 	err = s.AddListener(listeners.NewMockListener("t1", ":1883"), nil)
 	require.Error(t, err)
 	require.Equal(t, ErrListenerIDExists, err)
+}
+
+func TestServerAddListenerFailure(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+	m := listeners.NewMockListener("t1", ":1882")
+	m.ErrListen = true
+	err := s.AddListener(m, nil)
+	require.Error(t, err)
 }
 
 func BenchmarkServerAddListener(b *testing.B) {

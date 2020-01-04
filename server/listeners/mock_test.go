@@ -29,8 +29,15 @@ func TestNewMockListenerListen(t *testing.T) {
 	require.Equal(t, ":1882", mocked.address)
 
 	require.Equal(t, false, mocked.IsListening)
-	mocked.Listen(nil)
+	err := mocked.Listen(nil)
+	require.NoError(t, err)
 	require.Equal(t, true, mocked.IsListening)
+}
+func TestNewMockListenerListenFailure(t *testing.T) {
+	mocked := NewMockListener("t1", ":1882")
+	mocked.ErrListen = true
+	err := mocked.Listen(nil)
+	require.Error(t, err)
 }
 
 func TestMockListenerServe(t *testing.T) {

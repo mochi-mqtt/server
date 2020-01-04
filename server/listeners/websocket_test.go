@@ -1,14 +1,25 @@
 package listeners
 
 import (
-	//"errors"
-	//"net"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/mochi-co/mqtt/server/listeners/auth"
 	"github.com/stretchr/testify/require"
 )
+
+func TestWsConnClose(t *testing.T) {
+	r, _ := net.Pipe()
+	ws := &wsConn{r, new(websocket.Conn)}
+	err := ws.Close()
+	require.NoError(t, err)
+}
 
 func TestNewWebsocket(t *testing.T) {
 	l := NewWebsocket("t1", testPort)
@@ -60,30 +71,46 @@ func BenchmarkWebsocketID(b *testing.B) {
 
 func TestWebsocketListen(t *testing.T) {
 	l := NewWebsocket("t1", testPort)
+	require.Nil(t, l.listen)
 	err := l.Listen(nil)
 	require.NoError(t, err)
-
-	l2 := NewWebsocket("t2", testPort)
-	err = l2.Listen(nil)
-	require.Error(t, err)
-	l.listen.Close()
+	require.NotNil(t, l.listen)
 }
 
 func TestWebsocketServeAndClose(t *testing.T) {
 	l := NewWebsocket("t1", testPort)
-	err := l.Listen(nil)
-	require.NoError(t, err)
-
+	l.Listen(nil)
 	o := make(chan bool)
 	go func(o chan bool) {
 		l.Serve(MockEstablisher)
 		o <- true
 	}(o)
 	time.Sleep(time.Millisecond)
+
 	var closed bool
 	l.Close(func(id string) {
 		closed = true
 	})
 	require.Equal(t, true, closed)
+
 	<-o
+}
+
+func TestWebsocketUpgrade(t *testing.T) {
+	l := NewWebsocket("t1", testPort)
+	l.Listen(nil)
+	e := make(chan bool)
+	l.establish = func(id string, c net.Conn, ac auth.Controller) error {
+		e <- true
+		return nil
+	}
+	s := httptest.NewServer(http.HandlerFunc(l.handler))
+	u := "ws" + strings.TrimPrefix(s.URL, "http")
+	ws, _, err := websocket.DefaultDialer.Dial(u, nil)
+	require.NoError(t, err)
+	require.Equal(t, true, <-e)
+
+	s.Close()
+	ws.Close()
+
 }

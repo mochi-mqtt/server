@@ -63,7 +63,6 @@ func (l *HTTPStats) ID() string {
 // Listen starts listening on the listener's network address.
 func (l *HTTPStats) Listen(s *system.Info) error {
 	l.system = s
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", l.jsonHandler)
 	l.listen = &http.Server{

@@ -1,38 +1,85 @@
 package listeners
 
 import (
-	"fmt"
+	"context"
+	"errors"
 	"net"
 	"net/http"
-	"net/url"
-	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
-	"golang.org/x/net/websocket"
+	"github.com/gorilla/websocket"
 
 	"github.com/mochi-co/mqtt/server/listeners/auth"
 	"github.com/mochi-co/mqtt/server/system"
 )
 
+var (
+	ErrInvalidMessage = errors.New("Message type not binary")
+
+	// wsUpgrader is used to upgrade the incoming http/tcp connection to a
+	// websocket compliant connection.
+	wsUpgrader = &websocket.Upgrader{
+		Subprotocols: []string{"mqtt"},
+	}
+)
+
 // Websocket is a listener for establishing websocket connections.
 type Websocket struct {
 	sync.RWMutex
-	id       string       // the internal id of the listener.
-	protocol string       // the protocol of the listener.
-	config   *Config      // configuration values for the listener.
-	address  string       // the network address to bind to.
-	listen   net.Listener // a net.Listener which will listen for new clients.
-	end      int64        // ensure the close methods are only called once.}
+	id        string        // the internal id of the listener.
+	config    *Config       // configuration values for the listener.
+	address   string        // the network address to bind to.
+	listen    *http.Server  // an http server for serving websocket connections.
+	end       int64         // ensure the close methods are only called once.
+	establish EstablishFunc // the server's establish conection handler.
+}
+
+// wsConn is a websocket connection which satisfies the net.Conn interface.
+// Inspired by
+type wsConn struct {
+	net.Conn
+	c *websocket.Conn
+}
+
+// Read reads the next span of bytes from the websocket connection and returns
+// the number of bytes read.
+func (ws *wsConn) Read(p []byte) (n int, err error) {
+	op, r, err := ws.c.NextReader()
+	if err != nil {
+		return
+	}
+
+	if op != websocket.BinaryMessage {
+		err = ErrInvalidMessage
+		return
+	}
+
+	return r.Read(p)
+}
+
+// Write writes bytes to the websocket connection.
+func (ws *wsConn) Write(p []byte) (n int, err error) {
+	err = ws.c.WriteMessage(websocket.BinaryMessage, p)
+	if err != nil {
+		return
+	}
+
+	return len(p), nil
+}
+
+// Close signals the underlying websocket conn to close.
+func (ws *wsConn) Close() error {
+	return ws.Conn.Close()
 }
 
 // NewWebsocket initialises and returns a new Websocket listener, listening on an address.
 func NewWebsocket(id, address string) *Websocket {
 	return &Websocket{
-		id:       id,
-		protocol: "tcp",
-		address:  address,
-		config: &Config{ // default configuration.
+		id:      id,
+		address: address,
+		config: &Config{
 			Auth: new(auth.Allow),
 			TLS:  new(TLS),
 		},
@@ -65,52 +112,31 @@ func (l *Websocket) ID() string {
 
 // Listen starts listening on the listener's network address.
 func (l *Websocket) Listen(s *system.Info) error {
-	var err error
-	l.listen, err = net.Listen(l.protocol, l.address)
-	if err != nil {
-		return err
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", l.handler)
+	l.listen = &http.Server{
+		Addr:    l.address,
+		Handler: mux,
 	}
 
 	return nil
 }
 
-// Serve starts waiting for new Websocket connections, and calls the connection
-// establishment callback for any received.
-func (l *Websocket) Serve(establish EstablishFunc) {
-	server := &websocket.Server{
-		Handshake: func(c *websocket.Config, req *http.Request) error {
-
-			c.Protocol = []string{"mqtt"}
-
-			// If the remote address is an IP, prepend a protocol string so it can
-			// be parsed without errors.
-			if !strings.Contains(req.RemoteAddr, "://") {
-				req.RemoteAddr = "ws://" + req.RemoteAddr
-			}
-
-			// Websocket struggles to get a request origin address, so the remote
-			// address from the request is parsed into the origin struct instead.
-			var err error
-			c.Origin, err = url.Parse(req.RemoteAddr)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			return nil
-		},
-		Handler: func(c *websocket.Conn) {
-			c.PayloadType = websocket.BinaryFrame
-			err := establish(l.id, c, l.config.Auth)
-			if err != nil {
-				fmt.Println(err)
-			}
-		},
-	}
-
-	err := http.Serve(l.listen, server)
+func (l *Websocket) handler(w http.ResponseWriter, r *http.Request) {
+	c, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
+	defer c.Close()
+
+	l.establish(l.id, &wsConn{c.UnderlyingConn(), c}, l.config.Auth)
+}
+
+// Serve starts waiting for new Websocket connections, and calls the connection
+// establishment callback for any received.
+func (l *Websocket) Serve(establish EstablishFunc) {
+	l.establish = establish
+	l.listen.ListenAndServe()
 }
 
 // Close closes the listener and any client connections.
@@ -120,13 +146,10 @@ func (l *Websocket) Close(closeClients CloseFunc) {
 
 	if atomic.LoadInt64(&l.end) == 0 {
 		atomic.StoreInt64(&l.end, 1)
-		closeClients(l.id)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		l.listen.Shutdown(ctx)
 	}
 
-	if l.listen != nil {
-		err := l.listen.Close()
-		if err != nil {
-			return
-		}
-	}
+	closeClients(l.id)
 }

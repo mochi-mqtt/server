@@ -75,6 +75,10 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 	}
 
 	s.Listeners.Add(listener)
+	err := listener.Listen(s.System)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -528,7 +532,6 @@ func (s *Server) closeListenerClients(listener string) {
 // closeClient closes a client connection and publishes any LWT messages.
 func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 	if sendLWT && cl.LWT.Topic != "" {
-		// omit errors, since we're not logging and need to close the client in either case.
 		s.processPublish(cl, packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type:   packets.Publish,
@@ -538,6 +541,7 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 			TopicName: cl.LWT.Topic,
 			Payload:   cl.LWT.Message,
 		})
+		// omit errors, since we're not logging and need to close the client in either case.
 	}
 
 	cl.Stop()
