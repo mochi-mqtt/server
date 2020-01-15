@@ -14,6 +14,7 @@ import (
 	"github.com/mochi-co/mqtt/server/internal/topics"
 	"github.com/mochi-co/mqtt/server/listeners"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt/server/persistence"
 	"github.com/mochi-co/mqtt/server/system"
 )
 
@@ -40,6 +41,7 @@ type Server struct {
 	Clients   *clients.Clients     // clients known to the broker.
 	Topics    *topics.Index        // an index of topic subscriptions and retained messages.
 	System    *system.Info         // values commonly found in $SYS topics.
+	Stores    []persistence.Store  // a slice of persistent storage backends.
 	sysTicker *time.Ticker         // the interval ticker for sending updating $SYS topics.
 }
 
@@ -54,6 +56,7 @@ func New() *Server {
 			Version: Version,
 			Started: time.Now().Unix(),
 		},
+		Stores:    make([]persistence.Store, 0, 1),
 		sysTicker: time.NewTicker(SysTopicInterval * time.Millisecond),
 	}
 
@@ -62,6 +65,24 @@ func New() *Server {
 	s.Listeners = listeners.New(s.System)
 
 	return s
+}
+
+// AddStore adds a persistent storage backend to the server.
+func (s *Server) AddStore(p persistence.Store) error {
+	err := p.Open()
+	if err != nil {
+		return err
+	}
+
+	s.Stores = append(s.Stores, p)
+	return nil
+}
+
+// CloseStores closes down all storage backends.
+func (s *Server) CloseStores() {
+	for _, v := range s.Stores {
+		v.Close()
+	}
 }
 
 // AddListener adds a new network listener to the server.
@@ -513,10 +534,11 @@ func (s *Server) publishSysTopics() {
 
 }
 
-// Close attempts to gracefully shutdown the server, all listeners, and clients.
+// Close attempts to gracefully shutdown the server, all listeners, clients, and stores.
 func (s *Server) Close() error {
 	close(s.done)
 	s.Listeners.CloseAll(s.closeListenerClients)
+	s.CloseStores()
 	return nil
 }
 

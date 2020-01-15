@@ -16,6 +16,7 @@ import (
 	"github.com/mochi-co/mqtt/server/internal/topics"
 	"github.com/mochi-co/mqtt/server/listeners"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt/server/persistence"
 )
 
 const defaultPort = ":18882"
@@ -36,6 +37,7 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.Listeners)
 	require.NotNil(t, s.Clients)
 	require.NotNil(t, s.Topics)
+	require.NotNil(t, s.Stores)
 	require.NotEmpty(t, s.System.Version)
 	require.Equal(t, true, s.System.Started > 0)
 }
@@ -44,6 +46,58 @@ func BenchmarkNew(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		New()
 	}
+}
+
+func TestServerAddStore(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	p := new(persistence.MockStore)
+	err := s.AddStore(p)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, len(s.Stores))
+	require.Equal(t, p, s.Stores[0])
+}
+
+func TestServerAddStoreFailure(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	p := new(persistence.MockStore)
+	p.FailOpen = true
+	err := s.AddStore(p)
+	require.Error(t, err)
+	require.Equal(t, 0, len(s.Stores))
+}
+
+func BenchmarkServerAddStore(b *testing.B) {
+	s := New()
+	p := new(persistence.MockStore)
+	for n := 0; n < b.N; n++ {
+		s.AddStore(p)
+	}
+}
+
+func TestServerCloseStores(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	p := new(persistence.MockStore)
+	err := s.AddStore(p)
+	require.NoError(t, err)
+
+	p2 := new(persistence.MockStore)
+	err = s.AddStore(p2)
+	require.NoError(t, err)
+
+	require.Equal(t, false, p.Closed)
+	require.Equal(t, false, p2.Closed)
+
+	s.CloseStores()
+
+	require.Equal(t, true, p.Closed)
+	require.Equal(t, true, p2.Closed)
 }
 
 func TestServerAddListener(t *testing.T) {
@@ -1109,7 +1163,11 @@ func TestServerClose(t *testing.T) {
 	cl.Listener = "t1"
 	s.Clients.Add(cl)
 
-	err := s.AddListener(listeners.NewMockListener("t1", ":1882"), nil)
+	p := new(persistence.MockStore)
+	err := s.AddStore(p)
+	require.NoError(t, err)
+
+	err = s.AddListener(listeners.NewMockListener("t1", ":1882"), nil)
 	require.NoError(t, err)
 	s.Serve()
 	time.Sleep(time.Millisecond)
@@ -1122,6 +1180,7 @@ func TestServerClose(t *testing.T) {
 	s.Close()
 	time.Sleep(time.Millisecond)
 	require.Equal(t, false, listener.(*listeners.MockListener).IsServing)
+	require.Equal(t, true, p.Closed)
 }
 
 func TestServerCloseClientLWT(t *testing.T) {
