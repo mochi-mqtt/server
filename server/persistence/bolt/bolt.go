@@ -62,29 +62,8 @@ func (s *Store) Close() {
 	s.db.Close()
 }
 
-// StoreSubscriptions writes all subscriptions to the boltdb instance as
-// a bulk operation.
-func (s *Store) StoreSubscriptions() {
-
-}
-
-// StoreClients writes all clients to the boltdb instance as a bulk operation.
-func (s *Store) StoreClients() {
-
-}
-
-// StoreInflight writes all inflight messages to the boltdb instance as a bulk operation.
-func (s *Store) StoreInflight() {
-
-}
-
-// StoreInflight writes all inflight messages to the boltdb instance as a bulk operation.
-func (s *Store) StoreRetained() {
-
-}
-
-// StoreServerInfo writes the server info to the boltdb instance.
-func (s *Store) StoreServerInfo(v persistence.ServerInfo) error {
+// WriteServerInfo writes the server info to the boltdb instance.
+func (s *Store) WriteServerInfo(v persistence.ServerInfo) error {
 	err := s.db.Save(&v)
 	if err != nil {
 		return err
@@ -102,8 +81,21 @@ func (s *Store) WriteSubscription(v persistence.Subscription) error {
 }
 
 // WriteInflight writes a single inflight message to the boltdb instance.
-func (s *Store) WriteInflight() {
+func (s *Store) WriteInflight(v persistence.Message) error {
+	err := s.db.Save(&v)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
+// WriteRetained writes a single retained message to the boltdb instance.
+func (s *Store) WriteRetained(v persistence.Message) error {
+	err := s.db.Save(&v)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // WriteClient writes a single client to the boltdb instance.
@@ -111,28 +103,41 @@ func (s *Store) WriteClient() {
 
 }
 
-// LoadSubscriptions loads all the subscriptions from the boltdb instance.
-func (s *Store) LoadSubscriptions() (v []persistence.Subscription, err error) {
-	err = s.db.Find("T", "subscription", &v)
+// ReadSubscriptions loads all the subscriptions from the boltdb instance.
+func (s *Store) ReadSubscriptions() (v []persistence.Subscription, err error) {
+	err = s.db.Find("T", persistence.KSubscription, &v)
 	if err != nil {
 		return
 	}
 	return
 }
 
-// LoadClients loads all the clients from the boltdb instance.
-func (s *Store) LoadClients() {
+// ReadClients loads all the clients from the boltdb instance.
+func (s *Store) ReadClients() {
 
 }
 
-// LoadInflight loads all the inflight messages from the boltdb instance.
-func (s *Store) LoadInflight() {
-
+// ReadInflight loads all the inflight messages from the boltdb instance.
+func (s *Store) ReadInflight() (v []persistence.Message, err error) {
+	err = s.db.Find("T", persistence.KInflight, &v)
+	if err != nil {
+		return
+	}
+	return
 }
 
-// LoadServerInfo loads the server info from the boltdb instance.
-func (s *Store) LoadServerInfo() (v persistence.ServerInfo, err error) {
-	err = s.db.One("ID", "server_info", &v)
+// ReadRetained loads all the retained messages from the boltdb instance.
+func (s *Store) ReadRetained() (v []persistence.Message, err error) {
+	err = s.db.Find("T", persistence.KRetained, &v)
+	if err != nil {
+		return
+	}
+	return
+}
+
+//ReadServerInfo loads the server info from the boltdb instance.
+func (s *Store) ReadServerInfo() (v persistence.ServerInfo, err error) {
+	err = s.db.One("ID", persistence.KServerInfo, &v)
 	if err != nil {
 		return
 	}

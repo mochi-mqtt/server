@@ -6,6 +6,14 @@ import (
 	"github.com/mochi-co/mqtt/server/system"
 )
 
+const (
+	KSubscription = "sub"
+	KServerInfo   = "srv"
+	KRetained     = "ret"
+	KInflight     = "ifm"
+	KClient       = "cl"
+)
+
 // Store is an interface which details a persistent storage connector.
 type Store interface {
 	Open() error
@@ -13,17 +21,15 @@ type Store interface {
 
 	WriteSubscription() // including retained
 	WriteClient()
-	WriteInFlight()
+	WriteInflight()
+	WriteServerInfo()
 	WriteRetained()
-
-	StoreSubscriptions()
-	StoreInFlight()
-	StoreClients()
-	StoreServerInfo(v ServerInfo) error
 
 	ReadSubscriptions() (v []Subscription, err error)
 	ReadInflight()
+	ReadRetained()
 	ReadClients()
+
 	ReadServerInfo()
 }
 
@@ -112,25 +118,6 @@ func (s *MockStore) Close() {
 	s.Closed = true
 }
 
-// StoreSubscriptions writes all subscriptions to the storage instance.
-func (s *MockStore) StoreSubscriptions() {
-
-}
-
-// StoreClients writes all clients to the storage instance.
-func (s *MockStore) StoreClients() {}
-
-// StoreInFlight writes all Inflight messages to the storage instance.
-func (s *MockStore) StoreInflight() {}
-
-// StoreRetained writes all Inflight messages to the storage instance.
-func (s *MockStore) StoreRetained() {}
-
-// StoreServerInfo writes the server info to the storage instance.
-func (s *MockStore) StoreServerInfo(v ServerInfo) {
-
-}
-
 // WriteSubscription writes a single subscription to the storage instance.
 func (s *MockStore) WriteSubscription() {}
 
@@ -143,18 +130,18 @@ func (s *MockStore) WriteInflight() {}
 // WriteRetained writes a single retained message to the storage instance.
 func (s *MockStore) WriteRetained() {}
 
-// LoadSubscriptions loads the subscriptions from the storage instance.
-func (s *MockStore) LoadSubscriptions() (v []Subscription, err error) {
+// ReadSubscriptions loads the subscriptions from the storage instance.
+func (s *MockStore) ReadSubscriptions() (v []Subscription, err error) {
 	return
 }
 
-// LoadClients loads the clients from the storage instance.
-func (s *MockStore) LoadClients() {}
+// ReadClients loads the clients from the storage instance.
+func (s *MockStore) ReadClients() {}
 
-// LoadInflight loads the inflight messages from the storage instance.
-func (s *MockStore) LoadInflight() {}
+// ReadInflight loads the inflight messages from the storage instance.
+func (s *MockStore) ReadInflight() {}
 
-// LoadServerInfo loads the server info from the storage instance.
-func (s *MockStore) LoadServerInfo() (v ServerInfo, err error) {
+//ReadServerInfo loads the server info from the storage instance.
+func (s *MockStore) ReadServerInfo() (v ServerInfo, err error) {
 	return
 }
