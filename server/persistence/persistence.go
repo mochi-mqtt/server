@@ -19,18 +19,18 @@ type Store interface {
 	Open() error
 	Close()
 
-	WriteSubscription() // including retained
-	WriteClient()
-	WriteInflight()
-	WriteServerInfo()
-	WriteRetained()
+	WriteSubscription(v Subscription) error
+	WriteClient(v Client) error
+	WriteInflight(v Message) error
+	WriteServerInfo(v ServerInfo) error
+	WriteRetained(v Message) error
 
 	ReadSubscriptions() (v []Subscription, err error)
-	ReadInflight()
-	ReadRetained()
-	ReadClients()
+	ReadInflight() (v []Message, err error)
+	ReadRetained() (v []Message, err error)
+	ReadClients() (v []Client, err error)
 
-	ReadServerInfo()
+	ReadServerInfo() (v ServerInfo, err error)
 }
 
 // ServerInfo contains information and statistics about the server.
@@ -69,10 +69,10 @@ type FixedHeader struct {
 	Remaining int  // the number of remaining bytes in the payload.
 }
 
-/*
 // Client contains client data that can be persistently stored.
 type Client struct {
 	ID            string         // the id of the client
+	T             string         // the type of the stored data.
 	Listener      string         // the last known listener id for the client
 	Username      []byte         // the username the client authenticated with.
 	CleanSession  bool           // indicates if the client connected expecting a clean-session.
@@ -87,8 +87,6 @@ type LWT struct {
 	Qos     byte   // the quality of service desired.
 	Retain  bool   // indicates whether the will message should be retained
 }
-
-*/
 
 /*
 *
@@ -119,16 +117,29 @@ func (s *MockStore) Close() {
 }
 
 // WriteSubscription writes a single subscription to the storage instance.
-func (s *MockStore) WriteSubscription() {}
+func (s *MockStore) WriteSubscription(v Subscription) error {
+	return nil
+}
 
 // WriteClient writes a single client to the storage instance.
-func (s *MockStore) WriteClient() {}
+func (s *MockStore) WriteClient(v Client) error {
+	return nil
+}
 
 // WriteInFlight writes a single InFlight message to the storage instance.
-func (s *MockStore) WriteInflight() {}
+func (s *MockStore) WriteInflight(v Message) error {
+	return nil
+}
 
 // WriteRetained writes a single retained message to the storage instance.
-func (s *MockStore) WriteRetained() {}
+func (s *MockStore) WriteRetained(v Message) error {
+	return nil
+}
+
+// WriteServerInfo writes server info to the storage instance.
+func (s *MockStore) WriteServerInfo(v ServerInfo) error {
+	return nil
+}
 
 // ReadSubscriptions loads the subscriptions from the storage instance.
 func (s *MockStore) ReadSubscriptions() (v []Subscription, err error) {
@@ -136,10 +147,19 @@ func (s *MockStore) ReadSubscriptions() (v []Subscription, err error) {
 }
 
 // ReadClients loads the clients from the storage instance.
-func (s *MockStore) ReadClients() {}
+func (s *MockStore) ReadClients() (v []Client, err error) {
+	return
+}
 
 // ReadInflight loads the inflight messages from the storage instance.
-func (s *MockStore) ReadInflight() {}
+func (s *MockStore) ReadInflight() (v []Message, err error) {
+	return
+}
+
+// ReadRetained loads the retained messages from the storage instance.
+func (s *MockStore) ReadRetained() (v []Message, err error) {
+	return
+}
 
 //ReadServerInfo loads the server info from the storage instance.
 func (s *MockStore) ReadServerInfo() (v ServerInfo, err error) {

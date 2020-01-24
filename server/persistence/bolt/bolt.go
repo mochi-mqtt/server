@@ -2,6 +2,7 @@ package bolt
 
 import (
 	//"encoding/gob"
+	"errors"
 	"time"
 
 	sgob "github.com/asdine/storm/codec/gob"
@@ -64,6 +65,10 @@ func (s *Store) Close() {
 
 // WriteServerInfo writes the server info to the boltdb instance.
 func (s *Store) WriteServerInfo(v persistence.ServerInfo) error {
+	if s.db == nil {
+		return errors.New("boltdb not opened")
+	}
+
 	err := s.db.Save(&v)
 	if err != nil {
 		return err
@@ -73,6 +78,10 @@ func (s *Store) WriteServerInfo(v persistence.ServerInfo) error {
 
 // WriteSubscription writes a single subscription to the boltdb instance.
 func (s *Store) WriteSubscription(v persistence.Subscription) error {
+	if s.db == nil {
+		return errors.New("boltdb not opened")
+	}
+
 	err := s.db.Save(&v)
 	if err != nil {
 		return err
@@ -82,6 +91,10 @@ func (s *Store) WriteSubscription(v persistence.Subscription) error {
 
 // WriteInflight writes a single inflight message to the boltdb instance.
 func (s *Store) WriteInflight(v persistence.Message) error {
+	if s.db == nil {
+		return errors.New("boltdb not opened")
+	}
+
 	err := s.db.Save(&v)
 	if err != nil {
 		return err
@@ -91,6 +104,10 @@ func (s *Store) WriteInflight(v persistence.Message) error {
 
 // WriteRetained writes a single retained message to the boltdb instance.
 func (s *Store) WriteRetained(v persistence.Message) error {
+	if s.db == nil {
+		return errors.New("boltdb not opened")
+	}
+
 	err := s.db.Save(&v)
 	if err != nil {
 		return err
@@ -99,12 +116,25 @@ func (s *Store) WriteRetained(v persistence.Message) error {
 }
 
 // WriteClient writes a single client to the boltdb instance.
-func (s *Store) WriteClient() {
+func (s *Store) WriteClient(v persistence.Client) error {
+	if s.db == nil {
+		return errors.New("boltdb not opened")
+	}
 
+	err := s.db.Save(&v)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // ReadSubscriptions loads all the subscriptions from the boltdb instance.
 func (s *Store) ReadSubscriptions() (v []persistence.Subscription, err error) {
+	if s.db == nil {
+		err = errors.New("boltdb not opened")
+		return
+	}
+
 	err = s.db.Find("T", persistence.KSubscription, &v)
 	if err != nil {
 		return
@@ -113,12 +143,26 @@ func (s *Store) ReadSubscriptions() (v []persistence.Subscription, err error) {
 }
 
 // ReadClients loads all the clients from the boltdb instance.
-func (s *Store) ReadClients() {
+func (s *Store) ReadClients() (v []persistence.Client, err error) {
+	if s.db == nil {
+		err = errors.New("boltdb not opened")
+		return
+	}
 
+	err = s.db.Find("T", persistence.KClient, &v)
+	if err != nil {
+		return
+	}
+	return
 }
 
 // ReadInflight loads all the inflight messages from the boltdb instance.
 func (s *Store) ReadInflight() (v []persistence.Message, err error) {
+	if s.db == nil {
+		err = errors.New("boltdb not opened")
+		return
+	}
+
 	err = s.db.Find("T", persistence.KInflight, &v)
 	if err != nil {
 		return
@@ -128,6 +172,11 @@ func (s *Store) ReadInflight() (v []persistence.Message, err error) {
 
 // ReadRetained loads all the retained messages from the boltdb instance.
 func (s *Store) ReadRetained() (v []persistence.Message, err error) {
+	if s.db == nil {
+		err = errors.New("boltdb not opened")
+		return
+	}
+
 	err = s.db.Find("T", persistence.KRetained, &v)
 	if err != nil {
 		return
@@ -137,6 +186,11 @@ func (s *Store) ReadRetained() (v []persistence.Message, err error) {
 
 //ReadServerInfo loads the server info from the boltdb instance.
 func (s *Store) ReadServerInfo() (v persistence.ServerInfo, err error) {
+	if s.db == nil {
+		err = errors.New("boltdb not opened")
+		return
+	}
+
 	err = s.db.One("ID", persistence.KServerInfo, &v)
 	if err != nil {
 		return
