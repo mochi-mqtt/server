@@ -350,11 +350,9 @@ func TestWriteAndRetrieveClients(t *testing.T) {
 		Listener:     "tcp1",
 		Username:     []byte{'m', 'o', 'c', 'h', 'i'},
 		CleanSession: true,
-		Subscriptions: []persistence.Subscription{
-			persistence.Subscription{
-				Filter: "a/b/c",
-				QoS:    1,
-			},
+		Subscriptions: map[string]byte{
+			"a/b/c": 0,
+			"d/e/f": 1,
 		},
 		LWT: persistence.LWT{
 			Topic:   "a/b/c",
@@ -371,7 +369,7 @@ func TestWriteAndRetrieveClients(t *testing.T) {
 
 	require.Equal(t, []byte{'m', 'o', 'c', 'h', 'i'}, clients[0].Username)
 	require.Equal(t, "a/b/c", clients[0].LWT.Topic)
-	require.Equal(t, "a/b/c", clients[0].Subscriptions[0].Filter)
+	require.Equal(t, 1, clients[0].Subscriptions["d/e/f"])
 
 	v2 := persistence.Client{
 		ID:       "client2",

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,7 +31,7 @@ func main() {
 		Auth: new(Auth),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	// Start broker...

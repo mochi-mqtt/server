@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +11,7 @@ import (
 
 	mqtt "github.com/mochi-co/mqtt/server"
 	"github.com/mochi-co/mqtt/server/listeners"
+	"github.com/mochi-co/mqtt/server/persistence/bolt"
 )
 
 func main() {
@@ -30,7 +32,13 @@ func main() {
 		Auth: new(Auth),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
+	}
+
+	// Add the persistent store to the server.
+	err = server.AddStore(bolt.New("mochi-test.db", nil))
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	// Start broker...

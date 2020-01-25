@@ -41,7 +41,7 @@ type Server struct {
 	Clients   *clients.Clients     // clients known to the broker.
 	Topics    *topics.Index        // an index of topic subscriptions and retained messages.
 	System    *system.Info         // values commonly found in $SYS topics.
-	Stores    []persistence.Store  // a slice of persistent storage backends.
+	Store     persistence.Store    // a slice of persistent storage backends.
 	sysTicker *time.Ticker         // the interval ticker for sending updating $SYS topics.
 }
 
@@ -56,7 +56,6 @@ func New() *Server {
 			Version: Version,
 			Started: time.Now().Unix(),
 		},
-		Stores:    make([]persistence.Store, 0, 1),
 		sysTicker: time.NewTicker(SysTopicInterval * time.Millisecond),
 	}
 
@@ -69,20 +68,13 @@ func New() *Server {
 
 // AddStore adds a persistent storage backend to the server.
 func (s *Server) AddStore(p persistence.Store) error {
-	err := p.Open()
+	s.Store = p
+	err := s.Store.Open()
 	if err != nil {
 		return err
 	}
 
-	s.Stores = append(s.Stores, p)
 	return nil
-}
-
-// CloseStores closes down all storage backends.
-func (s *Server) CloseStores() {
-	for _, v := range s.Stores {
-		v.Close()
-	}
 }
 
 // AddListener adds a new network listener to the server.
@@ -107,10 +99,79 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 // Serve begins the event loops for establishing client connections on all
 // attached listeners.
 func (s *Server) Serve() error {
+	err := s.readStore()
+	if err != nil {
+		return err
+	}
+
 	go s.eventLoop()
 	s.Listeners.ServeAll(s.EstablishConnection)
 	s.publishSysTopics()
+
 	return nil
+}
+
+// readStore reads in any data from the persistent datastore (if applicable).
+func (s *Server) readStore() error {
+	return nil
+}
+
+// loadServerInfo restores server info from the datastore.
+func (s *Server) loadServerInfo(v persistence.ServerInfo) {
+	version := s.System.Version
+	s.System = &v.Info
+	s.System.Version = version
+}
+
+// loadSubscriptions restores subscriptions from the datastore.
+func (s *Server) loadSubscriptions(v []persistence.Subscription) {
+	for _, sub := range v {
+		s.Topics.Subscribe(sub.Filter, sub.Client, sub.QoS)
+	}
+}
+
+// loadClients restores clients from the datastore.
+func (s *Server) loadClients(v []persistence.Client) {
+	for _, cl := range v {
+		s.Clients.Add(&clients.Client{
+			ID:            cl.ID,
+			Listener:      cl.Listener,
+			Username:      cl.Username,
+			LWT:           clients.LWT(cl.LWT),
+			Subscriptions: cl.Subscriptions,
+		})
+	}
+}
+
+// loadInflight restores inflight messages from the datastore.
+func (s *Server) loadInflight(v []persistence.Message) {
+	for _, msg := range v {
+		if client, ok := s.Clients.Get(msg.Client); ok {
+			client.Inflight.Set(msg.PacketID, clients.InflightMessage{
+				Packet: packets.Packet{
+					FixedHeader: packets.FixedHeader(msg.FixedHeader),
+					PacketID:    msg.PacketID,
+					TopicName:   msg.TopicName,
+					Payload:     msg.Payload,
+				},
+				Sent:    msg.Sent,
+				Resends: msg.Resends,
+			})
+		}
+	}
+}
+
+// loadRetained restores retained messages from the datastore.
+func (s *Server) loadRetained(v []persistence.Message) {
+	for _, msg := range v {
+		s.Topics.RetainMessage(
+			packets.Packet{
+				FixedHeader: packets.FixedHeader(msg.FixedHeader),
+				TopicName:   msg.TopicName,
+				Payload:     msg.Payload,
+			},
+		)
+	}
 }
 
 // eventLoop runs server processes at intervals.
@@ -532,13 +593,24 @@ func (s *Server) publishSysTopics() {
 		s.publishToSubscribers(pk)
 	}
 
+	if s.Store != nil {
+		s.Store.WriteServerInfo(persistence.ServerInfo{
+			*s.System,
+			persistence.KServerInfo,
+		})
+	}
+
 }
 
 // Close attempts to gracefully shutdown the server, all listeners, clients, and stores.
 func (s *Server) Close() error {
 	close(s.done)
 	s.Listeners.CloseAll(s.closeListenerClients)
-	s.CloseStores()
+
+	if s.Store != nil {
+		s.Store.Close()
+	}
+
 	return nil
 }
 

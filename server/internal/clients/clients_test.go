@@ -714,7 +714,7 @@ func TestClientResendInflight(t *testing.T) {
 	}, rcv)
 
 	m := cl.Inflight.GetAll()
-	require.Equal(t, 1, m[11].resends) // index is packet id
+	require.Equal(t, 1, m[11].Resends) // index is packet id
 
 }
 
@@ -743,7 +743,7 @@ func TestClientResendBackoff(t *testing.T) {
 	cl.Inflight.Set(pk1.PacketID, InflightMessage{
 		Packet:  pk1,
 		Sent:    time.Now().Unix(),
-		resends: 0,
+		Resends: 0,
 	})
 
 	err := cl.ResendInflight(false)
@@ -767,7 +767,7 @@ func TestClientResendBackoff(t *testing.T) {
 	}, rcv)
 
 	m := cl.Inflight.GetAll()
-	require.Equal(t, 1, m[11].resends) // index is packet id
+	require.Equal(t, 1, m[11].Resends) // index is packet id
 }
 
 func TestClientResendInflightNoMessages(t *testing.T) {
@@ -797,7 +797,7 @@ func TestClientResendInflightDropMessage(t *testing.T) {
 	cl.Inflight.Set(pk1.PacketID, InflightMessage{
 		Packet:  pk1,
 		Sent:    time.Now().Unix(),
-		resends: maxResends,
+		Resends: maxResends,
 	})
 
 	err := cl.ResendInflight(true)

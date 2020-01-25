@@ -445,7 +445,7 @@ func (cl *Client) ResendInflight(force bool) error {
 
 	nt := time.Now().Unix()
 	for _, tk := range cl.Inflight.GetAll() {
-		if tk.resends >= maxResends { // After a reasonable time, drop inflight packets.
+		if tk.Resends >= maxResends { // After a reasonable time, drop inflight packets.
 			cl.Inflight.Delete(tk.Packet.PacketID)
 			if tk.Packet.FixedHeader.Type == packets.Publish {
 				atomic.AddInt64(&cl.system.PublishDropped, 1)
@@ -454,7 +454,7 @@ func (cl *Client) ResendInflight(force bool) error {
 		}
 
 		// Only continue if the resend backoff time has passed and there's a backoff time.
-		if !force && (nt-tk.Sent < resendBackoff[tk.resends] || len(resendBackoff) < tk.resends) {
+		if !force && (nt-tk.Sent < resendBackoff[tk.Resends] || len(resendBackoff) < tk.Resends) {
 			continue
 		}
 
@@ -462,7 +462,7 @@ func (cl *Client) ResendInflight(force bool) error {
 			tk.Packet.FixedHeader.Dup = true
 		}
 
-		tk.resends++
+		tk.Resends++
 		tk.Sent = nt
 		cl.Inflight.Set(tk.Packet.PacketID, tk)
 		_, err := cl.WritePacket(tk.Packet)
@@ -486,7 +486,7 @@ type LWT struct {
 type InflightMessage struct {
 	Packet  packets.Packet // the packet currently in-flight.
 	Sent    int64          // the last time the message was sent (for retries) in unixtime.
-	resends int            // the number of times the message was attempted to be sent.
+	Resends int            // the number of times the message was attempted to be sent.
 }
 
 // Inflight is a map of InflightMessage keyed on packet id.

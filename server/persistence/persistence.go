@@ -52,6 +52,7 @@ type Subscription struct {
 type Message struct {
 	ID          string      // the storage key.
 	T           string      // the type of the stored data.
+	Client      string      // the id of the client who sent the message (if inflight).
 	FixedHeader FixedHeader // the header properties of the message.
 	PacketID    uint16      // the unique id of the packet (if inflight).
 	TopicName   string      // the topic the message was sent to (if retained).
@@ -71,13 +72,13 @@ type FixedHeader struct {
 
 // Client contains client data that can be persistently stored.
 type Client struct {
-	ID            string         // the id of the client
-	T             string         // the type of the stored data.
-	Listener      string         // the last known listener id for the client
-	Username      []byte         // the username the client authenticated with.
-	CleanSession  bool           // indicates if the client connected expecting a clean-session.
-	Subscriptions []Subscription // a list of the subscriptions the user has.
-	LWT           LWT            // the last-will-and-testament message for the client.
+	ID            string          // the id of the client
+	T             string          // the type of the stored data.
+	Listener      string          // the last known listener id for the client
+	Username      []byte          // the username the client authenticated with.
+	CleanSession  bool            // indicates if the client connected expecting a clean-session.
+	Subscriptions map[string]byte // a list of the subscriptions the user has (qos keyed on filter).
+	LWT           LWT             // the last-will-and-testament message for the client.
 }
 
 // LWT contains details about a clients LWT payload.
@@ -163,5 +164,10 @@ func (s *MockStore) ReadRetained() (v []Message, err error) {
 
 //ReadServerInfo loads the server info from the storage instance.
 func (s *MockStore) ReadServerInfo() (v ServerInfo, err error) {
-	return
+	return ServerInfo{
+		system.Info{
+			Version: "test",
+		},
+		KServerInfo,
+	}, nil
 }

@@ -24,11 +24,6 @@ type Store struct {
 	db   *storm.DB      // the boltdb instance.
 }
 
-// init registers storage structs in gob.
-func init() {
-	//gob.Register(map[string]interface{}{})
-}
-
 // New returns a configured instance of the boltdb store.
 func New(path string, opts *bbolt.Options) *Store {
 	if path == "" || path == "." {

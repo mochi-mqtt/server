@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -66,7 +67,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	ws := listeners.NewWebsocket("ws1", ":1882")
@@ -78,7 +79,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	stats := listeners.NewHTTPStats("stats", ":8080")
@@ -90,7 +91,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	// Start broker...

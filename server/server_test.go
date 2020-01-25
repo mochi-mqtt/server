@@ -17,6 +17,7 @@ import (
 	"github.com/mochi-co/mqtt/server/listeners"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
 	"github.com/mochi-co/mqtt/server/persistence"
+	"github.com/mochi-co/mqtt/server/system"
 )
 
 const defaultPort = ":18882"
@@ -37,7 +38,7 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.Listeners)
 	require.NotNil(t, s.Clients)
 	require.NotNil(t, s.Topics)
-	require.NotNil(t, s.Stores)
+	require.Nil(t, s.Store)
 	require.NotEmpty(t, s.System.Version)
 	require.Equal(t, true, s.System.Started > 0)
 }
@@ -55,9 +56,7 @@ func TestServerAddStore(t *testing.T) {
 	p := new(persistence.MockStore)
 	err := s.AddStore(p)
 	require.NoError(t, err)
-
-	require.Equal(t, 1, len(s.Stores))
-	require.Equal(t, p, s.Stores[0])
+	require.Equal(t, p, s.Store)
 }
 
 func TestServerAddStoreFailure(t *testing.T) {
@@ -68,7 +67,6 @@ func TestServerAddStoreFailure(t *testing.T) {
 	p.FailOpen = true
 	err := s.AddStore(p)
 	require.Error(t, err)
-	require.Equal(t, 0, len(s.Stores))
 }
 
 func BenchmarkServerAddStore(b *testing.B) {
@@ -77,27 +75,6 @@ func BenchmarkServerAddStore(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		s.AddStore(p)
 	}
-}
-
-func TestServerCloseStores(t *testing.T) {
-	s := New()
-	require.NotNil(t, s)
-
-	p := new(persistence.MockStore)
-	err := s.AddStore(p)
-	require.NoError(t, err)
-
-	p2 := new(persistence.MockStore)
-	err = s.AddStore(p2)
-	require.NoError(t, err)
-
-	require.Equal(t, false, p.Closed)
-	require.Equal(t, false, p2.Closed)
-
-	s.CloseStores()
-
-	require.Equal(t, true, p.Closed)
-	require.Equal(t, true, p2.Closed)
 }
 
 func TestServerAddListener(t *testing.T) {
@@ -142,6 +119,185 @@ func BenchmarkServerAddListener(b *testing.B) {
 	}
 }
 
+func TestServerReadStore(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	s.Store = new(persistence.MockStore)
+
+	err := s.readStore()
+	require.NoError(t, err)
+}
+
+func TestServerLoadServerInfo(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	s.System.Version = "original"
+
+	s.loadServerInfo(persistence.ServerInfo{
+		system.Info{
+			Version: "test",
+			Started: 100,
+		}, persistence.KServerInfo,
+	})
+
+	require.Equal(t, "original", s.System.Version)
+	require.Equal(t, int64(100), s.System.Started)
+}
+
+func TestServerLoadSubscriptions(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	subs := []persistence.Subscription{
+		persistence.Subscription{
+			ID:     "test:a/b/c",
+			Client: "test",
+			Filter: "a/b/c",
+			QoS:    1,
+			T:      persistence.KSubscription,
+		},
+		persistence.Subscription{
+			ID:     "test:d/e/f",
+			Client: "test",
+			Filter: "d/e/f",
+			QoS:    0,
+			T:      persistence.KSubscription,
+		},
+	}
+
+	s.loadSubscriptions(subs)
+	require.Equal(t, topics.Subscriptions{"test": 1}, s.Topics.Subscribers("a/b/c"))
+	require.Equal(t, topics.Subscriptions{"test": 0}, s.Topics.Subscribers("d/e/f"))
+}
+
+func TestServerLoadClients(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	clients := []persistence.Client{
+		persistence.Client{
+			ID:           "client1",
+			T:            persistence.KClient,
+			Listener:     "tcp1",
+			CleanSession: true,
+			Subscriptions: map[string]byte{
+				"a/b/c": 0,
+				"d/e/f": 1,
+			},
+		},
+		persistence.Client{
+			ID:       "client2",
+			T:        persistence.KClient,
+			Listener: "tcp1",
+			Subscriptions: map[string]byte{
+				"q/w/e": 2,
+			},
+		},
+	}
+
+	s.loadClients(clients)
+
+	cl1, ok := s.Clients.Get("client1")
+	require.Equal(t, true, ok)
+	require.NotNil(t, cl1)
+
+	cl2, ok2 := s.Clients.Get("client2")
+	require.Equal(t, true, ok2)
+	require.NotNil(t, cl2)
+
+}
+
+func TestServerLoadInflight(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	msgs := []persistence.Message{
+		persistence.Message{
+			ID:        "client1_if_0",
+			T:         persistence.KInflight,
+			Client:    "client1",
+			PacketID:  0,
+			TopicName: "a/b/c",
+			Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
+			Sent:      100,
+			Resends:   0,
+		},
+		persistence.Message{
+			ID:        "client1_if_100",
+			T:         persistence.KInflight,
+			Client:    "client1",
+			PacketID:  100,
+			TopicName: "d/e/f",
+			Payload:   []byte{'y', 'e', 's'},
+			Sent:      200,
+			Resends:   1,
+		},
+	}
+
+	w, _ := net.Pipe()
+	defer w.Close()
+	c1 := clients.NewClient(w, nil, nil, nil)
+	c1.ID = "client1"
+	s.Clients.Add(c1)
+
+	s.loadInflight(msgs)
+
+	cl1, ok := s.Clients.Get("client1")
+	require.Equal(t, true, ok)
+	require.Equal(t, "client1", cl1.ID)
+
+	msg, ok := cl1.Inflight.Get(100)
+	require.Equal(t, true, ok)
+	require.Equal(t, []byte{'y', 'e', 's'}, msg.Packet.Payload)
+
+}
+
+func TestServerLoadRetained(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	msgs := []persistence.Message{
+		persistence.Message{
+			ID: "client1_ret_200",
+			T:  persistence.KRetained,
+			FixedHeader: persistence.FixedHeader{
+				Retain: true,
+			},
+			PacketID:  200,
+			TopicName: "a/b/c",
+			Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
+			Sent:      100,
+			Resends:   0,
+		},
+		persistence.Message{
+			ID: "client1_ret_300",
+			T:  persistence.KRetained,
+			FixedHeader: persistence.FixedHeader{
+				Retain: true,
+			},
+			PacketID:  100,
+			TopicName: "d/e/f",
+			Payload:   []byte{'y', 'e', 's'},
+			Sent:      200,
+			Resends:   1,
+		},
+	}
+
+	s.loadRetained(msgs)
+
+	require.Equal(t, 1, len(s.Topics.Messages("a/b/c")))
+	require.Equal(t, 1, len(s.Topics.Messages("d/e/f")))
+
+	msg := s.Topics.Messages("a/b/c")
+	require.Equal(t, []byte{'h', 'e', 'l', 'l', 'o'}, msg[0].Payload)
+
+	msg = s.Topics.Messages("d/e/f")
+	require.Equal(t, []byte{'y', 'e', 's'}, msg[0].Payload)
+
+}
+
 func TestServerServe(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
@@ -172,7 +328,7 @@ func BenchmarkServerServe(b *testing.B) {
 func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 	s := New()
 
-	// Existing conneciton with subscription.
+	// Existing connection with subscription.
 	c, _ := net.Pipe()
 	cl := clients.NewClient(c, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
 	cl.ID = "mochi"
