@@ -99,9 +99,11 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 // Serve begins the event loops for establishing client connections on all
 // attached listeners.
 func (s *Server) Serve() error {
-	err := s.readStore()
-	if err != nil {
-		return err
+	if s.Store != nil {
+		err := s.readStore()
+		if err != nil {
+			return err
+		}
 	}
 
 	go s.eventLoop()
@@ -113,6 +115,36 @@ func (s *Server) Serve() error {
 
 // readStore reads in any data from the persistent datastore (if applicable).
 func (s *Server) readStore() error {
+	info, err := s.Store.ReadServerInfo()
+	if err != nil {
+		return err
+	}
+	s.loadServerInfo(info)
+
+	subs, err := s.Store.ReadSubscriptions()
+	if err != nil {
+		return err
+	}
+	s.loadSubscriptions(subs)
+
+	clients, err := s.Store.ReadClients()
+	if err != nil {
+		return err
+	}
+	s.loadClients(clients)
+
+	inflight, err := s.Store.ReadInflight()
+	if err != nil {
+		return err
+	}
+	s.loadInflight(inflight)
+
+	retained, err := s.Store.ReadRetained()
+	if err != nil {
+		return err
+	}
+	s.loadRetained(retained)
+
 	return nil
 }
 

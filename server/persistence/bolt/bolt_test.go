@@ -369,7 +369,7 @@ func TestWriteAndRetrieveClients(t *testing.T) {
 
 	require.Equal(t, []byte{'m', 'o', 'c', 'h', 'i'}, clients[0].Username)
 	require.Equal(t, "a/b/c", clients[0].LWT.Topic)
-	require.Equal(t, 1, clients[0].Subscriptions["d/e/f"])
+	require.Equal(t, uint8(1), clients[0].Subscriptions["d/e/f"])
 
 	v2 := persistence.Client{
 		ID:       "client2",

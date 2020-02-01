@@ -129,6 +129,16 @@ func TestServerReadStore(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestServerReadStoreFailure(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	s.Store = new(persistence.MockStore)
+
+	err := s.readStore()
+	require.NoError(t, err)
+}
+
 func TestServerLoadServerInfo(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)

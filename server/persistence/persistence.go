@@ -18,18 +18,15 @@ const (
 type Store interface {
 	Open() error
 	Close()
-
 	WriteSubscription(v Subscription) error
 	WriteClient(v Client) error
 	WriteInflight(v Message) error
 	WriteServerInfo(v ServerInfo) error
 	WriteRetained(v Message) error
-
 	ReadSubscriptions() (v []Subscription, err error)
 	ReadInflight() (v []Message, err error)
 	ReadRetained() (v []Message, err error)
 	ReadClients() (v []Client, err error)
-
 	ReadServerInfo() (v ServerInfo, err error)
 }
 
@@ -89,17 +86,12 @@ type LWT struct {
 	Retain  bool   // indicates whether the will message should be retained
 }
 
-/*
-*
-*
-*
- */
-
 // MockStore is a mock storage backend for testing.
 type MockStore struct {
 	FailOpen bool
 	Closed   bool
 	Opened   bool
+	Fail     bool
 }
 
 // Open opens the storage instance.
@@ -119,51 +111,81 @@ func (s *MockStore) Close() {
 
 // WriteSubscription writes a single subscription to the storage instance.
 func (s *MockStore) WriteSubscription(v Subscription) error {
+	if s.Fail {
+		return errors.New("test")
+	}
 	return nil
 }
 
 // WriteClient writes a single client to the storage instance.
 func (s *MockStore) WriteClient(v Client) error {
+	if s.Fail {
+		return errors.New("test")
+	}
 	return nil
 }
 
 // WriteInFlight writes a single InFlight message to the storage instance.
 func (s *MockStore) WriteInflight(v Message) error {
+	if s.Fail {
+		return errors.New("test")
+	}
 	return nil
 }
 
 // WriteRetained writes a single retained message to the storage instance.
 func (s *MockStore) WriteRetained(v Message) error {
+	if s.Fail {
+		return errors.New("test")
+	}
 	return nil
 }
 
 // WriteServerInfo writes server info to the storage instance.
 func (s *MockStore) WriteServerInfo(v ServerInfo) error {
+	if s.Fail {
+		return errors.New("test")
+	}
 	return nil
 }
 
 // ReadSubscriptions loads the subscriptions from the storage instance.
 func (s *MockStore) ReadSubscriptions() (v []Subscription, err error) {
+	if s.Fail {
+		return v, errors.New("test")
+	}
 	return
 }
 
 // ReadClients loads the clients from the storage instance.
 func (s *MockStore) ReadClients() (v []Client, err error) {
+	if s.Fail {
+		return v, errors.New("test")
+	}
 	return
 }
 
 // ReadInflight loads the inflight messages from the storage instance.
 func (s *MockStore) ReadInflight() (v []Message, err error) {
+	if s.Fail {
+		return v, errors.New("test")
+	}
 	return
 }
 
 // ReadRetained loads the retained messages from the storage instance.
 func (s *MockStore) ReadRetained() (v []Message, err error) {
+	if s.Fail {
+		return v, errors.New("test")
+	}
 	return
 }
 
 //ReadServerInfo loads the server info from the storage instance.
 func (s *MockStore) ReadServerInfo() (v ServerInfo, err error) {
+	if s.Fail {
+		return v, errors.New("test")
+	}
 	return ServerInfo{
 		system.Info{
 			Version: "test",
