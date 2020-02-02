@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"io/ioutil"
 	"net"
 	"strconv"
@@ -124,19 +125,58 @@ func TestServerReadStore(t *testing.T) {
 	require.NotNil(t, s)
 
 	s.Store = new(persistence.MockStore)
-
 	err := s.readStore()
 	require.NoError(t, err)
+
+	require.Equal(t, int64(100), s.System.Started)
+	require.Equal(t, topics.Subscriptions{"test": 1}, s.Topics.Subscribers("a/b/c"))
+
+	cl1, ok := s.Clients.Get("client1")
+	require.Equal(t, true, ok)
+
+	msg, ok := cl1.Inflight.Get(100)
+	require.Equal(t, true, ok)
+	require.Equal(t, []byte{'y', 'e', 's'}, msg.Packet.Payload)
+
 }
 
-func TestServerReadStoreFailure(t *testing.T) {
+func TestServerReadStoreFailures(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
 
 	s.Store = new(persistence.MockStore)
+	s.Store.(*persistence.MockStore).Fail = map[string]bool{
+		"read_subs":     true,
+		"read_clients":  true,
+		"read_inflight": true,
+		"read_retained": true,
+		"read_info":     true,
+	}
 
 	err := s.readStore()
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.Equal(t, errors.New("test_info"), err)
+	delete(s.Store.(*persistence.MockStore).Fail, "read_info")
+
+	err = s.readStore()
+	require.Error(t, err)
+	require.Equal(t, errors.New("test_subs"), err)
+	delete(s.Store.(*persistence.MockStore).Fail, "read_subs")
+
+	err = s.readStore()
+	require.Error(t, err)
+	require.Equal(t, errors.New("test_clients"), err)
+	delete(s.Store.(*persistence.MockStore).Fail, "read_clients")
+
+	err = s.readStore()
+	require.Error(t, err)
+	require.Equal(t, errors.New("test_inflight"), err)
+	delete(s.Store.(*persistence.MockStore).Fail, "read_inflight")
+
+	err = s.readStore()
+	require.Error(t, err)
+	require.Equal(t, errors.New("test_retained"), err)
+	delete(s.Store.(*persistence.MockStore).Fail, "read_retained")
 }
 
 func TestServerLoadServerInfo(t *testing.T) {
@@ -315,12 +355,24 @@ func TestServerServe(t *testing.T) {
 	err := s.AddListener(listeners.NewMockListener("t1", ":1882"), nil)
 	require.NoError(t, err)
 
-	s.Serve()
+	err = s.Serve()
+	require.NoError(t, err)
 	time.Sleep(time.Millisecond)
 	require.Equal(t, 1, s.Listeners.Len())
 	listener, ok := s.Listeners.Get("t1")
 	require.Equal(t, true, ok)
 	require.Equal(t, true, listener.(*listeners.MockListener).IsServing)
+}
+
+func TestServerServeFail(t *testing.T) {
+	s := New()
+	s.Store = new(persistence.MockStore)
+	s.Store.(*persistence.MockStore).Fail = map[string]bool{
+		"read_subs": true,
+	}
+
+	err := s.Serve()
+	require.Error(t, err)
 }
 
 func BenchmarkServerServe(b *testing.B) {

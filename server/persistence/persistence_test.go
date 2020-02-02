@@ -33,8 +33,11 @@ func TestMockStoreWriteSubscription(t *testing.T) {
 }
 
 func TestMockStoreWriteSubscriptionFail(t *testing.T) {
-	s := new(MockStore)
-	s.Fail = true
+	s := &MockStore{
+		Fail: map[string]bool{
+			"write_subs": true,
+		},
+	}
 	err := s.WriteSubscription(Subscription{})
 	require.Error(t, err)
 }
@@ -46,8 +49,11 @@ func TestMockStoreWriteClient(t *testing.T) {
 }
 
 func TestMockStoreWriteClientFail(t *testing.T) {
-	s := new(MockStore)
-	s.Fail = true
+	s := &MockStore{
+		Fail: map[string]bool{
+			"write_clients": true,
+		},
+	}
 	err := s.WriteClient(Client{})
 	require.Error(t, err)
 }
@@ -59,8 +65,11 @@ func TestMockStoreWriteInflight(t *testing.T) {
 }
 
 func TestMockStoreWriteInflightFail(t *testing.T) {
-	s := new(MockStore)
-	s.Fail = true
+	s := &MockStore{
+		Fail: map[string]bool{
+			"write_inflight": true,
+		},
+	}
 	err := s.WriteInflight(Message{})
 	require.Error(t, err)
 }
@@ -72,8 +81,11 @@ func TestMockStoreWriteRetained(t *testing.T) {
 }
 
 func TestMockStoreWriteRetainedFail(t *testing.T) {
-	s := new(MockStore)
-	s.Fail = true
+	s := &MockStore{
+		Fail: map[string]bool{
+			"write_retained": true,
+		},
+	}
 	err := s.WriteRetained(Message{})
 	require.Error(t, err)
 }
@@ -85,9 +97,76 @@ func TestMockStoreWriteServerInfo(t *testing.T) {
 }
 
 func TestMockStoreWriteServerInfoFail(t *testing.T) {
-	s := new(MockStore)
-	s.Fail = true
+	s := &MockStore{
+		Fail: map[string]bool{
+			"write_info": true,
+		},
+	}
 	err := s.WriteServerInfo(ServerInfo{})
+	require.Error(t, err)
+}
+
+func TestMockStoreDeleteSubscription(t *testing.T) {
+	s := new(MockStore)
+	err := s.DeleteSubscription("client1:d/e/f")
+	require.NoError(t, err)
+}
+
+func TestMockStoreDeleteSubscriptionFail(t *testing.T) {
+	s := &MockStore{
+		Fail: map[string]bool{
+			"delete_subs": true,
+		},
+	}
+	err := s.DeleteSubscription("client1:a/b/c")
+	require.Error(t, err)
+}
+
+func TestMockStoreDeleteClient(t *testing.T) {
+	s := new(MockStore)
+	err := s.DeleteClient("client1")
+	require.NoError(t, err)
+}
+
+func TestMockStoreDeleteClientFail(t *testing.T) {
+	s := &MockStore{
+		Fail: map[string]bool{
+			"delete_clients": true,
+		},
+	}
+	err := s.DeleteClient("client1")
+	require.Error(t, err)
+}
+
+func TestMockStoreDeleteInflight(t *testing.T) {
+	s := new(MockStore)
+	err := s.DeleteInflight("client1-if-100")
+	require.NoError(t, err)
+}
+
+func TestMockStoreDeleteInflightFail(t *testing.T) {
+	s := &MockStore{
+		Fail: map[string]bool{
+			"delete_inflight": true,
+		},
+	}
+	err := s.DeleteInflight("client1-if-100")
+	require.Error(t, err)
+}
+
+func TestMockStoreDeleteRetained(t *testing.T) {
+	s := new(MockStore)
+	err := s.DeleteRetained("client1-ret-100")
+	require.NoError(t, err)
+}
+
+func TestMockStoreDeleteRetainedFail(t *testing.T) {
+	s := &MockStore{
+		Fail: map[string]bool{
+			"delete_retained": true,
+		},
+	}
+	err := s.DeleteRetained("client1-ret-100")
 	require.Error(t, err)
 }
 
@@ -98,8 +177,11 @@ func TestMockStorReadServerInfo(t *testing.T) {
 }
 
 func TestMockStorReadServerInfoFail(t *testing.T) {
-	s := new(MockStore)
-	s.Fail = true
+	s := &MockStore{
+		Fail: map[string]bool{
+			"read_info": true,
+		},
+	}
 	_, err := s.ReadServerInfo()
 	require.Error(t, err)
 }
@@ -111,8 +193,11 @@ func TestMockStoreReadSubscriptions(t *testing.T) {
 }
 
 func TestMockStoreReadSubscriptionsFail(t *testing.T) {
-	s := new(MockStore)
-	s.Fail = true
+	s := &MockStore{
+		Fail: map[string]bool{
+			"read_subs": true,
+		},
+	}
 	_, err := s.ReadSubscriptions()
 	require.Error(t, err)
 }
@@ -124,8 +209,11 @@ func TestMockStoreReadClients(t *testing.T) {
 }
 
 func TestMockStoreReadClientsFail(t *testing.T) {
-	s := new(MockStore)
-	s.Fail = true
+	s := &MockStore{
+		Fail: map[string]bool{
+			"read_clients": true,
+		},
+	}
 	_, err := s.ReadClients()
 	require.Error(t, err)
 }
@@ -137,8 +225,11 @@ func TestMockStoreReadInflight(t *testing.T) {
 }
 
 func TestMockStoreReadInflightFail(t *testing.T) {
-	s := new(MockStore)
-	s.Fail = true
+	s := &MockStore{
+		Fail: map[string]bool{
+			"read_inflight": true,
+		},
+	}
 	_, err := s.ReadInflight()
 	require.Error(t, err)
 }
@@ -150,8 +241,11 @@ func TestMockStoreReadRetained(t *testing.T) {
 }
 
 func TestMockStoreReadRetainedFail(t *testing.T) {
-	s := new(MockStore)
-	s.Fail = true
+	s := &MockStore{
+		Fail: map[string]bool{
+			"read_retained": true,
+		},
+	}
 	_, err := s.ReadRetained()
 	require.Error(t, err)
 }

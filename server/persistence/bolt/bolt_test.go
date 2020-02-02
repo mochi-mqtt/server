@@ -119,7 +119,7 @@ func TestReadServerInfoFail(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestWriteAndRetrieveSubscription(t *testing.T) {
+func TestWriteRetrieveDeleteSubscription(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
@@ -149,6 +149,13 @@ func TestWriteAndRetrieveSubscription(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, persistence.KSubscription, subs[0].T)
 	require.Equal(t, 2, len(subs))
+
+	err = s.DeleteSubscription("test:d/e/f")
+	require.NoError(t, err)
+
+	subs, err = s.ReadSubscriptions()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(subs))
 }
 
 func TestWriteSubscriptionNoDB(t *testing.T) {
@@ -187,7 +194,7 @@ func TestReadSubscriptionFail(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestWriteAndRetrieveInflight(t *testing.T) {
+func TestWriteRetrieveDeleteInflight(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
@@ -221,6 +228,14 @@ func TestWriteAndRetrieveInflight(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, persistence.KInflight, msgs[0].T)
 	require.Equal(t, 2, len(msgs))
+
+	err = s.DeleteInflight("client1_if_100")
+	require.NoError(t, err)
+
+	msgs, err = s.ReadInflight()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(msgs))
+
 }
 
 func TestWriteInflightNoDB(t *testing.T) {
@@ -259,7 +274,7 @@ func TestReadInflightFail(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestWriteAndRetrieveRetained(t *testing.T) {
+func TestWriteRetrieveDeleteRetained(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
@@ -300,6 +315,13 @@ func TestWriteAndRetrieveRetained(t *testing.T) {
 	require.Equal(t, persistence.KRetained, msgs[0].T)
 	require.Equal(t, true, msgs[0].FixedHeader.Retain)
 	require.Equal(t, 2, len(msgs))
+
+	err = s.DeleteRetained("client1_ret_300")
+	require.NoError(t, err)
+
+	msgs, err = s.ReadRetained()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(msgs))
 }
 
 func TestWriteRetainedNoDB(t *testing.T) {
@@ -338,7 +360,7 @@ func TestReadRetainedFail(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestWriteAndRetrieveClients(t *testing.T) {
+func TestWriteRetrieveDeleteClients(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
@@ -383,6 +405,13 @@ func TestWriteAndRetrieveClients(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, persistence.KClient, clients[0].T)
 	require.Equal(t, 2, len(clients))
+
+	err = s.DeleteClient("client2")
+	require.NoError(t, err)
+
+	clients, err = s.ReadClients()
+	require.NoError(t, err)
+	require.Equal(t, 1, len(clients))
 }
 
 func TestWriteClientNoDB(t *testing.T) {
@@ -418,5 +447,77 @@ func TestReadClientFail(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = s.ReadClients()
+	require.Error(t, err)
+}
+
+func TestDeleteSubscriptionNoDB(t *testing.T) {
+	s := New(tmpPath, nil)
+	err := s.DeleteSubscription("a")
+	require.Error(t, err)
+}
+
+func TestDeleteSubscriptionFail(t *testing.T) {
+	s := New(tmpPath, nil)
+	err := s.Open()
+	require.NoError(t, err)
+
+	err = os.Remove(tmpPath)
+	require.NoError(t, err)
+
+	err = s.DeleteSubscription("a")
+	require.Error(t, err)
+}
+
+func TestDeleteClientNoDB(t *testing.T) {
+	s := New(tmpPath, nil)
+	err := s.DeleteClient("a")
+	require.Error(t, err)
+}
+
+func TestDeleteClientFail(t *testing.T) {
+	s := New(tmpPath, nil)
+	err := s.Open()
+	require.NoError(t, err)
+
+	err = os.Remove(tmpPath)
+	require.NoError(t, err)
+
+	err = s.DeleteClient("a")
+	require.Error(t, err)
+}
+
+func TestDeleteInflightNoDB(t *testing.T) {
+	s := New(tmpPath, nil)
+	err := s.DeleteInflight("a")
+	require.Error(t, err)
+}
+
+func TestDeleteInflightFail(t *testing.T) {
+	s := New(tmpPath, nil)
+	err := s.Open()
+	require.NoError(t, err)
+
+	err = os.Remove(tmpPath)
+	require.NoError(t, err)
+
+	err = s.DeleteInflight("a")
+	require.Error(t, err)
+}
+
+func TestDeleteRetainedNoDB(t *testing.T) {
+	s := New(tmpPath, nil)
+	err := s.DeleteRetained("a")
+	require.Error(t, err)
+}
+
+func TestDeleteRetainedFail(t *testing.T) {
+	s := New(tmpPath, nil)
+	err := s.Open()
+	require.NoError(t, err)
+
+	err = os.Remove(tmpPath)
+	require.NoError(t, err)
+
+	err = s.DeleteRetained("a")
 	require.Error(t, err)
 }

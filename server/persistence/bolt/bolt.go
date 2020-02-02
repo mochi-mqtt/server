@@ -123,6 +123,70 @@ func (s *Store) WriteClient(v persistence.Client) error {
 	return nil
 }
 
+// DeleteSubscription deletes a subscription from the boltdb instance.
+func (s *Store) DeleteSubscription(id string) error {
+	if s.db == nil {
+		return errors.New("boltdb not opened")
+	}
+
+	err := s.db.DeleteStruct(&persistence.Subscription{
+		ID: id,
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DeleteClient deletes a client from the boltdb instance.
+func (s *Store) DeleteClient(id string) error {
+	if s.db == nil {
+		return errors.New("boltdb not opened")
+	}
+
+	err := s.db.DeleteStruct(&persistence.Client{
+		ID: id,
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DeleteInflight deletes an inflight message from the boltdb instance.
+func (s *Store) DeleteInflight(id string) error {
+	if s.db == nil {
+		return errors.New("boltdb not opened")
+	}
+
+	err := s.db.DeleteStruct(&persistence.Message{
+		ID: id,
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// DeleteRetained deletes a retained message from the boltdb instance.
+func (s *Store) DeleteRetained(id string) error {
+	if s.db == nil {
+		return errors.New("boltdb not opened")
+	}
+
+	err := s.db.DeleteStruct(&persistence.Message{
+		ID: id,
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ReadSubscriptions loads all the subscriptions from the boltdb instance.
 func (s *Store) ReadSubscriptions() (v []persistence.Subscription, err error) {
 	if s.db == nil {
@@ -134,6 +198,7 @@ func (s *Store) ReadSubscriptions() (v []persistence.Subscription, err error) {
 	if err != nil {
 		return
 	}
+
 	return
 }
 
@@ -148,6 +213,7 @@ func (s *Store) ReadClients() (v []persistence.Client, err error) {
 	if err != nil {
 		return
 	}
+
 	return
 }
 
@@ -162,6 +228,7 @@ func (s *Store) ReadInflight() (v []persistence.Message, err error) {
 	if err != nil {
 		return
 	}
+
 	return
 }
 
@@ -176,6 +243,7 @@ func (s *Store) ReadRetained() (v []persistence.Message, err error) {
 	if err != nil {
 		return
 	}
+
 	return
 }
 
@@ -190,5 +258,6 @@ func (s *Store) ReadServerInfo() (v persistence.ServerInfo, err error) {
 	if err != nil {
 		return
 	}
+
 	return
 }

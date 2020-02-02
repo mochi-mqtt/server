@@ -165,13 +165,14 @@ func (s *Server) loadSubscriptions(v []persistence.Subscription) {
 // loadClients restores clients from the datastore.
 func (s *Server) loadClients(v []persistence.Client) {
 	for _, cl := range v {
-		s.Clients.Add(&clients.Client{
-			ID:            cl.ID,
-			Listener:      cl.Listener,
-			Username:      cl.Username,
-			LWT:           clients.LWT(cl.LWT),
-			Subscriptions: cl.Subscriptions,
-		})
+
+		c := clients.NewClientStub(s.System)
+		c.ID = cl.ID
+		c.Listener = cl.Listener
+		c.Username = cl.Username
+		c.LWT = clients.LWT(cl.LWT)
+		c.Subscriptions = cl.Subscriptions
+		s.Clients.Add(c)
 	}
 }
 
@@ -319,9 +320,6 @@ func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 	if err != nil {
 		return err
 	}
-
-	// Log $SYS stats.
-	// @TODO ...
 
 	return nil
 }

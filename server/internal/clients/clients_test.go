@@ -144,6 +144,20 @@ func BenchmarkNewClient(b *testing.B) {
 	}
 }
 
+func TestNewClientStub(t *testing.T) {
+	cl := NewClientStub(nil)
+
+	require.NotNil(t, cl)
+	require.NotNil(t, cl.Inflight.internal)
+	require.NotNil(t, cl.Subscriptions)
+}
+
+func BenchmarkNewClientStub(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		NewClientStub(nil)
+	}
+}
+
 func TestClientIdentify(t *testing.T) {
 	cl := genClient()
 

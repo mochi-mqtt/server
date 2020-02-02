@@ -23,6 +23,12 @@ type Store interface {
 	WriteInflight(v Message) error
 	WriteServerInfo(v ServerInfo) error
 	WriteRetained(v Message) error
+
+	DeleteSubscription(id string) error
+	DeleteClient(id string) error
+	DeleteInflight(id string) error
+	DeleteRetained(id string) error
+
 	ReadSubscriptions() (v []Subscription, err error)
 	ReadInflight() (v []Message, err error)
 	ReadRetained() (v []Message, err error)
@@ -91,7 +97,7 @@ type MockStore struct {
 	FailOpen bool
 	Closed   bool
 	Opened   bool
-	Fail     bool
+	Fail     map[string]bool
 }
 
 // Open opens the storage instance.
@@ -111,7 +117,7 @@ func (s *MockStore) Close() {
 
 // WriteSubscription writes a single subscription to the storage instance.
 func (s *MockStore) WriteSubscription(v Subscription) error {
-	if s.Fail {
+	if _, ok := s.Fail["write_subs"]; ok {
 		return errors.New("test")
 	}
 	return nil
@@ -119,7 +125,7 @@ func (s *MockStore) WriteSubscription(v Subscription) error {
 
 // WriteClient writes a single client to the storage instance.
 func (s *MockStore) WriteClient(v Client) error {
-	if s.Fail {
+	if _, ok := s.Fail["write_clients"]; ok {
 		return errors.New("test")
 	}
 	return nil
@@ -127,7 +133,7 @@ func (s *MockStore) WriteClient(v Client) error {
 
 // WriteInFlight writes a single InFlight message to the storage instance.
 func (s *MockStore) WriteInflight(v Message) error {
-	if s.Fail {
+	if _, ok := s.Fail["write_inflight"]; ok {
 		return errors.New("test")
 	}
 	return nil
@@ -135,7 +141,7 @@ func (s *MockStore) WriteInflight(v Message) error {
 
 // WriteRetained writes a single retained message to the storage instance.
 func (s *MockStore) WriteRetained(v Message) error {
-	if s.Fail {
+	if _, ok := s.Fail["write_retained"]; ok {
 		return errors.New("test")
 	}
 	return nil
@@ -143,52 +149,137 @@ func (s *MockStore) WriteRetained(v Message) error {
 
 // WriteServerInfo writes server info to the storage instance.
 func (s *MockStore) WriteServerInfo(v ServerInfo) error {
-	if s.Fail {
+	if _, ok := s.Fail["write_info"]; ok {
 		return errors.New("test")
 	}
 	return nil
 }
 
+// DeleteSubscription deletes a subscription from the persistent store.
+func (s *MockStore) DeleteSubscription(id string) error {
+	if _, ok := s.Fail["delete_subs"]; ok {
+		return errors.New("test")
+	}
+
+	return nil
+}
+
+// DeleteClient deletes a client from the persistent store.
+func (s *MockStore) DeleteClient(id string) error {
+	if _, ok := s.Fail["delete_clients"]; ok {
+		return errors.New("test")
+	}
+
+	return nil
+}
+
+// DeleteInflight deletes an inflight message from the persistent store.
+func (s *MockStore) DeleteInflight(id string) error {
+	if _, ok := s.Fail["delete_inflight"]; ok {
+		return errors.New("test")
+	}
+
+	return nil
+}
+
+// DeleteRetained deletes a retained message from the persistent store.
+func (s *MockStore) DeleteRetained(id string) error {
+	if _, ok := s.Fail["delete_retained"]; ok {
+		return errors.New("test")
+	}
+
+	return nil
+}
+
 // ReadSubscriptions loads the subscriptions from the storage instance.
 func (s *MockStore) ReadSubscriptions() (v []Subscription, err error) {
-	if s.Fail {
-		return v, errors.New("test")
+	if _, ok := s.Fail["read_subs"]; ok {
+		return v, errors.New("test_subs")
 	}
-	return
+
+	return []Subscription{
+		Subscription{
+			ID:     "test:a/b/c",
+			Client: "test",
+			Filter: "a/b/c",
+			QoS:    1,
+			T:      KSubscription,
+		},
+	}, nil
 }
 
 // ReadClients loads the clients from the storage instance.
 func (s *MockStore) ReadClients() (v []Client, err error) {
-	if s.Fail {
-		return v, errors.New("test")
+	if _, ok := s.Fail["read_clients"]; ok {
+		return v, errors.New("test_clients")
 	}
-	return
+
+	return []Client{
+		Client{
+			ID:           "client1",
+			T:            KClient,
+			Listener:     "tcp1",
+			CleanSession: true,
+			Subscriptions: map[string]byte{
+				"a/b/c": 0,
+				"d/e/f": 1,
+			},
+		},
+	}, nil
 }
 
 // ReadInflight loads the inflight messages from the storage instance.
 func (s *MockStore) ReadInflight() (v []Message, err error) {
-	if s.Fail {
-		return v, errors.New("test")
+	if _, ok := s.Fail["read_inflight"]; ok {
+		return v, errors.New("test_inflight")
 	}
-	return
+
+	return []Message{
+		Message{
+			ID:        "client1_if_100",
+			T:         KInflight,
+			Client:    "client1",
+			PacketID:  100,
+			TopicName: "d/e/f",
+			Payload:   []byte{'y', 'e', 's'},
+			Sent:      200,
+			Resends:   1,
+		},
+	}, nil
 }
 
 // ReadRetained loads the retained messages from the storage instance.
 func (s *MockStore) ReadRetained() (v []Message, err error) {
-	if s.Fail {
-		return v, errors.New("test")
+	if _, ok := s.Fail["read_retained"]; ok {
+		return v, errors.New("test_retained")
 	}
-	return
+
+	return []Message{
+		Message{
+			ID: "client1_ret_200",
+			T:  KRetained,
+			FixedHeader: FixedHeader{
+				Retain: true,
+			},
+			PacketID:  200,
+			TopicName: "a/b/c",
+			Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
+			Sent:      100,
+			Resends:   0,
+		},
+	}, nil
 }
 
 //ReadServerInfo loads the server info from the storage instance.
 func (s *MockStore) ReadServerInfo() (v ServerInfo, err error) {
-	if s.Fail {
-		return v, errors.New("test")
+	if _, ok := s.Fail["read_info"]; ok {
+		return v, errors.New("test_info")
 	}
+
 	return ServerInfo{
 		system.Info{
 			Version: "test",
+			Started: 100,
 		},
 		KServerInfo,
 	}, nil
