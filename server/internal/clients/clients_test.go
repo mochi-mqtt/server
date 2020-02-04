@@ -685,157 +685,6 @@ func TestClientWritePacketInvalidPacket(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestClientResendInflight(t *testing.T) {
-	r, w := net.Pipe()
-	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
-	cl.Start()
-
-	o := make(chan []byte)
-	go func() {
-		buf, err := ioutil.ReadAll(w)
-		require.NoError(t, err)
-		o <- buf
-	}()
-
-	pk1 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
-			Qos:  1,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
-		PacketID:  11,
-	}
-
-	cl.Inflight.Set(pk1.PacketID, InflightMessage{
-		Packet: pk1,
-		Sent:   time.Now().Unix(),
-	})
-
-	err := cl.ResendInflight(true)
-	require.NoError(t, err)
-
-	time.Sleep(time.Millisecond)
-	r.Close()
-
-	rcv := <-o
-	require.Equal(t, []byte{
-		byte(packets.Publish<<4 | 1<<1 | 1<<3), 14,
-		0, 5,
-		'a', '/', 'b', '/', 'c',
-		0, 11,
-		'h', 'e', 'l', 'l', 'o',
-	}, rcv)
-
-	m := cl.Inflight.GetAll()
-	require.Equal(t, 1, m[11].Resends) // index is packet id
-
-}
-
-func TestClientResendBackoff(t *testing.T) {
-	r, w := net.Pipe()
-	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
-	cl.Start()
-
-	o := make(chan []byte)
-	go func() {
-		buf, err := ioutil.ReadAll(w)
-		require.NoError(t, err)
-		o <- buf
-	}()
-
-	pk1 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
-			Qos:  1,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
-		PacketID:  11,
-	}
-
-	cl.Inflight.Set(pk1.PacketID, InflightMessage{
-		Packet:  pk1,
-		Sent:    time.Now().Unix(),
-		Resends: 0,
-	})
-
-	err := cl.ResendInflight(false)
-	require.NoError(t, err)
-
-	time.Sleep(time.Millisecond)
-
-	// Attempt to send twice, but backoff should kick in stopping second resend.
-	err = cl.ResendInflight(false)
-	require.NoError(t, err)
-
-	r.Close()
-
-	rcv := <-o
-	require.Equal(t, []byte{
-		byte(packets.Publish<<4 | 1<<1 | 1<<3), 14,
-		0, 5,
-		'a', '/', 'b', '/', 'c',
-		0, 11,
-		'h', 'e', 'l', 'l', 'o',
-	}, rcv)
-
-	m := cl.Inflight.GetAll()
-	require.Equal(t, 1, m[11].Resends) // index is packet id
-}
-
-func TestClientResendInflightNoMessages(t *testing.T) {
-	r, _ := net.Pipe()
-	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
-	out := []packets.Packet{}
-	err := cl.ResendInflight(true)
-	require.NoError(t, err)
-	require.Equal(t, 0, len(out))
-	r.Close()
-}
-
-func TestClientResendInflightDropMessage(t *testing.T) {
-	r, _ := net.Pipe()
-	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
-
-	pk1 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
-			Qos:  1,
-		},
-		TopicName: "a/b/c",
-		Payload:   []byte("hello"),
-		PacketID:  11,
-	}
-
-	cl.Inflight.Set(pk1.PacketID, InflightMessage{
-		Packet:  pk1,
-		Sent:    time.Now().Unix(),
-		Resends: maxResends,
-	})
-
-	err := cl.ResendInflight(true)
-	require.NoError(t, err)
-	r.Close()
-
-	m := cl.Inflight.GetAll()
-	require.Equal(t, 0, len(m))
-	require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.PublishDropped))
-}
-
-func TestClientResendInflightError(t *testing.T) {
-	r, _ := net.Pipe()
-	cl := NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
-
-	cl.Inflight.Set(1, InflightMessage{
-		Packet: packets.Packet{},
-		Sent:   time.Now().Unix(),
-	})
-	r.Close()
-	err := cl.ResendInflight(true)
-	require.Error(t, err)
-}
-
 /////
 
 func TestInflightSet(t *testing.T) {
@@ -890,6 +739,20 @@ func BenchmarkInflightGetAll(b *testing.B) {
 	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
 	for n := 0; n < b.N; n++ {
 		cl.Inflight.Get(2)
+	}
+}
+
+func TestInflightLen(t *testing.T) {
+	cl := genClient()
+	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	require.Equal(t, 1, cl.Inflight.Len())
+}
+
+func BenchmarkInflightLen(b *testing.B) {
+	cl := genClient()
+	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	for n := 0; n < b.N; n++ {
+		cl.Inflight.Len()
 	}
 }
 

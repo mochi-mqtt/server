@@ -111,10 +111,7 @@ func TestReadServerInfoFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	_, err = s.ReadServerInfo()
 	require.Error(t, err)
 }
@@ -168,10 +165,7 @@ func TestWriteSubscriptionFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	err = s.WriteSubscription(persistence.Subscription{})
 	require.Error(t, err)
 }
@@ -186,10 +180,7 @@ func TestReadSubscriptionFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	_, err = s.ReadSubscriptions()
 	require.Error(t, err)
 }
@@ -248,10 +239,7 @@ func TestWriteInflightFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	err = s.WriteInflight(persistence.Message{})
 	require.Error(t, err)
 }
@@ -266,10 +254,7 @@ func TestReadInflightFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	_, err = s.ReadInflight()
 	require.Error(t, err)
 }
@@ -352,10 +337,7 @@ func TestReadRetainedFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	_, err = s.ReadRetained()
 	require.Error(t, err)
 }
@@ -367,15 +349,11 @@ func TestWriteRetrieveDeleteClients(t *testing.T) {
 	defer teardown(s, t)
 
 	v := persistence.Client{
-		ID:           "client1",
-		T:            persistence.KClient,
-		Listener:     "tcp1",
-		Username:     []byte{'m', 'o', 'c', 'h', 'i'},
-		CleanSession: true,
-		Subscriptions: map[string]byte{
-			"a/b/c": 0,
-			"d/e/f": 1,
-		},
+		ID:       "cl_client1",
+		ClientID: "client1",
+		T:        persistence.KClient,
+		Listener: "tcp1",
+		Username: []byte{'m', 'o', 'c', 'h', 'i'},
 		LWT: persistence.LWT{
 			Topic:   "a/b/c",
 			Message: []byte{'h', 'e', 'l', 'l', 'o'},
@@ -391,10 +369,10 @@ func TestWriteRetrieveDeleteClients(t *testing.T) {
 
 	require.Equal(t, []byte{'m', 'o', 'c', 'h', 'i'}, clients[0].Username)
 	require.Equal(t, "a/b/c", clients[0].LWT.Topic)
-	require.Equal(t, uint8(1), clients[0].Subscriptions["d/e/f"])
 
 	v2 := persistence.Client{
-		ID:       "client2",
+		ID:       "cl_client2",
+		ClientID: "client2",
 		T:        persistence.KClient,
 		Listener: "tcp1",
 	}
@@ -406,7 +384,7 @@ func TestWriteRetrieveDeleteClients(t *testing.T) {
 	require.Equal(t, persistence.KClient, clients[0].T)
 	require.Equal(t, 2, len(clients))
 
-	err = s.DeleteClient("client2")
+	err = s.DeleteClient("cl_client2")
 	require.NoError(t, err)
 
 	clients, err = s.ReadClients()
@@ -424,10 +402,7 @@ func TestWriteClientFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	err = s.WriteClient(persistence.Client{})
 	require.Error(t, err)
 }
@@ -442,10 +417,7 @@ func TestReadClientFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	_, err = s.ReadClients()
 	require.Error(t, err)
 }
@@ -460,10 +432,7 @@ func TestDeleteSubscriptionFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	err = s.DeleteSubscription("a")
 	require.Error(t, err)
 }
@@ -478,10 +447,7 @@ func TestDeleteClientFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	err = s.DeleteClient("a")
 	require.Error(t, err)
 }
@@ -496,10 +462,7 @@ func TestDeleteInflightFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	err = s.DeleteInflight("a")
 	require.Error(t, err)
 }
@@ -514,10 +477,7 @@ func TestDeleteRetainedFail(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
 	require.NoError(t, err)
-
-	err = os.Remove(tmpPath)
-	require.NoError(t, err)
-
+	s.Close()
 	err = s.DeleteRetained("a")
 	require.Error(t, err)
 }

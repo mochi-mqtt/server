@@ -1,9 +1,10 @@
 package bolt
 
 import (
-	//"encoding/gob"
 	"errors"
 	"time"
+
+	"fmt"
 
 	sgob "github.com/asdine/storm/codec/gob"
 	"github.com/asdine/storm/v3"
@@ -15,6 +16,10 @@ import (
 const (
 	defaultPath    = "mochi.db"
 	defaultTimeout = 250 * time.Millisecond
+)
+
+var (
+	errNotFound = "not found"
 )
 
 // Store is a backend for writing and reading to bolt persistent storage.
@@ -190,74 +195,70 @@ func (s *Store) DeleteRetained(id string) error {
 // ReadSubscriptions loads all the subscriptions from the boltdb instance.
 func (s *Store) ReadSubscriptions() (v []persistence.Subscription, err error) {
 	if s.db == nil {
-		err = errors.New("boltdb not opened")
-		return
+		return v, errors.New("boltdb not opened")
 	}
 
 	err = s.db.Find("T", persistence.KSubscription, &v)
-	if err != nil {
+	if err != nil && err.Error() != errNotFound {
 		return
 	}
 
-	return
+	return v, nil
 }
 
 // ReadClients loads all the clients from the boltdb instance.
 func (s *Store) ReadClients() (v []persistence.Client, err error) {
 	if s.db == nil {
-		err = errors.New("boltdb not opened")
-		return
+		return v, errors.New("boltdb not opened")
 	}
 
 	err = s.db.Find("T", persistence.KClient, &v)
-	if err != nil {
+	if err != nil && err.Error() != errNotFound {
 		return
 	}
 
-	return
+	return v, nil
 }
 
 // ReadInflight loads all the inflight messages from the boltdb instance.
 func (s *Store) ReadInflight() (v []persistence.Message, err error) {
 	if s.db == nil {
-		err = errors.New("boltdb not opened")
-		return
+		return v, errors.New("boltdb not opened")
 	}
 
 	err = s.db.Find("T", persistence.KInflight, &v)
-	if err != nil {
+	if err != nil && err.Error() != errNotFound {
 		return
 	}
 
-	return
+	return v, nil
 }
 
 // ReadRetained loads all the retained messages from the boltdb instance.
 func (s *Store) ReadRetained() (v []persistence.Message, err error) {
 	if s.db == nil {
-		err = errors.New("boltdb not opened")
-		return
+		return v, errors.New("boltdb not opened")
 	}
 
 	err = s.db.Find("T", persistence.KRetained, &v)
-	if err != nil {
+	if err != nil && err.Error() != errNotFound {
 		return
 	}
 
-	return
+	return v, nil
 }
 
 //ReadServerInfo loads the server info from the boltdb instance.
 func (s *Store) ReadServerInfo() (v persistence.ServerInfo, err error) {
 	if s.db == nil {
-		err = errors.New("boltdb not opened")
-		return
+		return v, errors.New("boltdb not opened")
 	}
 
 	err = s.db.One("ID", persistence.KServerInfo, &v)
-	if err != nil {
+	fmt.Println(err)
+	if err != nil && err.Error() != errNotFound {
 		return
 	}
 
-	return
+	return v, nil
 }

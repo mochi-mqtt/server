@@ -42,7 +42,12 @@ func main() {
 	}
 
 	// Start broker...
-	go server.Serve()
+	go func() {
+		err := server.Serve()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 	fmt.Println(aurora.BgMagenta("  Started!  "))
 
 	// Wait for signals...

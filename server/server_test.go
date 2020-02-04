@@ -1,7 +1,7 @@
 package server
 
 import (
-	"errors"
+	//"errors"
 	"io/ioutil"
 	"net"
 	"strconv"
@@ -25,6 +25,7 @@ const defaultPort = ":18882"
 
 func setupClient() (s *Server, cl *clients.Client, r net.Conn, w net.Conn) {
 	s = New()
+	s.Store = new(persistence.MockStore)
 	r, w = net.Pipe()
 	cl = clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
 	cl.ID = "mochi"
@@ -118,234 +119,6 @@ func BenchmarkServerAddListener(b *testing.B) {
 		}
 		s.Listeners.Delete("t1")
 	}
-}
-
-func TestServerReadStore(t *testing.T) {
-	s := New()
-	require.NotNil(t, s)
-
-	s.Store = new(persistence.MockStore)
-	err := s.readStore()
-	require.NoError(t, err)
-
-	require.Equal(t, int64(100), s.System.Started)
-	require.Equal(t, topics.Subscriptions{"test": 1}, s.Topics.Subscribers("a/b/c"))
-
-	cl1, ok := s.Clients.Get("client1")
-	require.Equal(t, true, ok)
-
-	msg, ok := cl1.Inflight.Get(100)
-	require.Equal(t, true, ok)
-	require.Equal(t, []byte{'y', 'e', 's'}, msg.Packet.Payload)
-
-}
-
-func TestServerReadStoreFailures(t *testing.T) {
-	s := New()
-	require.NotNil(t, s)
-
-	s.Store = new(persistence.MockStore)
-	s.Store.(*persistence.MockStore).Fail = map[string]bool{
-		"read_subs":     true,
-		"read_clients":  true,
-		"read_inflight": true,
-		"read_retained": true,
-		"read_info":     true,
-	}
-
-	err := s.readStore()
-	require.Error(t, err)
-	require.Equal(t, errors.New("test_info"), err)
-	delete(s.Store.(*persistence.MockStore).Fail, "read_info")
-
-	err = s.readStore()
-	require.Error(t, err)
-	require.Equal(t, errors.New("test_subs"), err)
-	delete(s.Store.(*persistence.MockStore).Fail, "read_subs")
-
-	err = s.readStore()
-	require.Error(t, err)
-	require.Equal(t, errors.New("test_clients"), err)
-	delete(s.Store.(*persistence.MockStore).Fail, "read_clients")
-
-	err = s.readStore()
-	require.Error(t, err)
-	require.Equal(t, errors.New("test_inflight"), err)
-	delete(s.Store.(*persistence.MockStore).Fail, "read_inflight")
-
-	err = s.readStore()
-	require.Error(t, err)
-	require.Equal(t, errors.New("test_retained"), err)
-	delete(s.Store.(*persistence.MockStore).Fail, "read_retained")
-}
-
-func TestServerLoadServerInfo(t *testing.T) {
-	s := New()
-	require.NotNil(t, s)
-
-	s.System.Version = "original"
-
-	s.loadServerInfo(persistence.ServerInfo{
-		system.Info{
-			Version: "test",
-			Started: 100,
-		}, persistence.KServerInfo,
-	})
-
-	require.Equal(t, "original", s.System.Version)
-	require.Equal(t, int64(100), s.System.Started)
-}
-
-func TestServerLoadSubscriptions(t *testing.T) {
-	s := New()
-	require.NotNil(t, s)
-
-	subs := []persistence.Subscription{
-		persistence.Subscription{
-			ID:     "test:a/b/c",
-			Client: "test",
-			Filter: "a/b/c",
-			QoS:    1,
-			T:      persistence.KSubscription,
-		},
-		persistence.Subscription{
-			ID:     "test:d/e/f",
-			Client: "test",
-			Filter: "d/e/f",
-			QoS:    0,
-			T:      persistence.KSubscription,
-		},
-	}
-
-	s.loadSubscriptions(subs)
-	require.Equal(t, topics.Subscriptions{"test": 1}, s.Topics.Subscribers("a/b/c"))
-	require.Equal(t, topics.Subscriptions{"test": 0}, s.Topics.Subscribers("d/e/f"))
-}
-
-func TestServerLoadClients(t *testing.T) {
-	s := New()
-	require.NotNil(t, s)
-
-	clients := []persistence.Client{
-		persistence.Client{
-			ID:           "client1",
-			T:            persistence.KClient,
-			Listener:     "tcp1",
-			CleanSession: true,
-			Subscriptions: map[string]byte{
-				"a/b/c": 0,
-				"d/e/f": 1,
-			},
-		},
-		persistence.Client{
-			ID:       "client2",
-			T:        persistence.KClient,
-			Listener: "tcp1",
-			Subscriptions: map[string]byte{
-				"q/w/e": 2,
-			},
-		},
-	}
-
-	s.loadClients(clients)
-
-	cl1, ok := s.Clients.Get("client1")
-	require.Equal(t, true, ok)
-	require.NotNil(t, cl1)
-
-	cl2, ok2 := s.Clients.Get("client2")
-	require.Equal(t, true, ok2)
-	require.NotNil(t, cl2)
-
-}
-
-func TestServerLoadInflight(t *testing.T) {
-	s := New()
-	require.NotNil(t, s)
-
-	msgs := []persistence.Message{
-		persistence.Message{
-			ID:        "client1_if_0",
-			T:         persistence.KInflight,
-			Client:    "client1",
-			PacketID:  0,
-			TopicName: "a/b/c",
-			Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
-			Sent:      100,
-			Resends:   0,
-		},
-		persistence.Message{
-			ID:        "client1_if_100",
-			T:         persistence.KInflight,
-			Client:    "client1",
-			PacketID:  100,
-			TopicName: "d/e/f",
-			Payload:   []byte{'y', 'e', 's'},
-			Sent:      200,
-			Resends:   1,
-		},
-	}
-
-	w, _ := net.Pipe()
-	defer w.Close()
-	c1 := clients.NewClient(w, nil, nil, nil)
-	c1.ID = "client1"
-	s.Clients.Add(c1)
-
-	s.loadInflight(msgs)
-
-	cl1, ok := s.Clients.Get("client1")
-	require.Equal(t, true, ok)
-	require.Equal(t, "client1", cl1.ID)
-
-	msg, ok := cl1.Inflight.Get(100)
-	require.Equal(t, true, ok)
-	require.Equal(t, []byte{'y', 'e', 's'}, msg.Packet.Payload)
-
-}
-
-func TestServerLoadRetained(t *testing.T) {
-	s := New()
-	require.NotNil(t, s)
-
-	msgs := []persistence.Message{
-		persistence.Message{
-			ID: "client1_ret_200",
-			T:  persistence.KRetained,
-			FixedHeader: persistence.FixedHeader{
-				Retain: true,
-			},
-			PacketID:  200,
-			TopicName: "a/b/c",
-			Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
-			Sent:      100,
-			Resends:   0,
-		},
-		persistence.Message{
-			ID: "client1_ret_300",
-			T:  persistence.KRetained,
-			FixedHeader: persistence.FixedHeader{
-				Retain: true,
-			},
-			PacketID:  100,
-			TopicName: "d/e/f",
-			Payload:   []byte{'y', 'e', 's'},
-			Sent:      200,
-			Resends:   1,
-		},
-	}
-
-	s.loadRetained(msgs)
-
-	require.Equal(t, 1, len(s.Topics.Messages("a/b/c")))
-	require.Equal(t, 1, len(s.Topics.Messages("d/e/f")))
-
-	msg := s.Topics.Messages("a/b/c")
-	require.Equal(t, []byte{'h', 'e', 'l', 'l', 'o'}, msg[0].Payload)
-
-	msg = s.Topics.Messages("d/e/f")
-	require.Equal(t, []byte{'y', 'e', 's'}, msg[0].Payload)
-
 }
 
 func TestServerServe(t *testing.T) {
@@ -873,6 +646,35 @@ func TestServerProcessPublishQoS2(t *testing.T) {
 		byte(packets.Pubrec << 4), 2, // Fixed header
 		0, 12, // Packet ID - LSB+MSB
 	}, <-ack1)
+
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Retained))
+}
+
+func TestServerProcessPublishUnretain(t *testing.T) {
+	s, cl1, r1, w1 := setupClient()
+	s.Clients.Add(cl1)
+
+	ack1 := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r1)
+		if err != nil {
+			panic(err)
+		}
+		ack1 <- buf
+	}()
+
+	err := s.processPacket(cl1, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type:   packets.Publish,
+			Retain: true,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte{},
+	})
+
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
+	w1.Close()
 
 	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Retained))
 }
@@ -1450,4 +1252,396 @@ func TestServerCloseClientClosed(t *testing.T) {
 
 	err := s.closeClient(cl, true)
 	require.NoError(t, err)
+}
+
+func TestServerReadStore(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	s.Store = new(persistence.MockStore)
+	err := s.readStore()
+	require.NoError(t, err)
+
+	require.Equal(t, int64(100), s.System.Started)
+	require.Equal(t, topics.Subscriptions{"test": 1}, s.Topics.Subscribers("a/b/c"))
+
+	cl1, ok := s.Clients.Get("client1")
+	require.Equal(t, true, ok)
+
+	msg, ok := cl1.Inflight.Get(100)
+	require.Equal(t, true, ok)
+	require.Equal(t, []byte{'y', 'e', 's'}, msg.Packet.Payload)
+
+}
+
+func TestServerReadStoreFailures(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	s.Store = new(persistence.MockStore)
+	s.Store.(*persistence.MockStore).Fail = map[string]bool{
+		"read_subs":     true,
+		"read_clients":  true,
+		"read_inflight": true,
+		"read_retained": true,
+		"read_info":     true,
+	}
+
+	err := s.readStore()
+	require.Error(t, err)
+	delete(s.Store.(*persistence.MockStore).Fail, "read_info")
+
+	err = s.readStore()
+	require.Error(t, err)
+	delete(s.Store.(*persistence.MockStore).Fail, "read_subs")
+
+	err = s.readStore()
+	require.Error(t, err)
+	delete(s.Store.(*persistence.MockStore).Fail, "read_clients")
+
+	err = s.readStore()
+	require.Error(t, err)
+	delete(s.Store.(*persistence.MockStore).Fail, "read_inflight")
+
+	err = s.readStore()
+	require.Error(t, err)
+	delete(s.Store.(*persistence.MockStore).Fail, "read_retained")
+}
+
+func TestServerLoadServerInfo(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	s.System.Version = "original"
+
+	s.loadServerInfo(persistence.ServerInfo{
+		system.Info{
+			Version: "test",
+			Started: 100,
+		}, persistence.KServerInfo,
+	})
+
+	require.Equal(t, "original", s.System.Version)
+	require.Equal(t, int64(100), s.System.Started)
+}
+
+func TestServerLoadSubscriptions(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	cl := clients.NewClientStub(s.System)
+	cl.ID = "test"
+	s.Clients.Add(cl)
+
+	subs := []persistence.Subscription{
+		persistence.Subscription{
+			ID:     "test:a/b/c",
+			Client: "test",
+			Filter: "a/b/c",
+			QoS:    1,
+			T:      persistence.KSubscription,
+		},
+		persistence.Subscription{
+			ID:     "test:d/e/f",
+			Client: "test",
+			Filter: "d/e/f",
+			QoS:    0,
+			T:      persistence.KSubscription,
+		},
+	}
+
+	s.loadSubscriptions(subs)
+	require.Equal(t, topics.Subscriptions{"test": 1}, s.Topics.Subscribers("a/b/c"))
+	require.Equal(t, topics.Subscriptions{"test": 0}, s.Topics.Subscribers("d/e/f"))
+}
+
+func TestServerLoadClients(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	clients := []persistence.Client{
+		persistence.Client{
+			ID:       "cl_client1",
+			ClientID: "client1",
+			T:        persistence.KClient,
+			Listener: "tcp1",
+		},
+		persistence.Client{
+			ID:       "cl_client2",
+			ClientID: "client2",
+			T:        persistence.KClient,
+			Listener: "tcp1",
+		},
+	}
+
+	s.loadClients(clients)
+
+	cl1, ok := s.Clients.Get("client1")
+	require.Equal(t, true, ok)
+	require.NotNil(t, cl1)
+
+	cl2, ok2 := s.Clients.Get("client2")
+	require.Equal(t, true, ok2)
+	require.NotNil(t, cl2)
+
+}
+
+func TestServerLoadInflight(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	msgs := []persistence.Message{
+		persistence.Message{
+			ID:        "client1_if_0",
+			T:         persistence.KInflight,
+			Client:    "client1",
+			PacketID:  0,
+			TopicName: "a/b/c",
+			Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
+			Sent:      100,
+			Resends:   0,
+		},
+		persistence.Message{
+			ID:        "client1_if_100",
+			T:         persistence.KInflight,
+			Client:    "client1",
+			PacketID:  100,
+			TopicName: "d/e/f",
+			Payload:   []byte{'y', 'e', 's'},
+			Sent:      200,
+			Resends:   1,
+		},
+	}
+
+	w, _ := net.Pipe()
+	defer w.Close()
+	c1 := clients.NewClient(w, nil, nil, nil)
+	c1.ID = "client1"
+	s.Clients.Add(c1)
+
+	s.loadInflight(msgs)
+
+	cl1, ok := s.Clients.Get("client1")
+	require.Equal(t, true, ok)
+	require.Equal(t, "client1", cl1.ID)
+
+	msg, ok := cl1.Inflight.Get(100)
+	require.Equal(t, true, ok)
+	require.Equal(t, []byte{'y', 'e', 's'}, msg.Packet.Payload)
+
+}
+
+func TestServerLoadRetained(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	msgs := []persistence.Message{
+		persistence.Message{
+			ID: "client1_ret_200",
+			T:  persistence.KRetained,
+			FixedHeader: persistence.FixedHeader{
+				Retain: true,
+			},
+			PacketID:  200,
+			TopicName: "a/b/c",
+			Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
+			Sent:      100,
+			Resends:   0,
+		},
+		persistence.Message{
+			ID: "client1_ret_300",
+			T:  persistence.KRetained,
+			FixedHeader: persistence.FixedHeader{
+				Retain: true,
+			},
+			PacketID:  100,
+			TopicName: "d/e/f",
+			Payload:   []byte{'y', 'e', 's'},
+			Sent:      200,
+			Resends:   1,
+		},
+	}
+
+	s.loadRetained(msgs)
+
+	require.Equal(t, 1, len(s.Topics.Messages("a/b/c")))
+	require.Equal(t, 1, len(s.Topics.Messages("d/e/f")))
+
+	msg := s.Topics.Messages("a/b/c")
+	require.Equal(t, []byte{'h', 'e', 'l', 'l', 'o'}, msg[0].Payload)
+
+	msg = s.Topics.Messages("d/e/f")
+	require.Equal(t, []byte{'y', 'e', 's'}, msg[0].Payload)
+}
+
+func TestServerResendClientInflight(t *testing.T) {
+	s := New()
+	s.Store = new(persistence.MockStore)
+	require.NotNil(t, s)
+
+	r, w := net.Pipe()
+	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+	cl.Start()
+	s.Clients.Add(cl)
+
+	o := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(w)
+		require.NoError(t, err)
+		o <- buf
+	}()
+
+	pk1 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+			Qos:  1,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+		PacketID:  11,
+	}
+
+	cl.Inflight.Set(pk1.PacketID, clients.InflightMessage{
+		Packet: pk1,
+		Sent:   time.Now().Unix(),
+	})
+
+	err := s.ResendClientInflight(cl, true)
+	require.NoError(t, err)
+
+	time.Sleep(time.Millisecond)
+	r.Close()
+
+	rcv := <-o
+	require.Equal(t, []byte{
+		byte(packets.Publish<<4 | 1<<1 | 1<<3), 14,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		0, 11,
+		'h', 'e', 'l', 'l', 'o',
+	}, rcv)
+
+	m := cl.Inflight.GetAll()
+	require.Equal(t, 1, m[11].Resends) // index is packet id
+
+}
+
+func TestServerResendClientInflightBackoff(t *testing.T) {
+	s := New()
+	s.Store = new(persistence.MockStore)
+	require.NotNil(t, s)
+
+	r, w := net.Pipe()
+	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+	cl.Start()
+	s.Clients.Add(cl)
+
+	o := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(w)
+		require.NoError(t, err)
+		o <- buf
+	}()
+
+	pk1 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+			Qos:  1,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+		PacketID:  11,
+	}
+
+	cl.Inflight.Set(pk1.PacketID, clients.InflightMessage{
+		Packet:  pk1,
+		Sent:    time.Now().Unix(),
+		Resends: 0,
+	})
+
+	err := s.ResendClientInflight(cl, true)
+	require.NoError(t, err)
+
+	time.Sleep(time.Millisecond)
+
+	// Attempt to send twice, but backoff should kick in stopping second resend.
+	err = s.ResendClientInflight(cl, false)
+	require.NoError(t, err)
+
+	r.Close()
+
+	rcv := <-o
+	require.Equal(t, []byte{
+		byte(packets.Publish<<4 | 1<<1 | 1<<3), 14,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		0, 11,
+		'h', 'e', 'l', 'l', 'o',
+	}, rcv)
+
+	m := cl.Inflight.GetAll()
+	require.Equal(t, 1, m[11].Resends) // index is packet id
+}
+
+func TestServerResendClientInflightNoMessages(t *testing.T) {
+	s := New()
+	s.Store = new(persistence.MockStore)
+	require.NotNil(t, s)
+
+	r, _ := net.Pipe()
+	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+	out := []packets.Packet{}
+	err := s.ResendClientInflight(cl, true)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(out))
+	r.Close()
+}
+
+func TestServerResendClientInflightDropMessage(t *testing.T) {
+	s := New()
+	s.Store = new(persistence.MockStore)
+	require.NotNil(t, s)
+
+	r, _ := net.Pipe()
+	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+
+	pk1 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+			Qos:  1,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+		PacketID:  11,
+	}
+
+	cl.Inflight.Set(pk1.PacketID, clients.InflightMessage{
+		Packet:  pk1,
+		Sent:    time.Now().Unix(),
+		Resends: inflightMaxResends,
+	})
+
+	err := s.ResendClientInflight(cl, true)
+	require.NoError(t, err)
+	r.Close()
+
+	m := cl.Inflight.GetAll()
+	require.Equal(t, 0, len(m))
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.PublishDropped))
+}
+
+func TestServerResendClientInflightError(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	r, _ := net.Pipe()
+	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+
+	cl.Inflight.Set(1, clients.InflightMessage{
+		Packet: packets.Packet{},
+		Sent:   time.Now().Unix(),
+	})
+	r.Close()
+	err := s.ResendClientInflight(cl, true)
+	require.Error(t, err)
 }

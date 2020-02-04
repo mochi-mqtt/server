@@ -20,9 +20,9 @@ import (
 )
 
 var (
-	defaultKeepalive uint16 = 10                                              // in seconds.
-	resendBackoff           = []int64{0, 1, 2, 10, 60, 120, 600, 3600, 21600} // <1 second to 6 hours
-	maxResends              = 6                                               // maximum number of times to retry sending QoS packets.
+	defaultKeepalive uint16 = 10 // in seconds.
+	//resendBackoff           = []int64{0, 1, 2, 10, 60, 120, 600, 3600, 21600} // <1 second to 6 hours
+	//maxResends              = 6                                               // maximum number of times to retry sending QoS packets.
 
 	ErrConnectionClosed = errors.New("Connection not open")
 )
@@ -109,28 +109,26 @@ type State struct {
 	started *sync.WaitGroup // tracks the goroutines which have been started.
 	endedW  *sync.WaitGroup // tracks when the writer has ended.
 	endedR  *sync.WaitGroup // tracks when the reader has ended.
-	endOnce sync.Once       //
+	endOnce sync.Once       // only end once.
 }
 
 // NewClient returns a new instance of Client.
 func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Client {
 	cl := &Client{
-		conn: c,
-		r:    r,
-		w:    w,
-
+		conn:      c,
+		r:         r,
+		w:         w,
+		system:    s,
 		keepalive: defaultKeepalive,
 		Inflight: Inflight{
 			internal: make(map[uint16]InflightMessage),
 		},
 		Subscriptions: make(map[string]byte),
-
 		State: State{
 			started: new(sync.WaitGroup),
 			endedW:  new(sync.WaitGroup),
 			endedR:  new(sync.WaitGroup),
 		},
-		system: s,
 	}
 
 	cl.refreshDeadline(cl.keepalive)
@@ -146,6 +144,9 @@ func NewClientStub(s *system.Info) *Client {
 			internal: make(map[uint16]InflightMessage),
 		},
 		Subscriptions: make(map[string]byte),
+		State: State{
+			Done: 1,
+		},
 	}
 }
 
@@ -240,6 +241,10 @@ func (cl *Client) Start() {
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
 func (cl *Client) Stop() {
+	if atomic.LoadInt64(&cl.State.Done) == 1 {
+		return
+	}
+
 	cl.State.endOnce.Do(func() {
 		cl.r.Stop()
 		cl.w.Stop()
@@ -324,9 +329,6 @@ func (cl *Client) Read(h func(*Client, packets.Packet) error) error {
 		if err != nil {
 			return err
 		}
-
-		// Attempt periodic resend of inflight messages (where applicable).
-		//cl.ResendInflight(false)
 	}
 }
 
@@ -446,43 +448,6 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 	cl.refreshDeadline(cl.keepalive)
 
 	return
-}
-
-// ResendInflight will attempt resend send any in-flight messages stored for a client.
-func (cl *Client) ResendInflight(force bool) error {
-	if cl.Inflight.Len() == 0 {
-		return nil
-	}
-
-	nt := time.Now().Unix()
-	for _, tk := range cl.Inflight.GetAll() {
-		if tk.Resends >= maxResends { // After a reasonable time, drop inflight packets.
-			cl.Inflight.Delete(tk.Packet.PacketID)
-			if tk.Packet.FixedHeader.Type == packets.Publish {
-				atomic.AddInt64(&cl.system.PublishDropped, 1)
-			}
-			continue
-		}
-
-		// Only continue if the resend backoff time has passed and there's a backoff time.
-		if !force && (nt-tk.Sent < resendBackoff[tk.Resends] || len(resendBackoff) < tk.Resends) {
-			continue
-		}
-
-		if tk.Packet.FixedHeader.Type == packets.Publish {
-			tk.Packet.FixedHeader.Dup = true
-		}
-
-		tk.Resends++
-		tk.Sent = nt
-		cl.Inflight.Set(tk.Packet.PacketID, tk)
-		_, err := cl.WritePacket(tk.Packet)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // LWT contains the last will and testament details for a client connection.

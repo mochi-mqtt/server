@@ -22,6 +22,7 @@ const (
 	Version = "0.1.0" // the server version.
 
 	maxPacketID = 65535 // the maximum value of a 16-bit packet ID.
+
 )
 
 var (
@@ -31,6 +32,9 @@ var (
 	ErrInvalidTopic         = errors.New("Cannot publish to $ and $SYS topics")
 
 	SysTopicInterval time.Duration = 30000 // the default number of milliseconds between $SYS topic publishes.
+
+	inflightResendBackoff = []int64{0, 1, 2, 10, 60, 120, 600, 3600, 21600} // <1 second to 6 hours
+	inflightMaxResends    = 6                                               // maximum number of times to retry sending QoS packets.
 )
 
 // Server is an MQTT broker server.
@@ -113,100 +117,6 @@ func (s *Server) Serve() error {
 	return nil
 }
 
-// readStore reads in any data from the persistent datastore (if applicable).
-func (s *Server) readStore() error {
-	info, err := s.Store.ReadServerInfo()
-	if err != nil {
-		return err
-	}
-	s.loadServerInfo(info)
-
-	subs, err := s.Store.ReadSubscriptions()
-	if err != nil {
-		return err
-	}
-	s.loadSubscriptions(subs)
-
-	clients, err := s.Store.ReadClients()
-	if err != nil {
-		return err
-	}
-	s.loadClients(clients)
-
-	inflight, err := s.Store.ReadInflight()
-	if err != nil {
-		return err
-	}
-	s.loadInflight(inflight)
-
-	retained, err := s.Store.ReadRetained()
-	if err != nil {
-		return err
-	}
-	s.loadRetained(retained)
-
-	return nil
-}
-
-// loadServerInfo restores server info from the datastore.
-func (s *Server) loadServerInfo(v persistence.ServerInfo) {
-	version := s.System.Version
-	s.System = &v.Info
-	s.System.Version = version
-}
-
-// loadSubscriptions restores subscriptions from the datastore.
-func (s *Server) loadSubscriptions(v []persistence.Subscription) {
-	for _, sub := range v {
-		s.Topics.Subscribe(sub.Filter, sub.Client, sub.QoS)
-	}
-}
-
-// loadClients restores clients from the datastore.
-func (s *Server) loadClients(v []persistence.Client) {
-	for _, cl := range v {
-
-		c := clients.NewClientStub(s.System)
-		c.ID = cl.ID
-		c.Listener = cl.Listener
-		c.Username = cl.Username
-		c.LWT = clients.LWT(cl.LWT)
-		c.Subscriptions = cl.Subscriptions
-		s.Clients.Add(c)
-	}
-}
-
-// loadInflight restores inflight messages from the datastore.
-func (s *Server) loadInflight(v []persistence.Message) {
-	for _, msg := range v {
-		if client, ok := s.Clients.Get(msg.Client); ok {
-			client.Inflight.Set(msg.PacketID, clients.InflightMessage{
-				Packet: packets.Packet{
-					FixedHeader: packets.FixedHeader(msg.FixedHeader),
-					PacketID:    msg.PacketID,
-					TopicName:   msg.TopicName,
-					Payload:     msg.Payload,
-				},
-				Sent:    msg.Sent,
-				Resends: msg.Resends,
-			})
-		}
-	}
-}
-
-// loadRetained restores retained messages from the datastore.
-func (s *Server) loadRetained(v []persistence.Message) {
-	for _, msg := range v {
-		s.Topics.RetainMessage(
-			packets.Packet{
-				FixedHeader: packets.FixedHeader(msg.FixedHeader),
-				TopicName:   msg.TopicName,
-				Payload:     msg.Payload,
-			},
-		)
-	}
-}
-
 // eventLoop runs server processes at intervals.
 func (s *Server) eventLoop() {
 	for {
@@ -264,6 +174,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 			atomic.AddInt64(&s.System.ClientsDisconnected, -1)
 		}
 		existing.Stop()
+		fmt.Printf("%+v\n", existing.Subscriptions)
 		if pk.CleanSession {
 			for k := range existing.Subscriptions {
 				delete(existing.Subscriptions, k)
@@ -298,7 +209,18 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		return err
 	}
 
-	cl.ResendInflight(true)
+	s.ResendClientInflight(cl, true)
+
+	if s.Store != nil {
+		s.Store.WriteClient(persistence.Client{
+			ID:       "cl_" + cl.ID,
+			ClientID: cl.ID,
+			T:        persistence.KClient,
+			Listener: cl.Listener,
+			Username: cl.Username,
+			LWT:      persistence.LWT(cl.LWT),
+		})
+	}
 
 	err = cl.Read(s.processPacket)
 	if err != nil {
@@ -404,8 +326,22 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 	}
 
 	if pk.FixedHeader.Retain {
-		q := s.Topics.RetainMessage(pk.PublishCopy())
+		out := pk.PublishCopy()
+		q := s.Topics.RetainMessage(out)
 		atomic.AddInt64(&s.System.Retained, q)
+		if s.Store != nil {
+			if q == 1 {
+				s.Store.WriteRetained(persistence.Message{
+					ID:          "ret_" + out.TopicName,
+					T:           persistence.KRetained,
+					FixedHeader: persistence.FixedHeader(out.FixedHeader),
+					TopicName:   out.TopicName,
+					Payload:     out.Payload,
+				})
+			} else {
+				s.Store.DeleteRetained("ret_" + out.TopicName)
+			}
+		}
 	}
 
 	if pk.FixedHeader.Qos > 0 {
@@ -450,12 +386,24 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 				// the client at some point, one way or another. Store the publish
 				// packet in the client's inflight queue and attempt to redeliver
 				// if an appropriate ack is not received (or if the client is offline).
+				sent := time.Now().Unix()
 				q := client.Inflight.Set(out.PacketID, clients.InflightMessage{
 					Packet: out,
-					Sent:   time.Now().Unix(),
+					Sent:   sent,
 				})
 				if q {
 					atomic.AddInt64(&s.System.Inflight, 1)
+				}
+
+				if s.Store != nil {
+					s.Store.WriteInflight(persistence.Message{
+						ID:          "if_" + client.ID + "_" + strconv.Itoa(int(out.PacketID)),
+						T:           persistence.KRetained,
+						FixedHeader: persistence.FixedHeader(out.FixedHeader),
+						TopicName:   out.TopicName,
+						Payload:     out.Payload,
+						Sent:        sent,
+					})
 				}
 			}
 
@@ -469,6 +417,9 @@ func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) error {
 	q := cl.Inflight.Delete(pk.PacketID)
 	if q {
 		atomic.AddInt64(&s.System.Inflight, -1)
+	}
+	if s.Store != nil {
+		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
 	}
 	return nil
 }
@@ -509,6 +460,10 @@ func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
 		atomic.AddInt64(&s.System.Inflight, -1)
 	}
 
+	if s.Store != nil {
+		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
+	}
+
 	return nil
 }
 
@@ -517,6 +472,9 @@ func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
 	q := cl.Inflight.Delete(pk.PacketID)
 	if q {
 		atomic.AddInt64(&s.System.Inflight, -1)
+	}
+	if s.Store != nil {
+		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
 	}
 	return nil
 }
@@ -534,6 +492,16 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 			}
 			cl.NoteSubscription(pk.Topics[i], pk.Qoss[i])
 			retCodes[i] = pk.Qoss[i]
+
+			if s.Store != nil {
+				s.Store.WriteSubscription(persistence.Subscription{
+					ID:     "sub_" + cl.ID + ":" + pk.Topics[i],
+					T:      persistence.KSubscription,
+					Filter: pk.Topics[i],
+					Client: cl.ID,
+					QoS:    pk.Qoss[i],
+				})
+			}
 		}
 	}
 
@@ -585,8 +553,6 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error
 // Due to the int to string conversions this method is not as cheap as
 // some of the others so the publishing interval should be set appropriately.
 func (s *Server) publishSysTopics() {
-	s.System.Uptime = time.Now().Unix() - s.System.Started
-
 	pk := packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type:   packets.Publish,
@@ -594,6 +560,7 @@ func (s *Server) publishSysTopics() {
 		},
 	}
 
+	s.System.Uptime = time.Now().Unix() - s.System.Started
 	topics := map[string]string{
 		"$SYS/broker/version":                   s.System.Version,
 		"$SYS/broker/uptime":                    strconv.Itoa(int(s.System.Uptime)),
@@ -629,7 +596,63 @@ func (s *Server) publishSysTopics() {
 			persistence.KServerInfo,
 		})
 	}
+}
 
+// ResendClientInflight attempts to resend all undelivered inflight messages
+// to a client.
+func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
+	if cl.Inflight.Len() == 0 {
+		return nil
+	}
+
+	nt := time.Now().Unix()
+	for _, tk := range cl.Inflight.GetAll() {
+
+		// After a reasonable time, drop inflight packets.
+		if tk.Resends >= inflightMaxResends {
+			cl.Inflight.Delete(tk.Packet.PacketID)
+			if tk.Packet.FixedHeader.Type == packets.Publish {
+				atomic.AddInt64(&s.System.PublishDropped, 1)
+			}
+
+			if s.Store != nil {
+				s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(tk.Packet.PacketID)))
+			}
+
+			continue
+		}
+
+		// Only continue if the resend backoff time has passed and there's a backoff time.
+		if !force && (nt-tk.Sent < inflightResendBackoff[tk.Resends] || len(inflightResendBackoff) < tk.Resends) {
+			continue
+		}
+
+		if tk.Packet.FixedHeader.Type == packets.Publish {
+			tk.Packet.FixedHeader.Dup = true
+		}
+
+		tk.Resends++
+		tk.Sent = nt
+		cl.Inflight.Set(tk.Packet.PacketID, tk)
+		_, err := cl.WritePacket(tk.Packet)
+		if err != nil {
+			return err
+		}
+
+		if s.Store != nil {
+			s.Store.WriteInflight(persistence.Message{
+				ID:          "if_" + cl.ID + "_" + strconv.Itoa(int(tk.Packet.PacketID)),
+				T:           persistence.KRetained,
+				FixedHeader: persistence.FixedHeader(tk.Packet.FixedHeader),
+				TopicName:   tk.Packet.TopicName,
+				Payload:     tk.Packet.Payload,
+				Sent:        tk.Sent,
+				Resends:     tk.Resends,
+			})
+		}
+	}
+
+	return nil
 }
 
 // Close attempts to gracefully shutdown the server, all listeners, clients, and stores.
@@ -665,10 +688,104 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 			TopicName: cl.LWT.Topic,
 			Payload:   cl.LWT.Message,
 		})
-		// omit errors, since we're not logging and need to close the client in either case.
 	}
 
 	cl.Stop()
 
 	return nil
+}
+
+// readStore reads in any data from the persistent datastore (if applicable).
+func (s *Server) readStore() error {
+	info, err := s.Store.ReadServerInfo()
+	if err != nil {
+		return fmt.Errorf("load server info; %w", err)
+	}
+	s.loadServerInfo(info)
+
+	clients, err := s.Store.ReadClients()
+	if err != nil {
+		return fmt.Errorf("load clients; %w", err)
+	}
+	fmt.Println("loading clients", clients)
+	s.loadClients(clients)
+
+	subs, err := s.Store.ReadSubscriptions()
+	if err != nil {
+		return fmt.Errorf("load subscriptions; %w", err)
+	}
+	s.loadSubscriptions(subs)
+
+	inflight, err := s.Store.ReadInflight()
+	if err != nil {
+		return fmt.Errorf("load inflight; %w", err)
+	}
+	s.loadInflight(inflight)
+
+	retained, err := s.Store.ReadRetained()
+	if err != nil {
+		return fmt.Errorf("load retained; %w", err)
+	}
+	s.loadRetained(retained)
+
+	return nil
+}
+
+// loadServerInfo restores server info from the datastore.
+func (s *Server) loadServerInfo(v persistence.ServerInfo) {
+	version := s.System.Version
+	s.System = &v.Info
+	s.System.Version = version
+}
+
+// loadSubscriptions restores subscriptions from the datastore.
+func (s *Server) loadSubscriptions(v []persistence.Subscription) {
+	for _, sub := range v {
+		s.Topics.Subscribe(sub.Filter, sub.Client, sub.QoS)
+		if cl, ok := s.Clients.Get(sub.Client); ok {
+			cl.NoteSubscription(sub.Filter, sub.QoS)
+		}
+	}
+
+}
+
+// loadClients restores clients from the datastore.
+func (s *Server) loadClients(v []persistence.Client) {
+	for _, c := range v {
+		cl := clients.NewClientStub(s.System)
+		cl.ID = c.ClientID
+		cl.Listener = c.Listener
+		cl.Username = c.Username
+		cl.LWT = clients.LWT(c.LWT)
+		s.Clients.Add(cl)
+	}
+}
+
+// loadInflight restores inflight messages from the datastore.
+func (s *Server) loadInflight(v []persistence.Message) {
+	for _, msg := range v {
+		if client, ok := s.Clients.Get(msg.Client); ok {
+			client.Inflight.Set(msg.PacketID, clients.InflightMessage{
+				Packet: packets.Packet{
+					FixedHeader: packets.FixedHeader(msg.FixedHeader),
+					PacketID:    msg.PacketID,
+					TopicName:   msg.TopicName,
+					Payload:     msg.Payload,
+				},
+				Sent:    msg.Sent,
+				Resends: msg.Resends,
+			})
+		}
+	}
+}
+
+// loadRetained restores retained messages from the datastore.
+func (s *Server) loadRetained(v []persistence.Message) {
+	for _, msg := range v {
+		s.Topics.RetainMessage(packets.Packet{
+			FixedHeader: packets.FixedHeader(msg.FixedHeader),
+			TopicName:   msg.TopicName,
+			Payload:     msg.Payload,
+		})
+	}
 }

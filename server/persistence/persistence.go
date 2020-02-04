@@ -75,13 +75,12 @@ type FixedHeader struct {
 
 // Client contains client data that can be persistently stored.
 type Client struct {
-	ID            string          // the id of the client
-	T             string          // the type of the stored data.
-	Listener      string          // the last known listener id for the client
-	Username      []byte          // the username the client authenticated with.
-	CleanSession  bool            // indicates if the client connected expecting a clean-session.
-	Subscriptions map[string]byte // a list of the subscriptions the user has (qos keyed on filter).
-	LWT           LWT             // the last-will-and-testament message for the client.
+	ID       string // the storage key.
+	ClientID string // the id of the client.
+	T        string // the type of the stored data.
+	Listener string // the last known listener id for the client
+	Username []byte // the username the client authenticated with.
+	LWT      LWT    // the last-will-and-testament message for the client.
 }
 
 // LWT contains details about a clients LWT payload.
@@ -216,14 +215,10 @@ func (s *MockStore) ReadClients() (v []Client, err error) {
 
 	return []Client{
 		Client{
-			ID:           "client1",
-			T:            KClient,
-			Listener:     "tcp1",
-			CleanSession: true,
-			Subscriptions: map[string]byte{
-				"a/b/c": 0,
-				"d/e/f": 1,
-			},
+			ID:       "cl_client1",
+			ClientID: "client1",
+			T:        KClient,
+			Listener: "tcp1",
 		},
 	}, nil
 }
