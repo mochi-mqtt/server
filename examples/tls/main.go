@@ -94,16 +94,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Start broker...
 	go server.Serve()
 	fmt.Println(aurora.BgMagenta("  Started!  "))
 
-	// Wait for signals...
 	<-done
 	fmt.Println(aurora.BgRed("  Caught Signal  "))
 
-	// End gracefully.
 	server.Close()
 	fmt.Println(aurora.BgGreen("  Finished  "))
-
 }

@@ -14,7 +14,6 @@ import (
 )
 
 func main() {
-
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -34,18 +33,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Start broker...
 	go server.Serve()
 	fmt.Println(aurora.BgMagenta("  Started!  "))
 
-	// Wait for signals...
 	<-done
 	fmt.Println(aurora.BgRed("  Caught Signal  "))
 
-	// End gracefully.
 	server.Close()
 	fmt.Println(aurora.BgGreen("  Finished  "))
-
 }
 
 // Auth is an example auth provider for the server.

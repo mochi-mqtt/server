@@ -21,13 +21,13 @@ func MockEstablisher(id string, c net.Conn, ac auth.Controller) error {
 // MockListener is a mock listener for establishing client connections.
 type MockListener struct {
 	sync.RWMutex
-	id          string
-	Config      *Config
-	address     string
-	IsListening bool
-	IsServing   bool
-	done        chan bool
-	ErrListen   bool
+	id          string    // the id of the listener.
+	Config      *Config   // configuration for the listener.
+	address     string    // the network address the listener binds to.
+	IsListening bool      // indiciate the listener is listening.
+	IsServing   bool      // indicate the listener is serving.
+	done        chan bool // indicate the listener is done.
+	ErrListen   bool      // throw an error on listen.
 }
 
 // NewMockListener returns a new instance of MockListener

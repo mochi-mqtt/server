@@ -7,16 +7,6 @@ import (
 	"github.com/mochi-co/mqtt/server/internal/packets"
 )
 
-// ReLeaf is a dev function for showing the trie leafs.
-/*
-func ReLeaf(m string, leaf *Leaf, d int) {
-	for k, v := range leaf.Leaves {
-		fmt.Println(m, d, strings.Repeat("  ", d), k)
-		ReLeaf(m, v, d+1)
-	}
-}
-*/
-
 // Subscriptions is a map of subscriptions keyed on client.
 type Subscriptions map[string]byte
 
@@ -341,3 +331,13 @@ func isolateParticle(filter string, d int) (particle string, hasNext bool) {
 
 	return
 }
+
+// ReLeaf is a dev function for showing the trie leafs.
+/*
+func ReLeaf(m string, leaf *Leaf, d int) {
+	for k, v := range leaf.Leaves {
+		fmt.Println(m, d, strings.Repeat("  ", d), k)
+		ReLeaf(m, v, d+1)
+	}
+}
+*/

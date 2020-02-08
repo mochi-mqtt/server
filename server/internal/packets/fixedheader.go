@@ -23,9 +23,6 @@ func (fh *FixedHeader) Encode(buf *bytes.Buffer) {
 func (fh *FixedHeader) Decode(headerByte byte) error {
 	fh.Type = headerByte >> 4 // Get the message type from the first 4 bytes.
 
-	// @SPEC [MQTT-2.2.2-1]
-	// Where a flag bit is marked as “Reserved” in Table 2.2 - Flag Bits,
-	// it is reserved for future use and MUST be set to the value listed in that table.
 	switch fh.Type {
 	case Publish:
 		fh.Dup = (headerByte>>3)&0x01 > 0 // Extract flags. Check if message is duplicate.
@@ -38,8 +35,6 @@ func (fh *FixedHeader) Decode(headerByte byte) error {
 	case Unsubscribe:
 		fh.Qos = (headerByte >> 1) & 0x03
 	default:
-		// [MQTT-2.2.2-2]
-		// If invalid flags are received, the receiver MUST close the Network Connection.
 		if (headerByte>>3)&0x01 > 0 || (headerByte>>1)&0x03 > 0 || headerByte&0x01 > 0 {
 			return ErrInvalidFlags
 		}

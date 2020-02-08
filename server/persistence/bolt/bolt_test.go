@@ -73,7 +73,10 @@ func TestWriteAndRetrieveServerInfo(t *testing.T) {
 		Version: "test",
 		Started: 100,
 	}
-	err = s.WriteServerInfo(persistence.ServerInfo{v, persistence.KServerInfo})
+	err = s.WriteServerInfo(persistence.ServerInfo{
+		Info: v,
+		ID:   persistence.KServerInfo,
+	})
 	require.NoError(t, err)
 
 	r, err := s.ReadServerInfo()

@@ -2,8 +2,7 @@ package main
 
 import (
 	"fmt"
-	//"log"
-	//	"net/http"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,29 +11,10 @@ import (
 
 	mqtt "github.com/mochi-co/mqtt/server"
 	"github.com/mochi-co/mqtt/server/listeners"
-	//	_ "net/http/pprof"
-	//	"runtime/trace"
 )
 
 func main() {
 	var err error
-	/*
-		go func() {
-			//	log.Println(http.ListenAndServe("localhost:6060", nil))
-		}()
-
-		f, err := os.Create("trace.out")
-		if err != nil {
-			panic(err)
-		}
-		defer f.Close()
-
-		err = trace.Start(f)
-		if err != nil {
-			panic(err)
-		}
-		defer trace.Stop()
-	*/
 
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
@@ -50,30 +30,27 @@ func main() {
 	tcp := listeners.NewTCP("t1", ":1883")
 	err = server.AddListener(tcp, nil)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	ws := listeners.NewWebsocket("ws1", ":1882")
 	err = server.AddListener(ws, nil)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	stats := listeners.NewHTTPStats("stats", ":8080")
 	err = server.AddListener(stats, nil)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	// Start broker...
 	go server.Serve()
 	fmt.Println(aurora.BgMagenta("  Started!  "))
 
-	// Wait for signals...
 	<-done
 	fmt.Println(aurora.BgRed("  Caught Signal  "))
 
-	// End gracefully.
 	server.Close()
 	fmt.Println(aurora.BgGreen("  Finished  "))
 

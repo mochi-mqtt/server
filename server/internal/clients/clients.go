@@ -20,9 +20,8 @@ import (
 )
 
 var (
-	defaultKeepalive uint16 = 10 // in seconds.
-	//resendBackoff           = []int64{0, 1, 2, 10, 60, 120, 600, 3600, 21600} // <1 second to 6 hours
-	//maxResends              = 6                                               // maximum number of times to retry sending QoS packets.
+	// defaultKeepalive is the default connection keepalive value in seconds.
+	defaultKeepalive uint16 = 10
 
 	ErrConnectionClosed = errors.New("Connection not open")
 )

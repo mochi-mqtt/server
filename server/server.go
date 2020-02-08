@@ -1,3 +1,4 @@
+// packet server provides a MQTT 3.1.1 compliant MQTT server.
 package server
 
 import (
@@ -19,10 +20,11 @@ import (
 )
 
 const (
-	Version = "0.1.0" // the server version.
+	Version = "1.0.0" // the server version.
 
-	maxPacketID = 65535 // the maximum value of a 16-bit packet ID.
-
+	// maxPacketID is the maximum value of a 16-bit packet ID. If a
+	// packet ID reaches this number, it resets to 0.
+	maxPacketID = 65535
 )
 
 var (
@@ -31,21 +33,27 @@ var (
 	ErrConnectNotAuthorized = errors.New("Connect packet was not authorized")
 	ErrInvalidTopic         = errors.New("Cannot publish to $ and $SYS topics")
 
-	SysTopicInterval time.Duration = 30000 // the default number of milliseconds between $SYS topic publishes.
+	// SysTopicInterval is the number of milliseconds between $SYS topic publishes.
+	SysTopicInterval time.Duration = 30000
 
-	inflightResendBackoff = []int64{0, 1, 2, 10, 60, 120, 600, 3600, 21600} // <1 second to 6 hours
-	inflightMaxResends    = 6                                               // maximum number of times to retry sending QoS packets.
+	// inflightResendBackoff is a slice of seconds, which determines the
+	// interval between inflight resend attempts.
+	inflightResendBackoff = []int64{0, 1, 2, 10, 60, 120, 600, 3600, 21600}
+
+	// inflightMaxResends is the maximum number of times to try resending QoS promises.
+	inflightMaxResends = 6
 )
 
-// Server is an MQTT broker server.
+// Server is an MQTT broker server. It should be created with server.New()
+// in order to ensure all the internal fields are correctly populated.
 type Server struct {
 	done      chan bool            // indicate that the server is ending.
-	bytepool  circ.BytesPool       // a byte pool for packet bytes.
-	Listeners *listeners.Listeners // listeners listen for new connections.
-	Clients   *clients.Clients     // clients known to the broker.
-	Topics    *topics.Index        // an index of topic subscriptions and retained messages.
-	System    *system.Info         // values commonly found in $SYS topics.
-	Store     persistence.Store    // a slice of persistent storage backends.
+	bytepool  circ.BytesPool       // a byte pool for incoming and outgoing packets.
+	Listeners *listeners.Listeners // listeners are network interfaces which listen for new connections.
+	Clients   *clients.Clients     // clients which are known to the broker.
+	Topics    *topics.Index        // an index of topic filter subscriptions and retained messages.
+	System    *system.Info         // values about the server commonly found in $SYS topics.
+	Store     persistence.Store    // a persistent storage backend if desired.
 	sysTicker *time.Ticker         // the interval ticker for sending updating $SYS topics.
 }
 
@@ -63,14 +71,15 @@ func New() *Server {
 		sysTicker: time.NewTicker(SysTopicInterval * time.Millisecond),
 	}
 
-	// Expose server stats to the listeners so it can be used in the dashboard
-	// and other experimental listeners.
+	// Expose server stats using the system listener so it can be used in the
+	// dashboard and other more experimental listeners.
 	s.Listeners = listeners.New(s.System)
 
 	return s
 }
 
-// AddStore adds a persistent storage backend to the server.
+// AddStore assigns a persistent storage backend to the server. This must be
+// called before calling server.Server().
 func (s *Server) AddStore(p persistence.Store) error {
 	s.Store = p
 	err := s.Store.Open()
@@ -100,8 +109,8 @@ func (s *Server) AddListener(listener listeners.Listener, config *listeners.Conf
 	return nil
 }
 
-// Serve begins the event loops for establishing client connections on all
-// attached listeners.
+// Serve starts the event loops responsible for establishing client connections
+// on all attached listeners, and publishing the system topics.
 func (s *Server) Serve() error {
 	if s.Store != nil {
 		err := s.readStore()
@@ -117,7 +126,7 @@ func (s *Server) Serve() error {
 	return nil
 }
 
-// eventLoop runs server processes at intervals.
+// eventLoop loops forever, running various server processes at different intervals.
 func (s *Server) eventLoop() {
 	for {
 		select {
@@ -130,10 +139,12 @@ func (s *Server) eventLoop() {
 	}
 }
 
-// EstablishConnection establishes a new client connection with the broker.
+// EstablishConnection establishes a new client when a listener accepts a new
+// connection.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
-	xbr := s.bytepool.Get()
+	xbr := s.bytepool.Get() // Get byte buffer from pools for sending and receiving packet data.
 	xbw := s.bytepool.Get()
+
 	cl := clients.NewClient(c,
 		circ.NewReaderFromSlice(0, xbr),
 		circ.NewWriterFromSlice(0, xbw),
@@ -174,7 +185,6 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 			atomic.AddInt64(&s.System.ClientsDisconnected, -1)
 		}
 		existing.Stop()
-		fmt.Printf("%+v\n", existing.Subscriptions)
 		if pk.CleanSession {
 			for k := range existing.Subscriptions {
 				delete(existing.Subscriptions, k)
@@ -227,7 +237,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		s.closeClient(cl, true)
 	}
 
-	s.bytepool.Put(xbr)
+	s.bytepool.Put(xbr) // Return byte buffers to pools when the client has finished.
 	s.bytepool.Put(xbw)
 
 	atomic.AddInt64(&s.System.ClientsConnected, -1)
@@ -247,7 +257,7 @@ func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 }
 
 // processPacket processes an inbound packet for a client. Since the method is
-// typically called as a goroutine, errors are mostly for test checking purposes.
+// typically called as a goroutine, errors are primarily for test checking purposes.
 func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
 	switch pk.FixedHeader.Type {
 	case packets.Connect:
@@ -318,6 +328,7 @@ func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) error {
 // processPublish processes a Publish packet.
 func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 	if len(pk.TopicName) >= 4 && pk.TopicName[0:4] == "$SYS" {
+		// Clients can't publish to $SYS topics.
 		return nil
 	}
 
@@ -592,8 +603,8 @@ func (s *Server) publishSysTopics() {
 
 	if s.Store != nil {
 		s.Store.WriteServerInfo(persistence.ServerInfo{
-			*s.System,
-			persistence.KServerInfo,
+			Info: *s.System,
+			ID:   persistence.KServerInfo,
 		})
 	}
 }
@@ -607,9 +618,7 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 
 	nt := time.Now().Unix()
 	for _, tk := range cl.Inflight.GetAll() {
-
-		// After a reasonable time, drop inflight packets.
-		if tk.Resends >= inflightMaxResends {
+		if tk.Resends >= inflightMaxResends { // After a reasonable time, drop inflight packets.
 			cl.Inflight.Delete(tk.Packet.PacketID)
 			if tk.Packet.FixedHeader.Type == packets.Publish {
 				atomic.AddInt64(&s.System.PublishDropped, 1)
@@ -707,7 +716,6 @@ func (s *Server) readStore() error {
 	if err != nil {
 		return fmt.Errorf("load clients; %w", err)
 	}
-	fmt.Println("loading clients", clients)
 	s.loadClients(clients)
 
 	subs, err := s.Store.ReadSubscriptions()
@@ -746,7 +754,6 @@ func (s *Server) loadSubscriptions(v []persistence.Subscription) {
 			cl.NoteSubscription(sub.Filter, sub.QoS)
 		}
 	}
-
 }
 
 // loadClients restores clients from the datastore.

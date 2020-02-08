@@ -1315,10 +1315,11 @@ func TestServerLoadServerInfo(t *testing.T) {
 	s.System.Version = "original"
 
 	s.loadServerInfo(persistence.ServerInfo{
-		system.Info{
+		Info: system.Info{
 			Version: "test",
 			Started: 100,
-		}, persistence.KServerInfo,
+		},
+		ID: persistence.KServerInfo,
 	})
 
 	require.Equal(t, "original", s.System.Version)

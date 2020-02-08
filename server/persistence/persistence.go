@@ -93,10 +93,10 @@ type LWT struct {
 
 // MockStore is a mock storage backend for testing.
 type MockStore struct {
-	FailOpen bool
-	Closed   bool
-	Opened   bool
-	Fail     map[string]bool
+	FailOpen bool            // error on open.
+	Closed   bool            // indicate mock store is closed.
+	Opened   bool            // indicate mock store is open.
+	Fail     map[string]bool // issue errors for different methods.
 }
 
 // Open opens the storage instance.
