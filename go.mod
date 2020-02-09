@@ -7,6 +7,7 @@ require (
 	github.com/asdine/storm/v3 v3.1.0
 	github.com/gorilla/websocket v1.4.1
 	github.com/jinzhu/copier v0.0.0-20190924061706-b57f9002281a
+	github.com/krylovsk/mqtt-benchmark v0.1.1 // indirect
 	github.com/logrusorgru/aurora v0.0.0-20191116043053-66b7ad493a23
 	github.com/rs/xid v1.2.1
 	github.com/stretchr/testify v1.4.0

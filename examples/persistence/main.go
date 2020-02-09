@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/logrusorgru/aurora"
+	"go.etcd.io/bbolt"
 
 	mqtt "github.com/mochi-co/mqtt/server"
 	"github.com/mochi-co/mqtt/server/listeners"
@@ -34,7 +35,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = server.AddStore(bolt.New("mochi-test.db", nil))
+	err = server.AddStore(bolt.New("mochi-test.db", &bbolt.Options{
+		Timeout: 500 * time.Millisecond,
+	}))
 	if err != nil {
 		log.Fatal(err)
 	}
