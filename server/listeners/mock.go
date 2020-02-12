@@ -21,13 +21,13 @@ func MockEstablisher(id string, c net.Conn, ac auth.Controller) error {
 // MockListener is a mock listener for establishing client connections.
 type MockListener struct {
 	sync.RWMutex
-	id          string    // the id of the listener.
-	Config      *Config   // configuration for the listener.
-	address     string    // the network address the listener binds to.
-	IsListening bool      // indiciate the listener is listening.
-	IsServing   bool      // indicate the listener is serving.
-	done        chan bool // indicate the listener is done.
-	ErrListen   bool      // throw an error on listen.
+	id        string    // the id of the listener.
+	Config    *Config   // configuration for the listener.
+	address   string    // the network address the listener binds to.
+	Listening bool      // indiciate the listener is listening.
+	Serving   bool      // indicate the listener is serving.
+	done      chan bool // indicate the listener is done.
+	ErrListen bool      // throw an error on listen.
 }
 
 // NewMockListener returns a new instance of MockListener
@@ -42,7 +42,7 @@ func NewMockListener(id, address string) *MockListener {
 // Serve serves the mock listener.
 func (l *MockListener) Serve(establisher EstablishFunc) {
 	l.Lock()
-	l.IsServing = true
+	l.Serving = true
 	l.Unlock()
 	for {
 		select {
@@ -59,7 +59,7 @@ func (l *MockListener) Listen(s *system.Info) error {
 	}
 
 	l.Lock()
-	l.IsListening = true
+	l.Listening = true
 	l.Unlock()
 	return nil
 }
@@ -83,7 +83,21 @@ func (l *MockListener) ID() string {
 func (l *MockListener) Close(closer CloseFunc) {
 	l.Lock()
 	defer l.Unlock()
-	l.IsServing = false
+	l.Serving = false
 	closer(l.id)
 	close(l.done)
+}
+
+// IsServing indicates whether the mock listener is serving.
+func (l *MockListener) IsServing() bool {
+	l.Lock()
+	defer l.Unlock()
+	return l.Serving
+}
+
+// IsServing indicates whether the mock listener is listening.
+func (l *MockListener) IsListening() bool {
+	l.Lock()
+	defer l.Unlock()
+	return l.Listening
 }

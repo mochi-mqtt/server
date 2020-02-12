@@ -125,10 +125,10 @@ func TestServeListener(t *testing.T) {
 	l.Add(NewMockListener("t1", ":1882"))
 	l.Serve("t1", MockEstablisher)
 	time.Sleep(time.Millisecond)
-	require.Equal(t, true, l.internal["t1"].(*MockListener).IsServing)
+	require.Equal(t, true, l.internal["t1"].(*MockListener).IsServing())
 
 	l.Close("t1", MockCloser)
-	require.Equal(t, false, l.internal["t1"].(*MockListener).IsServing)
+	require.Equal(t, false, l.internal["t1"].(*MockListener).IsServing())
 }
 
 func BenchmarkServeListener(b *testing.B) {
@@ -147,17 +147,17 @@ func TestServeAllListeners(t *testing.T) {
 	l.ServeAll(MockEstablisher)
 	time.Sleep(time.Millisecond)
 
-	require.Equal(t, true, l.internal["t1"].(*MockListener).IsServing)
-	require.Equal(t, true, l.internal["t2"].(*MockListener).IsServing)
-	require.Equal(t, true, l.internal["t3"].(*MockListener).IsServing)
+	require.Equal(t, true, l.internal["t1"].(*MockListener).IsServing())
+	require.Equal(t, true, l.internal["t2"].(*MockListener).IsServing())
+	require.Equal(t, true, l.internal["t3"].(*MockListener).IsServing())
 
 	l.Close("t1", MockCloser)
 	l.Close("t2", MockCloser)
 	l.Close("t3", MockCloser)
 
-	require.Equal(t, false, l.internal["t1"].(*MockListener).IsServing)
-	require.Equal(t, false, l.internal["t2"].(*MockListener).IsServing)
-	require.Equal(t, false, l.internal["t3"].(*MockListener).IsServing)
+	require.Equal(t, false, l.internal["t1"].(*MockListener).IsServing())
+	require.Equal(t, false, l.internal["t2"].(*MockListener).IsServing())
+	require.Equal(t, false, l.internal["t3"].(*MockListener).IsServing())
 }
 
 func BenchmarkServeAllListeners(b *testing.B) {
@@ -201,9 +201,9 @@ func TestCloseAllListeners(t *testing.T) {
 	l.Add(NewMockListener("t3", ":1882"))
 	l.ServeAll(MockEstablisher)
 	time.Sleep(time.Millisecond)
-	require.Equal(t, true, l.internal["t1"].(*MockListener).IsServing)
-	require.Equal(t, true, l.internal["t2"].(*MockListener).IsServing)
-	require.Equal(t, true, l.internal["t3"].(*MockListener).IsServing)
+	require.Equal(t, true, l.internal["t1"].(*MockListener).IsServing())
+	require.Equal(t, true, l.internal["t2"].(*MockListener).IsServing())
+	require.Equal(t, true, l.internal["t3"].(*MockListener).IsServing())
 
 	closed := make(map[string]bool)
 	l.CloseAll(func(id string) {

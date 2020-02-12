@@ -28,10 +28,10 @@ func TestNewMockListenerListen(t *testing.T) {
 	require.Equal(t, "t1", mocked.id)
 	require.Equal(t, ":1882", mocked.address)
 
-	require.Equal(t, false, mocked.IsListening)
+	require.Equal(t, false, mocked.IsListening())
 	err := mocked.Listen(nil)
 	require.NoError(t, err)
-	require.Equal(t, true, mocked.IsListening)
+	require.Equal(t, true, mocked.IsListening())
 }
 func TestNewMockListenerListenFailure(t *testing.T) {
 	mocked := NewMockListener("t1", ":1882")
@@ -42,7 +42,7 @@ func TestNewMockListenerListenFailure(t *testing.T) {
 
 func TestMockListenerServe(t *testing.T) {
 	mocked := NewMockListener("t1", ":1882")
-	require.Equal(t, false, mocked.IsServing)
+	require.Equal(t, false, mocked.IsServing())
 
 	o := make(chan bool)
 	go func(o chan bool) {
@@ -51,7 +51,7 @@ func TestMockListenerServe(t *testing.T) {
 	}(o)
 
 	time.Sleep(time.Millisecond) // easy non-channel wait for start of serving
-	require.Equal(t, true, mocked.IsServing)
+	require.Equal(t, true, mocked.IsServing())
 
 	var closed bool
 	mocked.Close(func(id string) {
@@ -76,4 +76,14 @@ func TestMockListenerClose(t *testing.T) {
 		closed = true
 	})
 	require.Equal(t, true, closed)
+}
+
+func TestNewMockListenerIsListening(t *testing.T) {
+	mocked := NewMockListener("t1", ":1882")
+	require.Equal(t, false, mocked.IsListening())
+}
+
+func TestNewMockListenerIsServing(t *testing.T) {
+	mocked := NewMockListener("t1", ":1882")
+	require.Equal(t, false, mocked.IsServing())
 }

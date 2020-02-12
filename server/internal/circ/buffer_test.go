@@ -56,8 +56,8 @@ func TestGetPos(t *testing.T) {
 	require.Equal(t, int64(0), tail)
 	require.Equal(t, int64(0), head)
 
-	buf.tail = 3
-	buf.head = 11
+	atomic.StoreInt64(&buf.tail, 3)
+	atomic.StoreInt64(&buf.head, 11)
 
 	tail, head = buf.GetPos()
 	require.Equal(t, int64(3), tail)
@@ -75,12 +75,12 @@ func TestGet(t *testing.T) {
 
 func TestSetPos(t *testing.T) {
 	buf := NewBuffer(16, 4)
-	require.Equal(t, int64(0), buf.tail)
-	require.Equal(t, int64(0), buf.head)
+	require.Equal(t, int64(0), atomic.LoadInt64(&buf.tail))
+	require.Equal(t, int64(0), atomic.LoadInt64(&buf.head))
 
 	buf.SetPos(4, 8)
-	require.Equal(t, int64(4), buf.tail)
-	require.Equal(t, int64(8), buf.head)
+	require.Equal(t, int64(4), atomic.LoadInt64(&buf.tail))
+	require.Equal(t, int64(8), atomic.LoadInt64(&buf.head))
 }
 
 func TestSet(t *testing.T) {
@@ -268,7 +268,7 @@ func TestCommitTail(t *testing.T) {
 			buf.wcond.Broadcast()
 			buf.wcond.L.Unlock()
 		}
-		require.Equal(t, tt.next, buf.tail, "Next tail mismatch [i:%d] %s", i, tt.desc)
+		require.Equal(t, tt.next, atomic.LoadInt64(&buf.tail), "Next tail mismatch [i:%d] %s", i, tt.desc)
 	}
 }
 

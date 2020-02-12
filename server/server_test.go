@@ -134,7 +134,7 @@ func TestServerServe(t *testing.T) {
 	require.Equal(t, 1, s.Listeners.Len())
 	listener, ok := s.Listeners.Get("t1")
 	require.Equal(t, true, ok)
-	require.Equal(t, true, listener.(*listeners.MockListener).IsServing)
+	require.Equal(t, true, listener.(*listeners.MockListener).IsServing())
 }
 
 func TestServerServeFail(t *testing.T) {
@@ -1195,11 +1195,11 @@ func TestServerClose(t *testing.T) {
 
 	listener, ok := s.Listeners.Get("t1")
 	require.Equal(t, true, ok)
-	require.Equal(t, true, listener.(*listeners.MockListener).IsServing)
+	require.Equal(t, true, listener.(*listeners.MockListener).IsServing())
 
 	s.Close()
 	time.Sleep(time.Millisecond)
-	require.Equal(t, false, listener.(*listeners.MockListener).IsServing)
+	require.Equal(t, false, listener.(*listeners.MockListener).IsServing())
 	require.Equal(t, true, p.Closed)
 }
 
