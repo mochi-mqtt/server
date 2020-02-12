@@ -1,3 +1,14 @@
+
+<p align="center">
+  
+[![Build Status](https://travis-ci.com/mochi-co/mqtt.svg?token=59nqixhtefy2iQRwsPcu&branch=master)](https://travis-ci.com/mochi-co/mqtt)
+[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/mochi-co/mqtt/issues)
+[![codecov](https://codecov.io/gh/mochi-co/mqtt/branch/master/graph/badge.svg?token=6vBUgYVaVB)](https://codecov.io/gh/mochi-co/mqtt)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/b48e17f87cee4221b60a45c02d49148c)](https://www.codacy.com/app/mochi-co/mqtt?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=mochi-co/mqtt&amp;utm_campaign=Badge_Grade)
+[![GoDoc](https://godoc.org/github.com/mochi-co/mqtt?status.svg)](https://godoc.org/github.com/mochi-co/mqtt)
+
+</p>
+
 # Mochi MQTT 
 ### A High-performance MQTT server in Go (v3.0 | v3.1.1) 
 
