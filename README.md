@@ -39,7 +39,7 @@ Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inov
 **Single Client, 10,000 messages**
 
 ![1 Client, 10,000 Messages](assets/benchmarkchart_1_10000.png "1 Client, 10,000 Messages")
-
+> With only 1 client, there is no variation in throughput so the benchmark is reports the same number for high, low, and median.
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=1 -num-messages=10000`
 
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
