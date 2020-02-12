@@ -11,6 +11,7 @@ import (
 
 	mqtt "github.com/mochi-co/mqtt/server"
 	"github.com/mochi-co/mqtt/server/listeners"
+	"github.com/mochi-co/mqtt/server/listeners/auth"
 )
 
 func main() {
@@ -27,7 +28,7 @@ func main() {
 	server := mqtt.New()
 	tcp := listeners.NewTCP("t1", ":1883")
 	err := server.AddListener(tcp, &listeners.Config{
-		Auth: new(Auth),
+		Auth: new(auth.Allow),
 	})
 	if err != nil {
 		log.Fatal(err)

@@ -27,7 +27,7 @@ func main() {
 	server := mqtt.New()
 
 	stats := listeners.NewHTTPStats("stats", ":8080")
-	err = server.AddListener(stats, nil)
+	err := server.AddListener(stats, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
