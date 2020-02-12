@@ -45,6 +45,9 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=1000`
 
+![10 Clients, 1,000 Messages](assets/benchmarkchart_10_1000.png "10 Clients, 1,000 Messages")
+
+
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
 | :----------- | --------: | ----------: | -------: | --------: | --------:
 | SEND High    |  37193 | 	15775 |	17455 |	34138 |	36575  |
@@ -59,6 +62,8 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=500 -num-messages=100`
 
+![500 Clients, 100 Messages](assets/benchmarkchart_500_100.png "500 Clients, 100 Messages")
+
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
 | :----------- | --------: | ----------: | -------: | --------: | --------:
 | SEND High    |  70688	| 72686	| 71392 |	75336 |	73192   |
@@ -71,6 +76,8 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 **10 Clients, 10,000 Messages**
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
+
+![10 Clients, 10000 Messages](assets/benchmarkchart_10_10000.png "10 Clients, 10000 Messages")
 
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
 | :----------- | --------: | ----------: | -------: | --------: | --------:
