@@ -20,12 +20,59 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 - Docker Image
 - MQTT v5 Compatibility
 
-#### Performance
-...
+#### Performance (messages/second)
+Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inovex/mqtt-stresser) on a  13-inch, Early 2015 Macbook Pro (2.7 GHz Intel Core i5). Taking into account bursts of high and low throughput, the median scores list are most significant. 
 
+Higher is better. As usual, any performance benchmarks should be taken with a pinch of salt, but are shown to demonstrate typical throughput compared to the other leading MQTT brokers.
+
+**Single Client, 10,000 messages**
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=1 -num-messages=10000`
+
+
+|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
+| :----------- | --------: | ----------: | -------: | --------: | --------:
+| SEND High    | 36505  |   30597  | 27202  | 32782  | 30125   |
+| SEND Low    |  36505    |  30597  | 27202   |  32782  | 30125  |
+| SEND Median  | 36505   | 30597   | 27202   |32782    | 30125  |
+| RECV High    | 152221  |  59130  | 7879   | 17551   | 9145   |
+| RECV Low    | 152221  | 59130   | 7879   |  17551    |  9145    |
+| RECV Median    | 152221  |  59130  | 7879   |  17551   |  9145   |
+
+**10 Clients, 1,000 Messages**
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=1000`
+|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
+| :----------- | --------: | ----------: | -------: | --------: | --------:
+| SEND High    |  37193 | 	15775 |	17455 |	34138 |	36575  |
+| SEND Low    |   6529 |	6446 |	7714 |	8583 |	7383      |
+| SEND Median  |  15127 |	7813 | 	10305 |	9887 |	8169     |
+| RECV High    |  33535	 | 3710	| 3022 |	4534 |	9411    |
+| RECV Low    |   7484	| 2661	| 1689 |	2021 |	2275     |
+| RECV Median    |   11427 |  3142 | 1831 |	2468 |	4692      |
+
+**500 Clients, 100 Messages**
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=500 -num-messages=100`
+|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
+| :----------- | --------: | ----------: | -------: | --------: | --------:
+| SEND High    |  70688	| 72686	| 71392 |	75336 |	73192   |
+| SEND Low    |   1021	| 2577 |	1603 |	8417 |	2344  |
+| SEND Median  |  49871	| 33076 |	33637 |	35200 |	31312   |
+| RECV High    |  116163 |	4215 |	3427 |	5484 |	10100 |
+| RECV Low    |   1044	| 156 | 	56 | 	83	| 169   |
+| RECV Median    |     24398 | 208 |	94 |	413 |	474     |
+
+**10 Clients, 10,000 Messages**
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
+|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
+| :----------- | --------: | ----------: | -------: | --------: | --------:
+| SEND High    |   13153 |	13270 |	12229 |	13025 |	38446  |
+| SEND Low    |  8728	| 8513	| 8193 | 	6483 |	3889    |
+| SEND Median  |   9045	| 9532	| 9252 |	8031 |	9210    |
+| RECV High    |  20774	| 5052	| 2093 |	2071 | 	43008    |
+| RECV Low    |   10718	 |3995	| 1531	| 1673	| 18764   |
+| RECV Median    |  16339 |	4607 |	1620 | 	1907	| 33524  |
 
 #### Using the Broker
-Mochi MQTT can be used as a standalone broker. Simply checkout this repository and run the `main.go` entrypoint in the `cmd` folder which will expose tcp (:1883), websocket (:1882), and dashboard (:8080) listeners.
+Mochi MQTT can be used as a standalone broker. Simply checkout this repository and run the `main.go` entrypoint in the `cmd` folder which will expose tcp (:1883), websocket (:1882), and dashboard (:8080) listeners. A docker image is coming soon.
 
 ```
 cd cmd
