@@ -29,7 +29,7 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=1 -num-messages=10000`
 
-![1 Client, 10,000 Messages](https://github.com/mochi-co/mqtt/assets/benchmarkchart_1_10000.png "1 Client, 10,000 Messages")
+![1 Client, 10,000 Messages](assets/benchmarkchart_1_10000.png "1 Client, 10,000 Messages")
 
 
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
