@@ -5,14 +5,14 @@
 [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/mochi-co/mqtt/issues)
 [![codecov](https://codecov.io/gh/mochi-co/mqtt/branch/master/graph/badge.svg?token=6vBUgYVaVB)](https://codecov.io/gh/mochi-co/mqtt)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/b48e17f87cee4221b60a45c02d49148c)](https://www.codacy.com/app/mochi-co/mqtt?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=mochi-co/mqtt&amp;utm_campaign=Badge_Grade)
-[![GoDoc](https://godoc.org/github.com/mochi-co/mqtt?status.svg)](https://godoc.org/github.com/mochi-co/mqtt)
+[![GoDoc](https://pkg.go.dev/github.com/mochi-co/mqtt?status.svg)](https://pkg.go.dev/github.com/mochi-co/mqtt)
 
 </p>
 
 # Mochi MQTT 
 ### A High-performance MQTT server in Go (v3.0 | v3.1.1) 
 
-Mochi MQTT is an embeddable high-performance MQTT broker server written in Go, and compliant with the MQTT v3.0 and v3.1.1 specification for the development of IoT and smarthome projects. The server can be used either as a standalone binary or embedded as a library in your own projects. Mochi MQTT message throughput is comparable with world favourites such as Mosquitto, Mosca, and VerneMQ.
+Mochi MQTT is an embeddable high-performance MQTT broker server written in Go, and compliant with the MQTT v3.0 and v3.1.1 specification for the development of IoT and smarthome projects. The server can be used either as a standalone binary or embedded as a library in your own projects. Mochi MQTT message throughput is comparable with everyone's favourites such as Mosquitto, Mosca, and VerneMQ.
 
 #### What is MQTT?
 MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely simple and lightweight messaging protocol, designed for constrained devices and low-bandwidth, high-latency or unreliable networks. [Learn more](https://mqtt.org/faq)
