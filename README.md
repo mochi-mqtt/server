@@ -18,12 +18,12 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 #### Roadmap
 - Inline Pub-sub (without client) and event hooks
 - Docker Image
-- MQTT v5 Compatibility
+- MQTT v5 compatibility
 
 #### Performance (messages/second)
-Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inovex/mqtt-stresser) on a  13-inch, Early 2015 Macbook Pro (2.7 GHz Intel Core i5). Taking into account bursts of high and low throughput, the median scores list are most significant. 
+Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inovex/mqtt-stresser) on a  13-inch, Early 2015 Macbook Pro (2.7 GHz Intel Core i5). Taking into account bursts of high and low throughput, the median scores are the most useful. Higher is better. 
 
-Higher is better. As usual, any performance benchmarks should be taken with a pinch of salt, but are shown to demonstrate typical throughput compared to the other leading MQTT brokers.
+> As usual, any performance benchmarks should be taken with a pinch of salt, but are shown to demonstrate typical throughput compared to the other leading MQTT brokers.
 
 **Single Client, 10,000 messages**
 
