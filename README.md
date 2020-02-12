@@ -55,6 +55,20 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 | RECV Low    |   7484	| 2661	| 1689 |	2021 |	2275     |
 | RECV Median    |   11427 |  3142 | 1831 |	2468 |	4692      |
 
+**10 Clients, 10,000 Messages**
+
+![10 Clients, 10000 Messages](assets/benchmarkchart_10_10000.png "10 Clients, 10000 Messages")
+
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
+
+|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
+| :----------- | --------: | ----------: | -------: | --------: | --------:
+| SEND High    |   13153 |	13270 |	12229 |	13025 |	38446  |
+| SEND Low    |  8728	| 8513	| 8193 | 	6483 |	3889    |
+| SEND Median  |   9045	| 9532	| 9252 |	8031 |	9210    |
+| RECV High    |  20774	| 5052	| 2093 |	2071 | 	43008    |
+| RECV Low    |   10718	 |3995	| 1531	| 1673	| 18764   |
+| RECV Median    |  16339 |	4607 |	1620 | 	1907	| 33524  |
 
 **500 Clients, 100 Messages**
 
@@ -70,22 +84,6 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 | RECV High    |  116163 |	4215 |	3427 |	5484 |	10100 |
 | RECV Low    |   1044	| 156 | 	56 | 	83	| 169   |
 | RECV Median    |     24398 | 208 |	94 |	413 |	474     |
-
-**10 Clients, 10,000 Messages**
-
-
-![10 Clients, 10000 Messages](assets/benchmarkchart_10_10000.png "10 Clients, 10000 Messages")
-
-`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
-
-|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
-| :----------- | --------: | ----------: | -------: | --------: | --------:
-| SEND High    |   13153 |	13270 |	12229 |	13025 |	38446  |
-| SEND Low    |  8728	| 8513	| 8193 | 	6483 |	3889    |
-| SEND Median  |   9045	| 9532	| 9252 |	8031 |	9210    |
-| RECV High    |  20774	| 5052	| 2093 |	2071 | 	43008    |
-| RECV Low    |   10718	 |3995	| 1531	| 1673	| 18764   |
-| RECV Median    |  16339 |	4607 |	1620 | 	1907	| 33524  |
 
 #### Using the Broker
 Mochi MQTT can be used as a standalone broker. Simply checkout this repository and run the `main.go` entrypoint in the `cmd` folder which will expose tcp (:1883), websocket (:1882), and dashboard (:8080) listeners. A docker image is coming soon.
