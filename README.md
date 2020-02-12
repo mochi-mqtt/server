@@ -27,10 +27,9 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 
 **Single Client, 10,000 messages**
 
-`mqtt-stresser -broker tcp://localhost:1883 -num-clients=1 -num-messages=10000`
-
 ![1 Client, 10,000 Messages](assets/benchmarkchart_1_10000.png "1 Client, 10,000 Messages")
 
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=1 -num-messages=10000`
 
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
 | :----------- | --------: | ----------: | -------: | --------: | --------:
@@ -43,10 +42,9 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 
 **10 Clients, 1,000 Messages**
 
-`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=1000`
-
 ![10 Clients, 1,000 Messages](assets/benchmarkchart_10_1000.png "10 Clients, 1,000 Messages")
 
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=1000`
 
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
 | :----------- | --------: | ----------: | -------: | --------: | --------:
@@ -60,9 +58,9 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 
 **500 Clients, 100 Messages**
 
-`mqtt-stresser -broker tcp://localhost:1883 -num-clients=500 -num-messages=100`
-
 ![500 Clients, 100 Messages](assets/benchmarkchart_500_100.png "500 Clients, 100 Messages")
+
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=500 -num-messages=100`
 
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
 | :----------- | --------: | ----------: | -------: | --------: | --------:
@@ -75,9 +73,10 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 
 **10 Clients, 10,000 Messages**
 
-`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
 
 ![10 Clients, 10000 Messages](assets/benchmarkchart_10_10000.png "10 Clients, 10000 Messages")
+
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
 
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
 | :----------- | --------: | ----------: | -------: | --------: | --------:
