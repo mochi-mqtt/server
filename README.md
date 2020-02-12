@@ -26,7 +26,10 @@ Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inov
 Higher is better. As usual, any performance benchmarks should be taken with a pinch of salt, but are shown to demonstrate typical throughput compared to the other leading MQTT brokers.
 
 **Single Client, 10,000 messages**
+
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=1 -num-messages=10000`
+
+![1 Client, 10,000 Messages](https://github.com/mochi-co/mqtt/assets/benchmarkchart_1_10000.png "1 Client, 10,000 Messages")
 
 
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
@@ -39,7 +42,9 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 | RECV Median    | 152221  |  59130  | 7879   |  17551   |  9145   |
 
 **10 Clients, 1,000 Messages**
+
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=1000`
+
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
 | :----------- | --------: | ----------: | -------: | --------: | --------:
 | SEND High    |  37193 | 	15775 |	17455 |	34138 |	36575  |
@@ -49,8 +54,11 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 | RECV Low    |   7484	| 2661	| 1689 |	2021 |	2275     |
 | RECV Median    |   11427 |  3142 | 1831 |	2468 |	4692      |
 
+
 **500 Clients, 100 Messages**
+
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=500 -num-messages=100`
+
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
 | :----------- | --------: | ----------: | -------: | --------: | --------:
 | SEND High    |  70688	| 72686	| 71392 |	75336 |	73192   |
@@ -61,7 +69,9 @@ Higher is better. As usual, any performance benchmarks should be taken with a pi
 | RECV Median    |     24398 | 208 |	94 |	413 |	474     |
 
 **10 Clients, 10,000 Messages**
+
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
+
 |              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
 | :----------- | --------: | ----------: | -------: | --------: | --------:
 | SEND High    |   13153 |	13270 |	12229 |	13025 |	38446  |
