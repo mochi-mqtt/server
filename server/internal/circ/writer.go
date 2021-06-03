@@ -32,10 +32,10 @@ func NewWriterFromSlice(block int, p []byte) *Writer {
 
 // WriteTo writes the contents of the buffer to an io.Writer.
 func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
-	atomic.StoreInt64(&b.State, 2)
-	defer atomic.StoreInt64(&b.State, 0)
+	atomic.StoreInt32(&b.State, 2)
+	defer atomic.StoreInt32(&b.State, 0)
 	for {
-		if atomic.LoadInt64(&b.done) == 1 && b.CapDelta() == 0 {
+		if atomic.LoadInt32(&b.done) == 1 && b.CapDelta() == 0 {
 			return total, io.EOF
 		}
 
@@ -46,9 +46,9 @@ func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
 		}
 
 		// Get all the bytes between the tail and head, wrapping if necessary.
-		tail := atomic.LoadInt64(&b.tail)
+		tail := atomic.LoadInt32(&b.tail)
 		rTail := b.Index(tail)
-		rHead := b.Index(atomic.LoadInt64(&b.head))
+		rHead := b.Index(atomic.LoadInt32(&b.head))
 		n := b.CapDelta()
 		p := make([]byte, 0, n)
 
@@ -69,7 +69,7 @@ func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
 		//fmt.Println("written", n)
 
 		// Move the tail forward the bytes written and broadcast change.
-		atomic.StoreInt64(&b.tail, tail+int64(n))
+		atomic.StoreInt32(&b.tail, tail+int32(n))
 		b.rcond.L.Lock()
 		b.rcond.Broadcast()
 		b.rcond.L.Unlock()
@@ -84,7 +84,7 @@ func (b *Writer) Write(p []byte) (total int, err error) {
 	}
 
 	total = b.writeBytes(p)
-	atomic.AddInt64(&b.head, int64(total))
+	atomic.AddInt32(&b.head, int32(total))
 	b.wcond.L.Lock()
 	b.wcond.Broadcast()
 	b.wcond.L.Unlock()
@@ -98,7 +98,7 @@ func (b *Writer) writeBytes(p []byte) int {
 	var o int
 	var n int
 	for i := 0; i < len(p); i++ {
-		o = b.Index(atomic.LoadInt64(&b.head) + int64(i))
+		o = b.Index(atomic.LoadInt32(&b.head) + int32(i))
 		b.buf[o] = p[i]
 		n++
 	}

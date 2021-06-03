@@ -33,7 +33,7 @@ type Websocket struct {
 	config    *Config       // configuration values for the listener.
 	address   string        // the network address to bind to.
 	listen    *http.Server  // an http server for serving websocket connections.
-	end       int64         // ensure the close methods are only called once.
+	end       int32         // ensure the close methods are only called once.
 	establish EstablishFunc // the server's establish conection handler.
 }
 
@@ -161,8 +161,8 @@ func (l *Websocket) Close(closeClients CloseFunc) {
 	l.Lock()
 	defer l.Unlock()
 
-	if atomic.LoadInt64(&l.end) == 0 {
-		atomic.StoreInt64(&l.end, 1)
+	if atomic.LoadInt32(&l.end) == 0 {
+		atomic.StoreInt32(&l.end, 1)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		l.listen.Shutdown(ctx)

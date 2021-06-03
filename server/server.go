@@ -175,14 +175,14 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		retcode = packets.CodeConnectBadAuthValues
 	}
 
-	atomic.AddInt64(&s.System.ConnectionsTotal, 1)
-	atomic.AddInt64(&s.System.ClientsConnected, 1)
+	atomic.AddInt32(&s.System.ConnectionsTotal, 1)
+	atomic.AddInt32(&s.System.ClientsConnected, 1)
 
 	var sessionPresent bool
 	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
 		existing.Lock()
-		if atomic.LoadInt64(&existing.State.Done) == 1 {
-			atomic.AddInt64(&s.System.ClientsDisconnected, -1)
+		if atomic.LoadInt32(&existing.State.Done) == 1 {
+			atomic.AddInt32(&s.System.ClientsDisconnected, -1)
 		}
 		existing.Stop()
 		if pk.CleanSession {
@@ -190,7 +190,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 				delete(existing.Subscriptions, k)
 				q := s.Topics.Unsubscribe(k, existing.ID)
 				if q {
-					atomic.AddInt64(&s.System.Subscriptions, -1)
+					atomic.AddInt32(&s.System.Subscriptions, -1)
 				}
 			}
 		} else {
@@ -200,9 +200,9 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		}
 		existing.Unlock()
 	} else {
-		atomic.AddInt64(&s.System.ClientsTotal, 1)
-		if atomic.LoadInt64(&s.System.ClientsConnected) > atomic.LoadInt64(&s.System.ClientsMax) {
-			atomic.AddInt64(&s.System.ClientsMax, 1)
+		atomic.AddInt32(&s.System.ClientsTotal, 1)
+		if atomic.LoadInt32(&s.System.ClientsConnected) > atomic.LoadInt32(&s.System.ClientsMax) {
+			atomic.AddInt32(&s.System.ClientsMax, 1)
 		}
 	}
 
@@ -240,8 +240,8 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	s.bytepool.Put(xbr) // Return byte buffers to pools when the client has finished.
 	s.bytepool.Put(xbw)
 
-	atomic.AddInt64(&s.System.ClientsConnected, -1)
-	atomic.AddInt64(&s.System.ClientsDisconnected, 1)
+	atomic.AddInt32(&s.System.ClientsConnected, -1)
+	atomic.AddInt32(&s.System.ClientsDisconnected, 1)
 
 	return err
 }
@@ -339,7 +339,7 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 	if pk.FixedHeader.Retain {
 		out := pk.PublishCopy()
 		q := s.Topics.RetainMessage(out)
-		atomic.AddInt64(&s.System.Retained, q)
+		atomic.AddInt32(&s.System.Retained, q)
 		if s.Store != nil {
 			if q == 1 {
 				s.Store.WriteRetained(persistence.Message{
@@ -403,7 +403,7 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 					Sent:   sent,
 				})
 				if q {
-					atomic.AddInt64(&s.System.Inflight, 1)
+					atomic.AddInt32(&s.System.Inflight, 1)
 				}
 
 				if s.Store != nil {
@@ -427,7 +427,7 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) error {
 	q := cl.Inflight.Delete(pk.PacketID)
 	if q {
-		atomic.AddInt64(&s.System.Inflight, -1)
+		atomic.AddInt32(&s.System.Inflight, -1)
 	}
 	if s.Store != nil {
 		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
@@ -468,7 +468,7 @@ func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
 	}
 	q := cl.Inflight.Delete(pk.PacketID)
 	if q {
-		atomic.AddInt64(&s.System.Inflight, -1)
+		atomic.AddInt32(&s.System.Inflight, -1)
 	}
 
 	if s.Store != nil {
@@ -482,7 +482,7 @@ func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
 func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
 	q := cl.Inflight.Delete(pk.PacketID)
 	if q {
-		atomic.AddInt64(&s.System.Inflight, -1)
+		atomic.AddInt32(&s.System.Inflight, -1)
 	}
 	if s.Store != nil {
 		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
@@ -499,7 +499,7 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 		} else {
 			q := s.Topics.Subscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
 			if q {
-				atomic.AddInt64(&s.System.Subscriptions, 1)
+				atomic.AddInt32(&s.System.Subscriptions, 1)
 			}
 			cl.NoteSubscription(pk.Topics[i], pk.Qoss[i])
 			retCodes[i] = pk.Qoss[i]
@@ -542,7 +542,7 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error
 	for i := 0; i < len(pk.Topics); i++ {
 		q := s.Topics.Unsubscribe(pk.Topics[i], cl.ID)
 		if q {
-			atomic.AddInt64(&s.System.Subscriptions, -1)
+			atomic.AddInt32(&s.System.Subscriptions, -1)
 		}
 		cl.ForgetSubscription(pk.Topics[i])
 	}
@@ -597,7 +597,7 @@ func (s *Server) publishSysTopics() {
 		pk.TopicName = topic
 		pk.Payload = []byte(payload)
 		q := s.Topics.RetainMessage(pk.PublishCopy())
-		atomic.AddInt64(&s.System.Retained, q)
+		atomic.AddInt32(&s.System.Retained, q)
 		s.publishToSubscribers(pk)
 	}
 
@@ -621,7 +621,7 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 		if tk.Resends >= inflightMaxResends { // After a reasonable time, drop inflight packets.
 			cl.Inflight.Delete(tk.Packet.PacketID)
 			if tk.Packet.FixedHeader.Type == packets.Publish {
-				atomic.AddInt64(&s.System.PublishDropped, 1)
+				atomic.AddInt32(&s.System.PublishDropped, 1)
 			}
 
 			if s.Store != nil {

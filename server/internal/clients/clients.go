@@ -74,7 +74,7 @@ func (cl *Clients) GetByListener(id string) []*Client {
 	clients := make([]*Client, 0, cl.Len())
 	cl.RLock()
 	for _, v := range cl.internal {
-		if v.Listener == id && atomic.LoadInt64(&v.State.Done) == 0 {
+		if v.Listener == id && atomic.LoadInt32(&v.State.Done) == 0 {
 			clients = append(clients, v)
 		}
 	}
@@ -104,7 +104,7 @@ type Client struct {
 
 // State tracks the state of the client.
 type State struct {
-	Done    int64           // atomic counter which indicates that the client has closed.
+	Done    int32           // atomic counter which indicates that the client has closed.
 	started *sync.WaitGroup // tracks the goroutines which have been started.
 	endedW  *sync.WaitGroup // tracks when the writer has ended.
 	endedR  *sync.WaitGroup // tracks when the reader has ended.
@@ -240,7 +240,7 @@ func (cl *Client) Start() {
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
 func (cl *Client) Stop() {
-	if atomic.LoadInt64(&cl.State.Done) == 1 {
+	if atomic.LoadInt32(&cl.State.Done) == 1 {
 		return
 	}
 
@@ -252,7 +252,7 @@ func (cl *Client) Stop() {
 		cl.conn.Close()
 
 		cl.State.endedR.Wait()
-		atomic.StoreInt64(&cl.State.Done, 1)
+		atomic.StoreInt32(&cl.State.Done, 1)
 	})
 }
 
@@ -300,7 +300,7 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 
 	// Having successfully read n bytes, commit the tail forward.
 	cl.r.CommitTail(n)
-	atomic.AddInt64(&cl.system.BytesRecv, int64(n))
+	atomic.AddInt32(&cl.system.BytesRecv, int32(n))
 
 	return nil
 }
@@ -308,7 +308,7 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 // Read reads new packets from a client connection
 func (cl *Client) Read(h func(*Client, packets.Packet) error) error {
 	for {
-		if atomic.LoadInt64(&cl.State.Done) == 1 && cl.r.CapDelta() == 0 {
+		if atomic.LoadInt32(&cl.State.Done) == 1 && cl.r.CapDelta() == 0 {
 			return nil
 		}
 
@@ -333,7 +333,7 @@ func (cl *Client) Read(h func(*Client, packets.Packet) error) error {
 
 // ReadPacket reads the remaining buffer into an MQTT packet.
 func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err error) {
-	atomic.AddInt64(&cl.system.MessagesRecv, 1)
+	atomic.AddInt32(&cl.system.MessagesRecv, 1)
 
 	pk.FixedHeader = *fh
 	if pk.FixedHeader.Remaining == 0 {
@@ -344,7 +344,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 	if err != nil {
 		return pk, err
 	}
-	atomic.AddInt64(&cl.system.BytesRecv, int64(len(p)))
+	atomic.AddInt32(&cl.system.BytesRecv, int32(len(p)))
 
 	// Decode the remaining packet values using a fresh copy of the bytes,
 	// otherwise the next packet will change the data of this one.
@@ -358,7 +358,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 	case packets.Publish:
 		err = pk.PublishDecode(px)
 		if err == nil {
-			atomic.AddInt64(&cl.system.PublishRecv, 1)
+			atomic.AddInt32(&cl.system.PublishRecv, 1)
 		}
 	case packets.Puback:
 		err = pk.PubackDecode(px)
@@ -390,7 +390,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 
 // WritePacket encodes and writes a packet to the client.
 func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
-	if atomic.LoadInt64(&cl.State.Done) == 1 {
+	if atomic.LoadInt32(&cl.State.Done) == 1 {
 		return 0, ErrConnectionClosed
 	}
 
@@ -406,7 +406,7 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 	case packets.Publish:
 		err = pk.PublishEncode(buf)
 		if err == nil {
-			atomic.AddInt64(&cl.system.PublishSent, 1)
+			atomic.AddInt32(&cl.system.PublishSent, 1)
 		}
 	case packets.Puback:
 		err = pk.PubackEncode(buf)
@@ -441,8 +441,8 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 	if err != nil {
 		return
 	}
-	atomic.AddInt64(&cl.system.BytesSent, int64(n))
-	atomic.AddInt64(&cl.system.MessagesSent, 1)
+	atomic.AddInt32(&cl.system.BytesSent, int32(n))
+	atomic.AddInt32(&cl.system.MessagesSent, 1)
 
 	cl.refreshDeadline(cl.keepalive)
 

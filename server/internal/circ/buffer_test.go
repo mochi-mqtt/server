@@ -53,15 +53,15 @@ func TestNewBufferFromSlice0Size(t *testing.T) {
 func TestGetPos(t *testing.T) {
 	buf := NewBuffer(16, 4)
 	tail, head := buf.GetPos()
-	require.Equal(t, int64(0), tail)
-	require.Equal(t, int64(0), head)
+	require.Equal(t, int32(0), tail)
+	require.Equal(t, int32(0), head)
 
-	atomic.StoreInt64(&buf.tail, 3)
-	atomic.StoreInt64(&buf.head, 11)
+	atomic.StoreInt32(&buf.tail, 3)
+	atomic.StoreInt32(&buf.head, 11)
 
 	tail, head = buf.GetPos()
-	require.Equal(t, int64(3), tail)
-	require.Equal(t, int64(11), head)
+	require.Equal(t, int32(3), tail)
+	require.Equal(t, int32(11), head)
 }
 
 func TestGet(t *testing.T) {
@@ -75,12 +75,12 @@ func TestGet(t *testing.T) {
 
 func TestSetPos(t *testing.T) {
 	buf := NewBuffer(16, 4)
-	require.Equal(t, int64(0), atomic.LoadInt64(&buf.tail))
-	require.Equal(t, int64(0), atomic.LoadInt64(&buf.head))
+	require.Equal(t, int32(0), atomic.LoadInt32(&buf.tail))
+	require.Equal(t, int32(0), atomic.LoadInt32(&buf.head))
 
 	buf.SetPos(4, 8)
-	require.Equal(t, int64(4), atomic.LoadInt64(&buf.tail))
-	require.Equal(t, int64(8), atomic.LoadInt64(&buf.head))
+	require.Equal(t, int32(4), atomic.LoadInt32(&buf.tail))
+	require.Equal(t, int32(8), atomic.LoadInt32(&buf.head))
 }
 
 func TestSet(t *testing.T) {
@@ -103,8 +103,8 @@ func TestIndex(t *testing.T) {
 
 func TestAwaitFilled(t *testing.T) {
 	tests := []struct {
-		tail  int64
-		head  int64
+		tail  int32
+		head  int32
 		n     int
 		await int
 		desc  string
@@ -124,7 +124,7 @@ func TestAwaitFilled(t *testing.T) {
 		}()
 
 		time.Sleep(time.Millisecond)
-		atomic.AddInt64(&buf.head, int64(tt.await))
+		atomic.AddInt32(&buf.head, int32(tt.await))
 		buf.wcond.L.Lock()
 		buf.wcond.Broadcast()
 		buf.wcond.L.Unlock()
@@ -140,7 +140,7 @@ func TestAwaitFilledEnded(t *testing.T) {
 		o <- buf.awaitFilled(4)
 	}()
 	time.Sleep(time.Millisecond)
-	atomic.StoreInt64(&buf.done, 1)
+	atomic.StoreInt32(&buf.done, 1)
 	buf.wcond.L.Lock()
 	buf.wcond.Broadcast()
 	buf.wcond.L.Unlock()
@@ -150,8 +150,8 @@ func TestAwaitFilledEnded(t *testing.T) {
 
 func TestAwaitEmptyOK(t *testing.T) {
 	tests := []struct {
-		tail  int64
-		head  int64
+		tail  int32
+		head  int32
 		await int
 		desc  string
 	}{
@@ -173,7 +173,7 @@ func TestAwaitEmptyOK(t *testing.T) {
 		}()
 
 		time.Sleep(time.Millisecond)
-		atomic.AddInt64(&buf.tail, int64(tt.await))
+		atomic.AddInt32(&buf.tail, int32(tt.await))
 		buf.rcond.L.Lock()
 		buf.rcond.Broadcast()
 		buf.rcond.L.Unlock()
@@ -190,7 +190,7 @@ func TestAwaitEmptyEnded(t *testing.T) {
 		o <- buf.awaitEmpty(4)
 	}()
 	time.Sleep(time.Millisecond)
-	atomic.StoreInt64(&buf.done, 1)
+	atomic.StoreInt32(&buf.done, 1)
 	buf.rcond.L.Lock()
 	buf.rcond.Broadcast()
 	buf.rcond.L.Unlock()
@@ -202,8 +202,8 @@ func TestCheckEmpty(t *testing.T) {
 	buf := NewBuffer(16, 4)
 
 	tests := []struct {
-		head int64
-		tail int64
+		head int32
+		tail int32
 		want bool
 		desc string
 	}{
@@ -223,8 +223,8 @@ func TestCheckFilled(t *testing.T) {
 	buf := NewBuffer(16, 4)
 
 	tests := []struct {
-		head int64
-		tail int64
+		head int32
+		tail int32
 		want bool
 		desc string
 	}{
@@ -243,10 +243,10 @@ func TestCheckFilled(t *testing.T) {
 
 func TestCommitTail(t *testing.T) {
 	tests := []struct {
-		tail  int64
-		head  int64
+		tail  int32
+		head  int32
 		n     int
-		next  int64
+		next  int32
 		await int
 		desc  string
 	}{
@@ -263,12 +263,12 @@ func TestCommitTail(t *testing.T) {
 
 		time.Sleep(time.Millisecond)
 		for j := 0; j < tt.await; j++ {
-			atomic.AddInt64(&buf.head, 1)
+			atomic.AddInt32(&buf.head, 1)
 			buf.wcond.L.Lock()
 			buf.wcond.Broadcast()
 			buf.wcond.L.Unlock()
 		}
-		require.Equal(t, tt.next, atomic.LoadInt64(&buf.tail), "Next tail mismatch [i:%d] %s", i, tt.desc)
+		require.Equal(t, tt.next, atomic.LoadInt32(&buf.tail), "Next tail mismatch [i:%d] %s", i, tt.desc)
 	}
 }
 
@@ -280,7 +280,7 @@ func TestCommitTailEnded(t *testing.T) {
 		o <- buf.CommitTail(5)
 	}()
 	time.Sleep(time.Millisecond)
-	atomic.StoreInt64(&buf.done, 1)
+	atomic.StoreInt32(&buf.done, 1)
 	buf.wcond.L.Lock()
 	buf.wcond.Broadcast()
 	buf.wcond.L.Unlock()
@@ -300,5 +300,5 @@ func TestCapDelta(t *testing.T) {
 func TestStop(t *testing.T) {
 	buf := NewBuffer(16, 4)
 	buf.Stop()
-	require.Equal(t, int64(1), buf.done)
+	require.Equal(t, int32(1), buf.done)
 }

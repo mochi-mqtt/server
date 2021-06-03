@@ -99,7 +99,7 @@ func TestRetainMessage(t *testing.T) {
 
 	index := New()
 	q := index.RetainMessage(pk)
-	require.Equal(t, int64(1), q)
+	require.Equal(t, int32(1), q)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
 	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
 
@@ -108,13 +108,13 @@ func TestRetainMessage(t *testing.T) {
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
 
 	q = index.RetainMessage(pk2)
-	require.Equal(t, int64(1), q)
+	require.Equal(t, int32(1), q)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
 	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
 
 	q = index.RetainMessage(pk2) // already exsiting
-	require.Equal(t, int64(0), q)
+	require.Equal(t, int32(0), q)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
 	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
@@ -122,7 +122,7 @@ func TestRetainMessage(t *testing.T) {
 	// Delete retained
 	pk3 := packets.Packet{TopicName: "path/to/another/mqtt", Payload: []byte{}}
 	q = index.RetainMessage(pk3)
-	require.Equal(t, int64(-1), q)
+	require.Equal(t, int32(-1), q)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
 	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
 	require.Equal(t, false, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message.FixedHeader.Retain)

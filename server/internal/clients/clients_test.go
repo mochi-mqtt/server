@@ -316,8 +316,8 @@ func TestClientStart(t *testing.T) {
 	cl.Start()
 	defer cl.Stop()
 	time.Sleep(time.Millisecond)
-	require.Equal(t, int64(1), atomic.LoadInt64(&cl.r.State))
-	require.Equal(t, int64(2), atomic.LoadInt64(&cl.w.State))
+	require.Equal(t, int32(1), atomic.LoadInt32(&cl.r.State))
+	require.Equal(t, int32(2), atomic.LoadInt32(&cl.w.State))
 }
 
 func BenchmarkClientStart(b *testing.B) {
@@ -340,11 +340,11 @@ func TestClientReadFixedHeader(t *testing.T) {
 	fh := new(packets.FixedHeader)
 	err := cl.ReadFixedHeader(fh)
 	require.NoError(t, err)
-	require.Equal(t, int64(2), atomic.LoadInt64(&cl.system.BytesRecv))
+	require.Equal(t, int32(2), atomic.LoadInt32(&cl.system.BytesRecv))
 
 	tail, head := cl.r.GetPos()
-	require.Equal(t, int64(2), tail)
-	require.Equal(t, int64(2), head)
+	require.Equal(t, int32(2), tail)
+	require.Equal(t, int32(2), head)
 
 }
 
@@ -419,7 +419,7 @@ func TestClientReadOK(t *testing.T) {
 
 	err := cl.r.Set(b, 0, len(b))
 	require.NoError(t, err)
-	cl.r.SetPos(0, int64(len(b)))
+	cl.r.SetPos(0, int32(len(b)))
 
 	o := make(chan error)
 	var pks []packets.Packet
@@ -456,8 +456,8 @@ func TestClientReadOK(t *testing.T) {
 		},
 	})
 
-	require.Equal(t, int64(len(b)), atomic.LoadInt64(&cl.system.BytesRecv))
-	require.Equal(t, int64(2), atomic.LoadInt64(&cl.system.MessagesRecv))
+	require.Equal(t, int32(len(b)), atomic.LoadInt32(&cl.system.BytesRecv))
+	require.Equal(t, int32(2), atomic.LoadInt32(&cl.system.MessagesRecv))
 
 }
 
@@ -487,7 +487,7 @@ func TestClientReadPacketError(t *testing.T) {
 	}
 	err := cl.r.Set(b, 0, len(b))
 	require.NoError(t, err)
-	cl.r.SetPos(0, int64(len(b)))
+	cl.r.SetPos(0, int32(len(b)))
 
 	o := make(chan error)
 	go func() {
@@ -513,7 +513,7 @@ func TestClientReadHandlerErr(t *testing.T) {
 
 	err := cl.r.Set(b, 0, len(b))
 	require.NoError(t, err)
-	cl.r.SetPos(0, int64(len(b)))
+	cl.r.SetPos(0, int32(len(b)))
 
 	err = cl.Read(func(cl *Client, pk packets.Packet) error {
 		return errors.New("test")
@@ -562,7 +562,7 @@ func TestClientReadPacket(t *testing.T) {
 	for i, tt := range pkTable {
 		err := cl.r.Set(tt.bytes, 0, len(tt.bytes))
 		require.NoError(t, err)
-		cl.r.SetPos(0, int64(len(tt.bytes)))
+		cl.r.SetPos(0, int32(len(tt.bytes)))
 
 		fh := new(packets.FixedHeader)
 		err = cl.ReadFixedHeader(fh)
@@ -574,7 +574,7 @@ func TestClientReadPacket(t *testing.T) {
 
 		require.Equal(t, tt.packet, pk, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
 		if tt.packet.FixedHeader.Type == packets.Publish {
-			require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.PublishRecv))
+			require.Equal(t, int32(1), atomic.LoadInt32(&cl.system.PublishRecv))
 		}
 	}
 }
@@ -647,10 +647,10 @@ func TestClientWritePacket(t *testing.T) {
 
 		require.Equal(t, tt.bytes, <-o, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
 		cl.Stop()
-		require.Equal(t, int64(n), atomic.LoadInt64(&cl.system.BytesSent))
-		require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.MessagesSent))
+		require.Equal(t, int32(n), atomic.LoadInt32(&cl.system.BytesSent))
+		require.Equal(t, int32(1), atomic.LoadInt32(&cl.system.MessagesSent))
 		if tt.packet.FixedHeader.Type == packets.Publish {
-			require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.PublishSent))
+			require.Equal(t, int32(1), atomic.LoadInt32(&cl.system.PublishSent))
 		}
 	}
 }

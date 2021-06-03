@@ -24,12 +24,12 @@ type Buffer struct {
 	block int          // the size of the R/W block.
 	buf   []byte       // the bytes buffer.
 	tmp   []byte       // a temporary buffer.
-	head  int64        // the current position in the sequence - a forever increasing index.
-	tail  int64        // the committed position in the sequence - a forever increasing index.
+	head  int32        // the current position in the sequence - a forever increasing index.
+	tail  int32        // the committed position in the sequence - a forever increasing index.
 	rcond *sync.Cond   // the sync condition for the buffer reader.
 	wcond *sync.Cond   // the sync condition for the buffer writer.
-	done  int64        // indicates that the buffer is closed.
-	State int64        // indicates whether the buffer is reading from (1) or writing to (2).
+	done  int32        // indicates that the buffer is closed.
+	State int32        // indicates whether the buffer is reading from (1) or writing to (2).
 }
 
 // NewBuffer returns a new instance of buffer. You should call NewReader or
@@ -80,14 +80,14 @@ func NewBufferFromSlice(block int, buf []byte) Buffer {
 
 // Get will return the tail and head positions of the buffer.
 // This method is for use with testing.
-func (b *Buffer) GetPos() (int64, int64) {
-	return atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head)
+func (b *Buffer) GetPos() (int32, int32) {
+	return atomic.LoadInt32(&b.tail), atomic.LoadInt32(&b.head)
 }
 
 // SetPos sets the head and tail of the buffer.
-func (b *Buffer) SetPos(tail, head int64) {
-	atomic.StoreInt64(&b.tail, tail)
-	atomic.StoreInt64(&b.head, head)
+func (b *Buffer) SetPos(tail, head int32) {
+	atomic.StoreInt32(&b.tail, tail)
+	atomic.StoreInt32(&b.head, head)
 }
 
 // Get returns the internal buffer.
@@ -116,7 +116,7 @@ func (b *Buffer) Set(p []byte, start, end int) error {
 }
 
 // Index returns the buffer-relative index of an integer.
-func (b *Buffer) Index(i int64) int {
+func (b *Buffer) Index(i int32) int {
 	return b.mask & int(i)
 }
 
@@ -127,7 +127,7 @@ func (b *Buffer) awaitEmpty(n int) error {
 	// then wait until tail has moved.
 	b.rcond.L.Lock()
 	for !b.checkEmpty(n) {
-		if atomic.LoadInt64(&b.done) == 1 {
+		if atomic.LoadInt32(&b.done) == 1 {
 			b.rcond.L.Unlock()
 			return io.EOF
 		}
@@ -146,7 +146,7 @@ func (b *Buffer) awaitFilled(n int) error {
 	// the forever-incrementing tail and head integers.
 	b.wcond.L.Lock()
 	for !b.checkFilled(n) {
-		if atomic.LoadInt64(&b.done) == 1 {
+		if atomic.LoadInt32(&b.done) == 1 {
 			b.wcond.L.Unlock()
 			return io.EOF
 		}
@@ -161,10 +161,10 @@ func (b *Buffer) awaitFilled(n int) error {
 // checkEmpty returns true if there are at least n bytes between the head and
 // the tail.
 func (b *Buffer) checkEmpty(n int) bool {
-	head := atomic.LoadInt64(&b.head)
-	next := head + int64(n)
-	tail := atomic.LoadInt64(&b.tail)
-	if next-tail > int64(b.size) {
+	head := atomic.LoadInt32(&b.head)
+	next := head + int32(n)
+	tail := atomic.LoadInt32(&b.tail)
+	if next-tail > int32(b.size) {
 		return false
 	}
 
@@ -174,7 +174,7 @@ func (b *Buffer) checkEmpty(n int) bool {
 // checkFilled returns true if there are at least n bytes between the tail and
 // the head.
 func (b *Buffer) checkFilled(n int) bool {
-	if atomic.LoadInt64(&b.tail)+int64(n) <= atomic.LoadInt64(&b.head) {
+	if atomic.LoadInt32(&b.tail)+int32(n) <= atomic.LoadInt32(&b.head) {
 		return true
 	}
 
@@ -183,7 +183,7 @@ func (b *Buffer) checkFilled(n int) bool {
 
 // CommitTail moves the tail position of the buffer n bytes.
 func (b *Buffer) CommitTail(n int) {
-	atomic.AddInt64(&b.tail, int64(n))
+	atomic.AddInt32(&b.tail, int32(n))
 	b.rcond.L.Lock()
 	b.rcond.Broadcast()
 	b.rcond.L.Unlock()
@@ -191,12 +191,12 @@ func (b *Buffer) CommitTail(n int) {
 
 // CapDelta returns the difference between the head and tail.
 func (b *Buffer) CapDelta() int {
-	return int(atomic.LoadInt64(&b.head) - atomic.LoadInt64(&b.tail))
+	return int(atomic.LoadInt32(&b.head) - atomic.LoadInt32(&b.tail))
 }
 
 // Stop signals the buffer to stop processing.
 func (b *Buffer) Stop() {
-	atomic.StoreInt64(&b.done, 1)
+	atomic.StoreInt32(&b.done, 1)
 	b.rcond.L.Lock()
 	b.rcond.Broadcast()
 	b.rcond.L.Unlock()

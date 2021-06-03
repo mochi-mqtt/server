@@ -581,7 +581,7 @@ func TestServerProcessPublishQoS1Retain(t *testing.T) {
 		ack2 <- buf
 	}()
 
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.PublishRecv))
+	require.Equal(t, int32(0), atomic.LoadInt32(&s.System.PublishRecv))
 
 	err := s.processPacket(cl1, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -612,7 +612,7 @@ func TestServerProcessPublishQoS1Retain(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, <-ack2)
 
-	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.Retained))
+	require.Equal(t, int32(1), atomic.LoadInt32(&s.System.Retained))
 }
 
 func TestServerProcessPublishQoS2(t *testing.T) {
@@ -647,7 +647,7 @@ func TestServerProcessPublishQoS2(t *testing.T) {
 		0, 12, // Packet ID - LSB+MSB
 	}, <-ack1)
 
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Retained))
+	require.Equal(t, int32(0), atomic.LoadInt32(&s.System.Retained))
 }
 
 func TestServerProcessPublishUnretain(t *testing.T) {
@@ -676,7 +676,7 @@ func TestServerProcessPublishUnretain(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	w1.Close()
 
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Retained))
+	require.Equal(t, int32(0), atomic.LoadInt32(&s.System.Retained))
 }
 
 func TestServerProcessPublishOfflineQueuing(t *testing.T) {
@@ -715,7 +715,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	require.Equal(t, int64(2), atomic.LoadInt64(&s.System.Inflight))
+	require.Equal(t, int32(2), atomic.LoadInt32(&s.System.Inflight))
 
 	time.Sleep(10 * time.Millisecond)
 	w1.Close()
@@ -805,7 +805,7 @@ func TestServerProcessPublishSystemPrefix(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, int64(0), s.System.BytesSent)
+	require.Equal(t, int32(0), s.System.BytesSent)
 }
 
 func TestServerProcessPublishBadACL(t *testing.T) {
@@ -843,7 +843,7 @@ func TestServerProcessPublishWriteAckError(t *testing.T) {
 func TestServerProcessPuback(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
-	atomic.AddInt64(&s.System.Inflight, 1)
+	atomic.AddInt32(&s.System.Inflight, 1)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -853,7 +853,7 @@ func TestServerProcessPuback(t *testing.T) {
 		PacketID: 11,
 	})
 	require.NoError(t, err)
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Inflight))
+	require.Equal(t, int32(0), atomic.LoadInt32(&s.System.Inflight))
 
 	_, ok := cl.Inflight.Get(11)
 	require.Equal(t, false, ok)
@@ -862,7 +862,7 @@ func TestServerProcessPuback(t *testing.T) {
 func TestServerProcessPubrec(t *testing.T) {
 	s, cl, r, w := setupClient()
 	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
-	atomic.AddInt64(&s.System.Inflight, 1)
+	atomic.AddInt32(&s.System.Inflight, 1)
 
 	recv := make(chan []byte)
 	go func() {
@@ -883,7 +883,7 @@ func TestServerProcessPubrec(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond)
 	w.Close()
-	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.Inflight))
+	require.Equal(t, int32(1), atomic.LoadInt32(&s.System.Inflight))
 
 	require.Equal(t, []byte{
 		byte(packets.Pubrel<<4) | 2, 2,
@@ -909,7 +909,7 @@ func TestServerProcessPubrecError(t *testing.T) {
 func TestServerProcessPubrel(t *testing.T) {
 	s, cl, r, w := setupClient()
 	cl.Inflight.Set(10, clients.InflightMessage{Packet: packets.Packet{PacketID: 10}, Sent: 0})
-	atomic.AddInt64(&s.System.Inflight, 1)
+	atomic.AddInt32(&s.System.Inflight, 1)
 
 	recv := make(chan []byte)
 	go func() {
@@ -928,7 +928,7 @@ func TestServerProcessPubrel(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Inflight))
+	require.Equal(t, int32(0), atomic.LoadInt32(&s.System.Inflight))
 	time.Sleep(10 * time.Millisecond)
 	w.Close()
 
@@ -955,7 +955,7 @@ func TestServerProcessPubrelError(t *testing.T) {
 func TestServerProcessPubcomp(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
-	atomic.AddInt64(&s.System.Inflight, 1)
+	atomic.AddInt32(&s.System.Inflight, 1)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -965,7 +965,7 @@ func TestServerProcessPubcomp(t *testing.T) {
 		PacketID: 11,
 	})
 	require.NoError(t, err)
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.Inflight))
+	require.Equal(t, int32(0), atomic.LoadInt32(&s.System.Inflight))
 
 	_, ok := cl.Inflight.Get(11)
 	require.Equal(t, false, ok)
@@ -1628,7 +1628,7 @@ func TestServerResendClientInflightDropMessage(t *testing.T) {
 
 	m := cl.Inflight.GetAll()
 	require.Equal(t, 0, len(m))
-	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.PublishDropped))
+	require.Equal(t, int32(1), atomic.LoadInt32(&s.System.PublishDropped))
 }
 
 func TestServerResendClientInflightError(t *testing.T) {

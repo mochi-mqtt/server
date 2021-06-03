@@ -18,7 +18,7 @@ type TCP struct {
 	protocol string       // the TCP protocol to use.
 	address  string       // the network address to bind to.
 	listen   net.Listener // a net.Listener which will listen for new clients.
-	end      int64        // ensure the close methods are only called once.
+	end      int32        // ensure the close methods are only called once.
 }
 
 // NewTCP initialises and returns a new TCP listener, listening on an address.
@@ -84,7 +84,7 @@ func (l *TCP) Listen(s *system.Info) error {
 // establishment callback for any received.
 func (l *TCP) Serve(establish EstablishFunc) {
 	for {
-		if atomic.LoadInt64(&l.end) == 1 {
+		if atomic.LoadInt32(&l.end) == 1 {
 			return
 		}
 
@@ -93,7 +93,7 @@ func (l *TCP) Serve(establish EstablishFunc) {
 			return
 		}
 
-		if atomic.LoadInt64(&l.end) == 0 {
+		if atomic.LoadInt32(&l.end) == 0 {
 			go establish(l.id, conn, l.config.Auth)
 		}
 	}
@@ -104,8 +104,8 @@ func (l *TCP) Close(closeClients CloseFunc) {
 	l.Lock()
 	defer l.Unlock()
 
-	if atomic.LoadInt64(&l.end) == 0 {
-		atomic.StoreInt64(&l.end, 1)
+	if atomic.LoadInt32(&l.end) == 0 {
+		atomic.StoreInt32(&l.end, 1)
 		closeClients(l.id)
 	}
 

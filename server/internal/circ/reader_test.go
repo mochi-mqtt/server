@@ -36,15 +36,15 @@ func TestReadFrom(t *testing.T) {
 	_, err := buf.ReadFrom(br)
 	require.NoError(t, err)
 	require.Equal(t, bytes.Repeat([]byte{'-'}, 4), buf.buf[:4])
-	require.Equal(t, int64(4), buf.head)
+	require.Equal(t, int32(4), buf.head)
 
 	br.Reset(b4)
 	_, err = buf.ReadFrom(br)
-	require.Equal(t, int64(8), buf.head)
+	require.Equal(t, int32(8), buf.head)
 
 	br.Reset(b4)
 	_, err = buf.ReadFrom(br)
-	require.Equal(t, int64(12), buf.head)
+	require.Equal(t, int32(12), buf.head)
 }
 
 func TestReadFromWrap(t *testing.T) {
@@ -60,15 +60,15 @@ func TestReadFromWrap(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond * 100)
 	go func() {
-		atomic.StoreInt64(&buf.done, 1)
+		atomic.StoreInt32(&buf.done, 1)
 		buf.rcond.L.Lock()
 		buf.rcond.Broadcast()
 		buf.rcond.L.Unlock()
 	}()
 	<-o
 	require.Equal(t, []byte{'/', '/', '/', '/', '/', '/', '-', '-', '-', '-', '-', '-', '-', '-', '/', '/'}, buf.Get())
-	require.Equal(t, int64(22), atomic.LoadInt64(&buf.head))
-	require.Equal(t, 6, buf.Index(atomic.LoadInt64(&buf.head)))
+	require.Equal(t, int32(22), atomic.LoadInt32(&buf.head))
+	require.Equal(t, 6, buf.Index(atomic.LoadInt32(&buf.head)))
 }
 
 func TestReadOK(t *testing.T) {
@@ -76,8 +76,8 @@ func TestReadOK(t *testing.T) {
 	buf.buf = []byte{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p'}
 
 	tests := []struct {
-		tail  int64
-		head  int64
+		tail  int32
+		head  int32
 		n     int
 		bytes []byte
 		desc  string
@@ -96,7 +96,7 @@ func TestReadOK(t *testing.T) {
 		}()
 
 		time.Sleep(time.Millisecond)
-		atomic.StoreInt64(&buf.head, buf.head+int64(tt.n))
+		atomic.StoreInt32(&buf.head, buf.head+int32(tt.n))
 
 		buf.wcond.L.Lock()
 		buf.wcond.Broadcast()
@@ -116,7 +116,7 @@ func TestReadEnded(t *testing.T) {
 		o <- err
 	}()
 	time.Sleep(time.Millisecond)
-	atomic.StoreInt64(&buf.done, 1)
+	atomic.StoreInt32(&buf.done, 1)
 	buf.wcond.L.Lock()
 	buf.wcond.Broadcast()
 	buf.wcond.L.Unlock()

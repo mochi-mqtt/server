@@ -31,11 +31,11 @@ func NewReaderFromSlice(block int, p []byte) *Reader {
 
 // ReadFrom reads bytes from an io.Reader and commits them to the buffer when
 // there is sufficient capacity to do so.
-func (b *Reader) ReadFrom(r io.Reader) (total int64, err error) {
-	atomic.StoreInt64(&b.State, 1)
-	defer atomic.StoreInt64(&b.State, 0)
+func (b *Reader) ReadFrom(r io.Reader) (total int32, err error) {
+	atomic.StoreInt32(&b.State, 1)
+	defer atomic.StoreInt32(&b.State, 0)
 	for {
-		if atomic.LoadInt64(&b.done) == 1 {
+		if atomic.LoadInt32(&b.done) == 1 {
 			return total, nil
 		}
 
@@ -50,7 +50,7 @@ func (b *Reader) ReadFrom(r io.Reader) (total int64, err error) {
 
 		// If the block will overrun the circle end, just fill up
 		// and collect the rest on the next pass.
-		start := b.Index(atomic.LoadInt64(&b.head))
+		start := b.Index(atomic.LoadInt32(&b.head))
 		end := start + b.block
 		if end > b.size {
 			end = b.size
@@ -58,13 +58,13 @@ func (b *Reader) ReadFrom(r io.Reader) (total int64, err error) {
 
 		// Read into the buffer between the start and end indexes only.
 		n, err := r.Read(b.buf[start:end])
-		total += int64(n) // incr total bytes read.
+		total += int32(n) // incr total bytes read.
 		if err != nil {
 			return total, nil
 		}
 
 		// Move the head forward however many bytes were read.
-		atomic.AddInt64(&b.head, int64(n))
+		atomic.AddInt32(&b.head, int32(n))
 
 		b.wcond.L.Lock()
 		b.wcond.Broadcast()
@@ -80,8 +80,8 @@ func (b *Buffer) Read(n int) (p []byte, err error) {
 		return
 	}
 
-	tail := atomic.LoadInt64(&b.tail)
-	next := tail + int64(n)
+	tail := atomic.LoadInt32(&b.tail)
+	next := tail + int32(n)
 
 	// If the read overruns the buffer, get everything until the end
 	// and then whatever is left from the start.

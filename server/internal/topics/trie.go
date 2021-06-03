@@ -29,8 +29,8 @@ func New() *Index {
 // RetainMessage saves a message payload to the end of a topic branch. Returns
 // 1 if a retained message was added, 0 if there was no change, and -1 if the
 // retained message was removed.
-func (x *Index) RetainMessage(msg packets.Packet) int64 {
-	var q int64
+func (x *Index) RetainMessage(msg packets.Packet) int32 {
+	var q int32
 
 	x.mu.Lock()
 	defer x.mu.Unlock()

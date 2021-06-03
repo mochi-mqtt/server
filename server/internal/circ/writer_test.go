@@ -31,8 +31,8 @@ func TestNewWriterFromSlice(t *testing.T) {
 
 func TestWriteTo(t *testing.T) {
 	tests := []struct {
-		tail  int64
-		head  int64
+		tail  int32
+		head  int32
 		bytes []byte
 		await int
 		total int
@@ -59,7 +59,7 @@ func TestWriteTo(t *testing.T) {
 		}()
 
 		time.Sleep(time.Millisecond * 100)
-		atomic.StoreInt64(&buf.done, 1)
+		atomic.StoreInt32(&buf.done, 1)
 		buf.wcond.L.Lock()
 		buf.wcond.Broadcast()
 		buf.wcond.L.Unlock()
@@ -94,9 +94,9 @@ func TestWriteToBadWriter(t *testing.T) {
 
 func TestWrite(t *testing.T) {
 	tests := []struct {
-		tail  int64
-		head  int64
-		rHead int64
+		tail  int32
+		head  int32
+		rHead int32
 		bytes []byte
 		want  []byte
 		desc  string
@@ -132,8 +132,8 @@ func TestWriteEnded(t *testing.T) {
 
 func TestWriteBytes(t *testing.T) {
 	tests := []struct {
-		tail  int64
-		head  int64
+		tail  int32
+		head  int32
 		bytes []byte
 		want  []byte
 		start int
