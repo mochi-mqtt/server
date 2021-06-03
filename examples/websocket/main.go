@@ -9,8 +9,8 @@ import (
 
 	"github.com/logrusorgru/aurora"
 
-	mqtt "github.com/mochi-co/mqtt/server"
-	"github.com/mochi-co/mqtt/server/listeners"
+	mqtt "github.com/vodamiro/mqtt/server"
+	"github.com/vodamiro/mqtt/server/listeners"
 )
 
 func main() {

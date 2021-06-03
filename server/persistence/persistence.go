@@ -3,7 +3,7 @@ package persistence
 import (
 	"errors"
 
-	"github.com/mochi-co/mqtt/server/system"
+	"github.com/vodamiro/mqtt/server/system"
 )
 
 const (

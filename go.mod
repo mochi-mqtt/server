@@ -1,4 +1,4 @@
-module github.com/mochi-co/mqtt
+module github.com/vodamiro/mqtt
 
 go 1.13
 

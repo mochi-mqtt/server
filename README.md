@@ -2,10 +2,10 @@
 <p align="center">
   
 [![Build Status](https://travis-ci.com/mochi-co/mqtt.svg?token=59nqixhtefy2iQRwsPcu&branch=master)](https://travis-ci.com/mochi-co/mqtt)
-[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/mochi-co/mqtt/issues)
+[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/vodamiro/mqtt/issues)
 [![codecov](https://codecov.io/gh/mochi-co/mqtt/branch/master/graph/badge.svg?token=6vBUgYVaVB)](https://codecov.io/gh/mochi-co/mqtt)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/b48e17f87cee4221b60a45c02d49148c)](https://www.codacy.com/app/mochi-co/mqtt?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=mochi-co/mqtt&amp;utm_campaign=Badge_Grade)
-[![GoDoc](https://godoc.org/github.com/mochi-co/mqtt?status.svg)](https://pkg.go.dev/github.com/mochi-co/mqtt)
+[![GoDoc](https://godoc.org/github.com/vodamiro/mqtt?status.svg)](https://pkg.go.dev/github.com/vodamiro/mqtt)
 
 </p>
 
@@ -109,7 +109,7 @@ go build -o mqtt && ./mqtt
 
 ``` go
 import (
-    mqtt "github.com/mochi-co/mqtt/server"
+    mqtt "github.com/vodamiro/mqtt/server"
 )
 
 func main() {
@@ -172,7 +172,7 @@ SSL may be configured on both the TCP and Websocket listeners by providing a pub
 #### Data Persistence
 Mochi MQTT provides a `persistence.Store` interface for developing and attaching persistent stores to the broker. The default persistence mechanism packaged with the broker is backed by [Bolt](https://github.com/etcd-io/bbolt) and can be enabled by assigning a `*bolt.Store` to the server.
 ```go
-    // import "github.com/mochi-co/mqtt/server/persistence/bolt"
+    // import "github.com/vodamiro/mqtt/server/persistence/bolt"
     err = server.AddStore(bolt.New("mochi.db", nil))
 	if err != nil {
 		log.Fatal(err)
@@ -184,7 +184,7 @@ Mochi MQTT provides a `persistence.Store` interface for developing and attaching
 You can check the broker against the [Paho Interoperability Test](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) by starting the broker using `examples/paho/main.go`, and then running the test with `python3 client_test.py` from the _interoperability_ folder.
 
 ## Contributions
-Contributions and feedback are both welcomed and encouraged! Open an [issue](https://github.com/mochi-co/mqtt/issues) to report a bug, ask a question, or make a feature request.
+Contributions and feedback are both welcomed and encouraged! Open an [issue](https://github.com/vodamiro/mqtt/issues) to report a bug, ask a question, or make a feature request.
 
 
 

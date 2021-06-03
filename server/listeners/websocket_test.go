@@ -10,8 +10,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/mochi-co/mqtt/server/listeners/auth"
 	"github.com/stretchr/testify/require"
+	"github.com/vodamiro/mqtt/server/listeners/auth"
 )
 
 func TestWsConnClose(t *testing.T) {

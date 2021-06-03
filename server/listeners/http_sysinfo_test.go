@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mochi-co/mqtt/server/listeners/auth"
-	"github.com/mochi-co/mqtt/server/system"
 	"github.com/stretchr/testify/require"
+	"github.com/vodamiro/mqtt/server/listeners/auth"
+	"github.com/vodamiro/mqtt/server/system"
 )
 
 func TestNewHTTPStats(t *testing.T) {

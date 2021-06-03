@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mochi-co/mqtt/server/listeners/auth"
 	"github.com/stretchr/testify/require"
+	"github.com/vodamiro/mqtt/server/listeners/auth"
 )
 
 const (
