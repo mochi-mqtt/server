@@ -840,6 +840,86 @@ func TestServerProcessPublishWriteAckError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestServerPublishInline(t *testing.T) {
+	s, cl1, r1, w1 := setupClient()
+	cl1.ID = "inline"
+	s.Clients.Add(cl1)
+	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
+	go s.inlineClient()
+
+	ack1 := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r1)
+		if err != nil {
+			panic(err)
+		}
+		ack1 <- buf
+	}()
+
+	err := s.Publish("a/b/c", []byte("hello"), false)
+	require.NoError(t, err)
+
+	time.Sleep(10 * time.Millisecond)
+	w1.Close()
+
+	require.Equal(t, []byte{
+		byte(packets.Publish << 4), 12,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		'h', 'e', 'l', 'l', 'o',
+	}, <-ack1)
+
+	require.Equal(t, int64(14), s.System.BytesSent)
+
+	close(s.inline.done)
+}
+
+func TestServerPublishInlineRetain(t *testing.T) {
+	s, cl1, r1, w1 := setupClient()
+	cl1.ID = "inline"
+
+	ack1 := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r1)
+		if err != nil {
+			panic(err)
+		}
+		ack1 <- buf
+	}()
+
+	err := s.Publish("a/b/c", []byte("hello"), true)
+	require.NoError(t, err)
+
+	time.Sleep(10 * time.Millisecond)
+
+	s.Clients.Add(cl1)
+	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
+	go s.inlineClient()
+
+	time.Sleep(10 * time.Millisecond)
+
+	w1.Close()
+
+	require.Equal(t, []byte{
+		byte(packets.Publish << 4), 12,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		'h', 'e', 'l', 'l', 'o',
+	}, <-ack1)
+
+	require.Equal(t, int64(14), s.System.BytesSent)
+
+	close(s.inline.done)
+}
+
+func TestServerPublishInlineSysTopicError(t *testing.T) {
+	s, _, _, _ := setupClient()
+
+	err := s.Publish("$SYS/stuff", []byte("hello"), false)
+	require.Error(t, err)
+	require.Equal(t, int64(0), s.System.BytesSent)
+}
+
 func TestServerProcessPuback(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
