@@ -4,12 +4,18 @@ go 1.17
 
 require (
 	github.com/asdine/storm v2.1.2+incompatible
-	github.com/asdine/storm/v3 v3.1.0
-	github.com/gorilla/websocket v1.4.1
-	github.com/jinzhu/copier v0.0.0-20190924061706-b57f9002281a
-	github.com/logrusorgru/aurora v0.0.0-20191116043053-66b7ad493a23
-	github.com/rs/xid v1.2.1
-	github.com/stretchr/testify v1.4.0
-	go.etcd.io/bbolt v1.3.3
-	golang.org/x/net v0.0.0-20191209160850-c0dbc17a3553 // indirect
+	github.com/asdine/storm/v3 v3.2.1
+	github.com/gorilla/websocket v1.4.2
+	github.com/jinzhu/copier v0.3.4
+	github.com/logrusorgru/aurora v2.0.3+incompatible
+	github.com/rs/xid v1.3.0
+	github.com/stretchr/testify v1.7.0
+	go.etcd.io/bbolt v1.3.6
+)
+
+require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	golang.org/x/sys v0.0.0-20200923182605-d9f96fdee20d // indirect
+	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 )
