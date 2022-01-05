@@ -77,6 +77,7 @@ func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
 }
 
 // Write writes the buffer to the buffer p, returning the number of bytes written.
+// The bytes written to the buffer are picked up by WriteTo.
 func (b *Writer) Write(p []byte) (total int, err error) {
 	err = b.awaitEmpty(len(p))
 	if err != nil {
