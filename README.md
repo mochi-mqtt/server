@@ -24,77 +24,12 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 - TCP, Websocket, (including SSL/TLS) and Dashboard listeners.
 - Interfaces for Client Authentication and Topic access control.
 - Bolt-backed persistence and storage interfaces.
+- Directly Publishing from embedding service (`s.Publish(topic, message, retain)`).
 
 #### Roadmap
-- Inline Pub-sub (without client) and event hooks
+- Event Hooks (eg. provide handler functions for `onMessage`).
 - Docker Image
 - MQTT v5 compatibility
-
-#### Performance (messages/second)
-Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inovex/mqtt-stresser) on a  13-inch, Early 2015 Macbook Pro (2.7 GHz Intel Core i5). Taking into account bursts of high and low throughput, the median scores are the most useful. Higher is better. SEND = Publish throughput, RECV = Subscribe throughput.
-
-> As usual, any performance benchmarks should be taken with a pinch of salt, but are shown to demonstrate typical throughput compared to the other leading MQTT brokers.
-
-**Single Client, 10,000 messages**
-_With only 1 client, there is no variation in throughput so the benchmark is reports the same number for high, low, and median._
-
-![1 Client, 10,000 Messages](assets/benchmarkchart_1_10000.png "1 Client, 10,000 Messages")
-
-`mqtt-stresser -broker tcp://localhost:1883 -num-clients=1 -num-messages=10000`
-
-|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
-| :----------- | --------: | ----------: | -------: | --------: | --------:
-| SEND Max    | 36505  |   30597  | 27202  | 32782  | 30125   |
-| SEND Min    |  36505    |  30597  | 27202   |  32782  | 30125  |
-| SEND Median  | 36505   | 30597   | 27202   |32782    | 30125  |
-| RECV Max    | 152221  |  59130  | 7879   | 17551   | 9145   |
-| RECV Min    | 152221  | 59130   | 7879   |  17551    |  9145    |
-| RECV Median    | 152221  |  59130  | 7879   |  17551   |  9145   |
-
-**10 Clients, 1,000 Messages**
-
-![10 Clients, 1,000 Messages](assets/benchmarkchart_10_1000.png "10 Clients, 1,000 Messages")
-
-`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=1000`
-
-|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
-| :----------- | --------: | ----------: | -------: | --------: | --------:
-| SEND Max    |  37193 | 	15775 |	17455 |	34138 |	36575  |
-| SEND Min    |   6529 |	6446 |	7714 |	8583 |	7383      |
-| SEND Median  |  15127 |	7813 | 	10305 |	9887 |	8169     |
-| RECV Max    |  33535	 | 3710	| 3022 |	4534 |	9411    |
-| RECV Min    |   7484	| 2661	| 1689 |	2021 |	2275     |
-| RECV Median    |   11427 |  3142 | 1831 |	2468 |	4692      |
-
-**10 Clients, 10,000 Messages**
-
-![10 Clients, 10000 Messages](assets/benchmarkchart_10_10000.png "10 Clients, 10000 Messages")
-
-`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
-
-|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
-| :----------- | --------: | ----------: | -------: | --------: | --------:
-| SEND Max    |   13153 |	13270 |	12229 |	13025 |	38446  |
-| SEND Min    |  8728	| 8513	| 8193 | 	6483 |	3889    |
-| SEND Median  |   9045	| 9532	| 9252 |	8031 |	9210    |
-| RECV Max    |  20774	| 5052	| 2093 |	2071 | 	43008    |
-| RECV Min    |   10718	 |3995	| 1531	| 1673	| 18764   |
-| RECV Median    |  16339 |	4607 |	1620 | 	1907	| 33524  |
-
-**500 Clients, 100 Messages**
-
-![500 Clients, 100 Messages](assets/benchmarkchart_500_100.png "500 Clients, 100 Messages")
-
-`mqtt-stresser -broker tcp://localhost:1883 -num-clients=500 -num-messages=100`
-
-|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
-| :----------- | --------: | ----------: | -------: | --------: | --------:
-| SEND Max    |  70688	| 72686	| 71392 |	75336 |	73192   |
-| SEND Min    |   1021	| 2577 |	1603 |	8417 |	2344  |
-| SEND Median  |  49871	| 33076 |	33637 |	35200 |	31312   |
-| RECV Max    |  116163 |	4215 |	3427 |	5484 |	10100 |
-| RECV Min    |   1044	| 156 | 	56 | 	83	| 169   |
-| RECV Median    |     24398 | 208 |	94 |	413 |	474     |
 
 #### Using the Broker
 Mochi MQTT can be used as a standalone broker. Simply checkout this repository and run the `main.go` entrypoint in the `cmd` folder which will expose tcp (:1883), websocket (:1882), and dashboard (:8080) listeners. A docker image is coming soon.
@@ -168,6 +103,19 @@ SSL may be configured on both the TCP and Websocket listeners by providing a pub
 ```
 > Note the mandatory inclusion of the Auth Controller!
 
+#### Direct Publishing
+When the broker is being embedded in a larger codebase, it can be useful to be able to publish messages directly to clients without having to implement a loopback TCP connection with an MQTT client. The `Publish` method allows you to inject publish messages directly into a queue to be delivered to any clients with matching topic filters. The `Retain` flag is supported.
+
+```go 
+	// func (s *Server) Publish(topic string, payload []byte, retain bool) error
+	err := s.Publish("a/b/c", []byte("hello"), false)
+	if err != nil {
+		log.Fatal(err)
+	}
+```
+
+A working example can be found in the `examples/events` folder.
+
 #### Data Persistence
 Mochi MQTT provides a `persistence.Store` interface for developing and attaching persistent stores to the broker. The default persistence mechanism packaged with the broker is backed by [Bolt](https://github.com/etcd-io/bbolt) and can be enabled by assigning a `*bolt.Store` to the server.
 ```go
@@ -181,6 +129,74 @@ Mochi MQTT provides a `persistence.Store` interface for developing and attaching
 
 #### Paho Interoperability Test
 You can check the broker against the [Paho Interoperability Test](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) by starting the broker using `examples/paho/main.go`, and then running the test with `python3 client_test.py` from the _interoperability_ folder.
+
+
+#### Performance (messages/second)
+Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inovex/mqtt-stresser) on a  13-inch, Early 2015 Macbook Pro (2.7 GHz Intel Core i5). Taking into account bursts of high and low throughput, the median scores are the most useful. Higher is better. SEND = Publish throughput, RECV = Subscribe throughput.
+
+> As usual, any performance benchmarks should be taken with a pinch of salt, but are shown to demonstrate typical throughput compared to the other leading MQTT brokers.
+
+**Single Client, 10,000 messages**
+_With only 1 client, there is no variation in throughput so the benchmark is reports the same number for high, low, and median._
+
+![1 Client, 10,000 Messages](assets/benchmarkchart_1_10000.png "1 Client, 10,000 Messages")
+
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=1 -num-messages=10000`
+
+|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
+| :----------- | --------: | ----------: | -------: | --------: | --------:
+| SEND Max    | 36505  |   30597  | 27202  | 32782  | 30125   |
+| SEND Min    |  36505    |  30597  | 27202   |  32782  | 30125  |
+| SEND Median  | 36505   | 30597   | 27202   |32782    | 30125  |
+| RECV Max    | 152221  |  59130  | 7879   | 17551   | 9145   |
+| RECV Min    | 152221  | 59130   | 7879   |  17551    |  9145    |
+| RECV Median    | 152221  |  59130  | 7879   |  17551   |  9145   |
+
+**10 Clients, 1,000 Messages**
+
+![10 Clients, 1,000 Messages](assets/benchmarkchart_10_1000.png "10 Clients, 1,000 Messages")
+
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=1000`
+
+|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
+| :----------- | --------: | ----------: | -------: | --------: | --------:
+| SEND Max    |  37193 | 	15775 |	17455 |	34138 |	36575  |
+| SEND Min    |   6529 |	6446 |	7714 |	8583 |	7383      |
+| SEND Median  |  15127 |	7813 | 	10305 |	9887 |	8169     |
+| RECV Max    |  33535	 | 3710	| 3022 |	4534 |	9411    |
+| RECV Min    |   7484	| 2661	| 1689 |	2021 |	2275     |
+| RECV Median    |   11427 |  3142 | 1831 |	2468 |	4692      |
+
+**10 Clients, 10,000 Messages**
+
+![10 Clients, 10000 Messages](assets/benchmarkchart_10_10000.png "10 Clients, 10000 Messages")
+
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
+
+|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
+| :----------- | --------: | ----------: | -------: | --------: | --------:
+| SEND Max    |   13153 |	13270 |	12229 |	13025 |	38446  |
+| SEND Min    |  8728	| 8513	| 8193 | 	6483 |	3889    |
+| SEND Median  |   9045	| 9532	| 9252 |	8031 |	9210    |
+| RECV Max    |  20774	| 5052	| 2093 |	2071 | 	43008    |
+| RECV Min    |   10718	 |3995	| 1531	| 1673	| 18764   |
+| RECV Median    |  16339 |	4607 |	1620 | 	1907	| 33524  |
+
+**500 Clients, 100 Messages**
+
+![500 Clients, 100 Messages](assets/benchmarkchart_500_100.png "500 Clients, 100 Messages")
+
+`mqtt-stresser -broker tcp://localhost:1883 -num-clients=500 -num-messages=100`
+
+|              | Mochi     | Mosquitto   | EMQX     | VerneMQ   | Mosca   |  
+| :----------- | --------: | ----------: | -------: | --------: | --------:
+| SEND Max    |  70688	| 72686	| 71392 |	75336 |	73192   |
+| SEND Min    |   1021	| 2577 |	1603 |	8417 |	2344  |
+| SEND Median  |  49871	| 33076 |	33637 |	35200 |	31312   |
+| RECV Max    |  116163 |	4215 |	3427 |	5484 |	10100 |
+| RECV Min    |   1044	| 156 | 	56 | 	83	| 169   |
+| RECV Median    |     24398 | 208 |	94 |	413 |	474     |
+
 
 ## Contributions
 Contributions and feedback are both welcomed and encouraged! Open an [issue](https://github.com/mochi-co/mqtt/issues) to report a bug, ask a question, or make a feature request.
