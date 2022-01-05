@@ -103,6 +103,30 @@ SSL may be configured on both the TCP and Websocket listeners by providing a pub
 ```
 > Note the mandatory inclusion of the Auth Controller!
 
+#### Event Hooks
+Some basic Event Hooks have been added, allowing you to call your own functions when certain events occur. The execution of the functions are blocking - if necessary, please handle goroutines within the embedding service.
+
+##### OnMessage
+`server.Events.OnMessage` is called when a Publish packet is received. The function receives the published message and information about the client who published it. This function will block message dispatching until it returns.
+
+> This hook is only triggered when a message is received by clients. It is not triggered when using the direct `server.Publish` method.
+
+```go
+import "github.com/mochi-co/mqtt/server/events"
+
+server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.Packet, err error) {
+	if string(pk.Payload) == "hello" {
+		pkx = pk
+		pkx.Payload = []byte("hello world")
+		return pkx, nil
+	} 
+
+	return pk, nil
+}
+```
+
+A working example can be found in the `examples/events` folder. Please open an issue if there is a particular event hook you are interested in!
+
 #### Direct Publishing
 When the broker is being embedded in a larger codebase, it can be useful to be able to publish messages directly to clients without having to implement a loopback TCP connection with an MQTT client. The `Publish` method allows you to inject publish messages directly into a queue to be delivered to any clients with matching topic filters. The `Retain` flag is supported.
 

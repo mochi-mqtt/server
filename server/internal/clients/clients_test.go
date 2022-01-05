@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/mochi-co/mqtt/server/internal/circ"
+	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
-	"github.com/mochi-co/mqtt/server/packets"
 	"github.com/mochi-co/mqtt/server/system"
 	"github.com/stretchr/testify/require"
 )

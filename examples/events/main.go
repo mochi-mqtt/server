@@ -11,6 +11,7 @@ import (
 	"github.com/logrusorgru/aurora"
 
 	mqtt "github.com/mochi-co/mqtt/server"
+	"github.com/mochi-co/mqtt/server/events"
 	"github.com/mochi-co/mqtt/server/listeners"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
 )
@@ -43,12 +44,25 @@ func main() {
 		}
 	}()
 
+	// Add OnMessage Event Hook
+	server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.Packet, err error) {
+		pkx = pk
+		if string(pk.Payload) == "hello" {
+			pkx.Payload = []byte("hello world")
+			fmt.Printf("< OnMessage modified message from client %s: %s\n", cl.ID, string(pkx.Payload))
+		} else {
+			fmt.Printf("< OnMessage received message from client %s: %s\n", cl.ID, string(pkx.Payload))
+		}
+
+		return pkx, nil
+	}
+
 	// Demonstration of directly publishing messages to a topic via the
 	// `server.Publish` method. Subscribe to `direct/publish` using your
 	// MQTT client to see the messages.
 	go func() {
-		for range time.Tick(time.Second * 5) {
-			server.Publish("direct/publish", []byte("hello world"), false)
+		for range time.Tick(time.Second * 10) {
+			server.Publish("direct/publish", []byte("scheduled message"), false)
 			fmt.Println("> issued direct message to direct/publish")
 		}
 	}()
