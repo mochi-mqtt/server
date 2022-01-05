@@ -46,24 +46,24 @@ import (
 )
 
 func main() {
-	// Create the new MQTT Server.
-	server := mqtt.New()
+    // Create the new MQTT Server.
+    server := mqtt.New()
 	
-	// Create a TCP listener on a standard port.
-	tcp := listeners.NewTCP("t1", ":1883")
+    // Create a TCP listener on a standard port.
+    tcp := listeners.NewTCP("t1", ":1883")
 	
-	// Add the listener to the server with default options (nil).
-	err := server.AddListener(tcp, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+    // Add the listener to the server with default options (nil).
+    err := server.AddListener(tcp, nil)
+    if err != nil {
+        log.Fatal(err)
+    }
 	
-	// Start the broker. Serve() is blocking - see examples folder 
-	// for usage ideas.
-  err = server.Serve()
-	if err != nil {
-		log.Fatal(err)
-	}
+    // Start the broker. Serve() is blocking - see examples folder 
+    // for usage ideas.
+    err = server.Serve()
+    if err != nil {
+        log.Fatal(err)
+    }
 }
 ```
 
@@ -93,11 +93,11 @@ err := server.AddListener(tcp, &listeners.Config{
 SSL may be configured on both the TCP and Websocket listeners by providing a public-private PEM key pair to the listener configuration as `[]byte` slices.
 ```go
 err := server.AddListener(tcp, &listeners.Config{
-	Auth: new(auth.Allow),
-	TLS: &listeners.TLS{
-		Certificate: publicCertificate, 
-		PrivateKey:  privateKey,
-	},
+    Auth: new(auth.Allow),
+    TLS: &listeners.TLS{
+        Certificate: publicCertificate, 
+        PrivateKey:  privateKey,
+    },
 })
 ```
 > Note the mandatory inclusion of the Auth Controller!
@@ -114,13 +114,13 @@ Some basic Event Hooks have been added, allowing you to call your own functions 
 import "github.com/mochi-co/mqtt/server/events"
 
 server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.Packet, err error) {
-	if string(pk.Payload) == "hello" {
-		pkx = pk
-		pkx.Payload = []byte("hello world")
-		return pkx, nil
-	} 
-
-	return pk, nil
+    if string(pk.Payload) == "hello" {
+        pkx = pk
+        pkx.Payload = []byte("hello world")
+        return pkx, nil
+    } 
+    
+    return pk, nil
 }
 ```
 
@@ -133,7 +133,7 @@ When the broker is being embedded in a larger codebase, it can be useful to be a
 // func (s *Server) Publish(topic string, payload []byte, retain bool) error
 err := s.Publish("a/b/c", []byte("hello"), false)
 if err != nil {
-	log.Fatal(err)
+    log.Fatal(err)
 }
 ```
 
@@ -145,7 +145,7 @@ Mochi MQTT provides a `persistence.Store` interface for developing and attaching
 // import "github.com/mochi-co/mqtt/server/persistence/bolt"
 err = server.AddStore(bolt.New("mochi.db", nil))
 if err != nil {
-	log.Fatal(err)
+    log.Fatal(err)
 }
 ```
 > Persistence is on-demand (not flushed) and will potentially reduce throughput when compared to the standard in-memory store. Only use it if you need to maintain state through restarts.
