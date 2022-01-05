@@ -2,6 +2,12 @@ Changes
 =======
 
 ---
+16:05:02
+Thursday, July 2, 2020
+
+Change license from the WTFPL to the Unlicense due to pkg.go.dev restriction.
+
+---
 15:39:40
 Wednesday, April 17, 2019
 

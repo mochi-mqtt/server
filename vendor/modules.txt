@@ -1,6 +1,8 @@
 # github.com/asdine/storm v2.1.2+incompatible
+## explicit
 github.com/asdine/storm/codec/gob
-# github.com/asdine/storm/v3 v3.1.0
+# github.com/asdine/storm/v3 v3.2.1
+## explicit; go 1.13
 github.com/asdine/storm/v3
 github.com/asdine/storm/v3/codec
 github.com/asdine/storm/v3/codec/json
@@ -8,23 +10,34 @@ github.com/asdine/storm/v3/index
 github.com/asdine/storm/v3/internal
 github.com/asdine/storm/v3/q
 # github.com/davecgh/go-spew v1.1.1
+## explicit
 github.com/davecgh/go-spew/spew
-# github.com/gorilla/websocket v1.4.1
+# github.com/gorilla/websocket v1.4.2
+## explicit; go 1.12
 github.com/gorilla/websocket
-# github.com/jinzhu/copier v0.0.0-20190924061706-b57f9002281a
+# github.com/jinzhu/copier v0.3.4
+## explicit; go 1.13
 github.com/jinzhu/copier
-# github.com/logrusorgru/aurora v0.0.0-20191116043053-66b7ad493a23
+# github.com/logrusorgru/aurora v2.0.3+incompatible
+## explicit
 github.com/logrusorgru/aurora
 # github.com/pmezard/go-difflib v1.0.0
+## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/rs/xid v1.2.1
+# github.com/rs/xid v1.3.0
+## explicit; go 1.12
 github.com/rs/xid
-# github.com/stretchr/testify v1.4.0
+# github.com/stretchr/testify v1.7.0
+## explicit; go 1.13
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
-# go.etcd.io/bbolt v1.3.3
+# go.etcd.io/bbolt v1.3.6
+## explicit; go 1.12
 go.etcd.io/bbolt
-# golang.org/x/sys v0.0.0-20191105142833-ac3223d80179
+# golang.org/x/sys v0.0.0-20200923182605-d9f96fdee20d
+## explicit; go 1.12
+golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
-# gopkg.in/yaml.v2 v2.2.2
-gopkg.in/yaml.v2
+# gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c
+## explicit
+gopkg.in/yaml.v3

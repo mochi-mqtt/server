@@ -1,8 +1,8 @@
 Aurora
 ======
 
-[![GoDoc](https://godoc.org/github.com/logrusorgru/aurora?status.svg)](https://godoc.org/github.com/logrusorgru/aurora)
-[![WTFPL License](https://img.shields.io/badge/license-wtfpl-blue.svg)](http://www.wtfpl.net/about/)
+[![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white)](https://pkg.go.dev/github.com/logrusorgru/aurora?tab=doc)
+[![Unlicense](https://img.shields.io/badge/license-unlicense-blue.svg)](http://unlicense.org/)
 [![Build Status](https://travis-ci.org/logrusorgru/aurora.svg)](https://travis-ci.org/logrusorgru/aurora)
 [![Coverage Status](https://coveralls.io/repos/logrusorgru/aurora/badge.svg?branch=master)](https://coveralls.io/r/logrusorgru/aurora?branch=master)
 [![GoReportCard](https://goreportcard.com/badge/logrusorgru/aurora)](https://goreportcard.com/report/logrusorgru/aurora)
@@ -236,7 +236,7 @@ Methods `Index` and `BgIndex` implements 8-bit colors.
   + red
   + green
   + yellow (brown)
-  +  blue
+  + blue
   + magenta
   + cyan
   + white
@@ -295,7 +295,7 @@ The obvious workaround is `Red(fmt.Sprintf("%T", some))`
 The Aurora provides ANSI colors only, so there is no support for Windows. That said, there are workarounds available. 
 Check out these comments to learn more:
 
-- [Using go-colrable](https://github.com/logrusorgru/aurora/issues/2#issuecomment-299014211).
+- [Using go-colorable](https://github.com/logrusorgru/aurora/issues/2#issuecomment-299014211).
 - [Using registry for Windows 10](https://github.com/logrusorgru/aurora/issues/10#issue-476361247).
 
 ### TTY
@@ -306,10 +306,9 @@ on colors for a terminal only, and turn them off for a file.
 
 ### Licensing
 
-Copyright &copy; 2016-2019 The Aurora Authors. This work is free.
+Copyright &copy; 2016-2020 The Aurora Authors. This work is free.
 It comes without any warranty, to the extent permitted by applicable
 law. You can redistribute it and/or modify it under the terms of the
-Do What The Fuck You Want To Public License, Version 2, as published
-by Sam Hocevar. See the LICENSE file for more details.
+the Unlicense. See the LICENSE file for more details.
 
 
