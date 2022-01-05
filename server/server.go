@@ -55,6 +55,13 @@ type Server struct {
 	System    *system.Info         // values about the server commonly found in $SYS topics.
 	Store     persistence.Store    // a persistent storage backend if desired.
 	sysTicker *time.Ticker         // the interval ticker for sending updating $SYS topics.
+	inline    inlineMessages       // channels for direct publishing
+}
+
+// inlineMessages contains channels for handling inline (direct) publishing.
+type inlineMessages struct {
+	done chan bool           // indicate that the server is ending.
+	pub  chan packets.Packet // a channel of packets to publish to clients
 }
 
 // New returns a new instance of an MQTT broker.
@@ -69,6 +76,10 @@ func New() *Server {
 			Started: time.Now().Unix(),
 		},
 		sysTicker: time.NewTicker(SysTopicInterval * time.Millisecond),
+		inline: inlineMessages{
+			done: make(chan bool),
+			pub:  make(chan packets.Packet, 1024),
+		},
 	}
 
 	// Expose server stats using the system listener so it can be used in the
@@ -119,9 +130,10 @@ func (s *Server) Serve() error {
 		}
 	}
 
-	go s.eventLoop()
-	s.Listeners.ServeAll(s.EstablishConnection)
-	s.publishSysTopics()
+	go s.eventLoop()                            // spin up event loop for issuing $SYS values and closing server.
+	go s.inlineClient()                         // spin up inline client for direct message publishing.
+	s.Listeners.ServeAll(s.EstablishConnection) // start listening on all listeners.
+	s.publishSysTopics()                        // begin publishing $SYS system values.
 
 	return nil
 }
@@ -132,6 +144,7 @@ func (s *Server) eventLoop() {
 		select {
 		case <-s.done:
 			s.sysTicker.Stop()
+			close(s.inline.done)
 			return
 		case <-s.sysTicker.C:
 			s.publishSysTopics()
@@ -139,11 +152,25 @@ func (s *Server) eventLoop() {
 	}
 }
 
-// EstablishConnection establishes a new client when a listener accepts a new
-// connection.
+// inlineClient loops forever, sending directly-published messages
+// from the Publish method to subscribers.
+func (s *Server) inlineClient() {
+	for {
+		select {
+		case <-s.inline.done:
+			close(s.inline.pub)
+			return
+		case pk := <-s.inline.pub:
+			s.publishToSubscribers(pk)
+		}
+	}
+}
+
+// EstablishConnection establishes a new client when a listener
+// accepts a new connection.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
-	xbr := s.bytepool.Get() // Get byte buffer from pools for sending and receiving packet data.
-	xbw := s.bytepool.Get()
+	xbr := s.bytepool.Get() // Get byte buffer from pools for receiving packet data.
+	xbw := s.bytepool.Get() // and for sending.
 
 	cl := clients.NewClient(c,
 		circ.NewReaderFromSlice(0, xbr),
@@ -325,11 +352,38 @@ func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) error {
 	return nil
 }
 
+// Publish creates a publish packet from a payload and sends it to the inline.pub
+// channel, where it is written directly to the outgoing byte buffers of any
+// clients subscribed to the given topic. Because the message is written directly
+// within the server, QoS is inherently 2 (exactly once).
+func (s *Server) Publish(topic string, payload []byte, retain bool) error {
+	if len(topic) >= 4 && topic[0:4] == "$SYS" {
+		return ErrInvalidTopic
+	}
+
+	pk := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: topic,
+		Payload:   payload,
+	}
+
+	if retain {
+		s.retainMessage(pk)
+	}
+
+	// handoff packet to s.inline.pub channel for writing to client buffers
+	// to avoid blocking the calling function.
+	s.inline.pub <- pk
+
+	return nil
+}
+
 // processPublish processes a Publish packet.
 func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 	if len(pk.TopicName) >= 4 && pk.TopicName[0:4] == "$SYS" {
-		// Clients can't publish to $SYS topics.
-		return nil
+		return nil // Clients can't publish to $SYS topics, so fail silently as per spec.
 	}
 
 	if !cl.AC.ACL(cl.Username, pk.TopicName, true) {
@@ -337,22 +391,7 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 	}
 
 	if pk.FixedHeader.Retain {
-		out := pk.PublishCopy()
-		q := s.Topics.RetainMessage(out)
-		atomic.AddInt64(&s.System.Retained, q)
-		if s.Store != nil {
-			if q == 1 {
-				s.Store.WriteRetained(persistence.Message{
-					ID:          "ret_" + out.TopicName,
-					T:           persistence.KRetained,
-					FixedHeader: persistence.FixedHeader(out.FixedHeader),
-					TopicName:   out.TopicName,
-					Payload:     out.Payload,
-				})
-			} else {
-				s.Store.DeleteRetained("ret_" + out.TopicName)
-			}
-		}
+		s.retainMessage(pk)
 	}
 
 	if pk.FixedHeader.Qos > 0 {
@@ -367,21 +406,42 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 			ack.FixedHeader.Type = packets.Pubrec
 		}
 
-		s.writeClient(cl, ack)
 		// omit errors in case of broken connection / LWT publish. ack send failures
 		// will be handled by in-flight resending on next reconnect.
+		s.writeClient(cl, ack)
 	}
 
+	// write packet to the byte buffers of any clients with matching topic filters.
 	s.publishToSubscribers(pk)
 
 	return nil
 }
 
+// retainMessage adds a message to a topic, and if a persistent store is provided,
+// adds the message to the store so it can be reloaded if necessary.
+func (s *Server) retainMessage(pk packets.Packet) {
+	out := pk.PublishCopy()
+	q := s.Topics.RetainMessage(out)
+	atomic.AddInt64(&s.System.Retained, q)
+	if s.Store != nil {
+		if q == 1 {
+			s.Store.WriteRetained(persistence.Message{
+				ID:          "ret_" + out.TopicName,
+				T:           persistence.KRetained,
+				FixedHeader: persistence.FixedHeader(out.FixedHeader),
+				TopicName:   out.TopicName,
+				Payload:     out.Payload,
+			})
+		} else {
+			s.Store.DeleteRetained("ret_" + out.TopicName)
+		}
+	}
+}
+
 // publishToSubscribers publishes a publish packet to all subscribers with
 // matching topic filters.
 func (s *Server) publishToSubscribers(pk packets.Packet) {
-	subs := s.Topics.Subscribers(pk.TopicName)
-	for id, qos := range subs {
+	for id, qos := range s.Topics.Subscribers(pk.TopicName) {
 		if client, ok := s.Clients.Get(id); ok {
 			out := pk.PublishCopy()
 			if qos > out.FixedHeader.Qos { // Inherit higher desired qos values.
