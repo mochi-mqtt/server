@@ -62,7 +62,7 @@ func main() {
 	// MQTT client to see the messages.
 	go func() {
 		for range time.Tick(time.Second * 10) {
-			server.Publish("direct/publish", []byte("hello world"), false)
+			server.Publish("direct/publish", []byte("scheduled message"), false)
 			fmt.Println("> issued direct message to direct/publish")
 		}
 	}()
