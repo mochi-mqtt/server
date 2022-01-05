@@ -1,6 +1,6 @@
 module github.com/mochi-co/mqtt
 
-go 1.13
+go 1.17
 
 require (
 	github.com/asdine/storm v2.1.2+incompatible
