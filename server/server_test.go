@@ -930,6 +930,8 @@ func TestServerProcessPublishHookOnMessage(t *testing.T) {
 	var hookedPacket events.Packet
 	var hookedClient events.Client
 	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
+		hookedClient = cl
+		hookedPacket = pk
 		return pk, nil
 	}
 
