@@ -415,9 +415,9 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 		s.Events.OnMessage(events.FromClient(*cl), events.Packet(pk))
 	}
 
-	// if an OnMessageModify hook exists, potentially modify the packet.
-	if s.Events.OnMessageModify != nil {
-		if pkx, err := s.Events.OnMessageModify(events.FromClient(*cl), events.Packet(pk)); err == nil {
+	// if an OnMessage hook exists, potentially modify the packet.
+	if s.Events.OnMessage != nil {
+		if pkx, err := s.Events.OnMessage(events.FromClient(*cl), events.Packet(pk)); err == nil {
 			pk = packets.Packet(pkx)
 		}
 	}

@@ -45,18 +45,13 @@ func main() {
 	}()
 
 	// Add OnMessage Event Hook
-	server.Events.OnMessage = func(cl events.Client, pk events.Packet) {
-		fmt.Printf("< OnMessage received message from client %s: %s\n", cl.ID, string(pk.Payload))
-	}
-
-	// Add OnMessage Event Hook
-	server.Events.OnMessageModify = func(cl events.Client, pk events.Packet) (pkx events.Packet, err error) {
+	server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.Packet, err error) {
 		pkx = pk
 		if string(pk.Payload) == "hello" {
 			pkx.Payload = []byte("hello world")
-			fmt.Printf("< OnMessageModify modified message from client %s: %s\n", cl.ID, string(pkx.Payload))
+			fmt.Printf("< OnMessage modified message from client %s: %s\n", cl.ID, string(pkx.Payload))
 		} else {
-			fmt.Printf("< OnMessageModify received message from client %s: %s\n", cl.ID, string(pkx.Payload))
+			fmt.Printf("< OnMessage received message from client %s: %s\n", cl.ID, string(pkx.Payload))
 		}
 
 		return pkx, nil

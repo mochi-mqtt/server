@@ -929,9 +929,8 @@ func TestServerProcessPublishHookOnMessage(t *testing.T) {
 
 	var hookedPacket events.Packet
 	var hookedClient events.Client
-	s.Events.OnMessage = func(cl events.Client, pk events.Packet) {
-		hookedPacket = pk
-		hookedClient = cl
+	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
+		return pk, nil
 	}
 
 	ack1 := make(chan []byte)
@@ -981,7 +980,7 @@ func TestServerProcessPublishHookOnMessageModify(t *testing.T) {
 
 	var hookedPacket events.Packet
 	var hookedClient events.Client
-	s.Events.OnMessageModify = func(cl events.Client, pk events.Packet) (events.Packet, error) {
+	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
 		hookedPacket = pk
 		hookedPacket.Payload = []byte("world")
 		hookedClient = cl
@@ -1031,7 +1030,7 @@ func TestServerProcessPublishHookOnMessageModifyError(t *testing.T) {
 	s.Clients.Add(cl1)
 	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
 
-	s.Events.OnMessageModify = func(cl events.Client, pk events.Packet) (events.Packet, error) {
+	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
 		pkx := pk
 		pkx.Payload = []byte("world")
 		return pkx, fmt.Errorf("error")
