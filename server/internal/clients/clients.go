@@ -305,8 +305,9 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	return nil
 }
 
-// Read reads new packets from a client connection
-func (cl *Client) Read(h func(*Client, packets.Packet) error) error {
+// Read loops forever reading new packets from a client connection until
+// an error is encountered (or the connection is closed).
+func (cl *Client) Read(packetHandler func(*Client, packets.Packet) error) error {
 	for {
 		if atomic.LoadInt64(&cl.State.Done) == 1 && cl.r.CapDelta() == 0 {
 			return nil
@@ -324,7 +325,7 @@ func (cl *Client) Read(h func(*Client, packets.Packet) error) error {
 			return err
 		}
 
-		err = h(cl, pk) // Process inbound packet.
+		err = packetHandler(cl, pk) // Process inbound packet.
 		if err != nil {
 			return err
 		}
@@ -437,6 +438,7 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 		return
 	}
 
+	// Write the packet bytes to the client byte buffer.
 	n, err = cl.w.Write(buf.Bytes())
 	if err != nil {
 		return

@@ -80,8 +80,8 @@ func (l *TCP) Listen(s *system.Info) error {
 	return nil
 }
 
-// Serve starts waiting for new TCP connections, and calls the connection
-// establishment callback for any received.
+// Serve starts waiting for new TCP connections, and calls the establish
+// connection callback for any received.
 func (l *TCP) Serve(establish EstablishFunc) {
 	for {
 		if atomic.LoadInt64(&l.end) == 1 {
