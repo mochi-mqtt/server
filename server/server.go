@@ -410,11 +410,6 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 		s.writeClient(cl, ack)
 	}
 
-	// If an OnMessage hook exists, trigger it.
-	if s.Events.OnMessage != nil {
-		s.Events.OnMessage(events.FromClient(*cl), events.Packet(pk))
-	}
-
 	// if an OnMessage hook exists, potentially modify the packet.
 	if s.Events.OnMessage != nil {
 		if pkx, err := s.Events.OnMessage(events.FromClient(*cl), events.Packet(pk)); err == nil {
