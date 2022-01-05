@@ -43,25 +43,25 @@ go build -o mqtt && ./mqtt
 
 ``` go
 import (
-    mqtt "github.com/mochi-co/mqtt/server"
+  mqtt "github.com/mochi-co/mqtt/server"
 )
 
 func main() {
-    // Create the new MQTT Server.
-    server := mqtt.New()
-    
-    // Create a TCP listener on a standard port.
-    tcp := listeners.NewTCP("t1", ":1883")
-    
-    // Add the listener to the server with default options (nil).
-    err := server.AddListener(tcp, nil)
+	// Create the new MQTT Server.
+	server := mqtt.New()
+	
+	// Create a TCP listener on a standard port.
+	tcp := listeners.NewTCP("t1", ":1883")
+	
+	// Add the listener to the server with default options (nil).
+	err := server.AddListener(tcp, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	
 	// Start the broker. Serve() is blocking - see examples folder 
 	// for usage ideas.
-    err = server.Serve()
+  err = server.Serve()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -83,9 +83,9 @@ When a listener is added to the server using `server.AddListener`, a `*listeners
 Authentication and ACL may be configured on a per-listener basis by providing an Auth Controller to the listener configuration. Custom Auth Controllers should satisfy the `auth.Controller` interface found in `listeners/auth`. Two default controllers are provided, `auth.Allow`, which allows all traffic, and `auth.Disallow`, which denies all traffic. 
 
 ```go
-    err := server.AddListener(tcp, &listeners.Config{
-		Auth: new(auth.Allow),
-	})
+err := server.AddListener(tcp, &listeners.Config{
+	Auth: new(auth.Allow),
+})
 ```
 
 > If no auth controller is provided in the listener configuration, the server will default to _Disallowing_ all traffic to prevent unintentional security issues.
@@ -93,13 +93,13 @@ Authentication and ACL may be configured on a per-listener basis by providing an
 ##### SSL
 SSL may be configured on both the TCP and Websocket listeners by providing a public-private PEM key pair to the listener configuration as `[]byte` slices.
 ```go
-    err := server.AddListener(tcp, &listeners.Config{
-		Auth: new(auth.Allow),
-		TLS: &listeners.TLS{
-			Certificate: publicCertificate, 
-			PrivateKey:  privateKey,
-		},
-	})
+err := server.AddListener(tcp, &listeners.Config{
+	Auth: new(auth.Allow),
+	TLS: &listeners.TLS{
+		Certificate: publicCertificate, 
+		PrivateKey:  privateKey,
+	},
+})
 ```
 > Note the mandatory inclusion of the Auth Controller!
 
@@ -131,11 +131,11 @@ A working example can be found in the `examples/events` folder. Please open an i
 When the broker is being embedded in a larger codebase, it can be useful to be able to publish messages directly to clients without having to implement a loopback TCP connection with an MQTT client. The `Publish` method allows you to inject publish messages directly into a queue to be delivered to any clients with matching topic filters. The `Retain` flag is supported.
 
 ```go 
-	// func (s *Server) Publish(topic string, payload []byte, retain bool) error
-	err := s.Publish("a/b/c", []byte("hello"), false)
-	if err != nil {
-		log.Fatal(err)
-	}
+// func (s *Server) Publish(topic string, payload []byte, retain bool) error
+err := s.Publish("a/b/c", []byte("hello"), false)
+if err != nil {
+	log.Fatal(err)
+}
 ```
 
 A working example can be found in the `examples/events` folder.
@@ -143,11 +143,11 @@ A working example can be found in the `examples/events` folder.
 #### Data Persistence
 Mochi MQTT provides a `persistence.Store` interface for developing and attaching persistent stores to the broker. The default persistence mechanism packaged with the broker is backed by [Bolt](https://github.com/etcd-io/bbolt) and can be enabled by assigning a `*bolt.Store` to the server.
 ```go
-    // import "github.com/mochi-co/mqtt/server/persistence/bolt"
-    err = server.AddStore(bolt.New("mochi.db", nil))
-	if err != nil {
-		log.Fatal(err)
-	}
+// import "github.com/mochi-co/mqtt/server/persistence/bolt"
+err = server.AddStore(bolt.New("mochi.db", nil))
+if err != nil {
+	log.Fatal(err)
+}
 ```
 > Persistence is on-demand (not flushed) and will potentially reduce throughput when compared to the standard in-memory store. Only use it if you need to maintain state through restarts.
 
