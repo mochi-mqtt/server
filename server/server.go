@@ -9,22 +9,19 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mochi-co/mqtt/server/events"
 	"github.com/mochi-co/mqtt/server/internal/circ"
 	"github.com/mochi-co/mqtt/server/internal/clients"
+	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/internal/topics"
 	"github.com/mochi-co/mqtt/server/listeners"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
-	"github.com/mochi-co/mqtt/server/packets"
 	"github.com/mochi-co/mqtt/server/persistence"
 	"github.com/mochi-co/mqtt/server/system"
 )
 
 const (
 	Version = "1.0.0" // the server version.
-
-	// maxPacketID is the maximum value of a 16-bit packet ID. If a
-	// packet ID reaches this number, it resets to 0.
-	maxPacketID = 65535
 )
 
 var (
@@ -47,15 +44,16 @@ var (
 // Server is an MQTT broker server. It should be created with server.New()
 // in order to ensure all the internal fields are correctly populated.
 type Server struct {
-	done      chan bool            // indicate that the server is ending.
-	bytepool  circ.BytesPool       // a byte pool for incoming and outgoing packets.
 	Listeners *listeners.Listeners // listeners are network interfaces which listen for new connections.
 	Clients   *clients.Clients     // clients which are known to the broker.
 	Topics    *topics.Index        // an index of topic filter subscriptions and retained messages.
 	System    *system.Info         // values about the server commonly found in $SYS topics.
 	Store     persistence.Store    // a persistent storage backend if desired.
+	done      chan bool            // indicate that the server is ending.
+	bytepool  circ.BytesPool       // a byte pool for incoming and outgoing packets.
 	sysTicker *time.Ticker         // the interval ticker for sending updating $SYS topics.
-	inline    inlineMessages       // channels for direct publishing
+	inline    inlineMessages       // channels for direct publishing.
+	Events    events.Events        // overrideable event hooks.
 }
 
 // inlineMessages contains channels for handling inline (direct) publishing.
@@ -80,6 +78,7 @@ func New() *Server {
 			done: make(chan bool),
 			pub:  make(chan packets.Packet, 1024),
 		},
+		Events: events.Events{},
 	}
 
 	// Expose server stats using the system listener so it can be used in the
@@ -409,6 +408,18 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 		// omit errors in case of broken connection / LWT publish. ack send failures
 		// will be handled by in-flight resending on next reconnect.
 		s.writeClient(cl, ack)
+	}
+
+	// If an OnMessage hook exists, trigger it.
+	if s.Events.OnMessage != nil {
+		s.Events.OnMessage(events.FromClient(*cl), events.Packet(pk))
+	}
+
+	// if an OnMessageModify hook exists, potentially modify the packet.
+	if s.Events.OnMessageModify != nil {
+		if pkx, err := s.Events.OnMessageModify(events.FromClient(*cl), events.Packet(pk)); err == nil {
+			pk = packets.Packet(pkx)
+		}
 	}
 
 	// write packet to the byte buffers of any clients with matching topic filters.
