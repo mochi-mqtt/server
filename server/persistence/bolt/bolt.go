@@ -255,7 +255,6 @@ func (s *Store) ReadServerInfo() (v persistence.ServerInfo, err error) {
 	}
 
 	err = s.db.One("ID", persistence.KServerInfo, &v)
-	fmt.Println(err)
 	if err != nil && err.Error() != errNotFound {
 		return
 	}
