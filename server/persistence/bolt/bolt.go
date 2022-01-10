@@ -4,8 +4,6 @@ import (
 	"errors"
 	"time"
 
-	"fmt"
-
 	sgob "github.com/asdine/storm/codec/gob"
 	"github.com/asdine/storm/v3"
 	"go.etcd.io/bbolt"
