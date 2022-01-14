@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version = "1.0.2" // the server version.
+	Version = "1.0.3" // the server version.
 )
 
 var (
