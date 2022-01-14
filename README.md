@@ -124,6 +124,8 @@ server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.P
 }
 ```
 
+The OnMessage hook can also be used to selectively only deliver messages to one or more clients based on their id, using the `AllowClients []string` field on the packet structure.  
+
 A working example can be found in the `examples/events` folder. Please open an issue if there is a particular event hook you are interested in!
 
 #### Direct Publishing
