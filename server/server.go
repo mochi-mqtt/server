@@ -14,6 +14,7 @@ import (
 	"github.com/mochi-co/mqtt/server/internal/clients"
 	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/internal/topics"
+	"github.com/mochi-co/mqtt/server/internal/utils"
 	"github.com/mochi-co/mqtt/server/listeners"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
 	"github.com/mochi-co/mqtt/server/persistence"
@@ -21,7 +22,7 @@ import (
 )
 
 const (
-	Version = "1.0.2" // the server version.
+	Version = "1.0.3" // the server version.
 )
 
 var (
@@ -449,6 +450,14 @@ func (s *Server) retainMessage(pk packets.Packet) {
 func (s *Server) publishToSubscribers(pk packets.Packet) {
 	for id, qos := range s.Topics.Subscribers(pk.TopicName) {
 		if client, ok := s.Clients.Get(id); ok {
+
+			// If the AllowClients value is set, only deliver the packet if the subscribed
+			// client exists in the AllowClients value. For use with the OnMessage event hook
+			// in cases where you want to publish messages to clients selectively.
+			if pk.AllowClients != nil && !utils.InSliceString(pk.AllowClients, id) {
+				continue
+			}
+
 			out := pk.PublishCopy()
 			if qos > out.FixedHeader.Qos { // Inherit higher desired qos values.
 				out.FixedHeader.Qos = qos

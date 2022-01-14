@@ -340,7 +340,7 @@ func TestClientReadFixedHeader(t *testing.T) {
 	fh := new(packets.FixedHeader)
 	err := cl.ReadFixedHeader(fh)
 	require.NoError(t, err)
-	require.Equal(t, int64(2), atomic.LoadInt64(&cl.system.BytesRecv))
+	require.Equal(t, int64(2), atomic.LoadInt64(&cl.systemInfo.BytesRecv))
 
 	tail, head := cl.r.GetPos()
 	require.Equal(t, int64(2), tail)
@@ -456,8 +456,8 @@ func TestClientReadOK(t *testing.T) {
 		},
 	})
 
-	require.Equal(t, int64(len(b)), atomic.LoadInt64(&cl.system.BytesRecv))
-	require.Equal(t, int64(2), atomic.LoadInt64(&cl.system.MessagesRecv))
+	require.Equal(t, int64(len(b)), atomic.LoadInt64(&cl.systemInfo.BytesRecv))
+	require.Equal(t, int64(2), atomic.LoadInt64(&cl.systemInfo.MessagesRecv))
 
 }
 
@@ -574,7 +574,7 @@ func TestClientReadPacket(t *testing.T) {
 
 		require.Equal(t, tt.packet, pk, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
 		if tt.packet.FixedHeader.Type == packets.Publish {
-			require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.PublishRecv))
+			require.Equal(t, int64(1), atomic.LoadInt64(&cl.systemInfo.PublishRecv))
 		}
 	}
 }
@@ -647,10 +647,10 @@ func TestClientWritePacket(t *testing.T) {
 
 		require.Equal(t, tt.bytes, <-o, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
 		cl.Stop()
-		require.Equal(t, int64(n), atomic.LoadInt64(&cl.system.BytesSent))
-		require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.MessagesSent))
+		require.Equal(t, int64(n), atomic.LoadInt64(&cl.systemInfo.BytesSent))
+		require.Equal(t, int64(1), atomic.LoadInt64(&cl.systemInfo.MessagesSent))
 		if tt.packet.FixedHeader.Type == packets.Publish {
-			require.Equal(t, int64(1), atomic.LoadInt64(&cl.system.PublishSent))
+			require.Equal(t, int64(1), atomic.LoadInt64(&cl.systemInfo.PublishSent))
 		}
 	}
 }

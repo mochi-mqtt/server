@@ -54,6 +54,12 @@ func main() {
 			fmt.Printf("< OnMessage received message from client %s: %s\n", cl.ID, string(pkx.Payload))
 		}
 
+		// Example of using AllowClients to selectively deliver/drop messages.
+		// Only a client with the id of `allowed-client` will received messages on the topic.
+		if pkx.TopicName == "a/b/restricted" {
+			pkx.AllowClients = []string{"allowed-client"} // slice of known client ids
+		}
+
 		return pkx, nil
 	}
 

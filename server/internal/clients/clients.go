@@ -99,7 +99,7 @@ type Client struct {
 	packetID      uint32               // the current highest packetID.
 	LWT           LWT                  // the last will and testament for the client.
 	State         State                // the operational state of the client.
-	system        *system.Info         // pointers to server system info.
+	systemInfo    *system.Info         // pointers to server system info.
 }
 
 // State tracks the state of the client.
@@ -114,11 +114,11 @@ type State struct {
 // NewClient returns a new instance of Client.
 func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Client {
 	cl := &Client{
-		conn:      c,
-		r:         r,
-		w:         w,
-		system:    s,
-		keepalive: defaultKeepalive,
+		conn:       c,
+		r:          r,
+		w:          w,
+		systemInfo: s,
+		keepalive:  defaultKeepalive,
 		Inflight: Inflight{
 			internal: make(map[uint16]InflightMessage),
 		},
@@ -300,7 +300,7 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 
 	// Having successfully read n bytes, commit the tail forward.
 	cl.r.CommitTail(n)
-	atomic.AddInt64(&cl.system.BytesRecv, int64(n))
+	atomic.AddInt64(&cl.systemInfo.BytesRecv, int64(n))
 
 	return nil
 }
@@ -334,7 +334,7 @@ func (cl *Client) Read(packetHandler func(*Client, packets.Packet) error) error 
 
 // ReadPacket reads the remaining buffer into an MQTT packet.
 func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err error) {
-	atomic.AddInt64(&cl.system.MessagesRecv, 1)
+	atomic.AddInt64(&cl.systemInfo.MessagesRecv, 1)
 
 	pk.FixedHeader = *fh
 	if pk.FixedHeader.Remaining == 0 {
@@ -345,7 +345,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 	if err != nil {
 		return pk, err
 	}
-	atomic.AddInt64(&cl.system.BytesRecv, int64(len(p)))
+	atomic.AddInt64(&cl.systemInfo.BytesRecv, int64(len(p)))
 
 	// Decode the remaining packet values using a fresh copy of the bytes,
 	// otherwise the next packet will change the data of this one.
@@ -359,7 +359,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 	case packets.Publish:
 		err = pk.PublishDecode(px)
 		if err == nil {
-			atomic.AddInt64(&cl.system.PublishRecv, 1)
+			atomic.AddInt64(&cl.systemInfo.PublishRecv, 1)
 		}
 	case packets.Puback:
 		err = pk.PubackDecode(px)
@@ -407,7 +407,7 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 	case packets.Publish:
 		err = pk.PublishEncode(buf)
 		if err == nil {
-			atomic.AddInt64(&cl.system.PublishSent, 1)
+			atomic.AddInt64(&cl.systemInfo.PublishSent, 1)
 		}
 	case packets.Puback:
 		err = pk.PubackEncode(buf)
@@ -443,8 +443,9 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 	if err != nil {
 		return
 	}
-	atomic.AddInt64(&cl.system.BytesSent, int64(n))
-	atomic.AddInt64(&cl.system.MessagesSent, 1)
+
+	atomic.AddInt64(&cl.systemInfo.BytesSent, int64(n))
+	atomic.AddInt64(&cl.systemInfo.MessagesSent, 1)
 
 	cl.refreshDeadline(cl.keepalive)
 

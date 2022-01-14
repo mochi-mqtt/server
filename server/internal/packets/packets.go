@@ -109,6 +109,10 @@ type Packet struct {
 	Topics []string
 	Qoss   []byte
 
+	// If AllowClients set, only deliver to clients in the client allow list.
+	// For use with the OnMessage event hook.
+	AllowClients []string
+
 	ReturnCodes []byte // Suback
 }
 
