@@ -36,6 +36,15 @@ func setupClient() (s *Server, cl *clients.Client, r net.Conn, w net.Conn) {
 	return
 }
 
+func setupServerClient(s *Server) (cl *clients.Client, r net.Conn, w net.Conn) {
+	r, w = net.Pipe()
+	cl = clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
+	cl.ID = "mochi"
+	cl.AC = new(auth.Allow)
+	cl.Start()
+	return
+}
+
 func TestNew(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
@@ -558,7 +567,7 @@ func TestServerProcessPublishQoS1Retain(t *testing.T) {
 	cl1.ID = "mochi1"
 	s.Clients.Add(cl1)
 
-	_, cl2, r2, w2 := setupClient()
+	cl2, r2, w2 := setupServerClient(s)
 	cl2.ID = "mochi2"
 	s.Clients.Add(cl2)
 
@@ -687,7 +696,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	s.Clients.Add(cl1)
 
 	// Start and stop the receiver client
-	_, cl2, _, _ := setupClient()
+	cl2, _, _ := setupServerClient(s)
 	cl2.ID = "mochi2"
 	s.Clients.Add(cl2)
 	s.Topics.Subscribe("qos0", cl2.ID, 0)
@@ -1443,7 +1452,7 @@ func TestServerCloseClientLWT(t *testing.T) {
 	}
 	s.Clients.Add(cl1)
 
-	_, cl2, r2, w2 := setupClient()
+	cl2, r2, w2 := setupServerClient(s)
 	cl2.ID = "mochi2"
 	s.Clients.Add(cl2)
 
