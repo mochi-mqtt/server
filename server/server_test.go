@@ -1080,6 +1080,86 @@ func TestServerProcessPublishHookOnMessageModifyError(t *testing.T) {
 	require.Equal(t, int64(14), s.System.BytesSent)
 }
 
+func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
+	s, cl1, r1, w1 := setupClient()
+	cl1.ID = "allowed"
+	s.Clients.Add(cl1)
+	s.Topics.Subscribe("a/b/c", cl1.ID, 0)
+
+	cl2, r2, w2 := setupServerClient(s)
+	cl2.ID = "not_allowed"
+	s.Clients.Add(cl2)
+	s.Topics.Subscribe("a/b/c", cl2.ID, 0)
+	s.Topics.Subscribe("d/e/f", cl2.ID, 0)
+
+	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
+		hookedPacket := pk
+		if pk.TopicName == "a/b/c" {
+			hookedPacket.AllowClients = []string{"allowed"}
+		}
+		return hookedPacket, nil
+	}
+
+	ack1 := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r1)
+		if err != nil {
+			panic(err)
+		}
+		ack1 <- buf
+	}()
+
+	ack2 := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r2)
+		if err != nil {
+			panic(err)
+		}
+		ack2 <- buf
+	}()
+
+	pk1 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+	}
+	err := s.processPacket(cl1, pk1)
+	require.NoError(t, err)
+
+	pk2 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "d/e/f",
+		Payload:   []byte("a"),
+	}
+	err = s.processPacket(cl1, pk2)
+	require.NoError(t, err)
+
+	time.Sleep(10 * time.Millisecond)
+
+	w1.Close()
+	w2.Close()
+
+	require.Equal(t, []byte{
+		byte(packets.Publish << 4), 12,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		'h', 'e', 'l', 'l', 'o',
+	}, <-ack1)
+
+	require.Equal(t, []byte{
+		byte(packets.Publish << 4), 8,
+		0, 5,
+		'd', '/', 'e', '/', 'f',
+		'a',
+	}, <-ack2)
+
+	require.Equal(t, int64(24), s.System.BytesSent)
+}
+
 func TestServerProcessPuback(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
