@@ -63,10 +63,11 @@ func (l *TCP) Listen(s *system.Info) error {
 	var err error
 
 	if l.config.TLS != nil && len(l.config.TLS.Certificate) > 0 && len(l.config.TLS.PrivateKey) > 0 {
-		cert, err := tls.X509KeyPair(l.config.TLS.Certificate, l.config.TLS.PrivateKey)
-		if err != nil {
-			return err
+		cert, e := tls.X509KeyPair(l.config.TLS.Certificate, l.config.TLS.PrivateKey)
+		if e != nil {
+			return e
 		}
+
 		l.listen, err = tls.Listen(l.protocol, l.address, &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		})
