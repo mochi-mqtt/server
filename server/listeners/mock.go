@@ -44,11 +44,8 @@ func (l *MockListener) Serve(establisher EstablishFunc) {
 	l.Lock()
 	l.Serving = true
 	l.Unlock()
-	for {
-		select {
-		case <-l.done:
-			return
-		}
+	for range l.done {
+		return
 	}
 }
 

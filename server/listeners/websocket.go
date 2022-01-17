@@ -17,12 +17,13 @@ import (
 )
 
 var (
-	ErrInvalidMessage = errors.New("Message type not binary")
+	ErrInvalidMessage = errors.New("message type not binary")
 
 	// wsUpgrader is used to upgrade the incoming http/tcp connection to a
 	// websocket compliant connection.
 	wsUpgrader = &websocket.Upgrader{
 		Subprotocols: []string{"mqtt"},
+		CheckOrigin:  func(r *http.Request) bool { return true },
 	}
 )
 
