@@ -259,6 +259,10 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		})
 	}
 
+	if s.Events.OnConnect != nil {
+		s.Events.OnConnect(events.FromClient(cl), events.Packet(pk))
+	}
+
 	err = cl.Read(s.processPacket)
 	if err != nil {
 		s.closeClient(cl, true)
