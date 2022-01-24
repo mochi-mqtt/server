@@ -44,6 +44,16 @@ func main() {
 		}
 	}()
 
+	// Add OnConnect Event Hook
+	server.Events.OnConnect = func(cl events.Client, pk events.Packet) {
+		fmt.Printf("<< OnConnect client connected %s: %+v\n", cl.ID, pk)
+	}
+
+	// Add OnDisconnect Event Hook
+	server.Events.OnDisconnect = func(cl events.Client, err error) {
+		fmt.Printf("<< OnDisconnect client dicconnected %s: %v\n", cl.ID, err)
+	}
+
 	// Add OnMessage Event Hook
 	server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.Packet, err error) {
 		pkx = pk
