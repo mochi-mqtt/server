@@ -6,9 +6,9 @@ import (
 )
 
 type Events struct {
-	OnMessage // published message receieved.
 	OnMessage    // published message receieved.
 	OnConnect    // client connected.
+	OnDisconnect // client disconnected.
 }
 
 type Packet packets.Packet
@@ -39,3 +39,8 @@ type OnMessage func(Client, Packet) (Packet, error)
 
 // OnConnect is called when a client successfully connects to the broker.
 type OnConnect func(Client, Packet)
+
+// OnDisconnect is called when a client disconnects to the broker. An error value
+// is passed to the function if the client disconnected abnormally, otherwise it
+// will be nil on a normal disconnect.
+type OnDisconnect func(Client, error)
