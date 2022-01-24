@@ -274,6 +274,10 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	atomic.AddInt64(&s.System.ClientsConnected, -1)
 	atomic.AddInt64(&s.System.ClientsDisconnected, 1)
 
+	if s.Events.OnDisconnect != nil {
+		s.Events.OnDisconnect(events.FromClient(cl), err)
+	}
+
 	return err
 }
 
