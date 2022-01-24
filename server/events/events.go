@@ -17,7 +17,7 @@ type Client struct {
 }
 
 // FromClient returns an event client from a client.
-func FromClient(cl clients.Client) Client {
+func FromClient(cl *clients.Client) Client {
 	return Client{
 		ID:       cl.ID,
 		Listener: cl.Listener,
