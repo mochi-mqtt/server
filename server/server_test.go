@@ -229,6 +229,203 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 	w.Close()
 }
 
+func TestServerEventOnConnect(t *testing.T) {
+	r, w := net.Pipe()
+	s, cl, _, _ := setupClient()
+	s.Clients.Add(cl)
+
+	var hookedClient events.Client
+	var hookedPacket events.Packet
+	s.Events.OnConnect = func(cl events.Client, pk events.Packet) {
+		hookedClient = cl
+		hookedPacket = pk
+	}
+
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
+	}()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 17, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			2,     // Packet Flags - clean session
+			0, 45, // Keepalive
+			0, 5, // Client ID - MSB+LSB
+			'm', 'o', 'c', 'h', 'i', // Client ID
+		})
+		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+	}()
+
+	// Receive the Connack
+	recv := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(w)
+		if err != nil {
+			panic(err)
+		}
+		recv <- buf
+	}()
+
+	clw, ok := s.Clients.Get("mochi")
+	require.Equal(t, true, ok)
+	clw.Stop()
+
+	errx := <-o
+	require.NoError(t, errx)
+	require.Equal(t, []byte{
+		byte(packets.Connack << 4), 2,
+		0, packets.Accepted,
+	}, <-recv)
+	require.Empty(t, clw.Subscriptions)
+
+	w.Close()
+
+	time.Sleep(10 * time.Millisecond)
+
+	require.Equal(t, events.Client{
+		ID:       "mochi",
+		Listener: "tcp",
+	}, hookedClient)
+
+	require.Equal(t, events.Packet(packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type:      packets.Connect,
+			Remaining: 17,
+		},
+		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
+		ProtocolVersion:  4,
+		CleanSession:     true,
+		Keepalive:        45,
+		ClientIdentifier: "mochi",
+	}), hookedPacket)
+
+}
+
+func TestServerEventOnDisconnect(t *testing.T) {
+	r, w := net.Pipe()
+	s, cl, _, _ := setupClient()
+	s.Clients.Add(cl)
+
+	var hookedClient events.Client
+	var hookedErr error
+	s.Events.OnDisconnect = func(cl events.Client, err error) {
+		hookedClient = cl
+		hookedErr = err
+	}
+
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
+	}()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 17, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			2,     // Packet Flags - clean session
+			0, 45, // Keepalive
+			0, 5, // Client ID - MSB+LSB
+			'm', 'o', 'c', 'h', 'i', // Client ID
+		})
+		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+	}()
+
+	// Receive the Connack
+	recv := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(w)
+		if err != nil {
+			panic(err)
+		}
+		recv <- buf
+	}()
+
+	clw, ok := s.Clients.Get("mochi")
+	require.Equal(t, true, ok)
+	clw.Stop()
+
+	errx := <-o
+	require.NoError(t, errx)
+
+	require.Equal(t, []byte{
+		byte(packets.Connack << 4), 2,
+		0, packets.Accepted,
+	}, <-recv)
+	require.Empty(t, clw.Subscriptions)
+
+	w.Close()
+
+	require.Equal(t, events.Client{
+		ID:       "mochi",
+		Listener: "tcp",
+	}, hookedClient)
+
+	require.Equal(t, nil, hookedErr)
+}
+
+func TestServerEventOnDisconnectOnError(t *testing.T) {
+	r, w := net.Pipe()
+	s, cl, _, _ := setupClient()
+	s.Clients.Add(cl)
+
+	var hookedClient events.Client
+	var hookedErr error
+	s.Events.OnDisconnect = func(cl events.Client, err error) {
+		hookedClient = cl
+		hookedErr = err
+	}
+
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
+	}()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 17, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			2,     // Packet Flags - clean session
+			0, 45, // Keepalive
+			0, 5, // Client ID - MSB+LSB
+			'm', 'o', 'c', 'h', 'i', // Client ID
+		})
+
+		w.Write([]byte{0, 0})
+	}()
+
+	// Receive the Connack
+	go func() {
+		_, err := ioutil.ReadAll(w)
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	clw, ok := s.Clients.Get("mochi")
+	require.Equal(t, true, ok)
+	clw.Stop()
+
+	errx := <-o
+	require.Error(t, errx)
+	require.Equal(t, "No valid packet available; 0", errx.Error())
+	fmt.Println(hookedErr)
+	require.Equal(t, errx, hookedErr)
+
+	require.Equal(t, events.Client{
+		ID:       "mochi",
+		Listener: "tcp",
+	}, hookedClient)
+
+}
+
 func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 	s := New()
 
@@ -440,6 +637,10 @@ func TestServerEstablishConnectionReadPacketErr(t *testing.T) {
 	time.Sleep(time.Millisecond)
 	r.Close()
 	require.Error(t, errx)
+}
+
+func TestServerOnDisconnectErr(t *testing.T) {
+
 }
 
 func TestServerWriteClient(t *testing.T) {
@@ -931,7 +1132,7 @@ func TestServerPublishInlineSysTopicError(t *testing.T) {
 	require.Equal(t, int64(0), s.System.BytesSent)
 }
 
-func TestServerProcessPublishHookOnMessage(t *testing.T) {
+func TestServerEventOnMessage(t *testing.T) {
 	s, cl1, r1, w1 := setupClient()
 	s.Clients.Add(cl1)
 	s.Topics.Subscribe("a/b/+", cl1.ID, 0)

@@ -25,9 +25,10 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 - Interfaces for Client Authentication and Topic access control.
 - Bolt-backed persistence and storage interfaces.
 - Directly Publishing from embedding service (`s.Publish(topic, message, retain)`).
-- Basic Event Hooks (currently `onMessage`)
+- Basic Event Hooks (currently `OnMessage`, `OnConnect`, `OnDisconnect`)
 
 #### Roadmap
+- Please open an issue to request new features or event hooks.
 - MQTT v5 compatibility?
 
 #### Using the Broker
@@ -105,8 +106,30 @@ err := server.AddListener(tcp, &listeners.Config{
 #### Event Hooks
 Some basic Event Hooks have been added, allowing you to call your own functions when certain events occur. The execution of the functions are blocking - if necessary, please handle goroutines within the embedding service.
 
+Working examples can be found in the `examples/events` folder. Please open an issue if there is a particular event hook you are interested in!
+
+##### OnConnect
+`server.Events.OnConnect` is called when a client successfully connects to the broker. The method receives the connect packet and the id and connection type for the client who connected.
+
+```go
+import "github.com/mochi-co/mqtt/server/events"
+
+server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.Packet, err error) {
+    fmt.Printf("<< OnConnect client connected %s: %+v\n", cl.ID, pk)
+}
+```
+
+##### OnDisconnect
+`server.Events.OnDisconnect` is called when a client disconnects to the broker. If the client disconnected abnormally, the reason is indicated in the `err` error parameter.
+
+```go
+server.Events.OnDisconnect = func(cl events.Client, err error) {
+    fmt.Printf("<< OnDisconnect client dicconnected %s: %v\n", cl.ID, err)
+}
+```
+
 ##### OnMessage
-`server.Events.OnMessage` is called when a Publish packet is received. The function receives the published message and information about the client who published it. This function will block message dispatching until it returns.
+`server.Events.OnMessage` is called when a Publish packet is received. The method receives the published message and information about the client who published it. 
 
 > This hook is only triggered when a message is received by clients. It is not triggered when using the direct `server.Publish` method.
 
@@ -126,7 +149,6 @@ server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.P
 
 The OnMessage hook can also be used to selectively only deliver messages to one or more clients based on their id, using the `AllowClients []string` field on the packet structure.  
 
-A working example can be found in the `examples/events` folder. Please open an issue if there is a particular event hook you are interested in!
 
 #### Direct Publishing
 When the broker is being embedded in a larger codebase, it can be useful to be able to publish messages directly to clients without having to implement a loopback TCP connection with an MQTT client. The `Publish` method allows you to inject publish messages directly into a queue to be delivered to any clients with matching topic filters. The `Retain` flag is supported.

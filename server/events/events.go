@@ -6,7 +6,9 @@ import (
 )
 
 type Events struct {
-	OnMessage // published message receieved.
+	OnMessage    // published message receieved.
+	OnConnect    // client connected.
+	OnDisconnect // client disconnected.
 }
 
 type Packet packets.Packet
@@ -17,7 +19,7 @@ type Client struct {
 }
 
 // FromClient returns an event client from a client.
-func FromClient(cl clients.Client) Client {
+func FromClient(cl *clients.Client) Client {
 	return Client{
 		ID:       cl.ID,
 		Listener: cl.Listener,
@@ -34,3 +36,11 @@ func FromClient(cl clients.Client) Client {
 // This function will block message dispatching until it returns. To minimise this,
 // have the function open a new goroutine on the embedding side.
 type OnMessage func(Client, Packet) (Packet, error)
+
+// OnConnect is called when a client successfully connects to the broker.
+type OnConnect func(Client, Packet)
+
+// OnDisconnect is called when a client disconnects to the broker. An error value
+// is passed to the function if the client disconnected abnormally, otherwise it
+// will be nil on a normal disconnect.
+type OnDisconnect func(Client, error)
