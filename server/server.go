@@ -208,7 +208,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	var sessionPresent bool
 	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
 		existing.Lock()
-		if atomic.LoadInt64(&existing.State.Done) == 1 {
+		if atomic.LoadUint32(&existing.State.Done) == 1 {
 			atomic.AddInt64(&s.System.ClientsDisconnected, -1)
 		}
 		existing.Stop()

@@ -59,7 +59,7 @@ func TestWriteTo(t *testing.T) {
 		}()
 
 		time.Sleep(time.Millisecond * 100)
-		atomic.StoreInt64(&buf.done, 1)
+		atomic.StoreUint32(&buf.done, 1)
 		buf.wcond.L.Lock()
 		buf.wcond.Broadcast()
 		buf.wcond.L.Unlock()
