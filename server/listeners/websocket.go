@@ -162,8 +162,7 @@ func (l *Websocket) Close(closeClients CloseFunc) {
 	l.Lock()
 	defer l.Unlock()
 
-	if atomic.LoadUint32(&l.end) == 0 {
-		atomic.StoreUint32(&l.end, 1)
+	if atomic.CompareAndSwapUint32(&l.end, 0, 1) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		l.listen.Shutdown(ctx)
