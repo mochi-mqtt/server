@@ -192,7 +192,7 @@ func BenchmarkFixedHeaderDecode(b *testing.B) {
 
 func TestEncodeLength(t *testing.T) {
 	tt := []struct {
-		have int
+		have int64
 		want []byte
 	}{
 		{

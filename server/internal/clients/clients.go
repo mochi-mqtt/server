@@ -74,7 +74,7 @@ func (cl *Clients) GetByListener(id string) []*Client {
 	clients := make([]*Client, 0, cl.Len())
 	cl.RLock()
 	for _, v := range cl.internal {
-		if v.Listener == id && atomic.LoadInt64(&v.State.Done) == 0 {
+		if v.Listener == id && atomic.LoadUint32(&v.State.Done) == 0 {
 			clients = append(clients, v)
 		}
 	}
@@ -104,7 +104,7 @@ type Client struct {
 
 // State tracks the state of the client.
 type State struct {
-	Done    int64           // atomic counter which indicates that the client has closed.
+	Done    uint32          // atomic counter which indicates that the client has closed.
 	started *sync.WaitGroup // tracks the goroutines which have been started.
 	endedW  *sync.WaitGroup // tracks when the writer has ended.
 	endedR  *sync.WaitGroup // tracks when the reader has ended.
@@ -240,7 +240,7 @@ func (cl *Client) Start() {
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
 func (cl *Client) Stop() {
-	if atomic.LoadInt64(&cl.State.Done) == 1 {
+	if atomic.LoadUint32(&cl.State.Done) == 1 {
 		return
 	}
 
@@ -252,7 +252,7 @@ func (cl *Client) Stop() {
 		cl.conn.Close()
 
 		cl.State.endedR.Wait()
-		atomic.StoreInt64(&cl.State.Done, 1)
+		atomic.StoreUint32(&cl.State.Done, 1)
 	})
 }
 
@@ -309,7 +309,7 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 // an error is encountered (or the connection is closed).
 func (cl *Client) Read(packetHandler func(*Client, packets.Packet) error) error {
 	for {
-		if atomic.LoadInt64(&cl.State.Done) == 1 && cl.r.CapDelta() == 0 {
+		if atomic.LoadUint32(&cl.State.Done) == 1 && cl.r.CapDelta() == 0 {
 			return nil
 		}
 
@@ -391,7 +391,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 
 // WritePacket encodes and writes a packet to the client.
 func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
-	if atomic.LoadInt64(&cl.State.Done) == 1 {
+	if atomic.LoadUint32(&cl.State.Done) == 1 {
 		return 0, ErrConnectionClosed
 	}
 

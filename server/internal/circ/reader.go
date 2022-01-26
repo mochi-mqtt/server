@@ -32,10 +32,10 @@ func NewReaderFromSlice(block int, p []byte) *Reader {
 // ReadFrom reads bytes from an io.Reader and commits them to the buffer when
 // there is sufficient capacity to do so.
 func (b *Reader) ReadFrom(r io.Reader) (total int64, err error) {
-	atomic.StoreInt64(&b.State, 1)
-	defer atomic.StoreInt64(&b.State, 0)
+	atomic.StoreUint32(&b.State, 1)
+	defer atomic.StoreUint32(&b.State, 0)
 	for {
-		if atomic.LoadInt64(&b.done) == 1 {
+		if atomic.LoadUint32(&b.done) == 1 {
 			return total, nil
 		}
 

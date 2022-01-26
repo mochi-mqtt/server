@@ -316,8 +316,8 @@ func TestClientStart(t *testing.T) {
 	cl.Start()
 	defer cl.Stop()
 	time.Sleep(time.Millisecond)
-	require.Equal(t, int64(1), atomic.LoadInt64(&cl.r.State))
-	require.Equal(t, int64(2), atomic.LoadInt64(&cl.w.State))
+	require.Equal(t, uint32(1), atomic.LoadUint32(&cl.r.State))
+	require.Equal(t, uint32(2), atomic.LoadUint32(&cl.w.State))
 }
 
 func BenchmarkClientStart(b *testing.B) {
