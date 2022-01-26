@@ -32,10 +32,10 @@ func NewWriterFromSlice(block int, p []byte) *Writer {
 
 // WriteTo writes the contents of the buffer to an io.Writer.
 func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
-	atomic.StoreInt64(&b.State, 2)
-	defer atomic.StoreInt64(&b.State, 0)
+	atomic.StoreUint32(&b.State, 2)
+	defer atomic.StoreUint32(&b.State, 0)
 	for {
-		if atomic.LoadInt64(&b.done) == 1 && b.CapDelta() == 0 {
+		if atomic.LoadUint32(&b.done) == 1 && b.CapDelta() == 0 {
 			return total, io.EOF
 		}
 

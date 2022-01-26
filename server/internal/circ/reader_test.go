@@ -60,7 +60,7 @@ func TestReadFromWrap(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond * 100)
 	go func() {
-		atomic.StoreInt64(&buf.done, 1)
+		atomic.StoreUint32(&buf.done, 1)
 		buf.rcond.L.Lock()
 		buf.rcond.Broadcast()
 		buf.rcond.L.Unlock()
@@ -116,7 +116,7 @@ func TestReadEnded(t *testing.T) {
 		o <- err
 	}()
 	time.Sleep(time.Millisecond)
-	atomic.StoreInt64(&buf.done, 1)
+	atomic.StoreUint32(&buf.done, 1)
 	buf.wcond.L.Lock()
 	buf.wcond.Broadcast()
 	buf.wcond.L.Unlock()

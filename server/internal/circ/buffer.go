@@ -24,12 +24,13 @@ type Buffer struct {
 	block int          // the size of the R/W block.
 	buf   []byte       // the bytes buffer.
 	tmp   []byte       // a temporary buffer.
+	_     int32        // align the next fields to an 8-byte boundary for atomic access.
 	head  int64        // the current position in the sequence - a forever increasing index.
 	tail  int64        // the committed position in the sequence - a forever increasing index.
 	rcond *sync.Cond   // the sync condition for the buffer reader.
 	wcond *sync.Cond   // the sync condition for the buffer writer.
-	done  int64        // indicates that the buffer is closed.
-	State int64        // indicates whether the buffer is reading from (1) or writing to (2).
+	done  uint32       // indicates that the buffer is closed.
+	State uint32       // indicates whether the buffer is reading from (1) or writing to (2).
 }
 
 // NewBuffer returns a new instance of buffer. You should call NewReader or
@@ -127,7 +128,7 @@ func (b *Buffer) awaitEmpty(n int) error {
 	// then wait until tail has moved.
 	b.rcond.L.Lock()
 	for !b.checkEmpty(n) {
-		if atomic.LoadInt64(&b.done) == 1 {
+		if atomic.LoadUint32(&b.done) == 1 {
 			b.rcond.L.Unlock()
 			return io.EOF
 		}
@@ -146,7 +147,7 @@ func (b *Buffer) awaitFilled(n int) error {
 	// the forever-incrementing tail and head integers.
 	b.wcond.L.Lock()
 	for !b.checkFilled(n) {
-		if atomic.LoadInt64(&b.done) == 1 {
+		if atomic.LoadUint32(&b.done) == 1 {
 			b.wcond.L.Unlock()
 			return io.EOF
 		}
@@ -196,7 +197,7 @@ func (b *Buffer) CapDelta() int {
 
 // Stop signals the buffer to stop processing.
 func (b *Buffer) Stop() {
-	atomic.StoreInt64(&b.done, 1)
+	atomic.StoreUint32(&b.done, 1)
 	b.rcond.L.Lock()
 	b.rcond.Broadcast()
 	b.rcond.L.Unlock()

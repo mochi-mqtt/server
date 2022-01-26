@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
 )
@@ -48,6 +49,18 @@ func TestNewBufferFromSlice0Size(t *testing.T) {
 	buf := NewBufferFromSlice(0, b.Get())
 	require.NotNil(t, buf.buf)
 	require.Equal(t, 256, cap(buf.buf))
+}
+
+func TestAtomicAlignment(t *testing.T) {
+	var b Buffer
+
+	offset := unsafe.Offsetof(b.head)
+	require.Equalf(t, uintptr(0), offset%8,
+		"head requires 64-bit alignment for atomic: offset %d", offset)
+
+	offset = unsafe.Offsetof(b.tail)
+	require.Equalf(t, uintptr(0), offset%8,
+		"tail requires 64-bit alignment for atomic: offset %d", offset)
 }
 
 func TestGetPos(t *testing.T) {
@@ -140,7 +153,7 @@ func TestAwaitFilledEnded(t *testing.T) {
 		o <- buf.awaitFilled(4)
 	}()
 	time.Sleep(time.Millisecond)
-	atomic.StoreInt64(&buf.done, 1)
+	atomic.StoreUint32(&buf.done, 1)
 	buf.wcond.L.Lock()
 	buf.wcond.Broadcast()
 	buf.wcond.L.Unlock()
@@ -190,7 +203,7 @@ func TestAwaitEmptyEnded(t *testing.T) {
 		o <- buf.awaitEmpty(4)
 	}()
 	time.Sleep(time.Millisecond)
-	atomic.StoreInt64(&buf.done, 1)
+	atomic.StoreUint32(&buf.done, 1)
 	buf.rcond.L.Lock()
 	buf.rcond.Broadcast()
 	buf.rcond.L.Unlock()
@@ -280,7 +293,7 @@ func TestCommitTailEnded(t *testing.T) {
 		o <- buf.CommitTail(5)
 	}()
 	time.Sleep(time.Millisecond)
-	atomic.StoreInt64(&buf.done, 1)
+	atomic.StoreUint32(&buf.done, 1)
 	buf.wcond.L.Lock()
 	buf.wcond.Broadcast()
 	buf.wcond.L.Unlock()
@@ -300,5 +313,5 @@ func TestCapDelta(t *testing.T) {
 func TestStop(t *testing.T) {
 	buf := NewBuffer(16, 4)
 	buf.Stop()
-	require.Equal(t, int64(1), buf.done)
+	require.Equal(t, uint32(1), buf.done)
 }
