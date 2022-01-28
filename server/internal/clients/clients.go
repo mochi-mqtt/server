@@ -119,7 +119,7 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Clie
 		w:          w,
 		systemInfo: s,
 		keepalive:  defaultKeepalive,
-		Inflight: Inflight{
+		Inflight: &Inflight{
 			internal: make(map[uint16]InflightMessage),
 		},
 		Subscriptions: make(map[string]byte),
@@ -139,7 +139,7 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Clie
 // method is typically called by the persistence restoration system.
 func NewClientStub(s *system.Info) *Client {
 	return &Client{
-		Inflight: Inflight{
+		Inflight: &Inflight{
 			internal: make(map[uint16]InflightMessage),
 		},
 		Subscriptions: make(map[string]byte),
