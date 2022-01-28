@@ -221,7 +221,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 				}
 			}
 		} else {
-			cl.Inflight = existing.Inflight // Inherit from existing session.
+			cl.Inflight = existing.Inflight // Take address of existing session.
 			cl.Subscriptions = existing.Subscriptions
 			sessionPresent = true
 		}
