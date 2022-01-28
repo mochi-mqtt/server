@@ -46,7 +46,7 @@ func NewBuffer(size, block int) *Buffer {
 		size = 2 * block
 	}
 
-	return Buffer{
+	return &Buffer{
 		size:  size,
 		mask:  size - 1,
 		block: block,
@@ -58,14 +58,14 @@ func NewBuffer(size, block int) *Buffer {
 
 // NewBufferFromSlice returns a new instance of buffer using a
 // pre-existing byte slice.
-func NewBufferFromSlice(block int, buf []byte) Buffer {
+func NewBufferFromSlice(block int, buf []byte) *Buffer {
 	l := len(buf)
 
 	if block == 0 {
 		block = DefaultBlockSize
 	}
 
-	b := Buffer{
+	b := &Buffer{
 		size:  l,
 		mask:  l - 1,
 		block: block,

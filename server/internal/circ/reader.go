@@ -7,7 +7,7 @@ import (
 
 // Reader is a circular buffer for reading data from an io.Reader.
 type Reader struct {
-	Buffer
+	*Buffer
 }
 
 // NewReader returns a new Circular Reader.

@@ -1,14 +1,14 @@
 package circ
 
 import (
-	"fmt"
 	"io"
+	"log"
 	"sync/atomic"
 )
 
 // Writer is a circular buffer for writing data to an io.Writer.
 type Writer struct {
-	Buffer
+	*Buffer
 }
 
 // NewWriter returns a pointer to a new Circular Writer.
@@ -31,7 +31,7 @@ func NewWriterFromSlice(block int, p []byte) *Writer {
 }
 
 // WriteTo writes the contents of the buffer to an io.Writer.
-func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
+func (b *Writer) WriteTo(w io.Writer) (total int64, err error) {
 	atomic.StoreUint32(&b.State, 2)
 	defer atomic.StoreUint32(&b.State, 0)
 	for {
@@ -59,14 +59,12 @@ func (b *Writer) WriteTo(w io.Writer) (total int, err error) {
 			p = append(p, b.buf[rTail:rHead]...)
 		}
 
-		//fmt.Println("writing", p)
 		n, err = w.Write(p)
-		total += n
+		total += int64(n)
 		if err != nil {
-			fmt.Println("writing err", err)
+			log.Println("error writing to buffer io.Writer;", err)
 			return
 		}
-		//fmt.Println("written", n)
 
 		// Move the tail forward the bytes written and broadcast change.
 		atomic.StoreInt64(&b.tail, tail+int64(n))
