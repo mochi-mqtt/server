@@ -31,11 +31,11 @@ var (
 type Websocket struct {
 	sync.RWMutex
 	id        string        // the internal id of the listener.
-	config    *Config       // configuration values for the listener.
 	address   string        // the network address to bind to.
+	config    *Config       // configuration values for the listener.
 	listen    *http.Server  // an http server for serving websocket connections.
-	end       uint32        // ensure the close methods are only called once.
 	establish EstablishFunc // the server's establish conection handler.
+	end       uint32        // ensure the close methods are only called once.
 }
 
 // wsConn is a websocket connection which satisfies the net.Conn interface.

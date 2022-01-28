@@ -18,9 +18,9 @@ import (
 type HTTPStats struct {
 	sync.RWMutex
 	id      string       // the internal id of the listener.
+	address string       // the network address to bind to.
 	config  *Config      // configuration values for the listener.
 	system  *system.Info // pointers to the server data.
-	address string       // the network address to bind to.
 	listen  *http.Server // the http server.
 	end     uint32       // ensure the close methods are only called once.}
 }

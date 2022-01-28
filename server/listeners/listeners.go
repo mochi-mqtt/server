@@ -38,10 +38,10 @@ type Listener interface {
 
 // Listeners contains the network listeners for the broker.
 type Listeners struct {
-	sync.RWMutex
 	wg       sync.WaitGroup      // a waitgroup that waits for all listeners to finish.
 	internal map[string]Listener // a map of active listeners.
 	system   *system.Info        // pointers to system info.
+	sync.RWMutex
 }
 
 // New returns a new instance of Listeners.
