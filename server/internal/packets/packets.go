@@ -76,44 +76,31 @@ var (
 // packet structs, this is a single concrete packet type to cover all packet
 // types, which allows us to take advantage of various compiler optimizations.
 type Packet struct {
-	FixedHeader FixedHeader
-
-	PacketID uint16
-
-	// Connect
+	FixedHeader      FixedHeader
+	AllowClients     []string // For use with OnMessage event hook.
+	Topics           []string
+	ReturnCodes      []byte
 	ProtocolName     []byte
+	Qoss             []byte
+	Payload          []byte
+	Username         []byte
+	Password         []byte
+	WillMessage      []byte
+	ClientIdentifier string
+	TopicName        string
+	WillTopic        string
+	PacketID         uint16
+	Keepalive        uint16
+	ReturnCode       byte
 	ProtocolVersion  byte
+	WillQos          byte
+	ReservedBit      byte
 	CleanSession     bool
 	WillFlag         bool
-	WillQos          byte
 	WillRetain       bool
 	UsernameFlag     bool
 	PasswordFlag     bool
-	ReservedBit      byte
-	Keepalive        uint16
-	ClientIdentifier string
-	WillTopic        string
-	WillMessage      []byte
-	Username         []byte
-	Password         []byte
-
-	// Connack
-	SessionPresent bool
-	ReturnCode     byte
-
-	// Publish
-	TopicName string
-	Payload   []byte
-
-	// Subscribe, Unsubscribe
-	Topics []string
-	Qoss   []byte
-
-	// If AllowClients set, only deliver to clients in the client allow list.
-	// For use with the OnMessage event hook.
-	AllowClients []string
-
-	ReturnCodes []byte // Suback
+	SessionPresent   bool
 }
 
 // ConnectEncode encodes a connect packet.

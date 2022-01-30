@@ -53,50 +53,50 @@ type Subscription struct {
 
 // Message contains the details of a retained or inflight message.
 type Message struct {
-	ID          string      // the storage key.
-	T           string      // the type of the stored data.
-	Client      string      // the id of the client who sent the message (if inflight).
-	FixedHeader FixedHeader // the header properties of the message.
-	PacketID    uint16      // the unique id of the packet (if inflight).
-	TopicName   string      // the topic the message was sent to (if retained).
 	Payload     []byte      // the message payload (if retained).
+	FixedHeader FixedHeader // the header properties of the message.
+	T           string      // the type of the stored data.
+	ID          string      // the storage key.
+	Client      string      // the id of the client who sent the message (if inflight).
+	TopicName   string      // the topic the message was sent to (if retained).
 	Sent        int64       // the last time the message was sent (for retries) in unixtime (if inflight).
 	Resends     int         // the number of times the message was attempted to be sent (if inflight).
+	PacketID    uint16      // the unique id of the packet (if inflight).
 }
 
 // FixedHeader contains the fixed header properties of a message.
 type FixedHeader struct {
-	Type      byte // the type of the packet (PUBLISH, SUBSCRIBE, etc) from bits 7 - 4 (byte 1).
-	Dup       bool // indicates if the packet was already sent at an earlier time.
-	Qos       byte // indicates the quality of service expected.
-	Retain    bool // whether the message should be retained.
 	Remaining int  // the number of remaining bytes in the payload.
+	Type      byte // the type of the packet (PUBLISH, SUBSCRIBE, etc) from bits 7 - 4 (byte 1).
+	Qos       byte // indicates the quality of service expected.
+	Dup       bool // indicates if the packet was already sent at an earlier time.
+	Retain    bool // whether the message should be retained.
 }
 
 // Client contains client data that can be persistently stored.
 type Client struct {
+	LWT      LWT    // the last-will-and-testament message for the client.
+	Username []byte // the username the client authenticated with.
 	ID       string // the storage key.
 	ClientID string // the id of the client.
 	T        string // the type of the stored data.
 	Listener string // the last known listener id for the client
-	Username []byte // the username the client authenticated with.
-	LWT      LWT    // the last-will-and-testament message for the client.
 }
 
 // LWT contains details about a clients LWT payload.
 type LWT struct {
-	Topic   string // the topic the will message shall be sent to.
 	Message []byte // the message that shall be sent when the client disconnects.
+	Topic   string // the topic the will message shall be sent to.
 	Qos     byte   // the quality of service desired.
 	Retain  bool   // indicates whether the will message should be retained
 }
 
 // MockStore is a mock storage backend for testing.
 type MockStore struct {
+	Fail     map[string]bool // issue errors for different methods.
 	FailOpen bool            // error on open.
 	Closed   bool            // indicate mock store is closed.
 	Opened   bool            // indicate mock store is open.
-	Fail     map[string]bool // issue errors for different methods.
 }
 
 // Open opens the storage instance.

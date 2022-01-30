@@ -18,130 +18,130 @@ type fixedHeaderTable struct {
 var fixedHeaderExpected = []fixedHeaderTable{
 	{
 		rawBytes: []byte{Connect << 4, 0x00},
-		header:   FixedHeader{Connect, false, 0, false, 0}, // Type byte, Dup bool, Qos byte, Retain bool, Remaining int
+		header:   FixedHeader{Type: Connect, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Connack << 4, 0x00},
-		header:   FixedHeader{Connack, false, 0, false, 0},
+		header:   FixedHeader{Type: Connack, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Publish << 4, 0x00},
-		header:   FixedHeader{Publish, false, 0, false, 0},
+		header:   FixedHeader{Type: Publish, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Publish<<4 | 1<<1, 0x00},
-		header:   FixedHeader{Publish, false, 1, false, 0},
+		header:   FixedHeader{Type: Publish, Dup: false, Qos: 1, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Publish<<4 | 1<<1 | 1, 0x00},
-		header:   FixedHeader{Publish, false, 1, true, 0},
+		header:   FixedHeader{Type: Publish, Dup: false, Qos: 1, Retain: true, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Publish<<4 | 2<<1, 0x00},
-		header:   FixedHeader{Publish, false, 2, false, 0},
+		header:   FixedHeader{Type: Publish, Dup: false, Qos: 2, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Publish<<4 | 2<<1 | 1, 0x00},
-		header:   FixedHeader{Publish, false, 2, true, 0},
+		header:   FixedHeader{Type: Publish, Dup: false, Qos: 2, Retain: true, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Publish<<4 | 1<<3, 0x00},
-		header:   FixedHeader{Publish, true, 0, false, 0},
+		header:   FixedHeader{Type: Publish, Dup: true, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Publish<<4 | 1<<3 | 1, 0x00},
-		header:   FixedHeader{Publish, true, 0, true, 0},
+		header:   FixedHeader{Type: Publish, Dup: true, Qos: 0, Retain: true, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Publish<<4 | 1<<3 | 1<<1 | 1, 0x00},
-		header:   FixedHeader{Publish, true, 1, true, 0},
+		header:   FixedHeader{Type: Publish, Dup: true, Qos: 1, Retain: true, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Publish<<4 | 1<<3 | 2<<1 | 1, 0x00},
-		header:   FixedHeader{Publish, true, 2, true, 0},
+		header:   FixedHeader{Type: Publish, Dup: true, Qos: 2, Retain: true, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Puback << 4, 0x00},
-		header:   FixedHeader{Puback, false, 0, false, 0},
+		header:   FixedHeader{Type: Puback, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Pubrec << 4, 0x00},
-		header:   FixedHeader{Pubrec, false, 0, false, 0},
+		header:   FixedHeader{Type: Pubrec, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Pubrel<<4 | 1<<1, 0x00},
-		header:   FixedHeader{Pubrel, false, 1, false, 0},
+		header:   FixedHeader{Type: Pubrel, Dup: false, Qos: 1, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Pubcomp << 4, 0x00},
-		header:   FixedHeader{Pubcomp, false, 0, false, 0},
+		header:   FixedHeader{Type: Pubcomp, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Subscribe<<4 | 1<<1, 0x00},
-		header:   FixedHeader{Subscribe, false, 1, false, 0},
+		header:   FixedHeader{Type: Subscribe, Dup: false, Qos: 1, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Suback << 4, 0x00},
-		header:   FixedHeader{Suback, false, 0, false, 0},
+		header:   FixedHeader{Type: Suback, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Unsubscribe<<4 | 1<<1, 0x00},
-		header:   FixedHeader{Unsubscribe, false, 1, false, 0},
+		header:   FixedHeader{Type: Unsubscribe, Dup: false, Qos: 1, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Unsuback << 4, 0x00},
-		header:   FixedHeader{Unsuback, false, 0, false, 0},
+		header:   FixedHeader{Type: Unsuback, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Pingreq << 4, 0x00},
-		header:   FixedHeader{Pingreq, false, 0, false, 0},
+		header:   FixedHeader{Type: Pingreq, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Pingresp << 4, 0x00},
-		header:   FixedHeader{Pingresp, false, 0, false, 0},
+		header:   FixedHeader{Type: Pingresp, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 	{
 		rawBytes: []byte{Disconnect << 4, 0x00},
-		header:   FixedHeader{Disconnect, false, 0, false, 0},
+		header:   FixedHeader{Type: Disconnect, Dup: false, Qos: 0, Retain: false, Remaining: 0},
 	},
 
 	// remaining length
 	{
 		rawBytes: []byte{Publish << 4, 0x0a},
-		header:   FixedHeader{Publish, false, 0, false, 10},
+		header:   FixedHeader{Type: Publish, Dup: false, Qos: 0, Retain: false, Remaining: 10},
 	},
 	{
 		rawBytes: []byte{Publish << 4, 0x80, 0x04},
-		header:   FixedHeader{Publish, false, 0, false, 512},
+		header:   FixedHeader{Type: Publish, Dup: false, Qos: 0, Retain: false, Remaining: 512},
 	},
 	{
 		rawBytes: []byte{Publish << 4, 0xd2, 0x07},
-		header:   FixedHeader{Publish, false, 0, false, 978},
+		header:   FixedHeader{Type: Publish, Dup: false, Qos: 0, Retain: false, Remaining: 978},
 	},
 	{
 		rawBytes: []byte{Publish << 4, 0x86, 0x9d, 0x01},
-		header:   FixedHeader{Publish, false, 0, false, 20102},
+		header:   FixedHeader{Type: Publish, Dup: false, Qos: 0, Retain: false, Remaining: 20102},
 	},
 	{
 		rawBytes:    []byte{Publish << 4, 0xd5, 0x86, 0xf9, 0x9e, 0x01},
-		header:      FixedHeader{Publish, false, 0, false, 333333333},
+		header:      FixedHeader{Type: Publish, Dup: false, Qos: 0, Retain: false, Remaining: 333333333},
 		packetError: true,
 	},
 
 	// Invalid flags for packet
 	{
 		rawBytes:  []byte{Connect<<4 | 1<<3, 0x00},
-		header:    FixedHeader{Connect, true, 0, false, 0},
+		header:    FixedHeader{Type: Connect, Dup: true, Qos: 0, Retain: false, Remaining: 0},
 		flagError: true,
 	},
 	{
 		rawBytes:  []byte{Connect<<4 | 1<<1, 0x00},
-		header:    FixedHeader{Connect, false, 1, false, 0},
+		header:    FixedHeader{Type: Connect, Dup: false, Qos: 1, Retain: false, Remaining: 0},
 		flagError: true,
 	},
 	{
 		rawBytes:  []byte{Connect<<4 | 1, 0x00},
-		header:    FixedHeader{Connect, false, 0, true, 0},
+		header:    FixedHeader{Type: Connect, Dup: false, Qos: 0, Retain: true, Remaining: 0},
 		flagError: true,
 	},
 }

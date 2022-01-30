@@ -175,12 +175,12 @@ func (x *Index) Messages(filter string) []packets.Packet {
 
 // Leaf is a child node on the tree.
 type Leaf struct {
+	Message packets.Packet   // a message which has been retained for a specific topic.
 	Key     string           // the key that was used to create the leaf.
+	Filter  string           // the path of the topic filter being matched.
 	Parent  *Leaf            // a pointer to the parent node for the leaf.
 	Leaves  map[string]*Leaf // a map of child nodes, keyed on particle id.
 	Clients map[string]byte  // a map of client ids subscribed to the topic.
-	Filter  string           // the path of the topic filter being matched.
-	Message packets.Packet   // a message which has been retained for a specific topic.
 }
 
 // scanSubscribers recursively steps through a branch of leaves finding clients who

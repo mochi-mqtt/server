@@ -52,7 +52,7 @@ func TestWriteTo(t *testing.T) {
 		var b bytes.Buffer
 		w := bufio.NewWriter(&b)
 
-		nc := make(chan int)
+		nc := make(chan int64)
 		go func() {
 			n, _ := buf.WriteTo(w)
 			nc <- n

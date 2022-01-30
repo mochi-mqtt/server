@@ -15,27 +15,25 @@ var (
 	ErrInsufficientBytes = errors.New("Insufficient bytes to return")
 )
 
-// buffer contains core values and methods to be included in a reader or writer.
 type Buffer struct {
-	Mu    sync.RWMutex // the buffer needs it's own mutex to work properly.
-	ID    string       // the identifier of the buffer. This is used in debug output.
-	size  int          // the size of the buffer.
-	mask  int          // a bitmask of the buffer size (size-1).
-	block int          // the size of the R/W block.
 	buf   []byte       // the bytes buffer.
 	tmp   []byte       // a temporary buffer.
-	_     int32        // align the next fields to an 8-byte boundary for atomic access.
+	Mu    sync.RWMutex // the buffer needs its own mutex to work properly.
+	ID    string       // the identifier of the buffer. This is used in debug output.
 	head  int64        // the current position in the sequence - a forever increasing index.
 	tail  int64        // the committed position in the sequence - a forever increasing index.
 	rcond *sync.Cond   // the sync condition for the buffer reader.
 	wcond *sync.Cond   // the sync condition for the buffer writer.
+	size  int          // the size of the buffer.
+	mask  int          // a bitmask of the buffer size (size-1).
+	block int          // the size of the R/W block.
 	done  uint32       // indicates that the buffer is closed.
 	State uint32       // indicates whether the buffer is reading from (1) or writing to (2).
 }
 
 // NewBuffer returns a new instance of buffer. You should call NewReader or
 // NewWriter instead of this function.
-func NewBuffer(size, block int) Buffer {
+func NewBuffer(size, block int) *Buffer {
 	if size == 0 {
 		size = DefaultBufferSize
 	}
@@ -48,7 +46,7 @@ func NewBuffer(size, block int) Buffer {
 		size = 2 * block
 	}
 
-	return Buffer{
+	return &Buffer{
 		size:  size,
 		mask:  size - 1,
 		block: block,
@@ -60,14 +58,14 @@ func NewBuffer(size, block int) Buffer {
 
 // NewBufferFromSlice returns a new instance of buffer using a
 // pre-existing byte slice.
-func NewBufferFromSlice(block int, buf []byte) Buffer {
+func NewBufferFromSlice(block int, buf []byte) *Buffer {
 	l := len(buf)
 
 	if block == 0 {
 		block = DefaultBlockSize
 	}
 
-	b := Buffer{
+	b := &Buffer{
 		size:  l,
 		mask:  l - 1,
 		block: block,

@@ -416,7 +416,7 @@ func TestServerEventOnDisconnectOnError(t *testing.T) {
 	errx := <-o
 	require.Error(t, errx)
 	require.Equal(t, "No valid packet available; 0", errx.Error())
-	fmt.Println(hookedErr)
+
 	require.Equal(t, errx, hookedErr)
 
 	require.Equal(t, events.Client{

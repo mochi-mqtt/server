@@ -84,30 +84,30 @@ func (cl *Clients) GetByListener(id string) []*Client {
 
 // Client contains information about a client known by the broker.
 type Client struct {
-	sync.RWMutex
+	State         State                // the operational state of the client.
+	LWT           LWT                  // the last will and testament for the client.
+	Inflight      *Inflight            // a map of in-flight qos messages.
+	sync.RWMutex                       // mutex
+	Username      []byte               // the username the client authenticated with.
+	AC            auth.Controller      // an auth controller inherited from the listener.
+	Listener      string               // the id of the listener the client is connected to.
+	ID            string               // the client id.
 	conn          net.Conn             // the net.Conn used to establish the connection.
 	r             *circ.Reader         // a reader for reading incoming bytes.
 	w             *circ.Writer         // a writer for writing outgoing bytes.
-	ID            string               // the client id.
-	AC            auth.Controller      // an auth controller inherited from the listener.
 	Subscriptions topics.Subscriptions // a map of the subscription filters a client maintains.
-	Listener      string               // the id of the listener the client is connected to.
-	Inflight      Inflight             // a map of in-flight qos messages.
-	Username      []byte               // the username the client authenticated with.
+	systemInfo    *system.Info         // pointers to server system info.
+	packetID      uint32               // the current highest packetID.
 	keepalive     uint16               // the number of seconds the connection can wait.
 	cleanSession  bool                 // indicates if the client expects a clean-session.
-	packetID      uint32               // the current highest packetID.
-	LWT           LWT                  // the last will and testament for the client.
-	State         State                // the operational state of the client.
-	systemInfo    *system.Info         // pointers to server system info.
 }
 
 // State tracks the state of the client.
 type State struct {
-	Done    uint32          // atomic counter which indicates that the client has closed.
 	started *sync.WaitGroup // tracks the goroutines which have been started.
 	endedW  *sync.WaitGroup // tracks when the writer has ended.
 	endedR  *sync.WaitGroup // tracks when the reader has ended.
+	Done    uint32          // atomic counter which indicates that the client has closed.
 	endOnce sync.Once       // only end once.
 }
 
@@ -119,7 +119,7 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Clie
 		w:          w,
 		systemInfo: s,
 		keepalive:  defaultKeepalive,
-		Inflight: Inflight{
+		Inflight: &Inflight{
 			internal: make(map[uint16]InflightMessage),
 		},
 		Subscriptions: make(map[string]byte),
@@ -139,7 +139,7 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Clie
 // method is typically called by the persistence restoration system.
 func NewClientStub(s *system.Info) *Client {
 	return &Client{
-		Inflight: Inflight{
+		Inflight: &Inflight{
 			internal: make(map[uint16]InflightMessage),
 		},
 		Subscriptions: make(map[string]byte),
@@ -454,8 +454,8 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 
 // LWT contains the last will and testament details for a client connection.
 type LWT struct {
-	Topic   string // the topic the will message shall be sent to.
 	Message []byte // the message that shall be sent when the client disconnects.
+	Topic   string // the topic the will message shall be sent to.
 	Qos     byte   // the quality of service desired.
 	Retain  bool   // indicates whether the will message should be retained
 }

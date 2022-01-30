@@ -14,10 +14,10 @@ import (
 type TCP struct {
 	sync.RWMutex
 	id       string       // the internal id of the listener.
-	config   *Config      // configuration values for the listener.
 	protocol string       // the TCP protocol to use.
 	address  string       // the network address to bind to.
 	listen   net.Listener // a net.Listener which will listen for new clients.
+	config   *Config      // configuration values for the listener.
 	end      uint32       // ensure the close methods are only called once.
 }
 

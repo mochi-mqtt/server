@@ -6,13 +6,13 @@ import (
 
 // BytesPool is a pool of []byte.
 type BytesPool struct {
-	pool sync.Pool
+	pool *sync.Pool
 }
 
 // NewBytesPool returns a sync.pool of []byte.
-func NewBytesPool(n int) BytesPool {
-	return BytesPool{
-		pool: sync.Pool{
+func NewBytesPool(n int) *BytesPool {
+	return &BytesPool{
+		pool: &sync.Pool{
 			New: func() interface{} {
 				return make([]byte, n)
 			},
