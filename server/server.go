@@ -45,16 +45,16 @@ var (
 // Server is an MQTT broker server. It should be created with server.New()
 // in order to ensure all the internal fields are correctly populated.
 type Server struct {
+	inline    inlineMessages       // channels for direct publishing.
+	Events    events.Events        // overrideable event hooks.
+	Store     persistence.Store    // a persistent storage backend if desired.
 	Listeners *listeners.Listeners // listeners are network interfaces which listen for new connections.
 	Clients   *clients.Clients     // clients which are known to the broker.
 	Topics    *topics.Index        // an index of topic filter subscriptions and retained messages.
 	System    *system.Info         // values about the server commonly found in $SYS topics.
-	Store     persistence.Store    // a persistent storage backend if desired.
-	done      chan bool            // indicate that the server is ending.
-	bytepool  circ.BytesPool       // a byte pool for incoming and outgoing packets.
+	bytepool  *circ.BytesPool      // a byte pool for incoming and outgoing packets.
 	sysTicker *time.Ticker         // the interval ticker for sending updating $SYS topics.
-	inline    inlineMessages       // channels for direct publishing.
-	Events    events.Events        // overrideable event hooks.
+	done      chan bool            // indicate that the server is ending.
 }
 
 // inlineMessages contains channels for handling inline (direct) publishing.
