@@ -8,7 +8,7 @@ import (
 
 func TestNewBytesPool(t *testing.T) {
 	bpool := NewBytesPool(256)
-	require.NotNil(t, &bpool.pool)
+	require.NotNil(t, bpool.pool)
 }
 
 func BenchmarkNewBytesPool(b *testing.B) {
