@@ -15,6 +15,14 @@ var (
 	ErrEmptyStruct = errors.New("the structure cannot be empty")
 )
 
+const (
+	KSubscription = "mqtt:" + persistence.KSubscription
+	KServerInfo   = "mqtt:" + persistence.KServerInfo
+	KRetained     = "mqtt:" + persistence.KRetained
+	KInflight     = "mqtt:" + persistence.KInflight
+	KClient       = "mqtt:" + persistence.KClient
+)
+
 type Store struct {
 	opts *redis.Options
 	db *redis.Client
@@ -64,7 +72,7 @@ func (s *Store) WriteServerInfo(v persistence.ServerInfo) error {
 		return ErrEmptyStruct
 	}
 	val, _ := json.Marshal(v)
-	return s.db.Set(context.Background(), persistence.KServerInfo, val, 0).Err()
+	return s.db.Set(context.Background(), KServerInfo, val, 0).Err()
 }
 
 // WriteSubscription writes a single subscription to the redis instance.
@@ -72,7 +80,7 @@ func (s *Store) WriteSubscription(v persistence.Subscription) error {
 	if v.ID == "" || v.Client == "" || v.Filter == "" {
 		return ErrEmptyStruct
 	}
-	return s.HSet(persistence.KSubscription, v.ID, v)
+	return s.HSet(KSubscription, v.ID, v)
 }
 
 // WriteInflight writes a single inflight message to the redis instance.
@@ -80,7 +88,7 @@ func (s *Store) WriteInflight(v persistence.Message) error {
 	if v.ID == "" || v.TopicName == "" {
 		return ErrEmptyStruct
 	}
-	return s.HSet(persistence.KInflight, v.ID, v)
+	return s.HSet(KInflight, v.ID, v)
 }
 
 // WriteRetained writes a single retained message to the redis instance.
@@ -88,7 +96,7 @@ func (s *Store) WriteRetained(v persistence.Message) error {
 	if v.ID == "" || v.TopicName == "" {
 		return ErrEmptyStruct
 	}
-	return s.HSet(persistence.KRetained, v.ID, v)
+	return s.HSet(KRetained, v.ID, v)
 }
 
 // WriteClient writes a single client to the redis instance.
@@ -96,7 +104,7 @@ func (s *Store) WriteClient(v persistence.Client) error {
 	if v.ClientID == "" {
 		return ErrEmptyStruct
 	}
-	return s.HSet(persistence.KClient, v.ID, v)
+	return s.HSet(KClient, v.ID, v)
 }
 
 func (s *Store ) Del(key, id string) error {
@@ -109,22 +117,22 @@ func (s *Store ) Del(key, id string) error {
 
 // DeleteSubscription deletes a subscription from the redis instance.
 func (s *Store) DeleteSubscription(id string) error {
-	return s.Del(persistence.KSubscription, id)
+	return s.Del(KSubscription, id)
 }
 
 // DeleteClient deletes a client from the redis instance.
 func (s *Store) DeleteClient(id string) error {
-	return s.Del(persistence.KClient, id)
+	return s.Del(KClient, id)
 }
 
 // DeleteInflight deletes an inflight message from the redis instance.
 func (s *Store) DeleteInflight(id string) error {
-	return s.Del(persistence.KInflight, id)
+	return s.Del(KInflight, id)
 }
 
 // DeleteRetained deletes a retained message from the redis instance.
 func (s *Store) DeleteRetained(id string) error {
-	return s.Del(persistence.KRetained, id)
+	return s.Del(KRetained, id)
 }
 
 // ReadSubscriptions loads all the subscriptions from the redis instance.
@@ -133,7 +141,7 @@ func (s *Store) ReadSubscriptions() (v []persistence.Subscription, err error) {
 		return v, ErrNotConnected
 	}
 
-	res, err := s.db.HGetAll(context.Background(), persistence.KSubscription).Result()
+	res, err := s.db.HGetAll(context.Background(), KSubscription).Result()
 	for _, val := range res {
 		sub := persistence.Subscription{}
 		json.Unmarshal([]byte(val), &sub)
@@ -149,7 +157,7 @@ func (s *Store) ReadClients() (v []persistence.Client, err error) {
 		return v, ErrNotConnected
 	}
 
-	res, err := s.db.HGetAll(context.Background(), persistence.KClient).Result()
+	res, err := s.db.HGetAll(context.Background(), KClient).Result()
 	for _, val := range res {
 		cli := persistence.Client{}
 		json.Unmarshal([]byte(val), &cli)
@@ -165,7 +173,7 @@ func (s *Store) ReadInflight() (v []persistence.Message, err error) {
 		return v, ErrNotConnected
 	}
 
-	res, err := s.db.HGetAll(context.Background(), persistence.KInflight).Result()
+	res, err := s.db.HGetAll(context.Background(), KInflight).Result()
 	for _, val := range res {
 		msg := persistence.Message{}
 		json.Unmarshal([]byte(val), &msg)
@@ -182,7 +190,7 @@ func (s *Store) ReadRetained() (v []persistence.Message, err error) {
 		return v, ErrNotConnected
 	}
 
-	res, err := s.db.HGetAll(context.Background(), persistence.KRetained).Result()
+	res, err := s.db.HGetAll(context.Background(), KRetained).Result()
 	for _, val := range res {
 		msg := persistence.Message{}
 		json.Unmarshal([]byte(val), &msg)
@@ -198,12 +206,11 @@ func (s *Store) ReadServerInfo() (v persistence.ServerInfo, err error) {
 		return v, ErrNotConnected
 	}
 
-	res, err := s.db.Get(context.Background(), persistence.KServerInfo).Result()
-	if res == "" {
-		return v, ErrNotFound
+	res, _ := s.db.Get(context.Background(), KServerInfo).Result()
+	if res != "" {
+		json.Unmarshal([]byte(res), &v)
 	}
 
-	json.Unmarshal([]byte(res), &v)
 	return
 }
 
