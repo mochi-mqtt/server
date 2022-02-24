@@ -36,9 +36,7 @@ func (x *Index) RetainMessage(msg packets.Packet) int64 {
 	defer x.mu.Unlock()
 	n := x.poperate(msg.TopicName)
 	if len(msg.Payload) > 0 {
-		if n.Message.FixedHeader.Retain == false {
-			q = 1
-		}
+		q = 1
 		n.Message = msg
 	} else {
 		if n.Message.FixedHeader.Retain == true {
