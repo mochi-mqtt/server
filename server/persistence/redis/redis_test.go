@@ -452,3 +452,4 @@ func TestDeleteRetainedFail(t *testing.T) {
 	err = s.DeleteRetained("a")
 	require.Error(t, err)
 }
+
