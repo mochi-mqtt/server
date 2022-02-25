@@ -734,7 +734,7 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 		if s.Store != nil {
 			s.Store.WriteInflight(persistence.Message{
 				ID:          "if_" + cl.ID + "_" + strconv.Itoa(int(tk.Packet.PacketID)),
-				T:           persistence.KInflight,
+				T:           persistence.KInflight, 
 				FixedHeader: persistence.FixedHeader(tk.Packet.FixedHeader),
 				TopicName:   tk.Packet.TopicName,
 				Payload:     tk.Packet.Payload,
