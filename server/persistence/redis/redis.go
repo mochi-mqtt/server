@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/mochi-co/mqtt/server/persistence"
 	"github.com/mochi-co/mqtt/server/system"
@@ -41,13 +42,10 @@ func New(opts *redis.Options) *Store {
 }
 
 func (s *Store) Open() error {
-	//if s.opts.Addr == "" {
-	//	return errors.New("addr cannot be empty")
-	//}
 	db := redis.NewClient(s.opts)
 	_, err := db.Ping(context.TODO()).Result()
 	if err != nil {
-		return err
+		fmt.Println("Redis connection not established: ", err)
 	}
 	s.db = db
 	return nil
@@ -141,7 +139,7 @@ func (s *Store) ReadSubscriptions() (v []persistence.Subscription, err error) {
 		return v, ErrNotConnected
 	}
 
-	res, err := s.db.HGetAll(context.Background(), KSubscription).Result()
+	res, _ := s.db.HGetAll(context.Background(), KSubscription).Result()
 	for _, val := range res {
 		sub := persistence.Subscription{}
 		json.Unmarshal([]byte(val), &sub)
@@ -156,8 +154,7 @@ func (s *Store) ReadClients() (v []persistence.Client, err error) {
 	if s.db == nil {
 		return v, ErrNotConnected
 	}
-
-	res, err := s.db.HGetAll(context.Background(), KClient).Result()
+	res, _ := s.db.HGetAll(context.Background(), KClient).Result()
 	for _, val := range res {
 		cli := persistence.Client{}
 		json.Unmarshal([]byte(val), &cli)
@@ -173,12 +170,11 @@ func (s *Store) ReadInflight() (v []persistence.Message, err error) {
 		return v, ErrNotConnected
 	}
 
-	res, err := s.db.HGetAll(context.Background(), KInflight).Result()
+	res, _ := s.db.HGetAll(context.Background(), KInflight).Result()
 	for _, val := range res {
 		msg := persistence.Message{}
 		json.Unmarshal([]byte(val), &msg)
 		v = append(v, msg)
-		//log.Printf("result %s, %v", k, msg)
 	}
 
 	return
@@ -190,7 +186,7 @@ func (s *Store) ReadRetained() (v []persistence.Message, err error) {
 		return v, ErrNotConnected
 	}
 
-	res, err := s.db.HGetAll(context.Background(), KRetained).Result()
+	res, _ := s.db.HGetAll(context.Background(), KRetained).Result()
 	for _, val := range res {
 		msg := persistence.Message{}
 		json.Unmarshal([]byte(val), &msg)
