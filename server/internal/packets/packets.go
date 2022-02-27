@@ -60,7 +60,6 @@ var (
 
 	// PACKETS
 	ErrProtocolViolation        = errors.New("protocol violation")
-	ErrOffsetStrOutOfRange      = errors.New("offset string out of range")
 	ErrOffsetBytesOutOfRange    = errors.New("offset bytes out of range")
 	ErrOffsetByteOutOfRange     = errors.New("offset byte out of range")
 	ErrOffsetBoolOutOfRange     = errors.New("offset bool out of range")

@@ -28,6 +28,10 @@ func decodeString(buf []byte, offset int) (string, int, error) {
 		return "", 0, err
 	}
 
+	if !validUTF8(b) {
+		return "", 0, ErrOffsetStrInvalidUTF8
+	}
+
 	return bytesToString(b), n, nil
 }
 
@@ -39,12 +43,10 @@ func decodeBytes(buf []byte, offset int) ([]byte, int, error) {
 	}
 
 	if next+int(length) > len(buf) {
-		return make([]byte, 0, 0), 0, ErrOffsetStrOutOfRange
+		return make([]byte, 0, 0), 0, ErrOffsetBytesOutOfRange
 	}
 
-	if !validUTF8(buf[next : next+int(length)]) {
-		return make([]byte, 0, 0), 0, ErrOffsetStrInvalidUTF8
-	}
+	// Note: there is no validUTF8() test for []byte payloads
 
 	return buf[next : next+int(length)], next + int(length), nil
 }
