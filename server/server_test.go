@@ -32,7 +32,7 @@ func setupClient() (s *Server, cl *clients.Client, r net.Conn, w net.Conn) {
 	s.Store = new(persistence.MockStore)
 	r, w = net.Pipe()
 	cl = clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
-	cl.ID = "mochi"
+	cl.SetID("mochi")
 	cl.AC = new(auth.Allow)
 	cl.Start()
 	return
@@ -41,7 +41,7 @@ func setupClient() (s *Server, cl *clients.Client, r net.Conn, w net.Conn) {
 func setupServerClient(s *Server) (cl *clients.Client, r net.Conn, w net.Conn) {
 	r, w = net.Pipe()
 	cl = clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
-	cl.ID = "mochi"
+	cl.SetID("mochi")
 	cl.AC = new(auth.Allow)
 	cl.Start()
 	return
@@ -179,12 +179,12 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 	// Existing connection with subscription.
 	c, _ := net.Pipe()
 	cl := clients.NewClient(c, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
-	cl.ID = "mochi"
+	cl.SetID("mochi")
 	cl.Subscriptions = map[string]byte{
 		"a/b/c": 1,
 	}
 	s.Clients.Add(cl)
-	s.Topics.Subscribe("a/b/c", cl.ID, 0)
+	s.Topics.Subscribe("a/b/c", cl.ID(), 0)
 
 	r, w := net.Pipe()
 	o := make(chan error)
@@ -218,10 +218,11 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.StopUnlocked(errTestStop)
+	// @@@ clw.StopUnlocked(errTestStop)
 
 	errx := <-o
 	require.NoError(t, errx)
+
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
 		0, packets.Accepted,
@@ -433,7 +434,7 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 
 	c, _ := net.Pipe()
 	cl := clients.NewClient(c, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
-	cl.ID = "mochi"
+	cl.SetID("mochi")
 	cl.Subscriptions = map[string]byte{
 		"a/b/c": 1,
 	}
@@ -647,7 +648,7 @@ func TestServerOnDisconnectErr(t *testing.T) {
 
 func TestServerWriteClient(t *testing.T) {
 	s, cl, r, w := setupClient()
-	cl.ID = "mochi"
+	cl.SetID("mochi")
 	defer cl.StopUnlocked(errTestStop)
 
 	err := s.writeClient(cl, packets.Packet{
@@ -680,7 +681,7 @@ func TestServerWriteClientError(t *testing.T) {
 	s := New()
 	w, _ := net.Pipe()
 	cl := clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
-	cl.ID = "mochi"
+	cl.SetID("mochi")
 
 	err := s.writeClient(cl, packets.Packet{})
 	require.Error(t, err)
@@ -767,15 +768,15 @@ func TestServerProcessPublishInvalid(t *testing.T) {
 
 func TestServerProcessPublishQoS1Retain(t *testing.T) {
 	s, cl1, r1, w1 := setupClient()
-	cl1.ID = "mochi1"
+	cl1.SetID("mochi1")
 	s.Clients.Add(cl1)
 
 	cl2, r2, w2 := setupServerClient(s)
-	cl2.ID = "mochi2"
+	cl2.SetID("mochi2")
 	s.Clients.Add(cl2)
 
-	s.Topics.Subscribe("a/b/+", cl2.ID, 0)
-	s.Topics.Subscribe("a/+/c", cl2.ID, 1)
+	s.Topics.Subscribe("a/b/+", cl2.ID(), 0)
+	s.Topics.Subscribe("a/+/c", cl2.ID(), 1)
 
 	ack1 := make(chan []byte)
 	go func() {
@@ -895,16 +896,16 @@ func TestServerProcessPublishUnretainByEmptyPayload(t *testing.T) {
 
 func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	s, cl1, r1, w1 := setupClient()
-	cl1.ID = "mochi1"
+	cl1.SetID("mochi1")
 	s.Clients.Add(cl1)
 
 	// Start and stop the receiver client
 	cl2, _, _ := setupServerClient(s)
-	cl2.ID = "mochi2"
+	cl2.SetID("mochi2")
 	s.Clients.Add(cl2)
-	s.Topics.Subscribe("qos0", cl2.ID, 0)
-	s.Topics.Subscribe("qos1", cl2.ID, 1)
-	s.Topics.Subscribe("qos2", cl2.ID, 2)
+	s.Topics.Subscribe("qos0", cl2.ID(), 0)
+	s.Topics.Subscribe("qos1", cl2.ID(), 1)
+	s.Topics.Subscribe("qos2", cl2.ID(), 2)
 	cl2.StopUnlocked(errTestStop)
 
 	ack1 := make(chan []byte)
@@ -1056,9 +1057,9 @@ func TestServerProcessPublishWriteAckError(t *testing.T) {
 
 func TestServerPublishInline(t *testing.T) {
 	s, cl1, r1, w1 := setupClient()
-	cl1.ID = "inline"
+	cl1.SetID("inline")
 	s.Clients.Add(cl1)
-	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
+	s.Topics.Subscribe("a/b/+", cl1.ID(), 0)
 	go s.inlineClient()
 
 	ack1 := make(chan []byte)
@@ -1090,7 +1091,7 @@ func TestServerPublishInline(t *testing.T) {
 
 func TestServerPublishInlineRetain(t *testing.T) {
 	s, cl1, r1, w1 := setupClient()
-	cl1.ID = "inline"
+	cl1.SetID("inline")
 
 	ack1 := make(chan []byte)
 	go func() {
@@ -1107,7 +1108,7 @@ func TestServerPublishInlineRetain(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	s.Clients.Add(cl1)
-	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
+	s.Topics.Subscribe("a/b/+", cl1.ID(), 0)
 	go s.inlineClient()
 
 	time.Sleep(10 * time.Millisecond)
@@ -1137,7 +1138,7 @@ func TestServerPublishInlineSysTopicError(t *testing.T) {
 func TestServerEventOnMessage(t *testing.T) {
 	s, cl1, r1, w1 := setupClient()
 	s.Clients.Add(cl1)
-	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
+	s.Topics.Subscribe("a/b/+", cl1.ID(), 0)
 
 	var hookedPacket events.Packet
 	var hookedClient events.Client
@@ -1190,7 +1191,7 @@ func TestServerEventOnMessage(t *testing.T) {
 func TestServerProcessPublishHookOnMessageModify(t *testing.T) {
 	s, cl1, r1, w1 := setupClient()
 	s.Clients.Add(cl1)
-	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
+	s.Topics.Subscribe("a/b/+", cl1.ID(), 0)
 
 	var hookedPacket events.Packet
 	var hookedClient events.Client
@@ -1242,7 +1243,7 @@ func TestServerProcessPublishHookOnMessageModify(t *testing.T) {
 func TestServerProcessPublishHookOnMessageModifyError(t *testing.T) {
 	s, cl1, r1, w1 := setupClient()
 	s.Clients.Add(cl1)
-	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
+	s.Topics.Subscribe("a/b/+", cl1.ID(), 0)
 
 	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
 		pkx := pk
@@ -1285,15 +1286,15 @@ func TestServerProcessPublishHookOnMessageModifyError(t *testing.T) {
 
 func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
 	s, cl1, r1, w1 := setupClient()
-	cl1.ID = "allowed"
+	cl1.SetID("allowed")
 	s.Clients.Add(cl1)
-	s.Topics.Subscribe("a/b/c", cl1.ID, 0)
+	s.Topics.Subscribe("a/b/c", cl1.ID(), 0)
 
 	cl2, r2, w2 := setupServerClient(s)
-	cl2.ID = "not_allowed"
+	cl2.SetID("not_allowed")
 	s.Clients.Add(cl2)
-	s.Topics.Subscribe("a/b/c", cl2.ID, 0)
-	s.Topics.Subscribe("d/e/f", cl2.ID, 0)
+	s.Topics.Subscribe("a/b/c", cl2.ID(), 0)
+	s.Topics.Subscribe("d/e/f", cl2.ID(), 0)
 
 	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
 		hookedPacket := pk
@@ -1558,8 +1559,8 @@ func TestServerProcessSubscribe(t *testing.T) {
 	require.Contains(t, cl.Subscriptions, "d/e/f")
 	require.Equal(t, byte(0), cl.Subscriptions["a/b/c"])
 	require.Equal(t, byte(1), cl.Subscriptions["d/e/f"])
-	require.Equal(t, topics.Subscriptions{cl.ID: 0}, s.Topics.Subscribers("a/b/c"))
-	require.Equal(t, topics.Subscriptions{cl.ID: 1}, s.Topics.Subscribers("d/e/f"))
+	require.Equal(t, topics.Subscriptions{cl.ID(): 0}, s.Topics.Subscribers("a/b/c"))
+	require.Equal(t, topics.Subscriptions{cl.ID(): 1}, s.Topics.Subscribers("d/e/f"))
 }
 
 func TestServerProcessSubscribeFailACL(t *testing.T) {
@@ -1632,9 +1633,9 @@ func TestServerProcessUnsubscribeInvalid(t *testing.T) {
 func TestServerProcessUnsubscribe(t *testing.T) {
 	s, cl, r, w := setupClient()
 	s.Clients.Add(cl)
-	s.Topics.Subscribe("a/b/c", cl.ID, 0)
-	s.Topics.Subscribe("d/e/f", cl.ID, 1)
-	s.Topics.Subscribe("a/b/+", cl.ID, 2)
+	s.Topics.Subscribe("a/b/c", cl.ID(), 0)
+	s.Topics.Subscribe("d/e/f", cl.ID(), 1)
+	s.Topics.Subscribe("a/b/+", cl.ID(), 2)
 	cl.NoteSubscription("a/b/c", 0)
 	cl.NoteSubscription("d/e/f", 1)
 	cl.NoteSubscription("a/b/+", 2)
@@ -1703,7 +1704,7 @@ func TestEventLoop(t *testing.T) {
 
 func TestServerClose(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Listener = "t1"
+	cl.SetListener("t1")
 	s.Clients.Add(cl)
 
 	p := new(persistence.MockStore)
@@ -1728,7 +1729,7 @@ func TestServerClose(t *testing.T) {
 
 func TestServerCloseClientLWT(t *testing.T) {
 	s, cl1, _, _ := setupClient()
-	cl1.Listener = "t1"
+	cl1.SetListener("t1")
 	cl1.LWT = clients.LWT{
 		Topic:   "a/b/c",
 		Message: []byte{'h', 'e', 'l', 'l', 'o'},
@@ -1736,10 +1737,10 @@ func TestServerCloseClientLWT(t *testing.T) {
 	s.Clients.Add(cl1)
 
 	cl2, r2, w2 := setupServerClient(s)
-	cl2.ID = "mochi2"
+	cl2.SetID("mochi2")
 	s.Clients.Add(cl2)
 
-	s.Topics.Subscribe("a/b/c", cl2.ID, 0)
+	s.Topics.Subscribe("a/b/c", cl2.ID(), 0)
 
 	ack2 := make(chan []byte)
 	go func() {
@@ -1764,7 +1765,7 @@ func TestServerCloseClientLWT(t *testing.T) {
 
 func TestServerCloseClientClosed(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Listener = "t1"
+	cl.SetListener("t1")
 	cl.LWT = clients.LWT{
 		Qos:     1,
 		Topic:   "a/b/c",
@@ -1851,8 +1852,8 @@ func TestServerLoadSubscriptions(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
 
-	cl := clients.NewClientStub(s.System)
-	cl.ID = "test"
+	cl := clients.NewClientStub(s.System, "test", "listener", []byte{'U'}, clients.LWT{})
+	cl.SetID("test")
 	s.Clients.Add(cl)
 
 	subs := []persistence.Subscription{
@@ -1938,7 +1939,7 @@ func TestServerLoadInflight(t *testing.T) {
 	w, _ := net.Pipe()
 	defer w.Close()
 	c1 := clients.NewClient(w, nil, nil, nil)
-	c1.ID = "client1"
+	c1.SetID("client1")
 	s.Clients.Add(c1)
 
 	s.loadInflight(msgs)

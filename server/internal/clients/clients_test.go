@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var testClientStop = errors.New("test stop")
+
 func genClient() *Client {
 	c, _ := net.Pipe()
 	return NewClient(c, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
@@ -34,13 +36,13 @@ func BenchmarkNewClients(b *testing.B) {
 
 func TestClientsAdd(t *testing.T) {
 	cl := New()
-	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{id: "t1"})
 	require.Contains(t, cl.internal, "t1")
 }
 
 func BenchmarkClientsAdd(b *testing.B) {
 	cl := New()
-	client := &Client{ID: "t1"}
+	client := &Client{id: "t1"}
 	for n := 0; n < b.N; n++ {
 		cl.Add(client)
 	}
@@ -48,8 +50,8 @@ func BenchmarkClientsAdd(b *testing.B) {
 
 func TestClientsGet(t *testing.T) {
 	cl := New()
-	cl.Add(&Client{ID: "t1"})
-	cl.Add(&Client{ID: "t2"})
+	cl.Add(&Client{id: "t1"})
+	cl.Add(&Client{id: "t2"})
 	require.Contains(t, cl.internal, "t1")
 	require.Contains(t, cl.internal, "t2")
 
@@ -60,7 +62,7 @@ func TestClientsGet(t *testing.T) {
 
 func BenchmarkClientsGet(b *testing.B) {
 	cl := New()
-	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{id: "t1"})
 	for n := 0; n < b.N; n++ {
 		cl.Get("t1")
 	}
@@ -68,8 +70,8 @@ func BenchmarkClientsGet(b *testing.B) {
 
 func TestClientsLen(t *testing.T) {
 	cl := New()
-	cl.Add(&Client{ID: "t1"})
-	cl.Add(&Client{ID: "t2"})
+	cl.Add(&Client{id: "t1"})
+	cl.Add(&Client{id: "t2"})
 	require.Contains(t, cl.internal, "t1")
 	require.Contains(t, cl.internal, "t2")
 	require.Equal(t, 2, cl.Len())
@@ -77,7 +79,7 @@ func TestClientsLen(t *testing.T) {
 
 func BenchmarkClientsLen(b *testing.B) {
 	cl := New()
-	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{id: "t1"})
 	for n := 0; n < b.N; n++ {
 		cl.Len()
 	}
@@ -85,7 +87,7 @@ func BenchmarkClientsLen(b *testing.B) {
 
 func TestClientsDelete(t *testing.T) {
 	cl := New()
-	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{id: "t1"})
 	require.Contains(t, cl.internal, "t1")
 
 	cl.Delete("t1")
@@ -96,7 +98,7 @@ func TestClientsDelete(t *testing.T) {
 
 func BenchmarkClientsDelete(b *testing.B) {
 	cl := New()
-	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{id: "t1"})
 	for n := 0; n < b.N; n++ {
 		cl.Delete("t1")
 	}
@@ -104,8 +106,8 @@ func BenchmarkClientsDelete(b *testing.B) {
 
 func TestClientsGetByListener(t *testing.T) {
 	cl := New()
-	cl.Add(&Client{ID: "t1", Listener: "tcp1"})
-	cl.Add(&Client{ID: "t2", Listener: "ws1"})
+	cl.Add(&Client{id: "t1", listener: "tcp1"})
+	cl.Add(&Client{id: "t2", listener: "ws1"})
 	require.Contains(t, cl.internal, "t1")
 	require.Contains(t, cl.internal, "t2")
 
@@ -117,8 +119,8 @@ func TestClientsGetByListener(t *testing.T) {
 
 func BenchmarkClientsGetByListener(b *testing.B) {
 	cl := New()
-	cl.Add(&Client{ID: "t1", Listener: "tcp1"})
-	cl.Add(&Client{ID: "t2", Listener: "ws1"})
+	cl.Add(&Client{id: "t1", listener: "tcp1"})
+	cl.Add(&Client{id: "t2", listener: "ws1"})
 	for n := 0; n < b.N; n++ {
 		cl.GetByListener("tcp1")
 	}
@@ -132,9 +134,7 @@ func TestNewClient(t *testing.T) {
 	require.NotNil(t, cl.Subscriptions)
 	require.NotNil(t, cl.r)
 	require.NotNil(t, cl.w)
-	require.NotNil(t, cl.State.started)
-	require.NotNil(t, cl.State.endedW)
-	require.NotNil(t, cl.State.endedR)
+	require.Nil(t, cl.State.stopCause)
 }
 
 func BenchmarkNewClient(b *testing.B) {
@@ -145,7 +145,7 @@ func BenchmarkNewClient(b *testing.B) {
 }
 
 func TestNewClientStub(t *testing.T) {
-	cl := NewClientStub(nil)
+	cl := NewClientStub(nil, "I", "L", []byte{'U'}, LWT{})
 
 	require.NotNil(t, cl)
 	require.NotNil(t, cl.Inflight.internal)
@@ -154,7 +154,7 @@ func TestNewClientStub(t *testing.T) {
 
 func BenchmarkNewClientStub(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		NewClientStub(nil)
+		NewClientStub(nil, "I", "L", []byte{'U'}, LWT{})
 	}
 }
 
@@ -314,7 +314,7 @@ func BenchmarkClientRefreshDeadline(b *testing.B) {
 func TestClientStart(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 	time.Sleep(time.Millisecond)
 	require.Equal(t, uint32(1), atomic.LoadUint32(&cl.r.State))
 	require.Equal(t, uint32(2), atomic.LoadUint32(&cl.w.State))
@@ -322,7 +322,7 @@ func TestClientStart(t *testing.T) {
 
 func BenchmarkClientStart(b *testing.B) {
 	cl := genClient()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	for n := 0; n < b.N; n++ {
 		cl.Start()
@@ -332,7 +332,7 @@ func BenchmarkClientStart(b *testing.B) {
 func TestClientReadFixedHeader(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	cl.r.Set([]byte{packets.Connect << 4, 0x00}, 0, 2)
 	cl.r.SetPos(0, 2)
@@ -351,7 +351,7 @@ func TestClientReadFixedHeader(t *testing.T) {
 func TestClientReadFixedHeaderDecodeError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	o := make(chan error)
 	go func() {
@@ -367,7 +367,7 @@ func TestClientReadFixedHeaderDecodeError(t *testing.T) {
 func TestClientReadFixedHeaderReadEOF(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	o := make(chan error)
 	go func() {
@@ -386,7 +386,7 @@ func TestClientReadFixedHeaderReadEOF(t *testing.T) {
 func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	o := make(chan error)
 	go func() {
@@ -403,7 +403,7 @@ func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
 func TestClientReadOK(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	// Two packets in a row...
 	b := []byte{
@@ -424,7 +424,7 @@ func TestClientReadOK(t *testing.T) {
 	o := make(chan error)
 	var pks []packets.Packet
 	go func() {
-		o <- cl.Read(func(cl *Client, pk packets.Packet) error {
+		o <- cl.ReadLoop(func(cl *Client, pk packets.Packet) error {
 			pks = append(pks, pk)
 			return nil
 		})
@@ -464,10 +464,10 @@ func TestClientReadOK(t *testing.T) {
 func TestClientReadDone(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 	cl.State.Done = 1
 
-	err := cl.Read(func(cl *Client, pk packets.Packet) error {
+	err := cl.ReadLoop(func(cl *Client, pk packets.Packet) error {
 		return nil
 	})
 
@@ -477,7 +477,7 @@ func TestClientReadDone(t *testing.T) {
 func TestClientReadPacketError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	b := []byte{
 		0, 18,
@@ -491,7 +491,7 @@ func TestClientReadPacketError(t *testing.T) {
 
 	o := make(chan error)
 	go func() {
-		o <- cl.Read(func(cl *Client, pk packets.Packet) error {
+		o <- cl.ReadLoop(func(cl *Client, pk packets.Packet) error {
 			return nil
 		})
 	}()
@@ -502,7 +502,7 @@ func TestClientReadPacketError(t *testing.T) {
 func TestClientReadHandlerErr(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	b := []byte{
 		byte(packets.Publish << 4), 11, // Fixed header
@@ -515,7 +515,7 @@ func TestClientReadHandlerErr(t *testing.T) {
 	require.NoError(t, err)
 	cl.r.SetPos(0, int64(len(b)))
 
-	err = cl.Read(func(cl *Client, pk packets.Packet) error {
+	err = cl.ReadLoop(func(cl *Client, pk packets.Packet) error {
 		return errors.New("test")
 	})
 
@@ -525,7 +525,7 @@ func TestClientReadHandlerErr(t *testing.T) {
 func TestClientReadPacketOK(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	err := cl.r.Set([]byte{
 		byte(packets.Publish << 4), 11, // Fixed header
@@ -557,7 +557,7 @@ func TestClientReadPacketOK(t *testing.T) {
 func TestClientReadPacket(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	for i, tt := range pkTable {
 		err := cl.r.Set(tt.bytes, 0, len(tt.bytes))
@@ -582,7 +582,7 @@ func TestClientReadPacket(t *testing.T) {
 func TestClientReadPacketReadingError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 
 	err := cl.r.Set([]byte{
 		0, 11, // Fixed header
@@ -603,7 +603,7 @@ func TestClientReadPacketReadingError(t *testing.T) {
 func TestClientReadPacketReadError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 	cl.r.Stop()
 
 	_, err := cl.ReadPacket(&packets.FixedHeader{
@@ -616,7 +616,7 @@ func TestClientReadPacketReadError(t *testing.T) {
 func TestClientReadPacketReadUnknown(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop()
+	defer cl.StopUnlocked(testClientStop)
 	cl.r.Stop()
 
 	_, err := cl.ReadPacket(&packets.FixedHeader{
@@ -646,7 +646,7 @@ func TestClientWritePacket(t *testing.T) {
 		r.Close()
 
 		require.Equal(t, tt.bytes, <-o, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
-		cl.Stop()
+		cl.StopUnlocked(testClientStop)
 		require.Equal(t, int64(n), atomic.LoadInt64(&cl.systemInfo.BytesSent))
 		require.Equal(t, int64(1), atomic.LoadInt64(&cl.systemInfo.MessagesSent))
 		if tt.packet.FixedHeader.Type == packets.Publish {
@@ -659,7 +659,7 @@ func TestClientWritePacketWriteNoConn(t *testing.T) {
 	c, _ := net.Pipe()
 	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4), new(system.Info))
 	cl.w.SetPos(0, 16)
-	cl.Stop()
+	cl.StopUnlocked(testClientStop)
 
 	_, err := cl.WritePacket(pkTable[1].packet)
 	require.Error(t, err)

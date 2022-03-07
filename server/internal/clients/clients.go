@@ -42,7 +42,7 @@ func New() *Clients {
 // Add adds a new client to the clients map, keyed on client id.
 func (cl *Clients) Add(val *Client) {
 	cl.Lock()
-	cl.internal[val.ID] = val
+	cl.internal[val.id] = val
 	cl.Unlock()
 }
 
@@ -74,7 +74,7 @@ func (cl *Clients) GetByListener(id string) []*Client {
 	clients := make([]*Client, 0, cl.Len())
 	cl.RLock()
 	for _, v := range cl.internal {
-		if v.Listener == id && atomic.LoadUint32(&v.State.Done) == 0 {
+		if v.listener == id && atomic.LoadUint32(&v.State.Done) == 0 {
 			clients = append(clients, v)
 		}
 	}
@@ -90,8 +90,8 @@ type Client struct {
 	sync.RWMutex                       // mutex
 	Username      []byte               // the username the client authenticated with.
 	AC            auth.Controller      // an auth controller inherited from the listener.
-	Listener      string               // the id of the listener the client is connected to.
-	ID            string               // the client id.
+	listener      string               // the id of the listener the client is connected to.
+	id            string               // the client id.
 	conn          net.Conn             // the net.Conn used to establish the connection.
 	r             *circ.Reader         // a reader for reading incoming bytes.
 	w             *circ.Writer         // a writer for writing outgoing bytes.
@@ -133,11 +133,15 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Clie
 
 // NewClientStub returns an instance of Client with basic initializations. This
 // method is typically called by the persistence restoration system.
-func NewClientStub(s *system.Info) *Client {
+func NewClientStub(s *system.Info, id, listener string, username []byte, lwt LWT) *Client {
 	return &Client{
 		Inflight: &Inflight{
 			internal: make(map[uint16]InflightMessage),
 		},
+		id:            id,
+		listener:      listener,
+		Username:      username,
+		LWT:           lwt,
 		Subscriptions: make(map[string]byte),
 		State: State{
 			Done: 1,
@@ -145,18 +149,34 @@ func NewClientStub(s *system.Info) *Client {
 	}
 }
 
+func (cl *Client) ID() string {
+	return cl.id
+}
+
+func (cl *Client) SetID(id string) {
+	cl.id = id
+}
+
+func (cl *Client) Listener() string {
+	return cl.listener
+}
+
+func (cl *Client) SetListener(listener string) {
+	cl.listener = listener
+}
+
 // Identify sets the identification values of a client instance.
 func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
-	cl.Listener = lid
+	cl.listener = lid
 	cl.AC = ac
 
-	cl.ID = pk.ClientIdentifier
-	if cl.ID == "" {
-		cl.ID = xid.New().String()
+	cl.id = pk.ClientIdentifier
+	if cl.id == "" {
+		cl.id = xid.New().String()
 	}
 
-	cl.r.ID = cl.ID + " READER"
-	cl.w.ID = cl.ID + " WRITER"
+	cl.r.ID = cl.id + " READER"
+	cl.w.ID = cl.id + " WRITER"
 
 	cl.Username = pk.Username
 	cl.cleanSession = pk.CleanSession
@@ -176,17 +196,18 @@ func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
 
 // refreshDeadline refreshes the read/write deadline for the net.Conn connection.
 func (cl *Client) refreshDeadline(keepalive uint16) {
-	if cl.conn != nil {
-		var expiry time.Time // Nil time can be used to disable deadline if keepalive = 0
-		if keepalive > 0 {
-			expiry = time.Now().Add(time.Duration(keepalive+(keepalive/2)) * time.Second)
-		}
-		_ = cl.conn.SetDeadline(expiry)
+	if cl.conn == nil {
+		return
 	}
+	var expiry time.Time // Nil time can be used to disable deadline if keepalive = 0
+	if keepalive > 0 {
+		expiry = time.Now().Add(time.Duration(keepalive+(keepalive/2)) * time.Second)
+	}
+	_ = cl.conn.SetDeadline(expiry)
 }
 
-func (cl *Client) Conn() net.Conn {
-	return cl.conn
+func (cl *Client) Describe() string {
+	return cl.conn.RemoteAddr().String()
 }
 
 // NextPacketID returns the next packet id for a client, looping back to 0
@@ -246,12 +267,14 @@ func (cl *Client) Start() {
 	started.Wait()
 }
 
-func (cl *Client) StopSessionInUse(cause error) {
-	// Note: Lock is held.
+// StopWithClientLocked instructs the client to shut down all processing goroutines and disconnect.
+// The internal mutex MUST be held held.
+func (cl *Client) StopWithClientLocked(cause error) {
 	cl.stopInternal(cause)
 }
 
 // StopUnlocked instructs the client to shut down all processing goroutines and disconnect.
+// The internal mutex MUST NOT held.
 func (cl *Client) StopUnlocked(cause error) {
 	cl.Lock()
 	defer cl.Unlock()

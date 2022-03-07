@@ -1,7 +1,6 @@
 package events
 
 import (
-	"github.com/mochi-co/mqtt/server/internal/clients"
 	"github.com/mochi-co/mqtt/server/internal/packets"
 )
 
@@ -20,12 +19,18 @@ type Client struct {
 	Listener string
 }
 
+type Clientlike interface {
+	ID() string
+	Describe() string
+	Listener() string
+}
+
 // FromClient returns an event client from a client.
-func FromClient(cl *clients.Client) Client {
+func FromClient(cl Clientlike) Client {
 	return Client{
-		ID:       cl.ID,
-		Remote:   cl.Conn().RemoteAddr().String(),
-		Listener: cl.Listener,
+		ID:       cl.ID(),
+		Remote:   cl.Describe(),
+		Listener: cl.Listener(),
 	}
 }
 
