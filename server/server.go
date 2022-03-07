@@ -4,6 +4,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"sync/atomic"
@@ -30,6 +31,12 @@ var (
 	ErrReadConnectInvalid   = errors.New("Connect packet was not valid")
 	ErrConnectNotAuthorized = errors.New("Connect packet was not authorized")
 	ErrInvalidTopic         = errors.New("Cannot publish to $ and $SYS topics")
+
+	ErrClientDisconnect     = errors.New("Client disconnected")
+	ErrClientReconnect      = errors.New("Client attemped to reconnect")
+	ErrServerShutdown       = errors.New("Server is shutting down")
+	ErrSessionReestablished = errors.New("Session reestablished")
+	ErrConnectionFailed     = errors.New("Connection attempt failed")
 
 	// SysTopicInterval is the number of milliseconds between $SYS topic publishes.
 	SysTopicInterval time.Duration = 30000
@@ -166,6 +173,35 @@ func (s *Server) inlineClient() {
 	}
 }
 
+func (s *Server) connSetup(cl *clients.Client) (packets.Packet, error) {
+	fh := new(packets.FixedHeader)
+	if err := cl.ReadFixedHeader(fh); err != nil {
+		return packets.Packet{}, err
+	}
+
+	pk, err := cl.ReadPacket(fh)
+	if err != nil {
+		return pk, err
+	}
+
+	if pk.FixedHeader.Type != packets.Connect {
+		return pk, ErrReadConnectInvalid
+	}
+	return pk, nil
+}
+
+func (s *Server) onError(cl *clients.Client, err error) error {
+	if err == nil {
+		return err
+	}
+	if s.Events.OnError != nil &&
+		!errors.Is(err, clients.ErrConnectionClosed) &&
+		!errors.Is(err, io.EOF) {
+		s.Events.OnError(events.FromClient(cl), err)
+	}
+	return err
+}
+
 // EstablishConnection establishes a new client when a listener
 // accepts a new connection.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
@@ -180,19 +216,9 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	cl.Start()
 
-	fh := new(packets.FixedHeader)
-	err := cl.ReadFixedHeader(fh)
+	pk, err := s.connSetup(cl)
 	if err != nil {
-		return err
-	}
-
-	pk, err := cl.ReadPacket(fh)
-	if err != nil {
-		return err
-	}
-
-	if pk.FixedHeader.Type != packets.Connect {
-		return ErrReadConnectInvalid
+		return s.onError(cl, err)
 	}
 
 	cl.Identify(lid, pk, ac)
@@ -211,7 +237,8 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		if atomic.LoadUint32(&existing.State.Done) == 1 {
 			atomic.AddInt64(&s.System.ClientsDisconnected, -1)
 		}
-		existing.Stop()
+
+		existing.StopSessionInUse(ErrSessionReestablished)
 		if pk.CleanSession {
 			for k := range existing.Subscriptions {
 				delete(existing.Subscriptions, k)
@@ -235,18 +262,24 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	s.Clients.Add(cl) // Overwrite any existing client with the same name.
 
-	err = s.writeClient(cl, packets.Packet{
+	if err := s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Connack,
 		},
 		SessionPresent: sessionPresent,
 		ReturnCode:     retcode,
-	})
-	if err != nil || retcode != packets.Accepted {
-		return err
+	}); err != nil {
+		return s.onError(cl, err)
+	}
+	if retcode != packets.Accepted {
+		err = ErrConnectionFailed
+		return s.onError(cl, err)
 	}
 
-	s.ResendClientInflight(cl, true)
+	if err := s.ResendClientInflight(cl, true); err != nil {
+		err = fmt.Errorf("resend in flight: %w ", err)
+		return s.onError(cl, err)
+	}
 
 	if s.Store != nil {
 		s.Store.WriteClient(persistence.Client{
@@ -263,9 +296,11 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		s.Events.OnConnect(events.FromClient(cl), events.Packet(pk))
 	}
 
-	err = cl.Read(s.processPacket)
+	s.onError(cl, cl.ReadLoop(s.processPacket))
+
+	err = cl.StopCause()
 	if err != nil {
-		s.closeClient(cl, true)
+		s.closeClient(cl, true, err)
 	}
 
 	s.bytepool.Put(xbr) // Return byte buffers to pools when the client has finished.
@@ -285,10 +320,9 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 	_, err := cl.WritePacket(pk)
 	if err != nil {
-		return err
+		return fmt.Errorf("write: %w", err)
 	}
-
-	return nil
+	return err
 }
 
 // processPacket processes an inbound packet for a client. Since the method is
@@ -336,28 +370,23 @@ func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
 // establish a new connection on an existing connection. See EstablishConnection
 // instead.
 func (s *Server) processConnect(cl *clients.Client, pk packets.Packet) error {
-	s.closeClient(cl, true)
+	s.closeClient(cl, true, ErrClientReconnect)
 	return nil
 }
 
 // processDisconnect processes a Disconnect packet.
 func (s *Server) processDisconnect(cl *clients.Client, pk packets.Packet) error {
-	s.closeClient(cl, false)
+	s.closeClient(cl, false, ErrClientDisconnect)
 	return nil
 }
 
 // processPingreq processes a Pingreq packet.
 func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) error {
-	err := s.writeClient(cl, packets.Packet{
+	return s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Pingresp,
 		},
 	})
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // Publish creates a publish packet from a payload and sends it to the inline.pub
@@ -416,7 +445,7 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 		// omit errors in case of broken connection / LWT publish. ack send failures
 		// will be handled by in-flight resending on next reconnect.
-		s.writeClient(cl, ack)
+		s.onError(cl, s.writeClient(cl, ack))
 	}
 
 	// if an OnMessage hook exists, potentially modify the packet.
@@ -501,7 +530,7 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 				}
 			}
 
-			s.writeClient(client, out)
+			s.onError(client, s.writeClient(client, out))
 		}
 	}
 }
@@ -528,12 +557,7 @@ func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) error {
 		PacketID: pk.PacketID,
 	}
 
-	err := s.writeClient(cl, out)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return s.writeClient(cl, out)
 }
 
 // processPubrel processes a Pubrel packet.
@@ -613,7 +637,7 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 	// Publish out any retained messages matching the subscription filter.
 	for i := 0; i < len(pk.Topics); i++ {
 		for _, pkv := range s.Topics.Messages(pk.Topics[i]) {
-			s.writeClient(cl, pkv) // omit errors, prefer continuing.
+			s.onError(cl, s.writeClient(cl, pkv))
 		}
 	}
 
@@ -630,17 +654,12 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error
 		cl.ForgetSubscription(pk.Topics[i])
 	}
 
-	err := s.writeClient(cl, packets.Packet{
+	return s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Unsuback,
 		},
 		PacketID: pk.PacketID,
 	})
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // publishSysTopics publishes the current values to the server $SYS topics.
@@ -763,15 +782,14 @@ func (s *Server) Close() error {
 func (s *Server) closeListenerClients(listener string) {
 	clients := s.Clients.GetByListener(listener)
 	for _, cl := range clients {
-		s.closeClient(cl, false) // omit errors
+		s.closeClient(cl, false, ErrServerShutdown) // omit errors
 	}
-
 }
 
 // closeClient closes a client connection and publishes any LWT messages.
-func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
+func (s *Server) closeClient(cl *clients.Client, sendLWT bool, cause error) {
 	if sendLWT && cl.LWT.Topic != "" {
-		s.processPublish(cl, packets.Packet{
+		if err := s.processPublish(cl, packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type:   packets.Publish,
 				Retain: cl.LWT.Retain,
@@ -779,12 +797,12 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 			},
 			TopicName: cl.LWT.Topic,
 			Payload:   cl.LWT.Message,
-		})
+		}); err != nil {
+			s.onError(cl, fmt.Errorf("publish will: %w", err))
+		}
 	}
 
-	cl.Stop()
-
-	return nil
+	cl.StopUnlocked(cause)
 }
 
 // readStore reads in any data from the persistent datastore (if applicable).

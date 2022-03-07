@@ -104,11 +104,11 @@ type Client struct {
 
 // State tracks the state of the client.
 type State struct {
-	started *sync.WaitGroup // tracks the goroutines which have been started.
-	endedW  *sync.WaitGroup // tracks when the writer has ended.
-	endedR  *sync.WaitGroup // tracks when the reader has ended.
-	Done    uint32          // atomic counter which indicates that the client has closed.
-	endOnce sync.Once       // only end once.
+	endedW    sync.WaitGroup // tracks when the writer has ended.
+	endedR    sync.WaitGroup // tracks when the reader has ended.
+	stopCause error          // the cause for stopping
+	Done      uint32         // atomic counter which indicates that the client has closed.
+	endOnce   sync.Once      // only end once.
 }
 
 // NewClient returns a new instance of Client.
@@ -123,11 +123,7 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Clie
 			internal: make(map[uint16]InflightMessage),
 		},
 		Subscriptions: make(map[string]byte),
-		State: State{
-			started: new(sync.WaitGroup),
-			endedW:  new(sync.WaitGroup),
-			endedR:  new(sync.WaitGroup),
-		},
+		State:         State{},
 	}
 
 	cl.refreshDeadline(cl.keepalive)
@@ -185,8 +181,12 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 		if keepalive > 0 {
 			expiry = time.Now().Add(time.Duration(keepalive+(keepalive/2)) * time.Second)
 		}
-		cl.conn.SetDeadline(expiry)
+		_ = cl.conn.SetDeadline(expiry)
 	}
+}
+
+func (cl *Client) Conn() net.Conn {
+	return cl.conn
 }
 
 // NextPacketID returns the next packet id for a client, looping back to 0
@@ -217,29 +217,49 @@ func (cl *Client) ForgetSubscription(filter string) {
 
 // Start begins the client goroutines reading and writing packets.
 func (cl *Client) Start() {
-	cl.State.started.Add(2)
+	var started sync.WaitGroup
+
+	started.Add(2)
 	cl.State.endedR.Add(1)
 	cl.State.endedW.Add(1)
 
 	go func() {
-		cl.State.started.Done()
-		cl.w.WriteTo(cl.conn)
+		started.Done()
+		_, err := cl.w.WriteTo(cl.conn)
+		if err != nil {
+			err = fmt.Errorf("writer: %w", err)
+		}
 		cl.State.endedW.Done()
-		cl.Stop()
+		cl.StopUnlocked(err)
 	}()
 
 	go func() {
-		cl.State.started.Done()
-		cl.r.ReadFrom(cl.conn)
+		started.Done()
+		_, err := cl.r.ReadFrom(cl.conn)
+		if err != nil {
+			err = fmt.Errorf("reader: %w", err)
+		}
 		cl.State.endedR.Done()
-		cl.Stop()
+		cl.StopUnlocked(err)
 	}()
 
-	cl.State.started.Wait()
+	started.Wait()
 }
 
-// Stop instructs the client to shut down all processing goroutines and disconnect.
-func (cl *Client) Stop() {
+func (cl *Client) StopSessionInUse(cause error) {
+	// Note: Lock is held.
+	cl.stopInternal(cause)
+}
+
+// StopUnlocked instructs the client to shut down all processing goroutines and disconnect.
+func (cl *Client) StopUnlocked(cause error) {
+	cl.Lock()
+	defer cl.Unlock()
+	cl.stopInternal(cause)
+}
+
+func (cl *Client) stopInternal(cause error) {
+
 	if atomic.LoadUint32(&cl.State.Done) == 1 {
 		return
 	}
@@ -248,9 +268,12 @@ func (cl *Client) Stop() {
 		cl.r.Stop()
 		cl.w.Stop()
 		cl.State.endedW.Wait()
+
+		_ = cl.conn.Close()
+
 		cl.State.endedR.Wait()
 
-		cl.conn.Close()
+		cl.State.stopCause = cause
 
 		atomic.StoreUint32(&cl.State.Done, 1)
 	})
@@ -305,9 +328,15 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	return nil
 }
 
-// Read loops forever reading new packets from a client connection until
+func (cl *Client) StopCause() error {
+	cl.Lock()
+	defer cl.Unlock()
+	return cl.State.stopCause
+}
+
+// ReadLoop loops forever reading new packets from a client connection until
 // an error is encountered (or the connection is closed).
-func (cl *Client) Read(packetHandler func(*Client, packets.Packet) error) error {
+func (cl *Client) ReadLoop(packetHandler func(*Client, packets.Packet) error) error {
 	for {
 		if atomic.LoadUint32(&cl.State.Done) == 1 && cl.r.CapDelta() == 0 {
 			return nil

@@ -7,6 +7,7 @@ import (
 
 type Events struct {
 	OnMessage    // published message receieved.
+	OnError      // server error.
 	OnConnect    // client connected.
 	OnDisconnect // client disconnected.
 }
@@ -15,6 +16,7 @@ type Packet packets.Packet
 
 type Client struct {
 	ID       string
+	Remote   string
 	Listener string
 }
 
@@ -22,6 +24,7 @@ type Client struct {
 func FromClient(cl *clients.Client) Client {
 	return Client{
 		ID:       cl.ID,
+		Remote:   cl.Conn().RemoteAddr().String(),
 		Listener: cl.Listener,
 	}
 }
@@ -44,3 +47,5 @@ type OnConnect func(Client, Packet)
 // is passed to the function if the client disconnected abnormally, otherwise it
 // will be nil on a normal disconnect.
 type OnDisconnect func(Client, error)
+
+type OnError func(Client, error)

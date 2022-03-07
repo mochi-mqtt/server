@@ -23,6 +23,8 @@ import (
 	"github.com/mochi-co/mqtt/server/system"
 )
 
+var errTestStop = fmt.Errorf("test stop")
+
 const defaultPort = ":18882"
 
 func setupClient() (s *Server, cl *clients.Client, r net.Conn, w net.Conn) {
@@ -216,7 +218,7 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.Stop()
+	clw.StopUnlocked(errTestStop)
 
 	errx := <-o
 	require.NoError(t, errx)
@@ -272,7 +274,7 @@ func TestServerEventOnConnect(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.Stop()
+	clw.StopUnlocked(errTestStop)
 
 	errx := <-o
 	require.NoError(t, errx)
@@ -348,7 +350,7 @@ func TestServerEventOnDisconnect(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.Stop()
+	clw.StopUnlocked(errTestStop)
 
 	errx := <-o
 	require.NoError(t, errx)
@@ -411,7 +413,7 @@ func TestServerEventOnDisconnectOnError(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.Stop()
+	clw.StopUnlocked(errTestStop)
 
 	errx := <-o
 	require.Error(t, errx)
@@ -469,7 +471,7 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.Stop()
+	clw.StopUnlocked(errTestStop)
 
 	errx := <-o
 	require.NoError(t, errx)
@@ -646,7 +648,7 @@ func TestServerOnDisconnectErr(t *testing.T) {
 func TestServerWriteClient(t *testing.T) {
 	s, cl, r, w := setupClient()
 	cl.ID = "mochi"
-	defer cl.Stop()
+	defer cl.StopUnlocked(errTestStop)
 
 	err := s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -740,7 +742,7 @@ func TestServerProcessPingreq(t *testing.T) {
 func TestServerProcessPingreqError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 
-	cl.Stop()
+	cl.StopUnlocked(errTestStop)
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Pingreq,
@@ -903,7 +905,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	s.Topics.Subscribe("qos0", cl2.ID, 0)
 	s.Topics.Subscribe("qos1", cl2.ID, 1)
 	s.Topics.Subscribe("qos2", cl2.ID, 2)
-	cl2.Stop()
+	cl2.StopUnlocked(errTestStop)
 
 	ack1 := make(chan []byte)
 	go func() {
@@ -976,7 +978,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi2")
 	require.Equal(t, true, ok)
-	clw.Stop()
+	clw.StopUnlocked(errTestStop)
 
 	errx := <-o
 	require.NoError(t, errx)
@@ -1038,7 +1040,7 @@ func TestServerProcessPublishBadACL(t *testing.T) {
 
 func TestServerProcessPublishWriteAckError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Stop()
+	cl.StopUnlocked(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1415,7 +1417,7 @@ func TestServerProcessPubrec(t *testing.T) {
 
 func TestServerProcessPubrecError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Stop()
+	cl.StopUnlocked(errTestStop)
 	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	err := s.processPacket(cl, packets.Packet{
@@ -1461,7 +1463,7 @@ func TestServerProcessPubrel(t *testing.T) {
 
 func TestServerProcessPubrelError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Stop()
+	cl.StopUnlocked(errTestStop)
 	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	err := s.processPacket(cl, packets.Packet{
@@ -1599,7 +1601,7 @@ func TestServerProcessSubscribeFailACL(t *testing.T) {
 
 func TestServerProcessSubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Stop()
+	cl.StopUnlocked(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1674,7 +1676,7 @@ func TestServerProcessUnsubscribe(t *testing.T) {
 
 func TestServerProcessUnsubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Stop()
+	cl.StopUnlocked(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1748,8 +1750,7 @@ func TestServerCloseClientLWT(t *testing.T) {
 		ack2 <- buf
 	}()
 
-	err := s.closeClient(cl1, true)
-	require.NoError(t, err)
+	s.closeClient(cl1, true, fmt.Errorf("goodbye"))
 	time.Sleep(time.Millisecond)
 	w2.Close()
 
@@ -1769,10 +1770,9 @@ func TestServerCloseClientClosed(t *testing.T) {
 		Topic:   "a/b/c",
 		Message: []byte{'h', 'e', 'l', 'l', 'o'},
 	}
-	cl.Stop()
+	cl.StopUnlocked(errTestStop)
 
-	err := s.closeClient(cl, true)
-	require.NoError(t, err)
+	s.closeClient(cl, true, fmt.Errorf("Goodbye"))
 }
 
 func TestServerReadStore(t *testing.T) {
