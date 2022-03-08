@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/xid"
 
+	"github.com/mochi-co/mqtt/server/events"
 	"github.com/mochi-co/mqtt/server/internal/circ"
 	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/internal/topics"
@@ -42,7 +43,7 @@ func New() *Clients {
 // Add adds a new client to the clients map, keyed on client id.
 func (cl *Clients) Add(val *Client) {
 	cl.Lock()
-	cl.internal[val.id] = val
+	cl.internal[val.ID] = val
 	cl.Unlock()
 }
 
@@ -74,7 +75,7 @@ func (cl *Clients) GetByListener(id string) []*Client {
 	clients := make([]*Client, 0, cl.Len())
 	cl.RLock()
 	for _, v := range cl.internal {
-		if v.listener == id && atomic.LoadUint32(&v.State.Done) == 0 {
+		if v.Listener == id && atomic.LoadUint32(&v.State.Done) == 0 {
 			clients = append(clients, v)
 		}
 	}
@@ -90,8 +91,8 @@ type Client struct {
 	sync.RWMutex                       // mutex
 	Username      []byte               // the username the client authenticated with.
 	AC            auth.Controller      // an auth controller inherited from the listener.
-	listener      string               // the id of the listener the client is connected to.
-	id            string               // the client id.
+	Listener      string               // the id of the listener the client is connected to.
+	ID            string               // the client id.
 	conn          net.Conn             // the net.Conn used to establish the connection.
 	r             *circ.Reader         // a reader for reading incoming bytes.
 	w             *circ.Writer         // a writer for writing outgoing bytes.
@@ -123,7 +124,6 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Clie
 			internal: make(map[uint16]InflightMessage),
 		},
 		Subscriptions: make(map[string]byte),
-		State:         State{},
 	}
 
 	cl.refreshDeadline(cl.keepalive)
@@ -138,8 +138,8 @@ func NewClientStub(s *system.Info, id, listener string, username []byte, lwt LWT
 		Inflight: &Inflight{
 			internal: make(map[uint16]InflightMessage),
 		},
-		id:            id,
-		listener:      listener,
+		ID:            id,
+		Listener:      listener,
 		Username:      username,
 		LWT:           lwt,
 		Subscriptions: make(map[string]byte),
@@ -149,34 +149,18 @@ func NewClientStub(s *system.Info, id, listener string, username []byte, lwt LWT
 	}
 }
 
-func (cl *Client) ID() string {
-	return cl.id
-}
-
-func (cl *Client) SetID(id string) {
-	cl.id = id
-}
-
-func (cl *Client) Listener() string {
-	return cl.listener
-}
-
-func (cl *Client) SetListener(listener string) {
-	cl.listener = listener
-}
-
 // Identify sets the identification values of a client instance.
 func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
-	cl.listener = lid
+	cl.Listener = lid
 	cl.AC = ac
 
-	cl.id = pk.ClientIdentifier
-	if cl.id == "" {
-		cl.id = xid.New().String()
+	cl.ID = pk.ClientIdentifier
+	if cl.ID == "" {
+		cl.ID = xid.New().String()
 	}
 
-	cl.r.ID = cl.id + " READER"
-	cl.w.ID = cl.id + " WRITER"
+	cl.r.ID = cl.ID + " READER"
+	cl.w.ID = cl.ID + " WRITER"
 
 	cl.Username = pk.Username
 	cl.cleanSession = pk.CleanSession
@@ -206,8 +190,12 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 	_ = cl.conn.SetDeadline(expiry)
 }
 
-func (cl *Client) Describe() string {
-	return cl.conn.RemoteAddr().String()
+func (cl *Client) Info() events.Client {
+	return events.Client{
+		ID:       cl.ID,
+		Remote:   cl.conn.RemoteAddr().String(),
+		Listener: cl.Listener,
+	}
 }
 
 // NextPacketID returns the next packet id for a client, looping back to 0

@@ -36,13 +36,13 @@ func BenchmarkNewClients(b *testing.B) {
 
 func TestClientsAdd(t *testing.T) {
 	cl := New()
-	cl.Add(&Client{id: "t1"})
+	cl.Add(&Client{ID: "t1"})
 	require.Contains(t, cl.internal, "t1")
 }
 
 func BenchmarkClientsAdd(b *testing.B) {
 	cl := New()
-	client := &Client{id: "t1"}
+	client := &Client{ID: "t1"}
 	for n := 0; n < b.N; n++ {
 		cl.Add(client)
 	}
@@ -50,8 +50,8 @@ func BenchmarkClientsAdd(b *testing.B) {
 
 func TestClientsGet(t *testing.T) {
 	cl := New()
-	cl.Add(&Client{id: "t1"})
-	cl.Add(&Client{id: "t2"})
+	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{ID: "t2"})
 	require.Contains(t, cl.internal, "t1")
 	require.Contains(t, cl.internal, "t2")
 
@@ -62,7 +62,7 @@ func TestClientsGet(t *testing.T) {
 
 func BenchmarkClientsGet(b *testing.B) {
 	cl := New()
-	cl.Add(&Client{id: "t1"})
+	cl.Add(&Client{ID: "t1"})
 	for n := 0; n < b.N; n++ {
 		cl.Get("t1")
 	}
@@ -70,8 +70,8 @@ func BenchmarkClientsGet(b *testing.B) {
 
 func TestClientsLen(t *testing.T) {
 	cl := New()
-	cl.Add(&Client{id: "t1"})
-	cl.Add(&Client{id: "t2"})
+	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{ID: "t2"})
 	require.Contains(t, cl.internal, "t1")
 	require.Contains(t, cl.internal, "t2")
 	require.Equal(t, 2, cl.Len())
@@ -79,7 +79,7 @@ func TestClientsLen(t *testing.T) {
 
 func BenchmarkClientsLen(b *testing.B) {
 	cl := New()
-	cl.Add(&Client{id: "t1"})
+	cl.Add(&Client{ID: "t1"})
 	for n := 0; n < b.N; n++ {
 		cl.Len()
 	}
@@ -87,7 +87,7 @@ func BenchmarkClientsLen(b *testing.B) {
 
 func TestClientsDelete(t *testing.T) {
 	cl := New()
-	cl.Add(&Client{id: "t1"})
+	cl.Add(&Client{ID: "t1"})
 	require.Contains(t, cl.internal, "t1")
 
 	cl.Delete("t1")
@@ -98,7 +98,7 @@ func TestClientsDelete(t *testing.T) {
 
 func BenchmarkClientsDelete(b *testing.B) {
 	cl := New()
-	cl.Add(&Client{id: "t1"})
+	cl.Add(&Client{ID: "t1"})
 	for n := 0; n < b.N; n++ {
 		cl.Delete("t1")
 	}
@@ -106,8 +106,8 @@ func BenchmarkClientsDelete(b *testing.B) {
 
 func TestClientsGetByListener(t *testing.T) {
 	cl := New()
-	cl.Add(&Client{id: "t1", listener: "tcp1"})
-	cl.Add(&Client{id: "t2", listener: "ws1"})
+	cl.Add(&Client{ID: "t1", Listener: "tcp1"})
+	cl.Add(&Client{ID: "t2", Listener: "ws1"})
 	require.Contains(t, cl.internal, "t1")
 	require.Contains(t, cl.internal, "t2")
 
@@ -119,8 +119,8 @@ func TestClientsGetByListener(t *testing.T) {
 
 func BenchmarkClientsGetByListener(b *testing.B) {
 	cl := New()
-	cl.Add(&Client{id: "t1", listener: "tcp1"})
-	cl.Add(&Client{id: "t2", listener: "ws1"})
+	cl.Add(&Client{ID: "t1", Listener: "tcp1"})
+	cl.Add(&Client{ID: "t2", Listener: "ws1"})
 	for n := 0; n < b.N; n++ {
 		cl.GetByListener("tcp1")
 	}

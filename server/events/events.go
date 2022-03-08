@@ -20,18 +20,7 @@ type Client struct {
 }
 
 type Clientlike interface {
-	ID() string
-	Describe() string
-	Listener() string
-}
-
-// FromClient returns an event client from a client.
-func FromClient(cl Clientlike) Client {
-	return Client{
-		ID:       cl.ID(),
-		Remote:   cl.Describe(),
-		Listener: cl.Listener(),
-	}
+	Info() Client
 }
 
 // OnMessage function is called when a publish message is received. Note,

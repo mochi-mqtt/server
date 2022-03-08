@@ -185,7 +185,7 @@ func (s *Server) connSetup(cl *clients.Client) (packets.Packet, error) {
 	return pk, nil
 }
 
-func (s *Server) onError(cl events.Clientlike, err error) error {
+func (s *Server) onError(cl events.Client, err error) error {
 	if err == nil {
 		return err
 	}
@@ -197,7 +197,7 @@ func (s *Server) onError(cl events.Clientlike, err error) error {
 	if s.Events.OnError != nil &&
 		!errors.Is(err, clients.ErrConnectionClosed) &&
 		!errors.Is(err, io.EOF) {
-		s.Events.OnError(events.FromClient(cl), err)
+		s.Events.OnError(cl, err)
 	}
 	return err
 }
@@ -206,7 +206,7 @@ func (s *Server) onStorage(cl events.Clientlike, err error) {
 	if err == nil {
 		return
 	}
-	s.onError(cl, fmt.Errorf("storage: %w", err))
+	s.onError(cl.Info(), fmt.Errorf("storage: %w", err))
 }
 
 // EstablishConnection establishes a new client when a listener
@@ -225,7 +225,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	pk, err := s.connSetup(cl)
 	if err != nil {
-		return s.onError(cl, fmt.Errorf("setup: %w", err))
+		return s.onError(cl.Info(), fmt.Errorf("setup: %w", err))
 	}
 
 	cl.Identify(lid, pk, ac)
@@ -249,7 +249,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		if pk.CleanSession {
 			for k := range existing.Subscriptions {
 				delete(existing.Subscriptions, k)
-				q := s.Topics.Unsubscribe(k, existing.ID())
+				q := s.Topics.Unsubscribe(k, existing.ID)
 				if q {
 					atomic.AddInt64(&s.System.Subscriptions, -1)
 				}
@@ -276,40 +276,38 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		SessionPresent: sessionPresent,
 		ReturnCode:     retcode,
 	}); err != nil {
-		return s.onError(cl, err)
+		return s.onError(cl.Info(), err)
 	}
 	if retcode != packets.Accepted {
 		err = ErrConnectionFailed
-		return s.onError(cl, err)
+		return s.onError(cl.Info(), err)
 	}
 
 	if err := s.ResendClientInflight(cl, true); err != nil {
 		err = fmt.Errorf("resend in flight: %w ", err)
-		s.onError(cl, err)
+		s.onError(cl.Info(), err)
 		// Note: Pass through after resend error.
 	}
 
 	if s.Store != nil {
 		s.onStorage(cl, s.Store.WriteClient(persistence.Client{
-			ID:       "cl_" + cl.ID(),
-			ClientID: cl.ID(),
+			ID:       "cl_" + cl.ID,
+			ClientID: cl.ID,
 			T:        persistence.KClient,
-			Listener: cl.Listener(),
+			Listener: cl.Listener,
 			Username: cl.Username,
 			LWT:      persistence.LWT(cl.LWT),
 		}))
 	}
 
 	if s.Events.OnConnect != nil {
-		s.Events.OnConnect(events.FromClient(cl), events.Packet(pk))
+		s.Events.OnConnect(cl.Info(), events.Packet(pk))
 	}
 
-	s.onError(cl, cl.ReadLoop(s.processPacket))
-
-	err = cl.StopCause()
-	if err != nil {
+	if err := cl.ReadLoop(s.processPacket); err != nil {
 		s.closeClient(cl, true, err)
 	}
+	err = cl.StopCause()
 
 	s.bytepool.Put(xbr) // Return byte buffers to pools when the client has finished.
 	s.bytepool.Put(xbw)
@@ -318,7 +316,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	atomic.AddInt64(&s.System.ClientsDisconnected, 1)
 
 	if s.Events.OnDisconnect != nil {
-		s.Events.OnDisconnect(events.FromClient(cl), err)
+		s.Events.OnDisconnect(cl.Info(), err)
 	}
 	if errors.Is(err, clients.ErrConnectionClosed) {
 		return nil
@@ -428,16 +426,12 @@ func (s *Server) Publish(topic string, payload []byte, retain bool) error {
 	return nil
 }
 
-func (*inlineMessages) Describe() string {
-	return "inline"
-}
-
-func (*inlineMessages) ID() string {
-	return "inline"
-}
-
-func (*inlineMessages) Listener() string {
-	return "inline"
+func (*inlineMessages) Info() events.Client {
+	return events.Client{
+		"inline",
+		"inline",
+		"inline",
+	}
 }
 
 // processPublish processes a Publish packet.
@@ -468,12 +462,12 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 		// omit errors in case of broken connection / LWT publish. ack send failures
 		// will be handled by in-flight resending on next reconnect.
-		s.onError(cl, s.writeClient(cl, ack))
+		s.onError(cl.Info(), s.writeClient(cl, ack))
 	}
 
 	// if an OnMessage hook exists, potentially modify the packet.
 	if s.Events.OnMessage != nil {
-		if pkx, err := s.Events.OnMessage(events.FromClient(cl), events.Packet(pk)); err == nil {
+		if pkx, err := s.Events.OnMessage(cl.Info(), events.Packet(pk)); err == nil {
 			pk = packets.Packet(pkx)
 		}
 	}
@@ -543,7 +537,7 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 
 				if s.Store != nil {
 					s.onStorage(client, s.Store.WriteInflight(persistence.Message{
-						ID:          "if_" + client.ID() + "_" + strconv.Itoa(int(out.PacketID)),
+						ID:          "if_" + client.ID + "_" + strconv.Itoa(int(out.PacketID)),
 						T:           persistence.KRetained,
 						FixedHeader: persistence.FixedHeader(out.FixedHeader),
 						TopicName:   out.TopicName,
@@ -553,7 +547,7 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 				}
 			}
 
-			s.onError(client, s.writeClient(client, out))
+			s.onError(client.Info(), s.writeClient(client, out))
 		}
 	}
 }
@@ -565,7 +559,7 @@ func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) error {
 		atomic.AddInt64(&s.System.Inflight, -1)
 	}
 	if s.Store != nil {
-		s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID()+"_"+strconv.Itoa(int(pk.PacketID))))
+		s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID+"_"+strconv.Itoa(int(pk.PacketID))))
 	}
 	return nil
 }
@@ -602,7 +596,7 @@ func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
 	}
 
 	if s.Store != nil {
-		s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID()+"_"+strconv.Itoa(int(pk.PacketID))))
+		s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID+"_"+strconv.Itoa(int(pk.PacketID))))
 	}
 
 	return nil
@@ -615,7 +609,7 @@ func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
 		atomic.AddInt64(&s.System.Inflight, -1)
 	}
 	if s.Store != nil {
-		s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID()+"_"+strconv.Itoa(int(pk.PacketID))))
+		s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID+"_"+strconv.Itoa(int(pk.PacketID))))
 	}
 	return nil
 }
@@ -627,7 +621,7 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 		if !cl.AC.ACL(cl.Username, pk.Topics[i], false) {
 			retCodes[i] = packets.ErrSubAckNetworkError
 		} else {
-			q := s.Topics.Subscribe(pk.Topics[i], cl.ID(), pk.Qoss[i])
+			q := s.Topics.Subscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
 			if q {
 				atomic.AddInt64(&s.System.Subscriptions, 1)
 			}
@@ -636,10 +630,10 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 
 			if s.Store != nil {
 				s.onStorage(cl, s.Store.WriteSubscription(persistence.Subscription{
-					ID:     "sub_" + cl.ID() + ":" + pk.Topics[i],
+					ID:     "sub_" + cl.ID + ":" + pk.Topics[i],
 					T:      persistence.KSubscription,
 					Filter: pk.Topics[i],
-					Client: cl.ID(),
+					Client: cl.ID,
 					QoS:    pk.Qoss[i],
 				}))
 			}
@@ -660,7 +654,7 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 	// Publish out any retained messages matching the subscription filter.
 	for i := 0; i < len(pk.Topics); i++ {
 		for _, pkv := range s.Topics.Messages(pk.Topics[i]) {
-			s.onError(cl, s.writeClient(cl, pkv))
+			s.onError(cl.Info(), s.writeClient(cl, pkv))
 		}
 	}
 
@@ -670,7 +664,7 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 // processUnsubscribe processes an unsubscribe packet.
 func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error {
 	for i := 0; i < len(pk.Topics); i++ {
-		q := s.Topics.Unsubscribe(pk.Topics[i], cl.ID())
+		q := s.Topics.Unsubscribe(pk.Topics[i], cl.ID)
 		if q {
 			atomic.AddInt64(&s.System.Subscriptions, -1)
 		}
@@ -750,7 +744,7 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 			}
 
 			if s.Store != nil {
-				s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID()+"_"+strconv.Itoa(int(tk.Packet.PacketID))))
+				s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID+"_"+strconv.Itoa(int(tk.Packet.PacketID))))
 			}
 
 			continue
@@ -775,7 +769,7 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 
 		if s.Store != nil {
 			s.onStorage(cl, s.Store.WriteInflight(persistence.Message{
-				ID:          "if_" + cl.ID() + "_" + strconv.Itoa(int(tk.Packet.PacketID)),
+				ID:          "if_" + cl.ID + "_" + strconv.Itoa(int(tk.Packet.PacketID)),
 				T:           persistence.KRetained,
 				FixedHeader: persistence.FixedHeader(tk.Packet.FixedHeader),
 				TopicName:   tk.Packet.TopicName,
@@ -821,7 +815,7 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool, cause error) {
 			TopicName: cl.LWT.Topic,
 			Payload:   cl.LWT.Message,
 		}); err != nil {
-			s.onError(cl, fmt.Errorf("publish will: %w", err))
+			s.onError(cl.Info(), fmt.Errorf("publish will: %w", err))
 		}
 	}
 
