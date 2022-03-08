@@ -145,7 +145,7 @@ func BenchmarkNewClient(b *testing.B) {
 }
 
 func TestNewClientStub(t *testing.T) {
-	cl := NewClientStub(nil, "I", "L", []byte{'U'}, LWT{})
+	cl := NewClientStub(nil)
 
 	require.NotNil(t, cl)
 	require.NotNil(t, cl.Inflight.internal)
@@ -154,7 +154,7 @@ func TestNewClientStub(t *testing.T) {
 
 func BenchmarkNewClientStub(b *testing.B) {
 	for n := 0; n < b.N; n++ {
-		NewClientStub(nil, "I", "L", []byte{'U'}, LWT{})
+		NewClientStub(nil)
 	}
 }
 

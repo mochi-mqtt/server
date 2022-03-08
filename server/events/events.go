@@ -19,6 +19,8 @@ type Client struct {
 	Listener string
 }
 
+// Clientlike is an interface for Clients and client-like objects that
+// are able to describe their client/listener IDs and remote address.
 type Clientlike interface {
 	Info() Client
 }
@@ -42,4 +44,6 @@ type OnConnect func(Client, Packet)
 // will be nil on a normal disconnect.
 type OnDisconnect func(Client, error)
 
+// OnError is called when errors that will not be passed to
+// OnDisconnet are handled by the server.
 type OnError func(Client, error)

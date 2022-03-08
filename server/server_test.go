@@ -471,7 +471,6 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.StopUnlocked(errTestStop)
 
 	errx := <-o
 	require.True(t, errors.Is(errx, ErrClientDisconnect))
@@ -648,7 +647,6 @@ func TestServerOnDisconnectErr(t *testing.T) {
 func TestServerWriteClient(t *testing.T) {
 	s, cl, r, w := setupClient()
 	cl.ID = "mochi"
-	defer cl.StopUnlocked(errTestStop)
 
 	err := s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -749,6 +747,7 @@ func TestServerProcessPingreqError(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestServerProcessPublishInvalid(t *testing.T) {
@@ -905,7 +904,6 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	s.Topics.Subscribe("qos0", cl2.ID, 0)
 	s.Topics.Subscribe("qos1", cl2.ID, 1)
 	s.Topics.Subscribe("qos2", cl2.ID, 2)
-	cl2.StopUnlocked(errTestStop)
 
 	ack1 := make(chan []byte)
 	go func() {
@@ -1051,6 +1049,7 @@ func TestServerProcessPublishWriteAckError(t *testing.T) {
 	})
 
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestServerPublishInline(t *testing.T) {
@@ -1428,6 +1427,7 @@ func TestServerProcessPubrecError(t *testing.T) {
 		PacketID: 12,
 	})
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestServerProcessPubrel(t *testing.T) {
@@ -1474,6 +1474,7 @@ func TestServerProcessPubrelError(t *testing.T) {
 		PacketID: 12,
 	})
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestServerProcessPubcomp(t *testing.T) {
@@ -1614,6 +1615,7 @@ func TestServerProcessSubscribeWriteError(t *testing.T) {
 	})
 
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestServerProcessUnsubscribeInvalid(t *testing.T) {
@@ -1688,6 +1690,7 @@ func TestServerProcessUnsubscribeWriteError(t *testing.T) {
 	})
 
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestEventLoop(t *testing.T) {
@@ -1771,9 +1774,10 @@ func TestServerCloseClientClosed(t *testing.T) {
 		Topic:   "a/b/c",
 		Message: []byte{'h', 'e', 'l', 'l', 'o'},
 	}
-	cl.StopUnlocked(errTestStop)
 
-	s.closeClient(cl, true, fmt.Errorf("Goodbye"))
+	cause := fmt.Errorf("Goodbye")
+	s.closeClient(cl, true, cause)
+	require.Equal(t, cause, cl.StopCause())
 }
 
 func TestServerReadStore(t *testing.T) {
@@ -1852,7 +1856,7 @@ func TestServerLoadSubscriptions(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
 
-	cl := clients.NewClientStub(s.System, "test", "listener", []byte{'U'}, clients.LWT{})
+	cl := clients.NewClientStub(s.System)
 	cl.ID = "test"
 	s.Clients.Add(cl)
 

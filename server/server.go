@@ -315,11 +315,15 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	atomic.AddInt64(&s.System.ClientsConnected, -1)
 	atomic.AddInt64(&s.System.ClientsDisconnected, 1)
 
+	// ErrConnectionClosed indicates a normal connection closure
+	// when it is captured as the original StopCause, otherwise
+	// the error will be reported through OnDisconnct and
+	// returned.
+	if errors.Is(err, clients.ErrConnectionClosed) {
+		err = nil
+	}
 	if s.Events.OnDisconnect != nil {
 		s.Events.OnDisconnect(cl.Info(), err)
-	}
-	if errors.Is(err, clients.ErrConnectionClosed) {
-		return nil
 	}
 
 	return err
@@ -877,7 +881,12 @@ func (s *Server) loadSubscriptions(v []persistence.Subscription) {
 // loadClients restores clients from the datastore.
 func (s *Server) loadClients(v []persistence.Client) {
 	for _, c := range v {
-		cl := clients.NewClientStub(s.System, c.ClientID, c.Listener, c.Username, clients.LWT(c.LWT))
+		cl := clients.NewClientStub(s.System)
+
+		cl.ID = c.ClientID
+		cl.Listener = c.Listener
+		cl.Username = c.Username
+		cl.LWT = clients.LWT(c.LWT)
 		s.Clients.Add(cl)
 	}
 }

@@ -133,15 +133,11 @@ func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Clie
 
 // NewClientStub returns an instance of Client with basic initializations. This
 // method is typically called by the persistence restoration system.
-func NewClientStub(s *system.Info, id, listener string, username []byte, lwt LWT) *Client {
+func NewClientStub(s *system.Info) *Client {
 	return &Client{
 		Inflight: &Inflight{
 			internal: make(map[uint16]InflightMessage),
 		},
-		ID:            id,
-		Listener:      listener,
-		Username:      username,
-		LWT:           lwt,
 		Subscriptions: make(map[string]byte),
 		State: State{
 			Done: 1,
