@@ -335,6 +335,11 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	return nil
 }
 
+// StopCause returns the original reason that the client connection
+// stopped.  If the client closed the connection and nothing else
+// precipated closing the connection, this will return
+// ErrConnectionClosed, which is treated as a non-error in
+// Server.EstablishConnection.
 func (cl *Client) StopCause() error {
 	cl.Lock()
 	defer cl.Unlock()
