@@ -314,7 +314,7 @@ func BenchmarkClientRefreshDeadline(b *testing.B) {
 func TestClientStart(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 	time.Sleep(time.Millisecond)
 	require.Equal(t, uint32(1), atomic.LoadUint32(&cl.r.State))
 	require.Equal(t, uint32(2), atomic.LoadUint32(&cl.w.State))
@@ -322,7 +322,7 @@ func TestClientStart(t *testing.T) {
 
 func BenchmarkClientStart(b *testing.B) {
 	cl := genClient()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	for n := 0; n < b.N; n++ {
 		cl.Start()
@@ -332,7 +332,7 @@ func BenchmarkClientStart(b *testing.B) {
 func TestClientReadFixedHeader(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	cl.r.Set([]byte{packets.Connect << 4, 0x00}, 0, 2)
 	cl.r.SetPos(0, 2)
@@ -351,7 +351,7 @@ func TestClientReadFixedHeader(t *testing.T) {
 func TestClientReadFixedHeaderDecodeError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	o := make(chan error)
 	go func() {
@@ -367,7 +367,7 @@ func TestClientReadFixedHeaderDecodeError(t *testing.T) {
 func TestClientReadFixedHeaderReadEOF(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	o := make(chan error)
 	go func() {
@@ -386,7 +386,7 @@ func TestClientReadFixedHeaderReadEOF(t *testing.T) {
 func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	o := make(chan error)
 	go func() {
@@ -403,7 +403,7 @@ func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
 func TestClientReadOK(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	// Two packets in a row...
 	b := []byte{
@@ -464,7 +464,7 @@ func TestClientReadOK(t *testing.T) {
 func TestClientReadDone(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 	cl.State.Done = 1
 
 	err := cl.ReadLoop(func(cl *Client, pk packets.Packet) error {
@@ -477,7 +477,7 @@ func TestClientReadDone(t *testing.T) {
 func TestClientReadPacketError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	b := []byte{
 		0, 18,
@@ -502,7 +502,7 @@ func TestClientReadPacketError(t *testing.T) {
 func TestClientReadHandlerErr(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	b := []byte{
 		byte(packets.Publish << 4), 11, // Fixed header
@@ -525,7 +525,7 @@ func TestClientReadHandlerErr(t *testing.T) {
 func TestClientReadPacketOK(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	err := cl.r.Set([]byte{
 		byte(packets.Publish << 4), 11, // Fixed header
@@ -557,7 +557,7 @@ func TestClientReadPacketOK(t *testing.T) {
 func TestClientReadPacket(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	for i, tt := range pkTable {
 		err := cl.r.Set(tt.bytes, 0, len(tt.bytes))
@@ -582,7 +582,7 @@ func TestClientReadPacket(t *testing.T) {
 func TestClientReadPacketReadingError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 
 	err := cl.r.Set([]byte{
 		0, 11, // Fixed header
@@ -603,7 +603,7 @@ func TestClientReadPacketReadingError(t *testing.T) {
 func TestClientReadPacketReadError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 	cl.r.Stop()
 
 	_, err := cl.ReadPacket(&packets.FixedHeader{
@@ -616,7 +616,7 @@ func TestClientReadPacketReadError(t *testing.T) {
 func TestClientReadPacketReadUnknown(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.StopUnlocked(testClientStop)
+	defer cl.StopGracefully(testClientStop)
 	cl.r.Stop()
 
 	_, err := cl.ReadPacket(&packets.FixedHeader{
@@ -646,7 +646,7 @@ func TestClientWritePacket(t *testing.T) {
 		r.Close()
 
 		require.Equal(t, tt.bytes, <-o, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
-		cl.StopUnlocked(testClientStop)
+		cl.StopGracefully(testClientStop)
 		require.Equal(t, int64(n), atomic.LoadInt64(&cl.systemInfo.BytesSent))
 		require.Equal(t, int64(1), atomic.LoadInt64(&cl.systemInfo.MessagesSent))
 		if tt.packet.FixedHeader.Type == packets.Publish {
@@ -659,7 +659,7 @@ func TestClientWritePacketWriteNoConn(t *testing.T) {
 	c, _ := net.Pipe()
 	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4), new(system.Info))
 	cl.w.SetPos(0, 16)
-	cl.StopUnlocked(testClientStop)
+	cl.StopGracefully(testClientStop)
 
 	_, err := cl.WritePacket(pkTable[1].packet)
 	require.Error(t, err)
