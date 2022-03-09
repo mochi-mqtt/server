@@ -740,7 +740,7 @@ func TestServerProcessPingreq(t *testing.T) {
 func TestServerProcessPingreqError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 
-	cl.StopUnlocked(errTestStop)
+	cl.StopGracefully(errTestStop)
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Pingreq,
@@ -1000,7 +1000,6 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	require.Equal(t, true, (ret[4] == byte(packets.Publish<<4|1<<1|1<<3) || ret[4] == byte(packets.Publish<<4|2<<1|1<<3)))
 
 	w.Close()
-
 }
 
 func TestServerProcessPublishSystemPrefix(t *testing.T) {
@@ -1037,7 +1036,7 @@ func TestServerProcessPublishBadACL(t *testing.T) {
 
 func TestServerProcessPublishWriteAckError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.StopUnlocked(errTestStop)
+	cl.StopGracefully(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1417,7 +1416,7 @@ func TestServerProcessPubrec(t *testing.T) {
 
 func TestServerProcessPubrecError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.StopUnlocked(errTestStop)
+	cl.StopGracefully(errTestStop)
 	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	err := s.processPacket(cl, packets.Packet{
@@ -1464,7 +1463,7 @@ func TestServerProcessPubrel(t *testing.T) {
 
 func TestServerProcessPubrelError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.StopUnlocked(errTestStop)
+	cl.StopGracefully(errTestStop)
 	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	err := s.processPacket(cl, packets.Packet{
@@ -1603,7 +1602,7 @@ func TestServerProcessSubscribeFailACL(t *testing.T) {
 
 func TestServerProcessSubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.StopUnlocked(errTestStop)
+	cl.StopGracefully(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1679,7 +1678,7 @@ func TestServerProcessUnsubscribe(t *testing.T) {
 
 func TestServerProcessUnsubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.StopUnlocked(errTestStop)
+	cl.StopGracefully(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1754,7 +1753,7 @@ func TestServerCloseClientLWT(t *testing.T) {
 		ack2 <- buf
 	}()
 
-	s.closeClient(cl1, true, fmt.Errorf("goodbye"))
+	s.closeClient(cl1, true, fmt.Errorf("goodbye"), true)
 	time.Sleep(time.Millisecond)
 	w2.Close()
 
@@ -1776,7 +1775,7 @@ func TestServerCloseClientClosed(t *testing.T) {
 	}
 
 	cause := fmt.Errorf("Goodbye")
-	s.closeClient(cl, true, cause)
+	s.closeClient(cl, true, cause, false)
 	require.Equal(t, cause, cl.StopCause())
 }
 

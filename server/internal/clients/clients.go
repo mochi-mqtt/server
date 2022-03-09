@@ -235,7 +235,7 @@ func (cl *Client) Start() {
 			err = fmt.Errorf("writer: %w", err)
 		}
 		cl.State.endedW.Done()
-		cl.StopUnlocked(err)
+		cl.StopUngracefully(err)
 	}()
 
 	go func() {
@@ -245,27 +245,35 @@ func (cl *Client) Start() {
 			err = fmt.Errorf("reader: %w", err)
 		}
 		cl.State.endedR.Done()
-		cl.StopUnlocked(err)
+		cl.StopUngracefully(err)
 	}()
 
 	started.Wait()
 }
 
-// StopWithClientLocked instructs the client to shut down all processing goroutines and disconnect.
+// StopUngracefullyWithClientLocked instructs the client to shut down all processing goroutines and disconnect.
 // The internal mutex MUST be held held.
-func (cl *Client) StopWithClientLocked(cause error) {
-	cl.stopInternal(cause)
+func (cl *Client) StopUngracefullyWithClientLocked(cause error) {
+	cl.stopInternal(cause, true)
 }
 
-// StopUnlocked instructs the client to shut down all processing goroutines and disconnect.
-// The internal mutex MUST NOT held.
-func (cl *Client) StopUnlocked(cause error) {
+// StopUngracefully instructs the client to shut down all processing goroutines and disconnect.
+// This DOES NOT wait for the writer to complete. The internal mutex MUST NOT held.
+func (cl *Client) StopUngracefully(cause error) {
 	cl.Lock()
 	defer cl.Unlock()
-	cl.stopInternal(cause)
+	cl.stopInternal(cause, true)
 }
 
-func (cl *Client) stopInternal(cause error) {
+// StopFracefully instructs the client to shut down all processing goroutines and disconnect.
+// This waits for the writer to complete.  The internal mutex MUST NOT held.
+func (cl *Client) StopGracefully(cause error) {
+	cl.Lock()
+	defer cl.Unlock()
+	cl.stopInternal(cause, false)
+}
+
+func (cl *Client) stopInternal(cause error, abort bool) {
 
 	if atomic.LoadUint32(&cl.State.Done) == 1 {
 		return
@@ -274,7 +282,11 @@ func (cl *Client) stopInternal(cause error) {
 	cl.State.endOnce.Do(func() {
 		cl.r.Stop()
 		cl.w.Stop()
-		cl.State.endedW.Wait()
+
+		// If we are not aborting, then wait for outstanding writes to complete.
+		if !abort {
+			cl.State.endedW.Wait()
+		}
 
 		_ = cl.conn.Close()
 
