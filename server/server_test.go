@@ -740,7 +740,7 @@ func TestServerProcessPingreq(t *testing.T) {
 func TestServerProcessPingreqError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 
-	cl.StopGracefully(errTestStop)
+	cl.StopUnlocked(errTestStop)
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Pingreq,
@@ -1036,7 +1036,7 @@ func TestServerProcessPublishBadACL(t *testing.T) {
 
 func TestServerProcessPublishWriteAckError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.StopGracefully(errTestStop)
+	cl.StopUnlocked(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1416,7 +1416,7 @@ func TestServerProcessPubrec(t *testing.T) {
 
 func TestServerProcessPubrecError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.StopGracefully(errTestStop)
+	cl.StopUnlocked(errTestStop)
 	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	err := s.processPacket(cl, packets.Packet{
@@ -1463,7 +1463,7 @@ func TestServerProcessPubrel(t *testing.T) {
 
 func TestServerProcessPubrelError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.StopGracefully(errTestStop)
+	cl.StopUnlocked(errTestStop)
 	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	err := s.processPacket(cl, packets.Packet{
@@ -1602,7 +1602,7 @@ func TestServerProcessSubscribeFailACL(t *testing.T) {
 
 func TestServerProcessSubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.StopGracefully(errTestStop)
+	cl.StopUnlocked(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1678,7 +1678,7 @@ func TestServerProcessUnsubscribe(t *testing.T) {
 
 func TestServerProcessUnsubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.StopGracefully(errTestStop)
+	cl.StopUnlocked(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1701,7 +1701,6 @@ func TestEventLoop(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond * 3)
 	close(s.done)
-
 }
 
 func TestServerClose(t *testing.T) {
@@ -1753,7 +1752,7 @@ func TestServerCloseClientLWT(t *testing.T) {
 		ack2 <- buf
 	}()
 
-	s.closeClient(cl1, true, fmt.Errorf("goodbye"), true)
+	s.closeClient(cl1, true, fmt.Errorf("goodbye"))
 	time.Sleep(time.Millisecond)
 	w2.Close()
 
@@ -1775,7 +1774,7 @@ func TestServerCloseClientClosed(t *testing.T) {
 	}
 
 	cause := fmt.Errorf("Goodbye")
-	s.closeClient(cl, true, cause, false)
+	s.closeClient(cl, true, cause)
 	require.Equal(t, cause, cl.StopCause())
 }
 

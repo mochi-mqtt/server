@@ -245,7 +245,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 			atomic.AddInt64(&s.System.ClientsDisconnected, -1)
 		}
 
-		existing.StopUngracefullyWithClientLocked(ErrSessionReestablished)
+		existing.StopWithClientLocked(ErrSessionReestablished)
 		if pk.CleanSession {
 			for k := range existing.Subscriptions {
 				delete(existing.Subscriptions, k)
@@ -305,7 +305,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	}
 
 	if err := cl.ReadLoop(s.processPacket); err != nil {
-		s.closeClient(cl, true, err, false)
+		s.closeClient(cl, true, err)
 	}
 	err = cl.StopCause()
 
@@ -383,13 +383,13 @@ func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
 // establish a new connection on an existing connection. See EstablishConnection
 // instead.
 func (s *Server) processConnect(cl *clients.Client, pk packets.Packet) error {
-	s.closeClient(cl, true, ErrClientReconnect, true)
+	s.closeClient(cl, true, ErrClientReconnect)
 	return nil
 }
 
 // processDisconnect processes a Disconnect packet.
 func (s *Server) processDisconnect(cl *clients.Client, pk packets.Packet) error {
-	s.closeClient(cl, false, ErrClientDisconnect, true)
+	s.closeClient(cl, false, ErrClientDisconnect)
 	return nil
 }
 
@@ -803,12 +803,12 @@ func (s *Server) Close() error {
 func (s *Server) closeListenerClients(listener string) {
 	clients := s.Clients.GetByListener(listener)
 	for _, cl := range clients {
-		s.closeClient(cl, false, ErrServerShutdown, true)
+		s.closeClient(cl, false, ErrServerShutdown)
 	}
 }
 
 // closeClient closes a client connection and publishes any LWT messages.
-func (s *Server) closeClient(cl *clients.Client, sendLWT bool, cause error, graceful bool) {
+func (s *Server) closeClient(cl *clients.Client, sendLWT bool, cause error) {
 	if sendLWT && cl.LWT.Topic != "" {
 		if err := s.processPublish(cl, packets.Packet{
 			FixedHeader: packets.FixedHeader{
@@ -823,11 +823,7 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool, cause error, grac
 		}
 	}
 
-	if graceful {
-		cl.StopGracefully(cause)
-	} else {
-		cl.StopUngracefully(cause)
-	}
+	cl.StopUnlocked(cause)
 }
 
 // readStore reads in any data from the persistent datastore (if applicable).

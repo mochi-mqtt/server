@@ -235,7 +235,7 @@ func (cl *Client) Start() {
 			err = fmt.Errorf("writer: %w", err)
 		}
 		cl.State.endedW.Done()
-		cl.StopUngracefully(err)
+		cl.StopUnlocked(err)
 	}()
 
 	go func() {
@@ -245,54 +245,51 @@ func (cl *Client) Start() {
 			err = fmt.Errorf("reader: %w", err)
 		}
 		cl.State.endedR.Done()
-		cl.StopUngracefully(err)
+		cl.StopUnlocked(err)
 	}()
 
 	started.Wait()
 }
 
-// StopUngracefullyWithClientLocked instructs the client to shut down all processing goroutines and disconnect.
+// StopWithClientLocked instructs the client to shut down all processing goroutines and disconnect.
 // The internal mutex MUST be held held.
-func (cl *Client) StopUngracefullyWithClientLocked(cause error) {
-	cl.stopInternal(cause, true)
+func (cl *Client) StopWithClientLocked(cause error) {
+	cl.stopInternal(cause)
+
+	// if cl.State.stopCause == nil {
+	// 	cl.State.stopCause = cause
+	// }
 }
 
-// StopUngracefully instructs the client to shut down all processing goroutines and disconnect.
-// This DOES NOT wait for the writer to complete. The internal mutex MUST NOT held.
-func (cl *Client) StopUngracefully(cause error) {
-	cl.Lock()
-	defer cl.Unlock()
-	cl.stopInternal(cause, true)
+// StopUnlocked instructs the client to shut down all processing goroutines and disconnect.
+// The internal mutex MUST NOT held.
+func (cl *Client) StopUnlocked(cause error) {
+	cl.stopInternal(cause)
+
+	// cl.Lock()
+	// defer cl.Unlock()
+	// if cl.State.stopCause == nil {
+	// 	cl.State.stopCause = cause
+	// }
 }
 
-// StopFracefully instructs the client to shut down all processing goroutines and disconnect.
-// This waits for the writer to complete.  The internal mutex MUST NOT held.
-func (cl *Client) StopGracefully(cause error) {
-	cl.Lock()
-	defer cl.Unlock()
-	cl.stopInternal(cause, false)
-}
-
-func (cl *Client) stopInternal(cause error, abort bool) {
+func (cl *Client) stopInternal(cause error) {
 
 	if atomic.LoadUint32(&cl.State.Done) == 1 {
 		return
 	}
 
 	cl.State.endOnce.Do(func() {
+		cl.State.stopCause = cause
+
 		cl.r.Stop()
 		cl.w.Stop()
 
-		// If we are not aborting, then wait for outstanding writes to complete.
-		if !abort {
-			cl.State.endedW.Wait()
-		}
+		cl.State.endedW.Wait()
 
 		_ = cl.conn.Close()
 
 		cl.State.endedR.Wait()
-
-		cl.State.stopCause = cause
 
 		atomic.StoreUint32(&cl.State.Done, 1)
 	})
