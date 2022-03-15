@@ -7,11 +7,21 @@ import (
 )
 
 const (
+
+	// KSubscription is the key for subscription data.
 	KSubscription = "sub"
-	KServerInfo   = "srv"
-	KRetained     = "ret"
-	KInflight     = "ifm"
-	KClient       = "cl"
+
+	// KServerInfo is the key for server info data.
+	KServerInfo = "srv"
+
+	// KRetained is the key for retained messages data.
+	KRetained = "ret"
+
+	// KInflight is the key for inflight messages data.
+	KInflight = "ifm"
+
+	// KClient is the key for client data.
+	KClient = "cl"
 )
 
 // Store is an interface which details a persistent storage connector.
@@ -197,7 +207,7 @@ func (s *MockStore) ReadSubscriptions() (v []Subscription, err error) {
 	}
 
 	return []Subscription{
-		Subscription{
+		{
 			ID:     "test:a/b/c",
 			Client: "test",
 			Filter: "a/b/c",
@@ -214,7 +224,7 @@ func (s *MockStore) ReadClients() (v []Client, err error) {
 	}
 
 	return []Client{
-		Client{
+		{
 			ID:       "cl_client1",
 			ClientID: "client1",
 			T:        KClient,
@@ -230,7 +240,7 @@ func (s *MockStore) ReadInflight() (v []Message, err error) {
 	}
 
 	return []Message{
-		Message{
+		{
 			ID:        "client1_if_100",
 			T:         KInflight,
 			Client:    "client1",
@@ -250,7 +260,7 @@ func (s *MockStore) ReadRetained() (v []Message, err error) {
 	}
 
 	return []Message{
-		Message{
+		{
 			ID: "client1_ret_200",
 			T:  KRetained,
 			FixedHeader: FixedHeader{

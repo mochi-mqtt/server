@@ -1882,13 +1882,13 @@ func TestServerLoadClients(t *testing.T) {
 	require.NotNil(t, s)
 
 	clients := []persistence.Client{
-		persistence.Client{
+		{
 			ID:       "cl_client1",
 			ClientID: "client1",
 			T:        persistence.KClient,
 			Listener: "tcp1",
 		},
-		persistence.Client{
+		{
 			ID:       "cl_client2",
 			ClientID: "client2",
 			T:        persistence.KClient,

@@ -5,14 +5,17 @@ import (
 	"github.com/mochi-co/mqtt/server/internal/packets"
 )
 
+// Events provides callback handlers for different event hooks.
 type Events struct {
 	OnMessage    // published message receieved.
 	OnConnect    // client connected.
 	OnDisconnect // client disconnected.
 }
 
+// Packets is an alias for packets.Packet.
 type Packet packets.Packet
 
+// Client contains limited information about a connected client.
 type Client struct {
 	ID       string
 	Listener string

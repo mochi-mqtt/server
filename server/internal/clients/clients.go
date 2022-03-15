@@ -23,7 +23,8 @@ var (
 	// defaultKeepalive is the default connection keepalive value in seconds.
 	defaultKeepalive uint16 = 10
 
-	ErrConnectionClosed = errors.New("Connection not open")
+	// ErrConnectionClosed indicates that the connection closed unexpectedly.
+	ErrConnectionClosed = errors.New("connection closed unexpectedly")
 )
 
 // Clients contains a map of the clients known by the broker.
@@ -256,7 +257,7 @@ func (cl *Client) Stop() {
 	})
 }
 
-// readFixedHeader reads in the values of the next packet's fixed header.
+// ReadFixedHeader reads in the values of the next packet's fixed header.
 func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	p, err := cl.r.Read(1)
 	if err != nil {

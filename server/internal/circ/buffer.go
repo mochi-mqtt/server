@@ -8,13 +8,20 @@ import (
 )
 
 var (
-	DefaultBufferSize int = 1024 * 256 // the default size of the buffer in bytes.
-	DefaultBlockSize  int = 1024 * 8   // the default size per R/W block in bytes.
+	// DefaultBufferSize is the default size of the buffer in bytes.
+	DefaultBufferSize int = 1024 * 256
 
-	ErrOutOfRange        = errors.New("Indexes out of range")
+	// DefaultBlockSize is the default size per R/W block in bytes.
+	DefaultBlockSize int = 1024 * 8
+
+	// ErrOutOfRange indicates that the index was out of range.
+	ErrOutOfRange = errors.New("Indexes out of range")
+
+	// ErrInsufficientBytes indicates that there were not enough bytes to return.
 	ErrInsufficientBytes = errors.New("Insufficient bytes to return")
 )
 
+// Buffer is a circular buffer for reading and writing messages.
 type Buffer struct {
 	buf   []byte       // the bytes buffer.
 	tmp   []byte       // a temporary buffer.
@@ -77,7 +84,7 @@ func NewBufferFromSlice(block int, buf []byte) *Buffer {
 	return b
 }
 
-// Get will return the tail and head positions of the buffer.
+// GetPos will return the tail and head positions of the buffer.
 // This method is for use with testing.
 func (b *Buffer) GetPos() (int64, int64) {
 	return atomic.LoadInt64(&b.tail), atomic.LoadInt64(&b.head)

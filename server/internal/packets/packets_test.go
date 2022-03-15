@@ -74,7 +74,7 @@ func TestConnectDecode(t *testing.T) {
 		}
 
 		require.Equal(t, uint8(1), Connect, "Incorrect Packet Type [i:%d] %s", i, wanted.desc)
-		require.Equal(t, true, (len(wanted.rawBytes) > 2), "Insufficent bytes in packet [i:%d] %s", i, wanted.desc)
+		require.Equal(t, true, (len(wanted.rawBytes) > 2), "Insufficient bytes in packet [i:%d] %s", i, wanted.desc)
 
 		pk := &Packet{FixedHeader: FixedHeader{Type: Connect}}
 		err := pk.ConnectDecode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
