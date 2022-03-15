@@ -45,5 +45,5 @@ type OnConnect func(Client, Packet)
 type OnDisconnect func(Client, error)
 
 // OnError is called when errors that will not be passed to
-// OnDisconnet are handled by the server.
+// OnDisconnect are handled by the server.
 type OnError func(Client, error)
