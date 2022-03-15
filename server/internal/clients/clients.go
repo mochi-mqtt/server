@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/xid"
 
+	"github.com/mochi-co/mqtt/server/events"
 	"github.com/mochi-co/mqtt/server/internal/circ"
 	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/internal/topics"
@@ -23,6 +24,8 @@ var (
 	// defaultKeepalive is the default connection keepalive value in seconds.
 	defaultKeepalive uint16 = 10
 
+	// ErrConnectionClosed is returned when operating on a closed
+	// connection and/or when no error cause has been given.
 	ErrConnectionClosed = errors.New("Connection not open")
 )
 
@@ -104,11 +107,12 @@ type Client struct {
 
 // State tracks the state of the client.
 type State struct {
-	started *sync.WaitGroup // tracks the goroutines which have been started.
-	endedW  *sync.WaitGroup // tracks when the writer has ended.
-	endedR  *sync.WaitGroup // tracks when the reader has ended.
-	Done    uint32          // atomic counter which indicates that the client has closed.
-	endOnce sync.Once       // only end once.
+	started   *sync.WaitGroup // tracks the goroutines which have been started.
+	endedW    *sync.WaitGroup // tracks when the writer has ended.
+	endedR    *sync.WaitGroup // tracks when the reader has ended.
+	Done      uint32          // atomic counter which indicates that the client has closed.
+	endOnce   sync.Once       // only end once.
+	stopCause atomic.Value    // reason for stopping (error).
 }
 
 // NewClient returns a new instance of Client.
@@ -185,7 +189,19 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 		if keepalive > 0 {
 			expiry = time.Now().Add(time.Duration(keepalive+(keepalive/2)) * time.Second)
 		}
-		cl.conn.SetDeadline(expiry)
+		_ = cl.conn.SetDeadline(expiry)
+	}
+}
+
+func (cl *Client) Info() events.Client {
+	addr := "unknown"
+	if cl.conn != nil && cl.conn.RemoteAddr() != nil {
+		addr = cl.conn.RemoteAddr().String()
+	}
+	return events.Client{
+		ID:       cl.ID,
+		Remote:   addr,
+		Listener: cl.Listener,
 	}
 }
 
@@ -223,33 +239,43 @@ func (cl *Client) Start() {
 
 	go func() {
 		cl.State.started.Done()
-		cl.w.WriteTo(cl.conn)
+		_, err := cl.w.WriteTo(cl.conn)
+		if err != nil {
+			err = fmt.Errorf("writer: %w", err)
+		}
 		cl.State.endedW.Done()
-		cl.Stop()
+		cl.Stop(err)
 	}()
 
 	go func() {
 		cl.State.started.Done()
-		cl.r.ReadFrom(cl.conn)
+		_, err := cl.r.ReadFrom(cl.conn)
+		if err != nil {
+			err = fmt.Errorf("reader: %w", err)
+		}
 		cl.State.endedR.Done()
-		cl.Stop()
+		cl.Stop(err)
 	}()
 
 	cl.State.started.Wait()
 }
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
-func (cl *Client) Stop() {
+func (cl *Client) Stop(cause error) {
 	if atomic.LoadUint32(&cl.State.Done) == 1 {
 		return
 	}
 
 	cl.State.endOnce.Do(func() {
+		if cause == nil {
+			cause = ErrConnectionClosed
+		}
+		cl.State.stopCause.Store(cause)
 		cl.r.Stop()
 		cl.w.Stop()
 		cl.State.endedW.Wait()
 
-		cl.conn.Close()
+		_ = cl.conn.Close()
 
 		cl.State.endedR.Wait()
 		atomic.StoreUint32(&cl.State.Done, 1)
@@ -303,6 +329,16 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	atomic.AddInt64(&cl.systemInfo.BytesRecv, int64(n))
 
 	return nil
+}
+
+// StopCause returns the original reason that the client connection
+// stopped.
+func (cl *Client) StopCause() error {
+	cause := cl.State.stopCause.Load()
+	if cause == nil {
+		return nil
+	}
+	return cause.(error)
 }
 
 // Read loops forever reading new packets from a client connection until

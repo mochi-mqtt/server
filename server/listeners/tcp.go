@@ -96,7 +96,9 @@ func (l *TCP) Serve(establish EstablishFunc) {
 		}
 
 		if atomic.LoadUint32(&l.end) == 0 {
-			go establish(l.id, conn, l.config.Auth)
+			go func() {
+				_ = establish(l.id, conn, l.config.Auth)
+			}()
 		}
 	}
 }
