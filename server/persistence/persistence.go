@@ -7,11 +7,21 @@ import (
 )
 
 const (
+
+	// KSubscription is the key for subscription data.
 	KSubscription = "sub"
-	KServerInfo   = "srv"
-	KRetained     = "ret"
-	KInflight     = "ifm"
-	KClient       = "cl"
+
+	// KServerInfo is the key for server info data.
+	KServerInfo = "srv"
+
+	// KRetained is the key for retained messages data.
+	KRetained = "ret"
+
+	// KInflight is the key for inflight messages data.
+	KInflight = "ifm"
+
+	// KClient is the key for client data.
+	KClient = "cl"
 )
 
 // Store is an interface which details a persistent storage connector.

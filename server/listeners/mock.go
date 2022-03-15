@@ -49,7 +49,7 @@ func (l *MockListener) Serve(establisher EstablishFunc) {
 	}
 }
 
-// SetConfig sets the configuration values of the mock listener.
+// Listen begins listening for incoming traffic.
 func (l *MockListener) Listen(s *system.Info) error {
 	if l.ErrListen {
 		return fmt.Errorf("listen failure")
@@ -92,7 +92,7 @@ func (l *MockListener) IsServing() bool {
 	return l.Serving
 }
 
-// IsServing indicates whether the mock listener is listening.
+// IsListening indicates whether the mock listener is listening.
 func (l *MockListener) IsListening() bool {
 	l.Lock()
 	defer l.Unlock()
