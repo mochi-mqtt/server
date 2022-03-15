@@ -23,7 +23,7 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 - Ring Buffer packet codec.
 - TCP, Websocket, (including SSL/TLS) and Dashboard listeners.
 - Interfaces for Client Authentication and Topic access control.
-- Bolt persistence and storage interfaces (see examples folder).
+- Bolt and Redis persistence and storage interfaces (see examples folder).
 - Directly Publishing from embedding service (`s.Publish(topic, message, retain)`).
 - Basic Event Hooks (currently `OnMessage`, `OnConnect`, `OnDisconnect`).
 - ARM32 Compatible.
@@ -33,7 +33,7 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 - MQTT v5 compatibility?
 
 #### Using the Broker
-Mochi MQTT can be used as a standalone broker. Simply checkout this repository and run the `main.go` entrypoint in the `cmd` folder which will expose tcp (:1883), websocket (:1882), and dashboard (:8080) listeners. A docker image is coming soon.
+Mochi MQTT can be used as a standalone broker. Simply checkout this repository and run the `main.go` entrypoint in the `cmd` folder which will expose tcp (:1883), websocket (:1882), and dashboard (:8080) listeners.
 
 ```
 cd cmd
