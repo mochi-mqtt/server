@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/mochi-co/mqtt/server/persistence"
 	"github.com/mochi-co/mqtt/server/system"
@@ -11,8 +12,8 @@ import (
 
 var (
 	ErrNotConnected = errors.New("redis not connected")
-	ErrNotFound = errors.New("not found")
-	ErrEmptyStruct = errors.New("the structure cannot be empty")
+	ErrNotFound     = errors.New("not found")
+	ErrEmptyStruct  = errors.New("the structure cannot be empty")
 )
 
 const (
@@ -25,7 +26,7 @@ const (
 
 type Store struct {
 	opts *redis.Options
-	db *redis.Client
+	db   *redis.Client
 }
 
 func New(opts *redis.Options) *Store {
@@ -100,7 +101,7 @@ func (s *Store) WriteClient(v persistence.Client) error {
 	return s.HSet(KClient, v.ID, v)
 }
 
-func (s *Store ) Del(key, id string) error {
+func (s *Store) Del(key, id string) error {
 	if s.db == nil {
 		return ErrNotConnected
 	}
@@ -135,13 +136,17 @@ func (s *Store) ReadSubscriptions() (v []persistence.Subscription, err error) {
 	}
 
 	res, err := s.db.HGetAll(context.Background(), KSubscription).Result()
+	if err != nil && err != redis.Nil {
+		return
+	}
+
 	for _, val := range res {
 		sub := persistence.Subscription{}
 		json.Unmarshal([]byte(val), &sub)
 		v = append(v, sub)
 	}
 
-	return
+	return v, nil
 }
 
 // ReadClients loads all the clients from the redis instance.
@@ -150,13 +155,17 @@ func (s *Store) ReadClients() (v []persistence.Client, err error) {
 		return v, ErrNotConnected
 	}
 	res, err := s.db.HGetAll(context.Background(), KClient).Result()
+	if err != nil && err != redis.Nil {
+		return
+	}
+
 	for _, val := range res {
 		cli := persistence.Client{}
 		json.Unmarshal([]byte(val), &cli)
 		v = append(v, cli)
 	}
 
-	return
+	return v, nil
 }
 
 // ReadInflight loads all the inflight messages from the redis instance.
@@ -166,13 +175,17 @@ func (s *Store) ReadInflight() (v []persistence.Message, err error) {
 	}
 
 	res, err := s.db.HGetAll(context.Background(), KInflight).Result()
+	if err != nil && err != redis.Nil {
+		return
+	}
+
 	for _, val := range res {
 		msg := persistence.Message{}
 		json.Unmarshal([]byte(val), &msg)
 		v = append(v, msg)
 	}
 
-	return
+	return v, nil
 }
 
 // ReadRetained loads all the retained messages from the redis instance.
@@ -182,13 +195,17 @@ func (s *Store) ReadRetained() (v []persistence.Message, err error) {
 	}
 
 	res, err := s.db.HGetAll(context.Background(), KRetained).Result()
+	if err != nil && err != redis.Nil {
+		return
+	}
+
 	for _, val := range res {
 		msg := persistence.Message{}
 		json.Unmarshal([]byte(val), &msg)
 		v = append(v, msg)
 	}
 
-	return
+	return v, nil
 }
 
 //ReadServerInfo loads the server info from the redis instance.
@@ -198,10 +215,13 @@ func (s *Store) ReadServerInfo() (v persistence.ServerInfo, err error) {
 	}
 
 	res, err := s.db.Get(context.Background(), KServerInfo).Result()
+	if err != nil && err != redis.Nil {
+		return
+	}
+
 	if res != "" {
 		json.Unmarshal([]byte(res), &v)
 	}
 
-	return
+	return v, nil
 }
-
