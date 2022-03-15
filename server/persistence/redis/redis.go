@@ -142,7 +142,11 @@ func (s *Store) ReadSubscriptions() (v []persistence.Subscription, err error) {
 
 	for _, val := range res {
 		sub := persistence.Subscription{}
-		json.Unmarshal([]byte(val), &sub)
+		err = json.Unmarshal([]byte(val), &sub)
+		if err != nil {
+			return v, err
+		}
+
 		v = append(v, sub)
 	}
 
@@ -161,7 +165,11 @@ func (s *Store) ReadClients() (v []persistence.Client, err error) {
 
 	for _, val := range res {
 		cli := persistence.Client{}
-		json.Unmarshal([]byte(val), &cli)
+		err = json.Unmarshal([]byte(val), &cli)
+		if err != nil {
+			return v, err
+		}
+
 		v = append(v, cli)
 	}
 
@@ -181,7 +189,11 @@ func (s *Store) ReadInflight() (v []persistence.Message, err error) {
 
 	for _, val := range res {
 		msg := persistence.Message{}
-		json.Unmarshal([]byte(val), &msg)
+		err = json.Unmarshal([]byte(val), &msg)
+		if err != nil {
+			return v, err
+		}
+
 		v = append(v, msg)
 	}
 
@@ -201,7 +213,11 @@ func (s *Store) ReadRetained() (v []persistence.Message, err error) {
 
 	for _, val := range res {
 		msg := persistence.Message{}
-		json.Unmarshal([]byte(val), &msg)
+		err = json.Unmarshal([]byte(val), &msg)
+		if err != nil {
+			return v, err
+		}
+
 		v = append(v, msg)
 	}
 
@@ -220,7 +236,10 @@ func (s *Store) ReadServerInfo() (v persistence.ServerInfo, err error) {
 	}
 
 	if res != "" {
-		json.Unmarshal([]byte(res), &v)
+		err = json.Unmarshal([]byte(res), &v)
+		if err != nil {
+			return
+		}
 	}
 
 	return v, nil
