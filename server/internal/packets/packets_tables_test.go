@@ -6,7 +6,7 @@ type packetTestData struct {
 	actualBytes []byte      // the actual byte array that is created in the event of a byte mutation (eg. MQTT-2.3.1-1 qos/packet id)
 	packet      *Packet     // the packet that is expected
 	desc        string      // a description of the test
-	failFirst   interface{} // expected fail result to be run immediately after the method is called
+	failFirst   error       // expected fail result to be run immediately after the method is called
 	expect      interface{} // generic expected fail result to be checked
 	isolate     bool        // isolate can be used to isolate a test
 	primary     bool        // primary is a test that should be run using readPackets
