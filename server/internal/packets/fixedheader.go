@@ -19,7 +19,7 @@ func (fh *FixedHeader) Encode(buf *bytes.Buffer) {
 	encodeLength(buf, int64(fh.Remaining))
 }
 
-// decode extracts the specification bits from the header byte.
+// Decode extracts the specification bits from the header byte.
 func (fh *FixedHeader) Decode(headerByte byte) error {
 	fh.Type = headerByte >> 4 // Get the message type from the first 4 bytes.
 

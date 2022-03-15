@@ -17,6 +17,7 @@ import (
 )
 
 var (
+	// ErrInvalidMessage indicates that a message payload was not valid.
 	ErrInvalidMessage = errors.New("message type not binary")
 
 	// wsUpgrader is used to upgrade the incoming http/tcp connection to a

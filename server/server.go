@@ -1,4 +1,4 @@
-// packet server provides a MQTT 3.1.1 compliant MQTT server.
+// package server provides a MQTT 3.1.1 compliant MQTT server.
 package server
 
 import (
@@ -22,14 +22,23 @@ import (
 )
 
 const (
-	Version = "1.1.1" // the server version.
+	// Version indicates the current server version.
+	Version = "1.1.1"
 )
 
 var (
-	ErrListenerIDExists     = errors.New("Listener id already exists")
-	ErrReadConnectInvalid   = errors.New("Connect packet was not valid")
-	ErrConnectNotAuthorized = errors.New("Connect packet was not authorized")
-	ErrInvalidTopic         = errors.New("Cannot publish to $ and $SYS topics")
+	// ErrListenerIDExists indicates that a listener with the same id already exists.
+	ErrListenerIDExists = errors.New("listener id already exists")
+
+	// ErrReadConnectInvalid indicates that the connection packet was invalid.
+	ErrReadConnectInvalid = errors.New("connect packet was not valid")
+
+	// ErrConnectNotAuthorized indicates that the connection packet had incorrect
+	// authentication parameters.
+	ErrConnectNotAuthorized = errors.New("connect packet was not authorized")
+
+	// ErrInvalidTopic indicates that the specified topic was not valid.
+	ErrInvalidTopic = errors.New("cannot publish to $ and $SYS topics")
 
 	// SysTopicInterval is the number of milliseconds between $SYS topic publishes.
 	SysTopicInterval time.Duration = 30000

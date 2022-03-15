@@ -46,7 +46,7 @@ func main() {
 // Auth is an example auth provider for the server.
 type Auth struct{}
 
-// Auth returns true if a username and password are acceptable.
+// Authenticate returns true if a username and password are acceptable.
 // Auth always returns true.
 func (a *Auth) Authenticate(user, password []byte) bool {
 	return true
@@ -55,8 +55,5 @@ func (a *Auth) Authenticate(user, password []byte) bool {
 // ACL returns true if a user has access permissions to read or write on a topic.
 // ACL is used to deny access to a specific topic to satisfy Test.test_subscribe_failure.
 func (a *Auth) ACL(user []byte, topic string, write bool) bool {
-	if topic == "test/nosubscribe" {
-		return false
-	}
-	return true
+	return topic != "test/nosubscribe"
 }
