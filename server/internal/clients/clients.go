@@ -234,8 +234,8 @@ func (cl *Client) ForgetSubscription(filter string) {
 // Start begins the client goroutines reading and writing packets.
 func (cl *Client) Start() {
 	cl.State.started.Add(2)
-	cl.State.endedR.Add(1)
 	cl.State.endedW.Add(1)
+	cl.State.endedR.Add(1)
 
 	go func() {
 		cl.State.started.Done()
