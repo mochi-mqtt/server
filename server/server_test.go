@@ -210,7 +210,11 @@ func BenchmarkServerServe(b *testing.B) {
 
 func TestServerInlineInfo(t *testing.T) {
 	s := New()
-	require.Equal(t, events.Client{"inline", "inline", "inline"}, s.inline.Info())
+	require.Equal(t, events.Client{
+		ID:       "inline",
+		Remote:   "inline",
+		Listener: "inline",
+	}, s.inline.Info())
 }
 
 func TestServerEstablishConnectionOKCleanSession(t *testing.T) {

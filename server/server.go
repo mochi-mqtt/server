@@ -444,9 +444,9 @@ func (s *Server) Publish(topic string, payload []byte, retain bool) error {
 // It provides a 'client' to which inline retained messages can be assigned.
 func (*inlineMessages) Info() events.Client {
 	return events.Client{
-		"inline",
-		"inline",
-		"inline",
+		ID:       "inline",
+		Remote:   "inline",
+		Listener: "inline",
 	}
 }
 
