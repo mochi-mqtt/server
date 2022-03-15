@@ -23,7 +23,7 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 - Ring Buffer packet codec.
 - TCP, Websocket, (including SSL/TLS) and Dashboard listeners.
 - Interfaces for Client Authentication and Topic access control.
-- Redis and Bolt persistence and storage interfaces (see examples folder).
+- Bolt persistence and storage interfaces (see examples folder).
 - Directly Publishing from embedding service (`s.Publish(topic, message, retain)`).
 - Basic Event Hooks (currently `OnMessage`, `OnConnect`, `OnDisconnect`).
 - ARM32 Compatible.
