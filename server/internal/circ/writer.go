@@ -20,7 +20,7 @@ func NewWriter(size, block int) *Writer {
 	}
 }
 
-// NewWriterFromSlice returns a new Circular Writer using a pre-exising
+// NewWriterFromSlice returns a new Circular Writer using a pre-existing
 // byte slice.
 func NewWriterFromSlice(block int, p []byte) *Writer {
 	b := NewBufferFromSlice(block, p)

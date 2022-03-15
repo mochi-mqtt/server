@@ -113,7 +113,7 @@ func TestRetainMessage(t *testing.T) {
 	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
 
-	q = index.RetainMessage(pk2) // already exsiting
+	q = index.RetainMessage(pk2) // already existing
 	require.Equal(t, int64(0), q)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"])
 	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Message)
