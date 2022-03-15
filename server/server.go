@@ -173,6 +173,8 @@ func (s *Server) inlineClient() {
 	}
 }
 
+// connSetup reads the first incoming header for a connection, and if
+// acceptable, returns the valid connection packet.
 func (s *Server) connSetup(cl *clients.Client) (packets.Packet, error) {
 	fh := new(packets.FixedHeader)
 	if err := cl.ReadFixedHeader(fh); err != nil {
@@ -187,15 +189,18 @@ func (s *Server) connSetup(cl *clients.Client) (packets.Packet, error) {
 	if pk.FixedHeader.Type != packets.Connect {
 		return pk, ErrReadConnectInvalid
 	}
+
 	return pk, nil
 }
 
+// onError is a pass-through method which triggers the OnError
+// event hook (if applicable), and returns the provided error.
 func (s *Server) onError(cl events.Client, err error) error {
 	if err == nil {
 		return err
 	}
 	// Note: if the error originates from a real cause, it will
-	// have been captured as the StopCause.  The two cases ignored
+	// have been captured as the StopCause. The two cases ignored
 	// below are ordinary consequences of closing the connection.
 	// If one of these ordinary conditions stops the connection,
 	// then the client closed or broke the connection.
@@ -203,13 +208,17 @@ func (s *Server) onError(cl events.Client, err error) error {
 		!errors.Is(err, io.EOF) {
 		s.Events.OnError(cl, err)
 	}
+
 	return err
 }
 
+// onStorage is a pass-through method which delegates errors from
+// the persistent storage adapter to the onError event hook.
 func (s *Server) onStorage(cl events.Clientlike, err error) {
 	if err == nil {
 		return
 	}
+
 	_ = s.onError(cl.Info(), fmt.Errorf("storage: %w", err))
 }
 
@@ -431,6 +440,8 @@ func (s *Server) Publish(topic string, payload []byte, retain bool) error {
 	return nil
 }
 
+// Info provides pseudo-client information for the inline messages processor.
+// It provides a 'client' to which inline retained messages can be assigned.
 func (*inlineMessages) Info() events.Client {
 	return events.Client{
 		"inline",
@@ -489,6 +500,7 @@ func (s *Server) retainMessage(cl events.Clientlike, pk packets.Packet) {
 	out := pk.PublishCopy()
 	q := s.Topics.RetainMessage(out)
 	atomic.AddInt64(&s.System.Retained, q)
+
 	if s.Store != nil {
 		if q == 1 {
 			s.onStorage(cl, s.Store.WriteRetained(persistence.Message{
