@@ -729,7 +729,7 @@ func TestInflightGetAll(t *testing.T) {
 
 	m := cl.Inflight.GetAll()
 	o := map[uint16]InflightMessage{
-		2: InflightMessage{},
+		2: {},
 	}
 	require.Equal(t, o, m)
 }

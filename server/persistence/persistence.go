@@ -197,7 +197,7 @@ func (s *MockStore) ReadSubscriptions() (v []Subscription, err error) {
 	}
 
 	return []Subscription{
-		Subscription{
+		{
 			ID:     "test:a/b/c",
 			Client: "test",
 			Filter: "a/b/c",
@@ -214,7 +214,7 @@ func (s *MockStore) ReadClients() (v []Client, err error) {
 	}
 
 	return []Client{
-		Client{
+		{
 			ID:       "cl_client1",
 			ClientID: "client1",
 			T:        KClient,
@@ -230,7 +230,7 @@ func (s *MockStore) ReadInflight() (v []Message, err error) {
 	}
 
 	return []Message{
-		Message{
+		{
 			ID:        "client1_if_100",
 			T:         KInflight,
 			Client:    "client1",
@@ -250,7 +250,7 @@ func (s *MockStore) ReadRetained() (v []Message, err error) {
 	}
 
 	return []Message{
-		Message{
+		{
 			ID: "client1_ret_200",
 			T:  KRetained,
 			FixedHeader: FixedHeader{
