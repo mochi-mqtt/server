@@ -432,7 +432,8 @@ func (s *Server) Publish(topic string, payload []byte, retain bool) error {
 
 	pk := packets.Packet{
 		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+			Type:   packets.Publish,
+			Retain: retain,
 		},
 		TopicName: topic,
 		Payload:   payload,
