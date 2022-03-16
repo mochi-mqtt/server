@@ -17,6 +17,7 @@ import (
 )
 
 var (
+	// ErrInvalidMessage indicates that a message payload was not valid.
 	ErrInvalidMessage = errors.New("message type not binary")
 
 	// wsUpgrader is used to upgrade the incoming http/tcp connection to a
@@ -34,7 +35,7 @@ type Websocket struct {
 	address   string        // the network address to bind to.
 	config    *Config       // configuration values for the listener.
 	listen    *http.Server  // an http server for serving websocket connections.
-	establish EstablishFunc // the server's establish conection handler.
+	establish EstablishFunc // the server's establish connection handler.
 	end       uint32        // ensure the close methods are only called once.
 }
 

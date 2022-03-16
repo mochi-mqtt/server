@@ -282,7 +282,7 @@ func (cl *Client) Stop(cause error) {
 	})
 }
 
-// readFixedHeader reads in the values of the next packet's fixed header.
+// ReadFixedHeader reads in the values of the next packet's fixed header.
 func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	p, err := cl.r.Read(1)
 	if err != nil {

@@ -19,7 +19,7 @@ func NewReader(size, block int) *Reader {
 	}
 }
 
-// NewReaderFromSlice returns a new Circular Reader using a pre-exising
+// NewReaderFromSlice returns a new Circular Reader using a pre-existing
 // byte slice.
 func NewReaderFromSlice(block int, p []byte) *Reader {
 	b := NewBufferFromSlice(block, p)
