@@ -1153,7 +1153,7 @@ func TestServerPublishInlineRetain(t *testing.T) {
 	w1.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Publish << 4), 12,
+		byte(packets.Publish<<4 | 1), 12,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		'h', 'e', 'l', 'l', 'o',
