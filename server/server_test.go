@@ -1,11 +1,13 @@
 package server
 
 import (
-	//"errors"
+	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,6 +24,41 @@ import (
 	"github.com/mochi-co/mqtt/server/persistence"
 	"github.com/mochi-co/mqtt/server/system"
 )
+
+type packetHook struct {
+	lock   sync.Mutex
+	client events.Client
+	packet events.Packet
+}
+
+func (h *packetHook) onPacket(cl events.Client, pk events.Packet) (events.Packet, error) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+	h.client = cl
+	h.packet = pk
+	return pk, nil
+}
+
+func (h *packetHook) onConnect(cl events.Client, pk events.Packet) {
+	h.onPacket(cl, pk)
+}
+
+type errorHook struct {
+	lock   sync.Mutex
+	client events.Client
+	err    error
+	cnt    int
+}
+
+func (h *errorHook) onError(cl events.Client, err error) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+	h.client = cl
+	h.err = err
+	h.cnt++
+}
+
+var errTestStop = fmt.Errorf("test stop")
 
 const defaultPort = ":18882"
 
@@ -171,6 +208,15 @@ func BenchmarkServerServe(b *testing.B) {
 	}
 }
 
+func TestServerInlineInfo(t *testing.T) {
+	s := New()
+	require.Equal(t, events.Client{
+		ID:       "inline",
+		Remote:   "inline",
+		Listener: "inline",
+	}, s.inline.Info())
+}
+
 func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 	s := New()
 
@@ -216,10 +262,10 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.Stop()
 
 	errx := <-o
-	require.NoError(t, errx)
+	require.True(t, errors.Is(errx, ErrClientDisconnect))
+
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
 		0, packets.Accepted,
@@ -234,12 +280,8 @@ func TestServerEventOnConnect(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	s.Clients.Add(cl)
 
-	var hookedClient events.Client
-	var hookedPacket events.Packet
-	s.Events.OnConnect = func(cl events.Client, pk events.Packet) {
-		hookedClient = cl
-		hookedPacket = pk
-	}
+	var hook packetHook
+	s.Events.OnConnect = hook.onConnect
 
 	o := make(chan error)
 	go func() {
@@ -272,10 +314,9 @@ func TestServerEventOnConnect(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.Stop()
 
 	errx := <-o
-	require.NoError(t, errx)
+	require.True(t, errors.Is(errx, ErrClientDisconnect))
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
 		0, packets.Accepted,
@@ -288,8 +329,9 @@ func TestServerEventOnConnect(t *testing.T) {
 
 	require.Equal(t, events.Client{
 		ID:       "mochi",
+		Remote:   "pipe",
 		Listener: "tcp",
-	}, hookedClient)
+	}, hook.client)
 
 	require.Equal(t, events.Packet(packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -301,7 +343,7 @@ func TestServerEventOnConnect(t *testing.T) {
 		CleanSession:     true,
 		Keepalive:        45,
 		ClientIdentifier: "mochi",
-	}), hookedPacket)
+	}), hook.packet)
 
 }
 
@@ -310,12 +352,8 @@ func TestServerEventOnDisconnect(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	s.Clients.Add(cl)
 
-	var hookedClient events.Client
-	var hookedErr error
-	s.Events.OnDisconnect = func(cl events.Client, err error) {
-		hookedClient = cl
-		hookedErr = err
-	}
+	var hook errorHook
+	s.Events.OnDisconnect = hook.onError
 
 	o := make(chan error)
 	go func() {
@@ -348,10 +386,9 @@ func TestServerEventOnDisconnect(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.Stop()
 
 	errx := <-o
-	require.NoError(t, errx)
+	require.True(t, errors.Is(errx, ErrClientDisconnect))
 
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
@@ -363,10 +400,11 @@ func TestServerEventOnDisconnect(t *testing.T) {
 
 	require.Equal(t, events.Client{
 		ID:       "mochi",
+		Remote:   "pipe",
 		Listener: "tcp",
-	}, hookedClient)
+	}, hook.client)
 
-	require.Equal(t, nil, hookedErr)
+	require.True(t, errors.Is(hook.err, ErrClientDisconnect))
 }
 
 func TestServerEventOnDisconnectOnError(t *testing.T) {
@@ -374,12 +412,13 @@ func TestServerEventOnDisconnectOnError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	s.Clients.Add(cl)
 
-	var hookedClient events.Client
-	var hookedErr error
-	s.Events.OnDisconnect = func(cl events.Client, err error) {
-		hookedClient = cl
-		hookedErr = err
+	s.Events.OnError = func(cl events.Client, err error) {
+		// Do not allow
+		panic(err)
 	}
+
+	var hook errorHook
+	s.Events.OnDisconnect = hook.onError
 
 	o := make(chan error)
 	go func() {
@@ -409,21 +448,19 @@ func TestServerEventOnDisconnectOnError(t *testing.T) {
 		}
 	}()
 
-	clw, ok := s.Clients.Get("mochi")
+	_, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.Stop()
 
 	errx := <-o
 	require.Error(t, errx)
 	require.Equal(t, "No valid packet available; 0", errx.Error())
-
-	require.Equal(t, errx, hookedErr)
+	require.Equal(t, errx, hook.err)
 
 	require.Equal(t, events.Client{
 		ID:       "mochi",
+		Remote:   "pipe",
 		Listener: "tcp",
-	}, hookedClient)
-
+	}, hook.client)
 }
 
 func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
@@ -469,10 +506,9 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi")
 	require.Equal(t, true, ok)
-	clw.Stop()
 
 	errx := <-o
-	require.NoError(t, errx)
+	require.True(t, errors.Is(errx, ErrClientDisconnect))
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
 		1, packets.Accepted,
@@ -485,6 +521,10 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 	s := New()
 
+	var hookE, hookD errorHook
+	s.Events.OnError = hookE.onError
+	s.Events.OnDisconnect = hookD.onError
+
 	r, w := net.Pipe()
 	go func() {
 		w.Write([]byte{packets.Connect<<4 | 1<<1, 0x00, 0x00})
@@ -495,7 +535,12 @@ func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 
 	r.Close()
 	require.Error(t, err)
-	require.Equal(t, packets.ErrInvalidFlags, err)
+	require.True(t, errors.Is(err, packets.ErrInvalidFlags))
+
+	require.Equal(t, err, hookE.err)
+
+	// There was no disconnect error b/c connection failed.
+	require.Nil(t, hookD.err)
 }
 
 func TestServerEstablishConnectionInvalidPacket(t *testing.T) {
@@ -528,7 +573,7 @@ func TestServerEstablishConnectionNotConnectPacket(t *testing.T) {
 
 	r.Close()
 	require.Error(t, err)
-	require.Equal(t, ErrReadConnectInvalid, err)
+	require.True(t, errors.Is(err, ErrReadConnectInvalid))
 }
 
 func TestServerEstablishConnectionBadAuth(t *testing.T) {
@@ -570,7 +615,7 @@ func TestServerEstablishConnectionBadAuth(t *testing.T) {
 	errx := <-o
 	time.Sleep(time.Millisecond)
 	r.Close()
-	require.NoError(t, errx)
+	require.True(t, errors.Is(errx, ErrConnectionFailed))
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
 		0, packets.CodeConnectBadAuthValues,
@@ -639,14 +684,9 @@ func TestServerEstablishConnectionReadPacketErr(t *testing.T) {
 	require.Error(t, errx)
 }
 
-func TestServerOnDisconnectErr(t *testing.T) {
-
-}
-
 func TestServerWriteClient(t *testing.T) {
 	s, cl, r, w := setupClient()
 	cl.ID = "mochi"
-	defer cl.Stop()
 
 	err := s.writeClient(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -657,21 +697,19 @@ func TestServerWriteClient(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ack := make(chan []byte)
-	go func() {
-		buf, err := ioutil.ReadAll(r)
-		if err != nil {
-			panic(err)
-		}
-		ack <- buf
-	}()
-	time.Sleep(time.Millisecond)
-	w.Close()
+	// Expecting 4 bytes
+	buf := make([]byte, 4)
+	nread, err := r.Read(buf)
+	if nread < 4 || err != nil {
+		panic(err)
+	}
 
 	require.Equal(t, []byte{
 		byte(packets.Pubcomp << 4), 2,
 		0, 14,
-	}, <-ack)
+	}, buf)
+
+	w.Close()
 }
 
 func TestServerWriteClientError(t *testing.T) {
@@ -740,13 +778,14 @@ func TestServerProcessPingreq(t *testing.T) {
 func TestServerProcessPingreqError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 
-	cl.Stop()
+	cl.Stop(errTestStop)
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Pingreq,
 		},
 	})
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestServerProcessPublishInvalid(t *testing.T) {
@@ -903,7 +942,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	s.Topics.Subscribe("qos0", cl2.ID, 0)
 	s.Topics.Subscribe("qos1", cl2.ID, 1)
 	s.Topics.Subscribe("qos2", cl2.ID, 2)
-	cl2.Stop()
+	cl2.Stop(errTestStop)
 
 	ack1 := make(chan []byte)
 	go func() {
@@ -976,10 +1015,10 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 
 	clw, ok := s.Clients.Get("mochi2")
 	require.Equal(t, true, ok)
-	clw.Stop()
+	clw.Stop(errTestStop)
 
 	errx := <-o
-	require.NoError(t, errx)
+	require.True(t, errors.Is(errx, ErrClientDisconnect))
 	ret := <-recv
 
 	wanted := []byte{
@@ -1001,7 +1040,6 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	require.Equal(t, true, (ret[4] == byte(packets.Publish<<4|1<<1|1<<3) || ret[4] == byte(packets.Publish<<4|2<<1|1<<3)))
 
 	w.Close()
-
 }
 
 func TestServerProcessPublishSystemPrefix(t *testing.T) {
@@ -1038,7 +1076,7 @@ func TestServerProcessPublishBadACL(t *testing.T) {
 
 func TestServerProcessPublishWriteAckError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Stop()
+	cl.Stop(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1050,6 +1088,7 @@ func TestServerProcessPublishWriteAckError(t *testing.T) {
 	})
 
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestServerPublishInline(t *testing.T) {
@@ -1081,7 +1120,8 @@ func TestServerPublishInline(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, <-ack1)
 
-	require.Equal(t, int64(14), s.System.BytesSent)
+	bsent := atomic.LoadInt64(&s.System.BytesSent)
+	require.Equal(t, int64(14), bsent)
 
 	close(s.inline.done)
 }
@@ -1137,13 +1177,8 @@ func TestServerEventOnMessage(t *testing.T) {
 	s.Clients.Add(cl1)
 	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
 
-	var hookedPacket events.Packet
-	var hookedClient events.Client
-	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
-		hookedClient = cl
-		hookedPacket = pk
-		return pk, nil
-	}
+	var hook packetHook
+	s.Events.OnMessage = hook.onPacket
 
 	ack1 := make(chan []byte)
 	go func() {
@@ -1168,10 +1203,11 @@ func TestServerEventOnMessage(t *testing.T) {
 
 	require.Equal(t, events.Client{
 		ID:       "mochi",
+		Remote:   "pipe",
 		Listener: "",
-	}, hookedClient)
+	}, hook.client)
 
-	require.Equal(t, events.Packet(pk1), hookedPacket)
+	require.Equal(t, events.Packet(pk1), hook.packet)
 
 	w1.Close()
 
@@ -1190,13 +1226,12 @@ func TestServerProcessPublishHookOnMessageModify(t *testing.T) {
 	s.Clients.Add(cl1)
 	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
 
-	var hookedPacket events.Packet
 	var hookedClient events.Client
 	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
-		hookedPacket = pk
-		hookedPacket.Payload = []byte("world")
+		pkx := pk
+		pkx.Payload = []byte("world")
 		hookedClient = cl
-		return hookedPacket, nil
+		return pkx, nil
 	}
 
 	ack1 := make(chan []byte)
@@ -1222,6 +1257,7 @@ func TestServerProcessPublishHookOnMessageModify(t *testing.T) {
 
 	require.Equal(t, events.Client{
 		ID:       "mochi",
+		Remote:   "pipe",
 		Listener: "",
 	}, hookedClient)
 
@@ -1294,11 +1330,10 @@ func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
 	s.Topics.Subscribe("d/e/f", cl2.ID, 0)
 
 	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
-		hookedPacket := pk
 		if pk.TopicName == "a/b/c" {
-			hookedPacket.AllowClients = []string{"allowed"}
+			pk.AllowClients = []string{"allowed"}
 		}
-		return hookedPacket, nil
+		return pk, nil
 	}
 
 	ack1 := make(chan []byte)
@@ -1415,7 +1450,7 @@ func TestServerProcessPubrec(t *testing.T) {
 
 func TestServerProcessPubrecError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Stop()
+	cl.Stop(errTestStop)
 	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	err := s.processPacket(cl, packets.Packet{
@@ -1425,6 +1460,7 @@ func TestServerProcessPubrecError(t *testing.T) {
 		PacketID: 12,
 	})
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestServerProcessPubrel(t *testing.T) {
@@ -1461,7 +1497,7 @@ func TestServerProcessPubrel(t *testing.T) {
 
 func TestServerProcessPubrelError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Stop()
+	cl.Stop(errTestStop)
 	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
 
 	err := s.processPacket(cl, packets.Packet{
@@ -1471,6 +1507,7 @@ func TestServerProcessPubrelError(t *testing.T) {
 		PacketID: 12,
 	})
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestServerProcessPubcomp(t *testing.T) {
@@ -1599,7 +1636,7 @@ func TestServerProcessSubscribeFailACL(t *testing.T) {
 
 func TestServerProcessSubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Stop()
+	cl.Stop(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1611,6 +1648,7 @@ func TestServerProcessSubscribeWriteError(t *testing.T) {
 	})
 
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestServerProcessUnsubscribeInvalid(t *testing.T) {
@@ -1674,7 +1712,7 @@ func TestServerProcessUnsubscribe(t *testing.T) {
 
 func TestServerProcessUnsubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Stop()
+	cl.Stop(errTestStop)
 
 	err := s.processPacket(cl, packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -1685,6 +1723,7 @@ func TestServerProcessUnsubscribeWriteError(t *testing.T) {
 	})
 
 	require.Error(t, err)
+	require.Equal(t, errTestStop, cl.StopCause())
 }
 
 func TestEventLoop(t *testing.T) {
@@ -1696,7 +1735,6 @@ func TestEventLoop(t *testing.T) {
 	}()
 	time.Sleep(time.Millisecond * 3)
 	close(s.done)
-
 }
 
 func TestServerClose(t *testing.T) {
@@ -1748,8 +1786,7 @@ func TestServerCloseClientLWT(t *testing.T) {
 		ack2 <- buf
 	}()
 
-	err := s.closeClient(cl1, true)
-	require.NoError(t, err)
+	s.closeClient(cl1, true, fmt.Errorf("goodbye"))
 	time.Sleep(time.Millisecond)
 	w2.Close()
 
@@ -1763,16 +1800,28 @@ func TestServerCloseClientLWT(t *testing.T) {
 
 func TestServerCloseClientClosed(t *testing.T) {
 	s, cl, _, _ := setupClient()
+
+	var hook errorHook
+	s.Events.OnError = hook.onError
+
 	cl.Listener = "t1"
 	cl.LWT = clients.LWT{
 		Qos:     1,
 		Topic:   "a/b/c",
 		Message: []byte{'h', 'e', 'l', 'l', 'o'},
 	}
-	cl.Stop()
+	// Close the client connection abruptly, e.g., as if the
+	// seession were taken over or a protocol error had occurred.
+	cl.Stop(errTestStop)
 
-	err := s.closeClient(cl, true)
-	require.NoError(t, err)
+	s.closeClient(cl, true, clients.ErrConnectionClosed)
+
+	// We see the original error that caused the connection to stop.
+	require.True(t, errors.Is(cl.StopCause(), errTestStop) || errors.Is(cl.StopCause(), io.EOF))
+
+	// Errors were generated in the closeClient() code path.
+	require.Equal(t, 1, hook.cnt)
+	require.True(t, errors.Is(hook.err, clients.ErrConnectionClosed))
 }
 
 func TestServerReadStore(t *testing.T) {
@@ -2032,6 +2081,7 @@ func TestServerResendClientInflight(t *testing.T) {
 	require.NoError(t, err)
 
 	time.Sleep(time.Millisecond)
+
 	r.Close()
 
 	rcv := <-o
@@ -2045,13 +2095,19 @@ func TestServerResendClientInflight(t *testing.T) {
 
 	m := cl.Inflight.GetAll()
 	require.Equal(t, 1, m[11].Resends) // index is packet id
-
 }
 
 func TestServerResendClientInflightBackoff(t *testing.T) {
 	s := New()
-	s.Store = new(persistence.MockStore)
 	require.NotNil(t, s)
+
+	mock := new(persistence.MockStore)
+	s.Store = mock
+	mock.Fail = make(map[string]bool)
+	mock.Fail["write_inflight"] = true
+
+	var hook errorHook
+	s.Events.OnError = hook.onError
 
 	r, w := net.Pipe()
 	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
@@ -2103,6 +2159,9 @@ func TestServerResendClientInflightBackoff(t *testing.T) {
 
 	m := cl.Inflight.GetAll()
 	require.Equal(t, 1, m[11].Resends) // index is packet id
+
+	// Expect a test persistence error.
+	require.Equal(t, "storage: test", hook.err.Error())
 }
 
 func TestServerResendClientInflightNoMessages(t *testing.T) {

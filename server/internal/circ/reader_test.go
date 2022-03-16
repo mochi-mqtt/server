@@ -2,6 +2,8 @@ package circ
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -34,16 +36,18 @@ func TestReadFrom(t *testing.T) {
 	br := bytes.NewReader(b4)
 
 	_, err := buf.ReadFrom(br)
-	require.NoError(t, err)
+	require.True(t, errors.Is(err, io.EOF))
 	require.Equal(t, bytes.Repeat([]byte{'-'}, 4), buf.buf[:4])
 	require.Equal(t, int64(4), buf.head)
 
 	br.Reset(b4)
 	_, err = buf.ReadFrom(br)
+	require.True(t, errors.Is(err, io.EOF))
 	require.Equal(t, int64(8), buf.head)
 
 	br.Reset(b4)
 	_, err = buf.ReadFrom(br)
+	require.True(t, errors.Is(err, io.EOF))
 	require.Equal(t, int64(12), buf.head)
 }
 

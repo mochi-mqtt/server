@@ -1,13 +1,13 @@
 package events
 
 import (
-	"github.com/mochi-co/mqtt/server/internal/clients"
 	"github.com/mochi-co/mqtt/server/internal/packets"
 )
 
 // Events provides callback handlers for different event hooks.
 type Events struct {
 	OnMessage    // published message receieved.
+	OnError      // server error.
 	OnConnect    // client connected.
 	OnDisconnect // client disconnected.
 }
@@ -18,15 +18,14 @@ type Packet packets.Packet
 // Client contains limited information about a connected client.
 type Client struct {
 	ID       string
+	Remote   string
 	Listener string
 }
 
-// FromClient returns an event client from a client.
-func FromClient(cl *clients.Client) Client {
-	return Client{
-		ID:       cl.ID,
-		Listener: cl.Listener,
-	}
+// Clientlike is an interface for Clients and client-like objects that
+// are able to describe their client/listener IDs and remote address.
+type Clientlike interface {
+	Info() Client
 }
 
 // OnMessage function is called when a publish message is received. Note,
@@ -47,3 +46,7 @@ type OnConnect func(Client, Packet)
 // is passed to the function if the client disconnected abnormally, otherwise it
 // will be nil on a normal disconnect.
 type OnDisconnect func(Client, error)
+
+// OnError is called when errors that will not be passed to
+// OnDisconnect are handled by the server.
+type OnError func(Client, error)

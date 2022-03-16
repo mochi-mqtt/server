@@ -3,6 +3,7 @@ package packets
 import (
 	"bytes"
 	"errors"
+	"fmt"
 )
 
 // All of the valid packet types and their packet identifier.
@@ -60,7 +61,6 @@ var (
 
 	// PACKETS
 	ErrProtocolViolation        = errors.New("protocol violation")
-	ErrOffsetStrOutOfRange      = errors.New("offset string out of range")
 	ErrOffsetBytesOutOfRange    = errors.New("offset bytes out of range")
 	ErrOffsetByteOutOfRange     = errors.New("offset byte out of range")
 	ErrOffsetBoolOutOfRange     = errors.New("offset bool out of range")
@@ -160,17 +160,17 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 	// Unpack protocol name and version.
 	pk.ProtocolName, offset, err = decodeBytes(buf, 0)
 	if err != nil {
-		return ErrMalformedProtocolName
+		return fmt.Errorf("%s: %w", err, ErrMalformedProtocolName)
 	}
 
 	pk.ProtocolVersion, offset, err = decodeByte(buf, offset)
 	if err != nil {
-		return ErrMalformedProtocolVersion
+		return fmt.Errorf("%s: %w", err, ErrMalformedProtocolVersion)
 	}
 	// Unpack flags byte.
 	flags, offset, err := decodeByte(buf, offset)
 	if err != nil {
-		return ErrMalformedFlags
+		return fmt.Errorf("%s: %w", err, ErrMalformedFlags)
 	}
 	pk.ReservedBit = 1 & flags
 	pk.CleanSession = 1&(flags>>1) > 0
@@ -183,25 +183,25 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 	// Get keepalive interval.
 	pk.Keepalive, offset, err = decodeUint16(buf, offset)
 	if err != nil {
-		return ErrMalformedKeepalive
+		return fmt.Errorf("%s: %w", err, ErrMalformedKeepalive)
 	}
 
 	// Get client ID.
 	pk.ClientIdentifier, offset, err = decodeString(buf, offset)
 	if err != nil {
-		return ErrMalformedClientID
+		return fmt.Errorf("%s: %w", err, ErrMalformedClientID)
 	}
 
 	// Get Last Will and Testament topic and message if applicable.
 	if pk.WillFlag {
 		pk.WillTopic, offset, err = decodeString(buf, offset)
 		if err != nil {
-			return ErrMalformedWillTopic
+			return fmt.Errorf("%s: %w", err, ErrMalformedWillTopic)
 		}
 
 		pk.WillMessage, offset, err = decodeBytes(buf, offset)
 		if err != nil {
-			return ErrMalformedWillMessage
+			return fmt.Errorf("%s: %w", err, ErrMalformedWillMessage)
 		}
 	}
 
@@ -209,14 +209,14 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 	if pk.UsernameFlag {
 		pk.Username, offset, err = decodeBytes(buf, offset)
 		if err != nil {
-			return ErrMalformedUsername
+			return fmt.Errorf("%s: %w", err, ErrMalformedUsername)
 		}
 	}
 
 	if pk.PasswordFlag {
 		pk.Password, offset, err = decodeBytes(buf, offset)
 		if err != nil {
-			return ErrMalformedPassword
+			return fmt.Errorf("%s: %w", err, ErrMalformedPassword)
 		}
 	}
 
@@ -283,12 +283,12 @@ func (pk *Packet) ConnackDecode(buf []byte) error {
 
 	pk.SessionPresent, offset, err = decodeByteBool(buf, 0)
 	if err != nil {
-		return ErrMalformedSessionPresent
+		return fmt.Errorf("%s: %w", err, ErrMalformedSessionPresent)
 	}
 
 	pk.ReturnCode, offset, err = decodeByte(buf, offset)
 	if err != nil {
-		return ErrMalformedReturnCode
+		return fmt.Errorf("%s: %w", err, ErrMalformedReturnCode)
 	}
 
 	return nil
@@ -325,7 +325,7 @@ func (pk *Packet) PubackDecode(buf []byte) error {
 	var err error
 	pk.PacketID, _, err = decodeUint16(buf, 0)
 	if err != nil {
-		return ErrMalformedPacketID
+		return fmt.Errorf("%s: %w", err, ErrMalformedPacketID)
 	}
 	return nil
 }
@@ -343,7 +343,7 @@ func (pk *Packet) PubcompDecode(buf []byte) error {
 	var err error
 	pk.PacketID, _, err = decodeUint16(buf, 0)
 	if err != nil {
-		return ErrMalformedPacketID
+		return fmt.Errorf("%s: %w", err, ErrMalformedPacketID)
 	}
 	return nil
 }
@@ -381,14 +381,14 @@ func (pk *Packet) PublishDecode(buf []byte) error {
 
 	pk.TopicName, offset, err = decodeString(buf, 0)
 	if err != nil {
-		return ErrMalformedTopic
+		return fmt.Errorf("%s: %w", err, ErrMalformedTopic)
 	}
 
 	// If QOS decode Packet ID.
 	if pk.FixedHeader.Qos > 0 {
 		pk.PacketID, offset, err = decodeUint16(buf, offset)
 		if err != nil {
-			return ErrMalformedPacketID
+			return fmt.Errorf("%s: %w", err, ErrMalformedPacketID)
 		}
 	}
 
@@ -442,7 +442,7 @@ func (pk *Packet) PubrecDecode(buf []byte) error {
 	var err error
 	pk.PacketID, _, err = decodeUint16(buf, 0)
 	if err != nil {
-		return ErrMalformedPacketID
+		return fmt.Errorf("%s: %w", err, ErrMalformedPacketID)
 	}
 
 	return nil
@@ -461,7 +461,7 @@ func (pk *Packet) PubrelDecode(buf []byte) error {
 	var err error
 	pk.PacketID, _, err = decodeUint16(buf, 0)
 	if err != nil {
-		return ErrMalformedPacketID
+		return fmt.Errorf("%s: %w", err, ErrMalformedPacketID)
 	}
 	return nil
 }
@@ -486,7 +486,7 @@ func (pk *Packet) SubackDecode(buf []byte) error {
 	// Get Packet ID.
 	pk.PacketID, offset, err = decodeUint16(buf, offset)
 	if err != nil {
-		return ErrMalformedPacketID
+		return fmt.Errorf("%s: %w", err, ErrMalformedPacketID)
 	}
 
 	// Get Granted QOS flags.
@@ -533,7 +533,7 @@ func (pk *Packet) SubscribeDecode(buf []byte) error {
 	// Get the Packet ID.
 	pk.PacketID, offset, err = decodeUint16(buf, 0)
 	if err != nil {
-		return ErrMalformedPacketID
+		return fmt.Errorf("%s: %w", err, ErrMalformedPacketID)
 	}
 
 	// Keep decoding until there's no space left.
@@ -543,7 +543,7 @@ func (pk *Packet) SubscribeDecode(buf []byte) error {
 		var topic string
 		topic, offset, err = decodeString(buf, offset)
 		if err != nil {
-			return ErrMalformedTopic
+			return fmt.Errorf("%s: %w", err, ErrMalformedTopic)
 		}
 		pk.Topics = append(pk.Topics, topic)
 
@@ -551,7 +551,7 @@ func (pk *Packet) SubscribeDecode(buf []byte) error {
 		var qos byte
 		qos, offset, err = decodeByte(buf, offset)
 		if err != nil {
-			return ErrMalformedQoS
+			return fmt.Errorf("%s: %w", err, ErrMalformedQoS)
 		}
 
 		// Ensure QoS byte is within range.
@@ -590,7 +590,7 @@ func (pk *Packet) UnsubackDecode(buf []byte) error {
 	var err error
 	pk.PacketID, _, err = decodeUint16(buf, 0)
 	if err != nil {
-		return ErrMalformedPacketID
+		return fmt.Errorf("%s: %w", err, ErrMalformedPacketID)
 	}
 	return nil
 }
@@ -632,7 +632,7 @@ func (pk *Packet) UnsubscribeDecode(buf []byte) error {
 	// Get the Packet ID.
 	pk.PacketID, offset, err = decodeUint16(buf, 0)
 	if err != nil {
-		return ErrMalformedPacketID
+		return fmt.Errorf("%s: %w", err, ErrMalformedPacketID)
 	}
 
 	// Keep decoding until there's no space left.
@@ -640,7 +640,7 @@ func (pk *Packet) UnsubscribeDecode(buf []byte) error {
 		var t string
 		t, offset, err = decodeString(buf, offset) // Decode Topic Name.
 		if err != nil {
-			return ErrMalformedTopic
+			return fmt.Errorf("%s: %w", err, ErrMalformedTopic)
 		}
 
 		if len(t) > 0 {
