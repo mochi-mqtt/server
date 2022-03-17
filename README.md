@@ -14,10 +14,8 @@
 
 Mochi MQTT is an embeddable high-performance MQTT broker server written in Go, and compliant with the MQTT v3.0 and v3.1.1 specification for the development of IoT and smarthome projects. The server can be used either as a standalone binary or embedded as a library in your own projects. Mochi MQTT message throughput is comparable with everyone's favourites such as Mosquitto, Mosca, and VerneMQ.
 
-#### 📦 💬 See Github Discussions for discussions about releases
-Ongoing discussion about current and future releases can be found on the **[discussions page](https://github.com/mochi-co/mqtt/discussions).**
-
-https://github.com/mochi-co/mqtt/discussions
+> #### 📦 💬 See Github Discussions for discussions about releases
+> Ongoing discussion about current and future releases can be found at https://github.com/mochi-co/mqtt/discussions
 
 
 #### What is MQTT?
