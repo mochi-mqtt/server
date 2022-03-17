@@ -683,8 +683,13 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 		return err
 	}
 
-	// Publish out any retained messages matching the subscription filter.
+	// Publish out any retained messages matching the subscription filter and the user has
+	// been allowed to subscribe to.
 	for i := 0; i < len(pk.Topics); i++ {
+		if retCodes[i] == packets.ErrSubAckNetworkError {
+			continue
+		}
+
 		for _, pkv := range s.Topics.Messages(pk.Topics[i]) {
 			s.onError(cl.Info(), s.writeClient(cl, pkv))
 		}
