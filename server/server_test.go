@@ -1634,6 +1634,53 @@ func TestServerProcessSubscribeFailACL(t *testing.T) {
 	require.Empty(t, s.Topics.Subscribers("d/e/f"))
 }
 
+func TestServerProcessSubscribeFailACLNoRetainedReturned(t *testing.T) {
+	s, cl, r, w := setupClient()
+	cl.AC = new(auth.Disallow)
+
+	s.Topics.RetainMessage(packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type:   packets.Publish,
+			Retain: true,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+	})
+	require.Equal(t, 1, len(s.Topics.Messages("a/b/c")))
+
+	recv := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r)
+		if err != nil {
+			panic(err)
+		}
+		recv <- buf
+	}()
+
+	err := s.processPacket(cl, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Subscribe,
+		},
+		PacketID: 10,
+		Topics:   []string{"a/b/c", "d/e/f"},
+		Qoss:     []byte{0, 1},
+	})
+
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
+	w.Close()
+
+	require.Equal(t, []byte{
+		byte(packets.Suback << 4), 4,
+		0, 10,
+		packets.ErrSubAckNetworkError,
+		packets.ErrSubAckNetworkError,
+	}, <-recv)
+
+	require.Empty(t, s.Topics.Subscribers("a/b/c"))
+	require.Empty(t, s.Topics.Subscribers("d/e/f"))
+}
+
 func TestServerProcessSubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Stop(errTestStop)
