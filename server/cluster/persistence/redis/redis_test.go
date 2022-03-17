@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"github.com/alicebob/miniredis/v2"
 	"github.com/go-redis/redis/v8"
 	"github.com/mochi-co/mqtt/server/persistence"
 	"github.com/mochi-co/mqtt/server/system"
@@ -30,7 +31,10 @@ func TestNewNoOpts(t *testing.T) {
 }
 
 func TestOpen(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	require.Equal(t, opts.Addr, s.opts.Addr)
@@ -39,7 +43,10 @@ func TestOpen(t *testing.T) {
 }
 
 func TestWriteAndRetrieveServerInfo(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	defer teardown(s, t)
@@ -68,7 +75,10 @@ func TestWriteServerInfoNoDB(t *testing.T) {
 }
 
 func TestWriteServerInfoFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	err = s.WriteServerInfo(persistence.ServerInfo{})
@@ -76,13 +86,19 @@ func TestWriteServerInfoFail(t *testing.T) {
 }
 
 func TestReadServerInfoNoDB(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	_, err := s.ReadServerInfo()
 	require.Error(t, err)
 }
 
 func TestReadServerInfoFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
@@ -91,13 +107,16 @@ func TestReadServerInfoFail(t *testing.T) {
 }
 
 func TestWriteRetrieveDeleteSubscription(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	defer teardown(s, t)
 
 	v := persistence.Subscription{
-		ID:     "test:a/b/c",
+		ID:     "a/b/c",
 		Client: "test",
 		Filter: "a/b/c",
 		QoS:    1,
@@ -107,7 +126,7 @@ func TestWriteRetrieveDeleteSubscription(t *testing.T) {
 	require.NoError(t, err)
 
 	v2 := persistence.Subscription{
-		ID:     "test:d/e/f",
+		ID:     "d/e/f",
 		Client: "test",
 		Filter: "d/e/f",
 		QoS:    2,
@@ -116,74 +135,75 @@ func TestWriteRetrieveDeleteSubscription(t *testing.T) {
 	err = s.WriteSubscription(v2)
 	require.NoError(t, err)
 
-	subs, err := s.ReadSubscriptions(v2.Client)
+	subs, err := s.ReadSubscriptionsByCid("test")
 	require.NoError(t, err)
 	require.Equal(t, persistence.KSubscription, subs[0].T)
 	require.Equal(t, 2, len(subs))
 
-	err = s.DeleteSubscription(v2.Client,"test:d/e/f")
+	err = s.DeleteSubscription("test", "d/e/f")
 	require.NoError(t, err)
 
-	subs, err = s.ReadSubscriptions(v2.Client)
+	subs, err = s.ReadSubscriptionsByCid("test")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(subs))
 }
 
 func TestWriteSubscriptionNoDB(t *testing.T) {
-	s := New(nil)
-	err := s.WriteSubscription(persistence.Subscription{
-		ID:     "test:g/h/k",
-		Client: "test",
-		Filter: "g/h/k",
-		QoS:    1,
-		T:      persistence.KSubscription,
-	})
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
+	err := s.WriteSubscription(persistence.Subscription{})
 	require.Error(t, err)
 }
 
 func TestWriteSubscriptionFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
-	err = s.WriteSubscription(persistence.Subscription{
-		ID:     "test:g/h/k",
-		Client: "test",
-		Filter: "g/h/k",
-		QoS:    1,
-		T:      persistence.KSubscription,
-	})
+	err = s.WriteSubscription(persistence.Subscription{})
 	require.Error(t, err)
 }
 
 func TestReadSubscriptionNoDB(t *testing.T) {
-	s := New(nil)
-	cid := "test"
-	_, err := s.ReadSubscriptions(cid)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
+	_, err := s.ReadSubscriptionsByCid("test")
 	require.Error(t, err)
 }
 
 func TestReadSubscriptionFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
-	cid := "test"
-	_, err = s.ReadSubscriptions(cid)
+	_, err = s.ReadSubscriptionsByCid("test")
 	require.Error(t, err)
 }
 
 func TestWriteRetrieveDeleteInflight(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	defer teardown(s, t)
 
 	v := persistence.Message{
-		ID:        "client1_if_0",
+		ID:        "0",
 		T:         persistence.KInflight,
-		Client:    "test",
 		PacketID:  0,
+		Client: "client1",
 		TopicName: "a/b/c",
 		Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
 		Sent:      100,
@@ -193,10 +213,10 @@ func TestWriteRetrieveDeleteInflight(t *testing.T) {
 	require.NoError(t, err)
 
 	v2 := persistence.Message{
-		ID:        "client1_if_100",
+		ID:        "100",
 		T:         persistence.KInflight,
-		Client: "test",
 		PacketID:  100,
+		Client: "client1",
 		TopicName: "d/e/f",
 		Payload:   []byte{'y', 'e', 's'},
 		Sent:      200,
@@ -205,80 +225,73 @@ func TestWriteRetrieveDeleteInflight(t *testing.T) {
 	err = s.WriteInflight(v2)
 	require.NoError(t, err)
 
-	msgs, err := s.ReadInflight(v.Client)
+	msgs, err := s.ReadInflightByCid("client1")
 	require.NoError(t, err)
 	require.Equal(t, persistence.KInflight, msgs[0].T)
 	require.Equal(t, 2, len(msgs))
 
-	err = s.DeleteInflight(v2.Client, v2.ID)
+	err = s.DeleteInflight("client1", 100)
 	require.NoError(t, err)
 
-	msgs, err = s.ReadInflight(v.Client)
+	msgs, err = s.ReadInflightByCid("client1")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(msgs))
 
 }
 
 func TestWriteInflightNoDB(t *testing.T) {
-	s := New(nil)
-	v := persistence.Message{
-		ID:        "client1_if_1",
-		T:         persistence.KInflight,
-		Client:    "test",
-		PacketID:  0,
-		TopicName: "a/b/c",
-		Payload:   []byte{'w', 'o', 'r', 'l', 'd'},
-		Sent:      100,
-		Resends:   0,
-	}
-	err := s.WriteInflight(v)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
+	err := s.WriteInflight(persistence.Message{})
 	require.Error(t, err)
 }
 
 func TestWriteInflightFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
-	v := persistence.Message{
-		ID:        "client1_if_2",
-		T:         persistence.KInflight,
-		Client:    "test",
-		PacketID:  0,
-		TopicName: "a/b/c",
-		Payload:   []byte{'w', 'o', 'r', 'l', 'd'},
-		Sent:      100,
-		Resends:   0,
-	}
-	err = s.WriteInflight(v)
+	err = s.WriteInflight(persistence.Message{})
 	require.Error(t, err)
 }
 
 func TestReadInflightNoDB(t *testing.T) {
-	s := New(nil)
-	cid := "test"
-	_, err := s.ReadInflight(cid)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
+	_, err := s.ReadInflightByCid("test")
 	require.Error(t, err)
 }
 
 func TestReadInflightFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
-	cid := "test"
-	_, err = s.ReadInflight(cid)
+	_, err = s.ReadInflightByCid("test")
 	require.Error(t, err)
 }
 
 func TestWriteRetrieveDeleteRetained(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	defer teardown(s, t)
 
 	v := persistence.Message{
-		ID: "client1_ret_200",
+		ID: s.GenRetainedId("a/b/c"),
 		T:  persistence.KRetained,
 		FixedHeader: persistence.FixedHeader{
 			Retain: true,
@@ -293,7 +306,7 @@ func TestWriteRetrieveDeleteRetained(t *testing.T) {
 	require.NoError(t, err)
 
 	v2 := persistence.Message{
-		ID: "client1_ret_300",
+		ID: s.GenRetainedId("d/e/f"),
 		T:  persistence.KRetained,
 		FixedHeader: persistence.FixedHeader{
 			Retain: true,
@@ -307,26 +320,29 @@ func TestWriteRetrieveDeleteRetained(t *testing.T) {
 	err = s.WriteRetained(v2)
 	require.NoError(t, err)
 
-	msg, err := s.ReadRetained(v2.TopicName)
+	msg, err := s.ReadRetainedByTopic("d/e/f")
 	require.NoError(t, err)
 	require.Equal(t, persistence.KRetained, msg.T)
 	require.Equal(t, true, msg.FixedHeader.Retain)
 
-	err = s.DeleteRetained("client1_ret_300")
-	require.NoError(t, err)
-
-	msg, err = s.ReadRetained(v2.TopicName)
+	err = s.DeleteRetained("d/e/f")
 	require.NoError(t, err)
 }
 
 func TestWriteRetainedNoDB(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.WriteRetained(persistence.Message{})
 	require.Error(t, err)
 }
 
 func TestWriteRetainedFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 
@@ -335,24 +351,31 @@ func TestWriteRetainedFail(t *testing.T) {
 }
 
 func TestReadRetainedNoDB(t *testing.T) {
-	s := New(nil)
-	topic := "d/e/f"
-	_, err := s.ReadRetained(topic)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
+	_, err := s.ReadRetainedByTopic("a/b/c")
 	require.Error(t, err)
 }
 
 func TestReadRetainedFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
-	topic := "d/e/f"
-	_, err = s.ReadRetained(topic)
+	_, err = s.ReadRetainedByTopic("a/b/c")
 	require.Error(t, err)
 }
 
 func TestWriteRetrieveDeleteClients(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	defer teardown(s, t)
@@ -373,7 +396,7 @@ func TestWriteRetrieveDeleteClients(t *testing.T) {
 	err = s.WriteClient(v)
 	require.NoError(t, err)
 
-	client, err := s.ReadClient(v.ClientID)
+	client, err := s.ReadClientByCid("client1")
 	require.NoError(t, err)
 
 	require.Equal(t, []byte{'m', 'o', 'c', 'h', 'i'}, client.Username)
@@ -388,25 +411,28 @@ func TestWriteRetrieveDeleteClients(t *testing.T) {
 	err = s.WriteClient(v2)
 	require.NoError(t, err)
 
-	client, err = s.ReadClient(v2.ClientID)
+	client, err = s.ReadClientByCid("client2")
 	require.NoError(t, err)
 	require.Equal(t, persistence.KClient, client.T)
 
-	err = s.DeleteClient("cl_client2")
-	require.NoError(t, err)
-
-	client, err = s.ReadClient(v2.ClientID)
+	err = s.DeleteClient("client2")
 	require.NoError(t, err)
 }
 
 func TestWriteClientNoDB(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.WriteClient(persistence.Client{})
 	require.Error(t, err)
 }
 
 func TestWriteClientFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
@@ -415,49 +441,61 @@ func TestWriteClientFail(t *testing.T) {
 }
 
 func TestReadClientNoDB(t *testing.T) {
-	s := New(nil)
-	cid := "test"
-	_, err := s.ReadClient(cid)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
+	_, err := s.ReadClientByCid("test")
 	require.Error(t, err)
 }
 
 func TestReadClientFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
-	cid := "test"
-	_, err = s.ReadClient(cid)
+	_, err = s.ReadClientByCid("test")
 	require.Error(t, err)
 }
 
 func TestDeleteSubscriptionNoDB(t *testing.T) {
-	s := New(nil)
-	filter := "test:g/h/k"
-	cid := "test"
-	err := s.DeleteSubscription(cid, filter)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
+	err := s.DeleteSubscription("test","a")
 	require.Error(t, err)
 }
 
 func TestDeleteSubscriptionFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
-	filter := "test:g/h/k"
-	cid := "test"
-	err = s.DeleteSubscription(cid, filter)
+	err = s.DeleteSubscription("test","a")
 	require.Error(t, err)
 }
 
 func TestDeleteClientNoDB(t *testing.T) {
-	s := New(nil)
-	err := s.DeleteClient("a")
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
+	err := s.DeleteClient("test")
 	require.Error(t, err)
 }
 
 func TestDeleteClientFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
@@ -466,32 +504,40 @@ func TestDeleteClientFail(t *testing.T) {
 }
 
 func TestDeleteInflightNoDB(t *testing.T) {
-	s := New(nil)
-	cid := "test"
-	fid := "client1_if_2"
-	err := s.DeleteInflight(cid, fid)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
+	err := s.DeleteInflight("test",1)
 	require.Error(t, err)
 }
 
 func TestDeleteInflightFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
-	cid := "test"
-	fid := "client1_if_2"
-	err = s.DeleteInflight(cid, fid)
+	err = s.DeleteInflight("test",1)
 	require.Error(t, err)
 }
 
 func TestDeleteRetainedNoDB(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.DeleteRetained("a")
 	require.Error(t, err)
 }
 
 func TestDeleteRetainedFail(t *testing.T) {
-	s := New(nil)
+	mr, _ := miniredis.Run()
+	opts.Addr = mr.Addr()
+	defer mr.Close()
+	s := New(opts)
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
