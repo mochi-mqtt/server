@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/mochi-co/mqtt/server/packets"
 	"log"
 	"os"
 	"os/signal"
@@ -45,7 +46,7 @@ func main() {
 	}()
 
 	// Add OnConnect Event Hook
-	server.Events.OnConnect = func(cl events.Client, pk events.Packet) {
+	server.Events.OnConnect = func(cl events.Client, pk packets.Packet) {
 		fmt.Printf("<< OnConnect client connected %s: %+v\n", cl.ID, pk)
 	}
 
@@ -55,7 +56,7 @@ func main() {
 	}
 
 	// Add OnMessage Event Hook
-	server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.Packet, err error) {
+	server.Events.OnMessage = func(cl events.Client, pk packets.Packet) (pkx packets.Packet, err error) {
 		pkx = pk
 		if string(pk.Payload) == "hello" {
 			pkx.Payload = []byte("hello world")

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	packets2 "github.com/mochi-co/mqtt/server/packets"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -13,7 +14,6 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/mochi-co/mqtt/server/internal/circ"
-	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/internal/topics"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
 	"github.com/mochi-co/mqtt/server/system"
@@ -150,7 +150,7 @@ func NewClientStub(s *system.Info) *Client {
 }
 
 // Identify sets the identification values of a client instance.
-func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
+func (cl *Client) Identify(lid string, pk packets2.Packet, ac auth.Controller) {
 	cl.Listener = lid
 	cl.AC = ac
 
@@ -257,7 +257,7 @@ func (cl *Client) Stop() {
 }
 
 // readFixedHeader reads in the values of the next packet's fixed header.
-func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
+func (cl *Client) ReadFixedHeader(fh *packets2.FixedHeader) error {
 	p, err := cl.r.Read(1)
 	if err != nil {
 		return err
@@ -290,7 +290,7 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 		// If i has reached 4 without a length terminator, return a protocol violation.
 		i++
 		if i == 4 {
-			return packets.ErrOversizedLengthIndicator
+			return packets2.ErrOversizedLengthIndicator
 		}
 	}
 
@@ -307,14 +307,14 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 
 // Read loops forever reading new packets from a client connection until
 // an error is encountered (or the connection is closed).
-func (cl *Client) Read(packetHandler func(*Client, packets.Packet) error) error {
+func (cl *Client) Read(packetHandler func(*Client, packets2.Packet) error) error {
 	for {
 		if atomic.LoadUint32(&cl.State.Done) == 1 && cl.r.CapDelta() == 0 {
 			return nil
 		}
 
 		cl.refreshDeadline(cl.keepalive)
-		fh := new(packets.FixedHeader)
+		fh := new(packets2.FixedHeader)
 		err := cl.ReadFixedHeader(fh)
 		if err != nil {
 			return err
@@ -333,7 +333,7 @@ func (cl *Client) Read(packetHandler func(*Client, packets.Packet) error) error 
 }
 
 // ReadPacket reads the remaining buffer into an MQTT packet.
-func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err error) {
+func (cl *Client) ReadPacket(fh *packets2.FixedHeader) (pk packets2.Packet, err error) {
 	atomic.AddInt64(&cl.systemInfo.MessagesRecv, 1)
 
 	pk.FixedHeader = *fh
@@ -352,34 +352,34 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 	px := append([]byte{}, p[:]...)
 
 	switch pk.FixedHeader.Type {
-	case packets.Connect:
+	case packets2.Connect:
 		err = pk.ConnectDecode(px)
-	case packets.Connack:
+	case packets2.Connack:
 		err = pk.ConnackDecode(px)
-	case packets.Publish:
+	case packets2.Publish:
 		err = pk.PublishDecode(px)
 		if err == nil {
 			atomic.AddInt64(&cl.systemInfo.PublishRecv, 1)
 		}
-	case packets.Puback:
+	case packets2.Puback:
 		err = pk.PubackDecode(px)
-	case packets.Pubrec:
+	case packets2.Pubrec:
 		err = pk.PubrecDecode(px)
-	case packets.Pubrel:
+	case packets2.Pubrel:
 		err = pk.PubrelDecode(px)
-	case packets.Pubcomp:
+	case packets2.Pubcomp:
 		err = pk.PubcompDecode(px)
-	case packets.Subscribe:
+	case packets2.Subscribe:
 		err = pk.SubscribeDecode(px)
-	case packets.Suback:
+	case packets2.Suback:
 		err = pk.SubackDecode(px)
-	case packets.Unsubscribe:
+	case packets2.Unsubscribe:
 		err = pk.UnsubscribeDecode(px)
-	case packets.Unsuback:
+	case packets2.Unsuback:
 		err = pk.UnsubackDecode(px)
-	case packets.Pingreq:
-	case packets.Pingresp:
-	case packets.Disconnect:
+	case packets2.Pingreq:
+	case packets2.Pingresp:
+	case packets2.Disconnect:
 	default:
 		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
 	}
@@ -390,7 +390,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 }
 
 // WritePacket encodes and writes a packet to the client.
-func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
+func (cl *Client) WritePacket(pk packets2.Packet) (n int, err error) {
 	if atomic.LoadUint32(&cl.State.Done) == 1 {
 		return 0, ErrConnectionClosed
 	}
@@ -400,36 +400,36 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 
 	buf := new(bytes.Buffer)
 	switch pk.FixedHeader.Type {
-	case packets.Connect:
+	case packets2.Connect:
 		err = pk.ConnectEncode(buf)
-	case packets.Connack:
+	case packets2.Connack:
 		err = pk.ConnackEncode(buf)
-	case packets.Publish:
+	case packets2.Publish:
 		err = pk.PublishEncode(buf)
 		if err == nil {
 			atomic.AddInt64(&cl.systemInfo.PublishSent, 1)
 		}
-	case packets.Puback:
+	case packets2.Puback:
 		err = pk.PubackEncode(buf)
-	case packets.Pubrec:
+	case packets2.Pubrec:
 		err = pk.PubrecEncode(buf)
-	case packets.Pubrel:
+	case packets2.Pubrel:
 		err = pk.PubrelEncode(buf)
-	case packets.Pubcomp:
+	case packets2.Pubcomp:
 		err = pk.PubcompEncode(buf)
-	case packets.Subscribe:
+	case packets2.Subscribe:
 		err = pk.SubscribeEncode(buf)
-	case packets.Suback:
+	case packets2.Suback:
 		err = pk.SubackEncode(buf)
-	case packets.Unsubscribe:
+	case packets2.Unsubscribe:
 		err = pk.UnsubscribeEncode(buf)
-	case packets.Unsuback:
+	case packets2.Unsuback:
 		err = pk.UnsubackEncode(buf)
-	case packets.Pingreq:
+	case packets2.Pingreq:
 		err = pk.PingreqEncode(buf)
-	case packets.Pingresp:
+	case packets2.Pingresp:
 		err = pk.PingrespEncode(buf)
-	case packets.Disconnect:
+	case packets2.Disconnect:
 		err = pk.DisconnectEncode(buf)
 	default:
 		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
@@ -462,9 +462,9 @@ type LWT struct {
 
 // InflightMessage contains data about a packet which is currently in-flight.
 type InflightMessage struct {
-	Packet  packets.Packet // the packet currently in-flight.
-	Sent    int64          // the last time the message was sent (for retries) in unixtime.
-	Resends int            // the number of times the message was attempted to be sent.
+	Packet  packets2.Packet // the packet currently in-flight.
+	Sent    int64           // the last time the message was sent (for retries) in unixtime.
+	Resends int             // the number of times the message was attempted to be sent.
 }
 
 // Inflight is a map of InflightMessage keyed on packet id.

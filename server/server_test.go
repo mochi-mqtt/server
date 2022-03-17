@@ -3,6 +3,7 @@ package server
 import (
 	//"errors"
 	"fmt"
+	packets2 "github.com/mochi-co/mqtt/server/packets"
 	"io/ioutil"
 	"net"
 	"strconv"
@@ -15,7 +16,6 @@ import (
 	"github.com/mochi-co/mqtt/server/events"
 	"github.com/mochi-co/mqtt/server/internal/circ"
 	"github.com/mochi-co/mqtt/server/internal/clients"
-	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/internal/topics"
 	"github.com/mochi-co/mqtt/server/listeners"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
@@ -192,7 +192,7 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 
 	go func() {
 		w.Write([]byte{
-			byte(packets.Connect << 4), 17, // Fixed header
+			byte(packets2.Connect << 4), 17, // Fixed header
 			0, 4, // Protocol Name - MSB+LSB
 			'M', 'Q', 'T', 'T', // Protocol Name
 			4,     // Protocol Version
@@ -201,7 +201,7 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 			0, 5, // Client ID - MSB+LSB
 			'm', 'o', 'c', 'h', 'i', // Client ID
 		})
-		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+		w.Write([]byte{byte(packets2.Disconnect << 4), 0})
 	}()
 
 	// Receive the Connack
@@ -221,8 +221,8 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 	errx := <-o
 	require.NoError(t, errx)
 	require.Equal(t, []byte{
-		byte(packets.Connack << 4), 2,
-		0, packets.Accepted,
+		byte(packets2.Connack << 4), 2,
+		0, packets2.Accepted,
 	}, <-recv)
 	require.Empty(t, clw.Subscriptions)
 
@@ -235,10 +235,8 @@ func TestServerEventOnConnect(t *testing.T) {
 	s.Clients.Add(cl)
 
 	var hookedClient events.Client
-	var hookedPacket events.Packet
-	s.Events.OnConnect = func(cl events.Client, pk events.Packet) {
+	s.Events.OnConnect = func(cl events.Client, pk packets2.Packet) {
 		hookedClient = cl
-		hookedPacket = pk
 	}
 
 	o := make(chan error)
@@ -248,7 +246,7 @@ func TestServerEventOnConnect(t *testing.T) {
 
 	go func() {
 		w.Write([]byte{
-			byte(packets.Connect << 4), 17, // Fixed header
+			byte(packets2.Connect << 4), 17, // Fixed header
 			0, 4, // Protocol Name - MSB+LSB
 			'M', 'Q', 'T', 'T', // Protocol Name
 			4,     // Protocol Version
@@ -257,7 +255,7 @@ func TestServerEventOnConnect(t *testing.T) {
 			0, 5, // Client ID - MSB+LSB
 			'm', 'o', 'c', 'h', 'i', // Client ID
 		})
-		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+		w.Write([]byte{byte(packets2.Disconnect << 4), 0})
 	}()
 
 	// Receive the Connack
@@ -277,8 +275,8 @@ func TestServerEventOnConnect(t *testing.T) {
 	errx := <-o
 	require.NoError(t, errx)
 	require.Equal(t, []byte{
-		byte(packets.Connack << 4), 2,
-		0, packets.Accepted,
+		byte(packets2.Connack << 4), 2,
+		0, packets2.Accepted,
 	}, <-recv)
 	require.Empty(t, clw.Subscriptions)
 
@@ -290,19 +288,6 @@ func TestServerEventOnConnect(t *testing.T) {
 		ID:       "mochi",
 		Listener: "tcp",
 	}, hookedClient)
-
-	require.Equal(t, events.Packet(packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
-			Remaining: 17,
-		},
-		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
-		ProtocolVersion:  4,
-		CleanSession:     true,
-		Keepalive:        45,
-		ClientIdentifier: "mochi",
-	}), hookedPacket)
-
 }
 
 func TestServerEventOnDisconnect(t *testing.T) {
@@ -324,7 +309,7 @@ func TestServerEventOnDisconnect(t *testing.T) {
 
 	go func() {
 		w.Write([]byte{
-			byte(packets.Connect << 4), 17, // Fixed header
+			byte(packets2.Connect << 4), 17, // Fixed header
 			0, 4, // Protocol Name - MSB+LSB
 			'M', 'Q', 'T', 'T', // Protocol Name
 			4,     // Protocol Version
@@ -333,7 +318,7 @@ func TestServerEventOnDisconnect(t *testing.T) {
 			0, 5, // Client ID - MSB+LSB
 			'm', 'o', 'c', 'h', 'i', // Client ID
 		})
-		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+		w.Write([]byte{byte(packets2.Disconnect << 4), 0})
 	}()
 
 	// Receive the Connack
@@ -354,8 +339,8 @@ func TestServerEventOnDisconnect(t *testing.T) {
 	require.NoError(t, errx)
 
 	require.Equal(t, []byte{
-		byte(packets.Connack << 4), 2,
-		0, packets.Accepted,
+		byte(packets2.Connack << 4), 2,
+		0, packets2.Accepted,
 	}, <-recv)
 	require.Empty(t, clw.Subscriptions)
 
@@ -388,7 +373,7 @@ func TestServerEventOnDisconnectOnError(t *testing.T) {
 
 	go func() {
 		w.Write([]byte{
-			byte(packets.Connect << 4), 17, // Fixed header
+			byte(packets2.Connect << 4), 17, // Fixed header
 			0, 4, // Protocol Name - MSB+LSB
 			'M', 'Q', 'T', 'T', // Protocol Name
 			4,     // Protocol Version
@@ -445,7 +430,7 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 
 	go func() {
 		w.Write([]byte{
-			byte(packets.Connect << 4), 17, // Fixed header
+			byte(packets2.Connect << 4), 17, // Fixed header
 			0, 4, // Protocol Name - MSB+LSB
 			'M', 'Q', 'T', 'T', // Protocol Name
 			4,     // Protocol Version
@@ -454,7 +439,7 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 			0, 5, // Client ID - MSB+LSB
 			'm', 'o', 'c', 'h', 'i', // Client ID
 		})
-		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+		w.Write([]byte{byte(packets2.Disconnect << 4), 0})
 	}()
 
 	// Receive the Connack
@@ -474,8 +459,8 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 	errx := <-o
 	require.NoError(t, errx)
 	require.Equal(t, []byte{
-		byte(packets.Connack << 4), 2,
-		1, packets.Accepted,
+		byte(packets2.Connack << 4), 2,
+		1, packets2.Accepted,
 	}, <-recv)
 	require.NotEmpty(t, clw.Subscriptions)
 
@@ -487,7 +472,7 @@ func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 
 	r, w := net.Pipe()
 	go func() {
-		w.Write([]byte{packets.Connect<<4 | 1<<1, 0x00, 0x00})
+		w.Write([]byte{packets2.Connect<<4 | 1<<1, 0x00, 0x00})
 		w.Close()
 	}()
 
@@ -495,7 +480,7 @@ func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 
 	r.Close()
 	require.Error(t, err)
-	require.Equal(t, packets.ErrInvalidFlags, err)
+	require.Equal(t, packets2.ErrInvalidFlags, err)
 }
 
 func TestServerEstablishConnectionInvalidPacket(t *testing.T) {
@@ -520,7 +505,7 @@ func TestServerEstablishConnectionNotConnectPacket(t *testing.T) {
 	r, w := net.Pipe()
 
 	go func() {
-		w.Write([]byte{byte(packets.Connack << 4), 2, 0, packets.Accepted})
+		w.Write([]byte{byte(packets2.Connack << 4), 2, 0, packets2.Accepted})
 		w.Close()
 	}()
 
@@ -542,7 +527,7 @@ func TestServerEstablishConnectionBadAuth(t *testing.T) {
 
 	go func() {
 		w.Write([]byte{
-			byte(packets.Connect << 4), 30, // Fixed header
+			byte(packets2.Connect << 4), 30, // Fixed header
 			0, 4, // Protocol Name - MSB+LSB
 			'M', 'Q', 'T', 'T', // Protocol Name
 			4,     // Protocol Version
@@ -572,8 +557,8 @@ func TestServerEstablishConnectionBadAuth(t *testing.T) {
 	r.Close()
 	require.NoError(t, errx)
 	require.Equal(t, []byte{
-		byte(packets.Connack << 4), 2,
-		0, packets.CodeConnectBadAuthValues,
+		byte(packets2.Connack << 4), 2,
+		0, packets2.CodeConnectBadAuthValues,
 	}, <-recv)
 }
 
@@ -588,7 +573,7 @@ func TestServerEstablishConnectionPromptSendLWT(t *testing.T) {
 
 	go func() {
 		w.Write([]byte{
-			byte(packets.Connect << 4), 17, // Fixed header
+			byte(packets2.Connect << 4), 17, // Fixed header
 			0, 4, // Protocol Name - MSB+LSB
 			'M', 'Q', 'T', 'T', // Protocol Name
 			4,     // Protocol Version
@@ -622,7 +607,7 @@ func TestServerEstablishConnectionReadPacketErr(t *testing.T) {
 
 	go func() {
 		w.Write([]byte{
-			byte(packets.Connect << 4), 17, // Fixed header
+			byte(packets2.Connect << 4), 17, // Fixed header
 			0, 4, // Protocol Name - MSB+LSB
 			'M', 'Q', 'T', 'T', // Protocol Name
 			4,     // Protocol Version
@@ -648,9 +633,9 @@ func TestServerWriteClient(t *testing.T) {
 	cl.ID = "mochi"
 	defer cl.Stop()
 
-	err := s.writeClient(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Pubcomp,
+	err := s.writeClient(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:      packets2.Pubcomp,
 			Remaining: 2,
 		},
 		PacketID: 14,
@@ -669,7 +654,7 @@ func TestServerWriteClient(t *testing.T) {
 	w.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Pubcomp << 4), 2,
+		byte(packets2.Pubcomp << 4), 2,
 		0, 14,
 	}, <-ack)
 }
@@ -680,21 +665,21 @@ func TestServerWriteClientError(t *testing.T) {
 	cl := clients.NewClient(w, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
 	cl.ID = "mochi"
 
-	err := s.writeClient(cl, packets.Packet{})
+	err := s.writeClient(cl, packets2.Packet{})
 	require.Error(t, err)
 }
 
 func TestServerProcessFailure(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	err := s.processPacket(cl, packets.Packet{})
+	err := s.processPacket(cl, packets2.Packet{})
 	require.Error(t, err)
 }
 
 func TestServerProcessConnect(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Connect,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Connect,
 		},
 	})
 	require.NoError(t, err)
@@ -702,9 +687,9 @@ func TestServerProcessConnect(t *testing.T) {
 
 func TestServerProcessDisconnect(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Disconnect,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Disconnect,
 		},
 	})
 	require.NoError(t, err)
@@ -722,9 +707,9 @@ func TestServerProcessPingreq(t *testing.T) {
 		recv <- buf
 	}()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Pingreq,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Pingreq,
 		},
 	})
 
@@ -733,7 +718,7 @@ func TestServerProcessPingreq(t *testing.T) {
 	w.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Pingresp << 4), 0,
+		byte(packets2.Pingresp << 4), 0,
 	}, <-recv)
 }
 
@@ -741,9 +726,9 @@ func TestServerProcessPingreqError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 
 	cl.Stop()
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Pingreq,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Pingreq,
 		},
 	})
 	require.Error(t, err)
@@ -752,9 +737,9 @@ func TestServerProcessPingreqError(t *testing.T) {
 func TestServerProcessPublishInvalid(t *testing.T) {
 	s, cl, _, _ := setupClient()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 			Qos:  1,
 		},
 		PacketID: 0,
@@ -795,9 +780,9 @@ func TestServerProcessPublishQoS1Retain(t *testing.T) {
 
 	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.PublishRecv))
 
-	err := s.processPacket(cl1, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:   packets.Publish,
+	err := s.processPacket(cl1, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:   packets2.Publish,
 			Qos:    1,
 			Retain: true,
 		},
@@ -812,12 +797,12 @@ func TestServerProcessPublishQoS1Retain(t *testing.T) {
 	w2.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Puback << 4), 2,
+		byte(packets2.Puback << 4), 2,
 		0, 12,
 	}, <-ack1)
 
 	require.Equal(t, []byte{
-		byte(packets.Publish<<4 | 2 | 3), 14,
+		byte(packets2.Publish<<4 | 2 | 3), 14,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		0, 1,
@@ -840,9 +825,9 @@ func TestServerProcessPublishQoS2(t *testing.T) {
 		ack1 <- buf
 	}()
 
-	err := s.processPacket(cl1, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	err := s.processPacket(cl1, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 			Qos:  2,
 		},
 		TopicName: "a/b/c",
@@ -855,7 +840,7 @@ func TestServerProcessPublishQoS2(t *testing.T) {
 	w1.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Pubrec << 4), 2, // Fixed header
+		byte(packets2.Pubrec << 4), 2, // Fixed header
 		0, 12, // Packet ID - LSB+MSB
 	}, <-ack1)
 
@@ -875,9 +860,9 @@ func TestServerProcessPublishUnretainByEmptyPayload(t *testing.T) {
 		ack1 <- buf
 	}()
 
-	err := s.processPacket(cl1, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:   packets.Publish,
+	err := s.processPacket(cl1, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:   packets2.Publish,
 			Retain: true,
 		},
 		TopicName: "a/b/c",
@@ -915,9 +900,9 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	}()
 
 	for i := 0; i < 3; i++ {
-		err := s.processPacket(cl1, packets.Packet{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Publish,
+		err := s.processPacket(cl1, packets2.Packet{
+			FixedHeader: packets2.FixedHeader{
+				Type: packets2.Publish,
 				Qos:  byte(i),
 			},
 			TopicName: "qos" + strconv.Itoa(i),
@@ -933,9 +918,9 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	w1.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Puback << 4), 2, // Qos1 Ack
+		byte(packets2.Puback << 4), 2, // Qos1 Ack
 		0, 1,
-		byte(packets.Pubrec << 4), 2, // Qos2 Ack
+		byte(packets2.Pubrec << 4), 2, // Qos2 Ack
 		0, 2,
 	}, <-ack1)
 
@@ -953,7 +938,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 
 	go func() {
 		w.Write([]byte{
-			byte(packets.Connect << 4), 18, // Fixed header
+			byte(packets2.Connect << 4), 18, // Fixed header
 			0, 4, // Protocol Name - MSB+LSB
 			'M', 'Q', 'T', 'T', // Protocol Name
 			4,     // Protocol Version
@@ -962,7 +947,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 			0, 6, // Client ID - MSB+LSB
 			'm', 'o', 'c', 'h', 'i', '2', // Client ID
 		})
-		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+		w.Write([]byte{byte(packets2.Disconnect << 4), 0})
 	}()
 
 	recv := make(chan []byte)
@@ -983,14 +968,14 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	ret := <-recv
 
 	wanted := []byte{
-		byte(packets.Connack << 4), 2,
-		1, packets.Accepted,
-		byte(packets.Publish<<4 | 1<<1 | 1<<3), 13,
+		byte(packets2.Connack << 4), 2,
+		1, packets2.Accepted,
+		byte(packets2.Publish<<4 | 1<<1 | 1<<3), 13,
 		0, 4,
 		'q', 'o', 's', '1',
 		0, 1,
 		'h', 'e', 'l', 'l', 'o',
-		byte(packets.Publish<<4 | 2<<1 | 1<<3), 13,
+		byte(packets2.Publish<<4 | 2<<1 | 1<<3), 13,
 		0, 4,
 		'q', 'o', 's', '2',
 		0, 2,
@@ -998,7 +983,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	}
 
 	require.Equal(t, len(wanted), len(ret))
-	require.Equal(t, true, (ret[4] == byte(packets.Publish<<4|1<<1|1<<3) || ret[4] == byte(packets.Publish<<4|2<<1|1<<3)))
+	require.Equal(t, true, (ret[4] == byte(packets2.Publish<<4|1<<1|1<<3) || ret[4] == byte(packets2.Publish<<4|2<<1|1<<3)))
 
 	w.Close()
 
@@ -1008,9 +993,9 @@ func TestServerProcessPublishSystemPrefix(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	s.Clients.Add(cl)
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 		},
 		TopicName: "$SYS/stuff",
 		Payload:   []byte("hello"),
@@ -1025,9 +1010,9 @@ func TestServerProcessPublishBadACL(t *testing.T) {
 	cl.AC = new(auth.Disallow)
 	s.Clients.Add(cl)
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 		},
 		TopicName: "a/b/c",
 		Payload:   []byte("hello"),
@@ -1040,9 +1025,9 @@ func TestServerProcessPublishWriteAckError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Stop()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 			Qos:  1,
 		},
 		TopicName: "a/b/c",
@@ -1075,7 +1060,7 @@ func TestServerPublishInline(t *testing.T) {
 	w1.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Publish << 4), 12,
+		byte(packets2.Publish << 4), 12,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		'h', 'e', 'l', 'l', 'o',
@@ -1113,7 +1098,7 @@ func TestServerPublishInlineRetain(t *testing.T) {
 	w1.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Publish << 4), 12,
+		byte(packets2.Publish << 4), 12,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		'h', 'e', 'l', 'l', 'o',
@@ -1137,11 +1122,9 @@ func TestServerEventOnMessage(t *testing.T) {
 	s.Clients.Add(cl1)
 	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
 
-	var hookedPacket events.Packet
 	var hookedClient events.Client
-	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
+	s.Events.OnMessage = func(cl events.Client, pk packets2.Packet) (packets2.Packet, error) {
 		hookedClient = cl
-		hookedPacket = pk
 		return pk, nil
 	}
 
@@ -1154,9 +1137,9 @@ func TestServerEventOnMessage(t *testing.T) {
 		ack1 <- buf
 	}()
 
-	pk1 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	pk1 := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 		},
 		TopicName: "a/b/c",
 		Payload:   []byte("hello"),
@@ -1171,12 +1154,10 @@ func TestServerEventOnMessage(t *testing.T) {
 		Listener: "",
 	}, hookedClient)
 
-	require.Equal(t, events.Packet(pk1), hookedPacket)
-
 	w1.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Publish << 4), 12,
+		byte(packets2.Publish << 4), 12,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		'h', 'e', 'l', 'l', 'o',
@@ -1190,13 +1171,11 @@ func TestServerProcessPublishHookOnMessageModify(t *testing.T) {
 	s.Clients.Add(cl1)
 	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
 
-	var hookedPacket events.Packet
 	var hookedClient events.Client
-	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
-		hookedPacket = pk
-		hookedPacket.Payload = []byte("world")
+	s.Events.OnMessage = func(cl events.Client, pk packets2.Packet) (packets2.Packet, error) {
+		pk.Payload = []byte("world")
 		hookedClient = cl
-		return hookedPacket, nil
+		return pk, nil
 	}
 
 	ack1 := make(chan []byte)
@@ -1208,9 +1187,9 @@ func TestServerProcessPublishHookOnMessageModify(t *testing.T) {
 		ack1 <- buf
 	}()
 
-	pk1 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	pk1 := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 		},
 		TopicName: "a/b/c",
 		Payload:   []byte("hello"),
@@ -1228,7 +1207,7 @@ func TestServerProcessPublishHookOnMessageModify(t *testing.T) {
 	w1.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Publish << 4), 12,
+		byte(packets2.Publish << 4), 12,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		'w', 'o', 'r', 'l', 'd',
@@ -1242,7 +1221,7 @@ func TestServerProcessPublishHookOnMessageModifyError(t *testing.T) {
 	s.Clients.Add(cl1)
 	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
 
-	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
+	s.Events.OnMessage = func(cl events.Client, pk packets2.Packet) (packets2.Packet, error) {
 		pkx := pk
 		pkx.Payload = []byte("world")
 		return pkx, fmt.Errorf("error")
@@ -1257,9 +1236,9 @@ func TestServerProcessPublishHookOnMessageModifyError(t *testing.T) {
 		ack1 <- buf
 	}()
 
-	pk1 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	pk1 := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 		},
 		TopicName: "a/b/c",
 		Payload:   []byte("hello"),
@@ -1272,7 +1251,7 @@ func TestServerProcessPublishHookOnMessageModifyError(t *testing.T) {
 	w1.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Publish << 4), 12,
+		byte(packets2.Publish << 4), 12,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		'h', 'e', 'l', 'l', 'o',
@@ -1293,12 +1272,11 @@ func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
 	s.Topics.Subscribe("a/b/c", cl2.ID, 0)
 	s.Topics.Subscribe("d/e/f", cl2.ID, 0)
 
-	s.Events.OnMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
-		hookedPacket := pk
+	s.Events.OnMessage = func(cl events.Client, pk packets2.Packet) (packets2.Packet, error) {
 		if pk.TopicName == "a/b/c" {
-			hookedPacket.AllowClients = []string{"allowed"}
+			pk.AllowClients = []string{"allowed"}
 		}
-		return hookedPacket, nil
+		return pk, nil
 	}
 
 	ack1 := make(chan []byte)
@@ -1319,9 +1297,9 @@ func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
 		ack2 <- buf
 	}()
 
-	pk1 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	pk1 := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 		},
 		TopicName: "a/b/c",
 		Payload:   []byte("hello"),
@@ -1329,9 +1307,9 @@ func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
 	err := s.processPacket(cl1, pk1)
 	require.NoError(t, err)
 
-	pk2 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	pk2 := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 		},
 		TopicName: "d/e/f",
 		Payload:   []byte("a"),
@@ -1345,14 +1323,14 @@ func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
 	w2.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Publish << 4), 12,
+		byte(packets2.Publish << 4), 12,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		'h', 'e', 'l', 'l', 'o',
 	}, <-ack1)
 
 	require.Equal(t, []byte{
-		byte(packets.Publish << 4), 8,
+		byte(packets2.Publish << 4), 8,
 		0, 5,
 		'd', '/', 'e', '/', 'f',
 		'a',
@@ -1363,12 +1341,12 @@ func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
 
 func TestServerProcessPuback(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
+	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets2.Packet{PacketID: 11}, Sent: 0})
 	atomic.AddInt64(&s.System.Inflight, 1)
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Puback,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:      packets2.Puback,
 			Remaining: 2,
 		},
 		PacketID: 11,
@@ -1382,7 +1360,7 @@ func TestServerProcessPuback(t *testing.T) {
 
 func TestServerProcessPubrec(t *testing.T) {
 	s, cl, r, w := setupClient()
-	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
+	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets2.Packet{PacketID: 12}, Sent: 0})
 	atomic.AddInt64(&s.System.Inflight, 1)
 
 	recv := make(chan []byte)
@@ -1394,9 +1372,9 @@ func TestServerProcessPubrec(t *testing.T) {
 		recv <- buf
 	}()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Pubrec,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Pubrec,
 		},
 		PacketID: 12,
 	})
@@ -1407,7 +1385,7 @@ func TestServerProcessPubrec(t *testing.T) {
 	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.Inflight))
 
 	require.Equal(t, []byte{
-		byte(packets.Pubrel<<4) | 2, 2,
+		byte(packets2.Pubrel<<4) | 2, 2,
 		0, 12,
 	}, <-recv)
 
@@ -1416,11 +1394,11 @@ func TestServerProcessPubrec(t *testing.T) {
 func TestServerProcessPubrecError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Stop()
-	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
+	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets2.Packet{PacketID: 12}, Sent: 0})
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Pubrec,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Pubrec,
 		},
 		PacketID: 12,
 	})
@@ -1429,7 +1407,7 @@ func TestServerProcessPubrecError(t *testing.T) {
 
 func TestServerProcessPubrel(t *testing.T) {
 	s, cl, r, w := setupClient()
-	cl.Inflight.Set(10, clients.InflightMessage{Packet: packets.Packet{PacketID: 10}, Sent: 0})
+	cl.Inflight.Set(10, clients.InflightMessage{Packet: packets2.Packet{PacketID: 10}, Sent: 0})
 	atomic.AddInt64(&s.System.Inflight, 1)
 
 	recv := make(chan []byte)
@@ -1441,9 +1419,9 @@ func TestServerProcessPubrel(t *testing.T) {
 		recv <- buf
 	}()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Pubrel,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Pubrel,
 		},
 		PacketID: 10,
 	})
@@ -1454,7 +1432,7 @@ func TestServerProcessPubrel(t *testing.T) {
 	w.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Pubcomp << 4), 2,
+		byte(packets2.Pubcomp << 4), 2,
 		0, 10,
 	}, <-recv)
 }
@@ -1462,11 +1440,11 @@ func TestServerProcessPubrel(t *testing.T) {
 func TestServerProcessPubrelError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Stop()
-	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets.Packet{PacketID: 12}, Sent: 0})
+	cl.Inflight.Set(12, clients.InflightMessage{Packet: packets2.Packet{PacketID: 12}, Sent: 0})
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Pubrel,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Pubrel,
 		},
 		PacketID: 12,
 	})
@@ -1475,12 +1453,12 @@ func TestServerProcessPubrelError(t *testing.T) {
 
 func TestServerProcessPubcomp(t *testing.T) {
 	s, cl, _, _ := setupClient()
-	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
+	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets2.Packet{PacketID: 11}, Sent: 0})
 	atomic.AddInt64(&s.System.Inflight, 1)
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Pubcomp,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:      packets2.Pubcomp,
 			Remaining: 2,
 		},
 		PacketID: 11,
@@ -1495,9 +1473,9 @@ func TestServerProcessPubcomp(t *testing.T) {
 func TestServerProcessSubscribeInvalid(t *testing.T) {
 	s, cl, _, _ := setupClient()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Subscribe,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Subscribe,
 			Qos:  1,
 		},
 		PacketID: 0,
@@ -1509,9 +1487,9 @@ func TestServerProcessSubscribeInvalid(t *testing.T) {
 func TestServerProcessSubscribe(t *testing.T) {
 	s, cl, r, w := setupClient()
 
-	s.Topics.RetainMessage(packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:   packets.Publish,
+	s.Topics.RetainMessage(packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:   packets2.Publish,
 			Retain: true,
 		},
 		TopicName: "a/b/c",
@@ -1528,9 +1506,9 @@ func TestServerProcessSubscribe(t *testing.T) {
 		recv <- buf
 	}()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Subscribe,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Subscribe,
 		},
 		PacketID: 10,
 		Topics:   []string{"a/b/c", "d/e/f"},
@@ -1541,12 +1519,12 @@ func TestServerProcessSubscribe(t *testing.T) {
 	w.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Suback << 4), 4, // Fixed header
+		byte(packets2.Suback << 4), 4, // Fixed header
 		0, 10, // Packet ID - LSB+MSB
 		0, // Return Code QoS 0
 		1, // Return Code QoS 1
 
-		byte(packets.Publish<<4 | 1), 12, // Fixed header
+		byte(packets2.Publish<<4 | 1), 12, // Fixed header
 		0, 5, // Topic Name - LSB+MSB
 		'a', '/', 'b', '/', 'c', // Topic Name
 		'h', 'e', 'l', 'l', 'o', // Payload
@@ -1573,9 +1551,9 @@ func TestServerProcessSubscribeFailACL(t *testing.T) {
 		recv <- buf
 	}()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Subscribe,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Subscribe,
 		},
 		PacketID: 10,
 		Topics:   []string{"a/b/c", "d/e/f"},
@@ -1587,10 +1565,10 @@ func TestServerProcessSubscribeFailACL(t *testing.T) {
 	w.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Suback << 4), 4,
+		byte(packets2.Suback << 4), 4,
 		0, 10,
-		packets.ErrSubAckNetworkError,
-		packets.ErrSubAckNetworkError,
+		packets2.ErrSubAckNetworkError,
+		packets2.ErrSubAckNetworkError,
 	}, <-recv)
 
 	require.Empty(t, s.Topics.Subscribers("a/b/c"))
@@ -1601,9 +1579,9 @@ func TestServerProcessSubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Stop()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Subscribe,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Subscribe,
 		},
 		PacketID: 10,
 		Topics:   []string{"a/b/c", "d/e/f"},
@@ -1616,9 +1594,9 @@ func TestServerProcessSubscribeWriteError(t *testing.T) {
 func TestServerProcessUnsubscribeInvalid(t *testing.T) {
 	s, cl, _, _ := setupClient()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Unsubscribe,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Unsubscribe,
 			Qos:  1,
 		},
 		PacketID: 0,
@@ -1646,9 +1624,9 @@ func TestServerProcessUnsubscribe(t *testing.T) {
 		recv <- buf
 	}()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Unsubscribe,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Unsubscribe,
 		},
 		PacketID: 12,
 		Topics:   []string{"a/b/c", "d/e/f"},
@@ -1659,7 +1637,7 @@ func TestServerProcessUnsubscribe(t *testing.T) {
 	w.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Unsuback << 4), 2,
+		byte(packets2.Unsuback << 4), 2,
 		0, 12,
 	}, <-recv)
 
@@ -1676,9 +1654,9 @@ func TestServerProcessUnsubscribeWriteError(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Stop()
 
-	err := s.processPacket(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Unsubscribe,
+	err := s.processPacket(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Unsubscribe,
 		},
 		PacketID: 12,
 		Topics:   []string{"a/b/c", "d/e/f"},
@@ -1754,7 +1732,7 @@ func TestServerCloseClientLWT(t *testing.T) {
 	w2.Close()
 
 	require.Equal(t, []byte{
-		byte(packets.Publish << 4), 12,
+		byte(packets2.Publish << 4), 12,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		'h', 'e', 'l', 'l', 'o',
@@ -2013,9 +1991,9 @@ func TestServerResendClientInflight(t *testing.T) {
 		o <- buf
 	}()
 
-	pk1 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	pk1 := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 			Qos:  1,
 		},
 		TopicName: "a/b/c",
@@ -2036,7 +2014,7 @@ func TestServerResendClientInflight(t *testing.T) {
 
 	rcv := <-o
 	require.Equal(t, []byte{
-		byte(packets.Publish<<4 | 1<<1 | 1<<3), 14,
+		byte(packets2.Publish<<4 | 1<<1 | 1<<3), 14,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		0, 11,
@@ -2065,9 +2043,9 @@ func TestServerResendClientInflightBackoff(t *testing.T) {
 		o <- buf
 	}()
 
-	pk1 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	pk1 := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 			Qos:  1,
 		},
 		TopicName: "a/b/c",
@@ -2094,7 +2072,7 @@ func TestServerResendClientInflightBackoff(t *testing.T) {
 
 	rcv := <-o
 	require.Equal(t, []byte{
-		byte(packets.Publish<<4 | 1<<1 | 1<<3), 14,
+		byte(packets2.Publish<<4 | 1<<1 | 1<<3), 14,
 		0, 5,
 		'a', '/', 'b', '/', 'c',
 		0, 11,
@@ -2112,7 +2090,7 @@ func TestServerResendClientInflightNoMessages(t *testing.T) {
 
 	r, _ := net.Pipe()
 	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
-	out := []packets.Packet{}
+	out := []packets2.Packet{}
 	err := s.ResendClientInflight(cl, true)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(out))
@@ -2127,9 +2105,9 @@ func TestServerResendClientInflightDropMessage(t *testing.T) {
 	r, _ := net.Pipe()
 	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
 
-	pk1 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	pk1 := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 			Qos:  1,
 		},
 		TopicName: "a/b/c",
@@ -2160,7 +2138,7 @@ func TestServerResendClientInflightError(t *testing.T) {
 	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
 
 	cl.Inflight.Set(1, clients.InflightMessage{
-		Packet: packets.Packet{},
+		Packet: packets2.Packet{},
 		Sent:   time.Now().Unix(),
 	})
 	r.Close()

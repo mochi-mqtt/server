@@ -4,6 +4,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	packets2 "github.com/mochi-co/mqtt/server/packets"
 	"net"
 	"strconv"
 	"sync/atomic"
@@ -12,7 +13,6 @@ import (
 	"github.com/mochi-co/mqtt/server/events"
 	"github.com/mochi-co/mqtt/server/internal/circ"
 	"github.com/mochi-co/mqtt/server/internal/clients"
-	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/internal/topics"
 	"github.com/mochi-co/mqtt/server/internal/utils"
 	"github.com/mochi-co/mqtt/server/listeners"
@@ -55,12 +55,13 @@ type Server struct {
 	bytepool  *circ.BytesPool      // a byte pool for incoming and outgoing packets.
 	sysTicker *time.Ticker         // the interval ticker for sending updating $SYS topics.
 	done      chan bool            // indicate that the server is ending.
+	Cluster   bool                 // cluster mode
 }
 
 // inlineMessages contains channels for handling inline (direct) publishing.
 type inlineMessages struct {
-	done chan bool           // indicate that the server is ending.
-	pub  chan packets.Packet // a channel of packets to publish to clients
+	done chan bool            // indicate that the server is ending.
+	pub  chan packets2.Packet // a channel of packets to publish to clients
 }
 
 // New returns a new instance of an MQTT broker.
@@ -77,7 +78,7 @@ func New() *Server {
 		sysTicker: time.NewTicker(SysTopicInterval * time.Millisecond),
 		inline: inlineMessages{
 			done: make(chan bool),
-			pub:  make(chan packets.Packet, 1024),
+			pub:  make(chan packets2.Packet, 1024),
 		},
 		Events: events.Events{},
 	}
@@ -180,7 +181,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	cl.Start()
 
-	fh := new(packets.FixedHeader)
+	fh := new(packets2.FixedHeader)
 	err := cl.ReadFixedHeader(fh)
 	if err != nil {
 		return err
@@ -191,7 +192,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		return err
 	}
 
-	if pk.FixedHeader.Type != packets.Connect {
+	if pk.FixedHeader.Type != packets2.Connect {
 		return ErrReadConnectInvalid
 	}
 
@@ -199,7 +200,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	retcode, _ := pk.ConnectValidate()
 	if !ac.Authenticate(pk.Username, pk.Password) {
-		retcode = packets.CodeConnectBadAuthValues
+		retcode = packets2.CodeConnectBadAuthValues
 	}
 
 	atomic.AddInt64(&s.System.ConnectionsTotal, 1)
@@ -235,15 +236,19 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	s.Clients.Add(cl) // Overwrite any existing client with the same name.
 
-	err = s.writeClient(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Connack,
+	err = s.writeClient(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Connack,
 		},
 		SessionPresent: sessionPresent,
 		ReturnCode:     retcode,
 	})
-	if err != nil || retcode != packets.Accepted {
+	if err != nil || retcode != packets2.Accepted {
 		return err
+	}
+
+	if s.Cluster {
+		s.LoadClientHistory(cl)
 	}
 
 	s.ResendClientInflight(cl, true)
@@ -260,7 +265,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	}
 
 	if s.Events.OnConnect != nil {
-		s.Events.OnConnect(events.FromClient(cl), events.Packet(pk))
+		s.Events.OnConnect(events.FromClient(cl), pk)
 	}
 
 	err = cl.Read(s.processPacket)
@@ -282,7 +287,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 }
 
 // writeClient writes packets to a client connection.
-func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
+func (s *Server) writeClient(cl *clients.Client, pk packets2.Packet) error {
 	_, err := cl.WritePacket(pk)
 	if err != nil {
 		return err
@@ -293,37 +298,37 @@ func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 
 // processPacket processes an inbound packet for a client. Since the method is
 // typically called as a goroutine, errors are primarily for test checking purposes.
-func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
+func (s *Server) processPacket(cl *clients.Client, pk packets2.Packet) error {
 	switch pk.FixedHeader.Type {
-	case packets.Connect:
+	case packets2.Connect:
 		return s.processConnect(cl, pk)
-	case packets.Disconnect:
+	case packets2.Disconnect:
 		return s.processDisconnect(cl, pk)
-	case packets.Pingreq:
+	case packets2.Pingreq:
 		return s.processPingreq(cl, pk)
-	case packets.Publish:
+	case packets2.Publish:
 		r, err := pk.PublishValidate()
-		if r != packets.Accepted {
+		if r != packets2.Accepted {
 			return err
 		}
 		return s.processPublish(cl, pk)
-	case packets.Puback:
+	case packets2.Puback:
 		return s.processPuback(cl, pk)
-	case packets.Pubrec:
+	case packets2.Pubrec:
 		return s.processPubrec(cl, pk)
-	case packets.Pubrel:
+	case packets2.Pubrel:
 		return s.processPubrel(cl, pk)
-	case packets.Pubcomp:
+	case packets2.Pubcomp:
 		return s.processPubcomp(cl, pk)
-	case packets.Subscribe:
+	case packets2.Subscribe:
 		r, err := pk.SubscribeValidate()
-		if r != packets.Accepted {
+		if r != packets2.Accepted {
 			return err
 		}
 		return s.processSubscribe(cl, pk)
-	case packets.Unsubscribe:
+	case packets2.Unsubscribe:
 		r, err := pk.UnsubscribeValidate()
-		if r != packets.Accepted {
+		if r != packets2.Accepted {
 			return err
 		}
 		return s.processUnsubscribe(cl, pk)
@@ -335,22 +340,22 @@ func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
 // processConnect processes a Connect packet. The packet cannot be used to
 // establish a new connection on an existing connection. See EstablishConnection
 // instead.
-func (s *Server) processConnect(cl *clients.Client, pk packets.Packet) error {
+func (s *Server) processConnect(cl *clients.Client, pk packets2.Packet) error {
 	s.closeClient(cl, true)
 	return nil
 }
 
 // processDisconnect processes a Disconnect packet.
-func (s *Server) processDisconnect(cl *clients.Client, pk packets.Packet) error {
+func (s *Server) processDisconnect(cl *clients.Client, pk packets2.Packet) error {
 	s.closeClient(cl, false)
 	return nil
 }
 
 // processPingreq processes a Pingreq packet.
-func (s *Server) processPingreq(cl *clients.Client, pk packets.Packet) error {
-	err := s.writeClient(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Pingresp,
+func (s *Server) processPingreq(cl *clients.Client, pk packets2.Packet) error {
+	err := s.writeClient(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Pingresp,
 		},
 	})
 	if err != nil {
@@ -369,9 +374,9 @@ func (s *Server) Publish(topic string, payload []byte, retain bool) error {
 		return ErrInvalidTopic
 	}
 
-	pk := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+	pk := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Publish,
 		},
 		TopicName: topic,
 		Payload:   payload,
@@ -389,7 +394,7 @@ func (s *Server) Publish(topic string, payload []byte, retain bool) error {
 }
 
 // processPublish processes a Publish packet.
-func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
+func (s *Server) processPublish(cl *clients.Client, pk packets2.Packet) error {
 	if len(pk.TopicName) >= 4 && pk.TopicName[0:4] == "$SYS" {
 		return nil // Clients can't publish to $SYS topics, so fail silently as per spec.
 	}
@@ -403,15 +408,15 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 	}
 
 	if pk.FixedHeader.Qos > 0 {
-		ack := packets.Packet{
-			FixedHeader: packets.FixedHeader{
-				Type: packets.Puback,
+		ack := packets2.Packet{
+			FixedHeader: packets2.FixedHeader{
+				Type: packets2.Puback,
 			},
 			PacketID: pk.PacketID,
 		}
 
 		if pk.FixedHeader.Qos == 2 {
-			ack.FixedHeader.Type = packets.Pubrec
+			ack.FixedHeader.Type = packets2.Pubrec
 		}
 
 		// omit errors in case of broken connection / LWT publish. ack send failures
@@ -421,8 +426,8 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 	// if an OnMessage hook exists, potentially modify the packet.
 	if s.Events.OnMessage != nil {
-		if pkx, err := s.Events.OnMessage(events.FromClient(cl), events.Packet(pk)); err == nil {
-			pk = packets.Packet(pkx)
+		if pkx, err := s.Events.OnMessage(events.FromClient(cl), packets2.Packet(pk)); err == nil {
+			pk = packets2.Packet(pkx)
 		}
 	}
 
@@ -434,28 +439,29 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 // retainMessage adds a message to a topic, and if a persistent store is provided,
 // adds the message to the store so it can be reloaded if necessary.
-func (s *Server) retainMessage(pk packets.Packet) {
+func (s *Server) retainMessage(pk packets2.Packet) {
 	out := pk.PublishCopy()
 	q := s.Topics.RetainMessage(out)
 	atomic.AddInt64(&s.System.Retained, q)
 	if s.Store != nil {
 		if q == 1 {
 			s.Store.WriteRetained(persistence.Message{
-				ID:          "ret_" + out.TopicName,
+				ID:          s.Store.GenRetainedId(out.TopicName),
 				T:           persistence.KRetained,
 				FixedHeader: persistence.FixedHeader(out.FixedHeader),
 				TopicName:   out.TopicName,
 				Payload:     out.Payload,
+				PacketID:    out.PacketID,
 			})
 		} else {
-			s.Store.DeleteRetained("ret_" + out.TopicName)
+			s.Store.DeleteRetained(out.TopicName)
 		}
 	}
 }
 
 // publishToSubscribers publishes a publish packet to all subscribers with
 // matching topic filters.
-func (s *Server) publishToSubscribers(pk packets.Packet) {
+func (s *Server) publishToSubscribers(pk packets2.Packet) {
 	for id, qos := range s.Topics.Subscribers(pk.TopicName) {
 		if client, ok := s.Clients.Get(id); ok {
 
@@ -491,12 +497,14 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 
 				if s.Store != nil {
 					s.Store.WriteInflight(persistence.Message{
-						ID:          "if_" + client.ID + "_" + strconv.Itoa(int(out.PacketID)),
-						T:           persistence.KRetained,
+						ID:          s.Store.GenInflightId(client.ID, out.PacketID),
+						T:           persistence.KInflight,
+						Client:      client.ID,
 						FixedHeader: persistence.FixedHeader(out.FixedHeader),
 						TopicName:   out.TopicName,
 						Payload:     out.Payload,
 						Sent:        sent,
+						PacketID:    out.PacketID,
 					})
 				}
 			}
@@ -507,22 +515,22 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 }
 
 // processPuback processes a Puback packet.
-func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) error {
+func (s *Server) processPuback(cl *clients.Client, pk packets2.Packet) error {
 	q := cl.Inflight.Delete(pk.PacketID)
 	if q {
 		atomic.AddInt64(&s.System.Inflight, -1)
 	}
 	if s.Store != nil {
-		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
+		s.Store.DeleteInflight(cl.ID, pk.PacketID)
 	}
 	return nil
 }
 
 // processPubrec processes a Pubrec packet.
-func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) error {
-	out := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Pubrel,
+func (s *Server) processPubrec(cl *clients.Client, pk packets2.Packet) error {
+	out := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Pubrel,
 			Qos:  1,
 		},
 		PacketID: pk.PacketID,
@@ -537,10 +545,10 @@ func (s *Server) processPubrec(cl *clients.Client, pk packets.Packet) error {
 }
 
 // processPubrel processes a Pubrel packet.
-func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
-	out := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Pubcomp,
+func (s *Server) processPubrel(cl *clients.Client, pk packets2.Packet) error {
+	out := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Pubcomp,
 		},
 		PacketID: pk.PacketID,
 	}
@@ -555,30 +563,30 @@ func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
 	}
 
 	if s.Store != nil {
-		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
+		s.Store.DeleteInflight(cl.ID, pk.PacketID)
 	}
 
 	return nil
 }
 
 // processPubcomp processes a Pubcomp packet.
-func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
+func (s *Server) processPubcomp(cl *clients.Client, pk packets2.Packet) error {
 	q := cl.Inflight.Delete(pk.PacketID)
 	if q {
 		atomic.AddInt64(&s.System.Inflight, -1)
 	}
 	if s.Store != nil {
-		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
+		s.Store.DeleteInflight(cl.ID, pk.PacketID)
 	}
 	return nil
 }
 
 // processSubscribe processes a Subscribe packet.
-func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
+func (s *Server) processSubscribe(cl *clients.Client, pk packets2.Packet) error {
 	retCodes := make([]byte, len(pk.Topics))
 	for i := 0; i < len(pk.Topics); i++ {
 		if !cl.AC.ACL(cl.Username, pk.Topics[i], false) {
-			retCodes[i] = packets.ErrSubAckNetworkError
+			retCodes[i] = packets2.ErrSubAckNetworkError
 		} else {
 			q := s.Topics.Subscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
 			if q {
@@ -589,7 +597,7 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 
 			if s.Store != nil {
 				s.Store.WriteSubscription(persistence.Subscription{
-					ID:     "sub_" + cl.ID + ":" + pk.Topics[i],
+					ID:     s.Store.GenSubscriptionId(cl.ID, pk.Topics[i]),
 					T:      persistence.KSubscription,
 					Filter: pk.Topics[i],
 					Client: cl.ID,
@@ -599,9 +607,9 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 		}
 	}
 
-	err := s.writeClient(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Suback,
+	err := s.writeClient(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Suback,
 		},
 		PacketID:    pk.PacketID,
 		ReturnCodes: retCodes,
@@ -621,18 +629,22 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 }
 
 // processUnsubscribe processes an unsubscribe packet.
-func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error {
+func (s *Server) processUnsubscribe(cl *clients.Client, pk packets2.Packet) error {
 	for i := 0; i < len(pk.Topics); i++ {
 		q := s.Topics.Unsubscribe(pk.Topics[i], cl.ID)
 		if q {
 			atomic.AddInt64(&s.System.Subscriptions, -1)
 		}
 		cl.ForgetSubscription(pk.Topics[i])
+
+		if s.Store != nil {
+			s.Store.DeleteSubscription(cl.ID, pk.Topics[i])
+		}
 	}
 
-	err := s.writeClient(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Unsuback,
+	err := s.writeClient(cl, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type: packets2.Unsuback,
 		},
 		PacketID: pk.PacketID,
 	})
@@ -647,9 +659,9 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error
 // Due to the int to string conversions this method is not as cheap as
 // some of the others so the publishing interval should be set appropriately.
 func (s *Server) publishSysTopics() {
-	pk := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:   packets.Publish,
+	pk := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:   packets2.Publish,
 			Retain: true,
 		},
 	}
@@ -692,6 +704,29 @@ func (s *Server) publishSysTopics() {
 	}
 }
 
+//LoadClientHistory loads its history info for the connected client,
+func (s *Server) LoadClientHistory(cl *clients.Client) {
+	ss, _ := s.Store.ReadSubscriptionsByCid(cl.ID)
+	for _, sub := range ss {
+		s.Topics.Subscribe(sub.Filter, sub.Client, sub.QoS)
+		cl.NoteSubscription(sub.Filter, sub.QoS)
+	}
+
+	fs, _ := s.Store.ReadInflightByCid(cl.ID)
+	for _, msg := range fs {
+		cl.Inflight.Set(msg.PacketID, clients.InflightMessage{
+			Packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader(msg.FixedHeader),
+				PacketID:    msg.PacketID,
+				TopicName:   msg.TopicName,
+				Payload:     msg.Payload,
+			},
+			Sent:    msg.Sent,
+			Resends: msg.Resends,
+		})
+	}
+}
+
 // ResendClientInflight attempts to resend all undelivered inflight messages
 // to a client.
 func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
@@ -703,12 +738,12 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 	for _, tk := range cl.Inflight.GetAll() {
 		if tk.Resends >= inflightMaxResends { // After a reasonable time, drop inflight packets.
 			cl.Inflight.Delete(tk.Packet.PacketID)
-			if tk.Packet.FixedHeader.Type == packets.Publish {
+			if tk.Packet.FixedHeader.Type == packets2.Publish {
 				atomic.AddInt64(&s.System.PublishDropped, 1)
 			}
 
 			if s.Store != nil {
-				s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(tk.Packet.PacketID)))
+				s.Store.DeleteInflight(cl.ID, tk.Packet.PacketID)
 			}
 
 			continue
@@ -719,7 +754,7 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 			continue
 		}
 
-		if tk.Packet.FixedHeader.Type == packets.Publish {
+		if tk.Packet.FixedHeader.Type == packets2.Publish {
 			tk.Packet.FixedHeader.Dup = true
 		}
 
@@ -733,13 +768,15 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 
 		if s.Store != nil {
 			s.Store.WriteInflight(persistence.Message{
-				ID:          "if_" + cl.ID + "_" + strconv.Itoa(int(tk.Packet.PacketID)),
-				T:           persistence.KRetained,
+				ID:          s.Store.GenInflightId(cl.ID, tk.Packet.PacketID),
+				T:           persistence.KInflight,
+				Client:      cl.ID,
 				FixedHeader: persistence.FixedHeader(tk.Packet.FixedHeader),
 				TopicName:   tk.Packet.TopicName,
 				Payload:     tk.Packet.Payload,
 				Sent:        tk.Sent,
 				Resends:     tk.Resends,
+				PacketID:    tk.Packet.PacketID,
 			})
 		}
 	}
@@ -771,9 +808,9 @@ func (s *Server) closeListenerClients(listener string) {
 // closeClient closes a client connection and publishes any LWT messages.
 func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 	if sendLWT && cl.LWT.Topic != "" {
-		s.processPublish(cl, packets.Packet{
-			FixedHeader: packets.FixedHeader{
-				Type:   packets.Publish,
+		s.processPublish(cl, packets2.Packet{
+			FixedHeader: packets2.FixedHeader{
+				Type:   packets2.Publish,
 				Retain: cl.LWT.Retain,
 				Qos:    cl.LWT.Qos,
 			},
@@ -794,6 +831,11 @@ func (s *Server) readStore() error {
 		return fmt.Errorf("load server info; %w", err)
 	}
 	s.loadServerInfo(info)
+
+	//In cluster mode, only server info is loaded
+	if s.Cluster {
+		return nil
+	}
 
 	clients, err := s.Store.ReadClients()
 	if err != nil {
@@ -856,8 +898,8 @@ func (s *Server) loadInflight(v []persistence.Message) {
 	for _, msg := range v {
 		if client, ok := s.Clients.Get(msg.Client); ok {
 			client.Inflight.Set(msg.PacketID, clients.InflightMessage{
-				Packet: packets.Packet{
-					FixedHeader: packets.FixedHeader(msg.FixedHeader),
+				Packet: packets2.Packet{
+					FixedHeader: packets2.FixedHeader(msg.FixedHeader),
 					PacketID:    msg.PacketID,
 					TopicName:   msg.TopicName,
 					Payload:     msg.Payload,
@@ -872,8 +914,8 @@ func (s *Server) loadInflight(v []persistence.Message) {
 // loadRetained restores retained messages from the datastore.
 func (s *Server) loadRetained(v []persistence.Message) {
 	for _, msg := range v {
-		s.Topics.RetainMessage(packets.Packet{
-			FixedHeader: packets.FixedHeader(msg.FixedHeader),
+		s.Topics.RetainMessage(packets2.Packet{
+			FixedHeader: packets2.FixedHeader(msg.FixedHeader),
 			TopicName:   msg.TopicName,
 			Payload:     msg.Payload,
 		})

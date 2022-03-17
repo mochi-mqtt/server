@@ -1,11 +1,10 @@
 package topics
 
 import (
+	packets2 "github.com/mochi-co/mqtt/server/packets"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/mochi-co/mqtt/server/internal/packets"
 )
 
 func TestNew(t *testing.T) {
@@ -47,12 +46,12 @@ func TestUnpoperate(t *testing.T) {
 	index.Subscribe("path/to/another/mqtt", "client-1", 0)
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
 
-	pk := packets.Packet{TopicName: "path/to/retained/message", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
+	pk := packets2.Packet{TopicName: "path/to/retained/message", Payload: []byte{'h', 'e', 'l', 'l', 'o'}}
 	index.RetainMessage(pk)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["retained"].Leaves["message"])
 	require.Equal(t, pk, index.Root.Leaves["path"].Leaves["to"].Leaves["retained"].Leaves["message"].Message)
 
-	pk2 := packets.Packet{TopicName: "path/to/my/mqtt", Payload: []byte{'s', 'h', 'a', 'r', 'e', 'd'}}
+	pk2 := packets2.Packet{TopicName: "path/to/my/mqtt", Payload: []byte{'s', 'h', 'a', 'r', 'e', 'd'}}
 	index.RetainMessage(pk2)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
 	require.Equal(t, pk2, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"].Message)
@@ -82,15 +81,15 @@ func BenchmarkUnpoperate(b *testing.B) {
 }
 
 func TestRetainMessage(t *testing.T) {
-	pk := packets.Packet{
-		FixedHeader: packets.FixedHeader{
+	pk := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
 			Retain: true,
 		},
 		TopicName: "path/to/my/mqtt",
 		Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
 	}
-	pk2 := packets.Packet{
-		FixedHeader: packets.FixedHeader{
+	pk2 := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
 			Retain: true,
 		},
 		TopicName: "path/to/another/mqtt",
@@ -120,7 +119,7 @@ func TestRetainMessage(t *testing.T) {
 	require.Contains(t, index.Root.Leaves["path"].Leaves["to"].Leaves["another"].Leaves["mqtt"].Clients, "client-1")
 
 	// Delete retained
-	pk3 := packets.Packet{TopicName: "path/to/another/mqtt", Payload: []byte{}}
+	pk3 := packets2.Packet{TopicName: "path/to/another/mqtt", Payload: []byte{}}
 	q = index.RetainMessage(pk3)
 	require.Equal(t, int64(-1), q)
 	require.NotNil(t, index.Root.Leaves["path"].Leaves["to"].Leaves["my"].Leaves["mqtt"])
@@ -130,7 +129,7 @@ func TestRetainMessage(t *testing.T) {
 
 func BenchmarkRetainMessage(b *testing.B) {
 	index := New()
-	pk := packets.Packet{TopicName: "path/to/another/mqtt"}
+	pk := packets2.Packet{TopicName: "path/to/another/mqtt"}
 	for n := 0; n < b.N; n++ {
 		index.RetainMessage(pk)
 	}
@@ -383,67 +382,67 @@ func BenchmarkIsolateParticle(b *testing.B) {
 
 func TestMessagesPattern(t *testing.T) {
 	tt := []struct {
-		packet packets.Packet
+		packet packets2.Packet
 		filter string
 		len    int
 	}{
 		{
-			packets.Packet{TopicName: "a/b/c/d", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "a/b/c/d", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"a/b/c/d",
 			1,
 		},
 		{
-			packets.Packet{TopicName: "a/b/c/e", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "a/b/c/e", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"a/+/c/+",
 			2,
 		},
 		{
-			packets.Packet{TopicName: "a/b/d/f", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "a/b/d/f", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"+/+/+/+",
 			3,
 		},
 		{
-			packets.Packet{TopicName: "q/w/e/r/t/y", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "q/w/e/r/t/y", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"q/w/e/#",
 			1,
 		},
 		{
-			packets.Packet{TopicName: "q/w/x/r/t/x", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "q/w/x/r/t/x", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"q/#",
 			2,
 		},
 		{
-			packets.Packet{TopicName: "asd", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "asd", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"asd",
 			1,
 		},
 		{
-			packets.Packet{TopicName: "$SYS/testing", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "$SYS/testing", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"#",
 			8,
 		},
 		{
-			packets.Packet{TopicName: "$SYS/test", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "$SYS/test", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"+/testing",
 			0,
 		},
 		{
-			packets.Packet{TopicName: "$SYS/info", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "$SYS/info", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"$SYS/info",
 			1,
 		},
 		{
-			packets.Packet{TopicName: "$SYS/b", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "$SYS/b", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"$SYS/#",
 			4,
 		},
 		{
-			packets.Packet{TopicName: "asd/fgh/jkl", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "asd/fgh/jkl", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"#",
 			8,
 		},
 		{
-			packets.Packet{TopicName: "stuff/asdadsa/dsfdsafdsadfsa/dsfdsf/sdsadas", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets.FixedHeader{Retain: true}},
+			packets2.Packet{TopicName: "stuff/asdadsa/dsfdsafdsadfsa/dsfdsf/sdsadas", Payload: []byte{'h', 'e', 'l', 'l', 'o'}, FixedHeader: packets2.FixedHeader{Retain: true}},
 			"stuff/#/things", // indexer will ignore trailing /things
 			1,
 		},
@@ -461,8 +460,8 @@ func TestMessagesPattern(t *testing.T) {
 
 func TestMessagesFind(t *testing.T) {
 	index := New()
-	index.RetainMessage(packets.Packet{TopicName: "a/a", Payload: []byte{'a'}, FixedHeader: packets.FixedHeader{Retain: true}})
-	index.RetainMessage(packets.Packet{TopicName: "a/b", Payload: []byte{'b'}, FixedHeader: packets.FixedHeader{Retain: true}})
+	index.RetainMessage(packets2.Packet{TopicName: "a/a", Payload: []byte{'a'}, FixedHeader: packets2.FixedHeader{Retain: true}})
+	index.RetainMessage(packets2.Packet{TopicName: "a/b", Payload: []byte{'b'}, FixedHeader: packets2.FixedHeader{Retain: true}})
 	messages := index.Messages("a/a")
 	require.Equal(t, 1, len(messages))
 
@@ -472,11 +471,11 @@ func TestMessagesFind(t *testing.T) {
 
 func BenchmarkMessages(b *testing.B) {
 	index := New()
-	index.RetainMessage(packets.Packet{TopicName: "path/to/my/mqtt"})
-	index.RetainMessage(packets.Packet{TopicName: "path/to/another/mqtt"})
-	index.RetainMessage(packets.Packet{TopicName: "path/a/some/mqtt"})
-	index.RetainMessage(packets.Packet{TopicName: "what/is"})
-	index.RetainMessage(packets.Packet{TopicName: "q/w/e/r/t/y"})
+	index.RetainMessage(packets2.Packet{TopicName: "path/to/my/mqtt"})
+	index.RetainMessage(packets2.Packet{TopicName: "path/to/another/mqtt"})
+	index.RetainMessage(packets2.Packet{TopicName: "path/a/some/mqtt"})
+	index.RetainMessage(packets2.Packet{TopicName: "what/is"})
+	index.RetainMessage(packets2.Packet{TopicName: "q/w/e/r/t/y"})
 
 	for n := 0; n < b.N; n++ {
 		index.Messages("path/to/+/mqtt")

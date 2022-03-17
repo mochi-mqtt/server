@@ -2,6 +2,7 @@ package clients
 
 import (
 	"errors"
+	packets2 "github.com/mochi-co/mqtt/server/packets"
 	"io"
 	"io/ioutil"
 	"net"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/mochi-co/mqtt/server/internal/circ"
-	"github.com/mochi-co/mqtt/server/internal/packets"
 	"github.com/mochi-co/mqtt/server/listeners/auth"
 	"github.com/mochi-co/mqtt/server/system"
 	"github.com/stretchr/testify/require"
@@ -161,9 +161,9 @@ func BenchmarkNewClientStub(b *testing.B) {
 func TestClientIdentify(t *testing.T) {
 	cl := genClient()
 
-	pk := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
+	pk := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:      packets2.Connect,
 			Remaining: 16,
 		},
 		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
@@ -182,9 +182,9 @@ func TestClientIdentify(t *testing.T) {
 func BenchmarkClientIdentify(b *testing.B) {
 	cl := genClient()
 
-	pk := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
+	pk := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:      packets2.Connect,
 			Remaining: 16,
 		},
 		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
@@ -202,9 +202,9 @@ func BenchmarkClientIdentify(b *testing.B) {
 func TestClientIdentifyNoID(t *testing.T) {
 	cl := genClient()
 
-	pk := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
+	pk := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:      packets2.Connect,
 			Remaining: 16,
 		},
 		ProtocolName:    []byte{'M', 'Q', 'T', 'T'},
@@ -220,9 +220,9 @@ func TestClientIdentifyNoID(t *testing.T) {
 func TestClientIdentifyLWT(t *testing.T) {
 	cl := genClient()
 
-	pk := packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Connect,
+	pk := packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:      packets2.Connect,
 			Remaining: 16,
 		},
 		ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
@@ -334,10 +334,10 @@ func TestClientReadFixedHeader(t *testing.T) {
 	cl.Start()
 	defer cl.Stop()
 
-	cl.r.Set([]byte{packets.Connect << 4, 0x00}, 0, 2)
+	cl.r.Set([]byte{packets2.Connect << 4, 0x00}, 0, 2)
 	cl.r.SetPos(0, 2)
 
-	fh := new(packets.FixedHeader)
+	fh := new(packets2.FixedHeader)
 	err := cl.ReadFixedHeader(fh)
 	require.NoError(t, err)
 	require.Equal(t, int64(2), atomic.LoadInt64(&cl.systemInfo.BytesRecv))
@@ -355,8 +355,8 @@ func TestClientReadFixedHeaderDecodeError(t *testing.T) {
 
 	o := make(chan error)
 	go func() {
-		fh := new(packets.FixedHeader)
-		cl.r.Set([]byte{packets.Connect<<4 | 1<<1, 0x00, 0x00}, 0, 2)
+		fh := new(packets2.FixedHeader)
+		cl.r.Set([]byte{packets2.Connect<<4 | 1<<1, 0x00, 0x00}, 0, 2)
 		cl.r.SetPos(0, 2)
 		o <- cl.ReadFixedHeader(fh)
 	}()
@@ -371,8 +371,8 @@ func TestClientReadFixedHeaderReadEOF(t *testing.T) {
 
 	o := make(chan error)
 	go func() {
-		fh := new(packets.FixedHeader)
-		cl.r.Set([]byte{packets.Connect << 4, 0x00}, 0, 2)
+		fh := new(packets2.FixedHeader)
+		cl.r.Set([]byte{packets2.Connect << 4, 0x00}, 0, 2)
 		cl.r.SetPos(0, 1)
 		o <- cl.ReadFixedHeader(fh)
 	}()
@@ -390,8 +390,8 @@ func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
 
 	o := make(chan error)
 	go func() {
-		fh := new(packets.FixedHeader)
-		err := cl.r.Set([]byte{packets.Connect << 4, 0xd5, 0x86, 0xf9, 0x9e, 0x01}, 0, 5)
+		fh := new(packets2.FixedHeader)
+		err := cl.r.Set([]byte{packets2.Connect << 4, 0xd5, 0x86, 0xf9, 0x9e, 0x01}, 0, 5)
 		require.NoError(t, err)
 		cl.r.SetPos(0, 5)
 		o <- cl.ReadFixedHeader(fh)
@@ -407,11 +407,11 @@ func TestClientReadOK(t *testing.T) {
 
 	// Two packets in a row...
 	b := []byte{
-		byte(packets.Publish << 4), 18, // Fixed header
+		byte(packets2.Publish << 4), 18, // Fixed header
 		0, 5, // Topic Name - LSB+MSB
 		'a', '/', 'b', '/', 'c', // Topic Name
 		'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload,
-		byte(packets.Publish << 4), 11, // Fixed header
+		byte(packets2.Publish << 4), 11, // Fixed header
 		0, 5, // Topic Name - LSB+MSB
 		'd', '/', 'e', '/', 'f', // Topic Name
 		'y', 'e', 'a', 'h', // Payload
@@ -422,9 +422,9 @@ func TestClientReadOK(t *testing.T) {
 	cl.r.SetPos(0, int64(len(b)))
 
 	o := make(chan error)
-	var pks []packets.Packet
+	var pks []packets2.Packet
 	go func() {
-		o <- cl.Read(func(cl *Client, pk packets.Packet) error {
+		o <- cl.Read(func(cl *Client, pk packets2.Packet) error {
 			pks = append(pks, pk)
 			return nil
 		})
@@ -437,18 +437,18 @@ func TestClientReadOK(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, io.EOF, err)
 	require.Equal(t, 2, len(pks))
-	require.Equal(t, pks, []packets.Packet{
+	require.Equal(t, pks, []packets2.Packet{
 		{
-			FixedHeader: packets.FixedHeader{
-				Type:      packets.Publish,
+			FixedHeader: packets2.FixedHeader{
+				Type:      packets2.Publish,
 				Remaining: 18,
 			},
 			TopicName: "a/b/c",
 			Payload:   []byte("hello mochi"),
 		},
 		{
-			FixedHeader: packets.FixedHeader{
-				Type:      packets.Publish,
+			FixedHeader: packets2.FixedHeader{
+				Type:      packets2.Publish,
 				Remaining: 11,
 			},
 			TopicName: "d/e/f",
@@ -467,7 +467,7 @@ func TestClientReadDone(t *testing.T) {
 	defer cl.Stop()
 	cl.State.Done = 1
 
-	err := cl.Read(func(cl *Client, pk packets.Packet) error {
+	err := cl.Read(func(cl *Client, pk packets2.Packet) error {
 		return nil
 	})
 
@@ -491,7 +491,7 @@ func TestClientReadPacketError(t *testing.T) {
 
 	o := make(chan error)
 	go func() {
-		o <- cl.Read(func(cl *Client, pk packets.Packet) error {
+		o <- cl.Read(func(cl *Client, pk packets2.Packet) error {
 			return nil
 		})
 	}()
@@ -505,7 +505,7 @@ func TestClientReadHandlerErr(t *testing.T) {
 	defer cl.Stop()
 
 	b := []byte{
-		byte(packets.Publish << 4), 11, // Fixed header
+		byte(packets2.Publish << 4), 11, // Fixed header
 		0, 5, // Topic Name - LSB+MSB
 		'd', '/', 'e', '/', 'f', // Topic Name
 		'y', 'e', 'a', 'h', // Payload
@@ -515,7 +515,7 @@ func TestClientReadHandlerErr(t *testing.T) {
 	require.NoError(t, err)
 	cl.r.SetPos(0, int64(len(b)))
 
-	err = cl.Read(func(cl *Client, pk packets.Packet) error {
+	err = cl.Read(func(cl *Client, pk packets2.Packet) error {
 		return errors.New("test")
 	})
 
@@ -528,7 +528,7 @@ func TestClientReadPacketOK(t *testing.T) {
 	defer cl.Stop()
 
 	err := cl.r.Set([]byte{
-		byte(packets.Publish << 4), 11, // Fixed header
+		byte(packets2.Publish << 4), 11, // Fixed header
 		0, 5,
 		'd', '/', 'e', '/', 'f',
 		'y', 'e', 'a', 'h',
@@ -536,7 +536,7 @@ func TestClientReadPacketOK(t *testing.T) {
 	require.NoError(t, err)
 	cl.r.SetPos(0, 13)
 
-	fh := new(packets.FixedHeader)
+	fh := new(packets2.FixedHeader)
 	err = cl.ReadFixedHeader(fh)
 	require.NoError(t, err)
 
@@ -544,9 +544,9 @@ func TestClientReadPacketOK(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, pk)
 
-	require.Equal(t, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type:      packets.Publish,
+	require.Equal(t, packets2.Packet{
+		FixedHeader: packets2.FixedHeader{
+			Type:      packets2.Publish,
 			Remaining: 11,
 		},
 		TopicName: "d/e/f",
@@ -564,7 +564,7 @@ func TestClientReadPacket(t *testing.T) {
 		require.NoError(t, err)
 		cl.r.SetPos(0, int64(len(tt.bytes)))
 
-		fh := new(packets.FixedHeader)
+		fh := new(packets2.FixedHeader)
 		err = cl.ReadFixedHeader(fh)
 		require.NoError(t, err)
 
@@ -573,7 +573,7 @@ func TestClientReadPacket(t *testing.T) {
 		require.NotNil(t, pk)
 
 		require.Equal(t, tt.packet, pk, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
-		if tt.packet.FixedHeader.Type == packets.Publish {
+		if tt.packet.FixedHeader.Type == packets2.Publish {
 			require.Equal(t, int64(1), atomic.LoadInt64(&cl.systemInfo.PublishRecv))
 		}
 	}
@@ -593,7 +593,7 @@ func TestClientReadPacketReadingError(t *testing.T) {
 	require.NoError(t, err)
 	cl.r.SetPos(2, 13)
 
-	_, err = cl.ReadPacket(&packets.FixedHeader{
+	_, err = cl.ReadPacket(&packets2.FixedHeader{
 		Type:      0,
 		Remaining: 11,
 	})
@@ -606,7 +606,7 @@ func TestClientReadPacketReadError(t *testing.T) {
 	defer cl.Stop()
 	cl.r.Stop()
 
-	_, err := cl.ReadPacket(&packets.FixedHeader{
+	_, err := cl.ReadPacket(&packets2.FixedHeader{
 		Remaining: 1,
 	})
 	require.Error(t, err)
@@ -619,7 +619,7 @@ func TestClientReadPacketReadUnknown(t *testing.T) {
 	defer cl.Stop()
 	cl.r.Stop()
 
-	_, err := cl.ReadPacket(&packets.FixedHeader{
+	_, err := cl.ReadPacket(&packets2.FixedHeader{
 		Remaining: 1,
 	})
 	require.Error(t, err)
@@ -649,7 +649,7 @@ func TestClientWritePacket(t *testing.T) {
 		cl.Stop()
 		require.Equal(t, int64(n), atomic.LoadInt64(&cl.systemInfo.BytesSent))
 		require.Equal(t, int64(1), atomic.LoadInt64(&cl.systemInfo.MessagesSent))
-		if tt.packet.FixedHeader.Type == packets.Publish {
+		if tt.packet.FixedHeader.Type == packets2.Publish {
 			require.Equal(t, int64(1), atomic.LoadInt64(&cl.systemInfo.PublishSent))
 		}
 	}
@@ -681,7 +681,7 @@ func TestClientWritePacketInvalidPacket(t *testing.T) {
 	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4), new(system.Info))
 	cl.Start()
 
-	_, err := cl.WritePacket(packets.Packet{})
+	_, err := cl.WritePacket(packets2.Packet{})
 	require.Error(t, err)
 }
 
@@ -689,18 +689,18 @@ func TestClientWritePacketInvalidPacket(t *testing.T) {
 
 func TestInflightSet(t *testing.T) {
 	cl := genClient()
-	q := cl.Inflight.Set(1, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	q := cl.Inflight.Set(1, InflightMessage{Packet: packets2.Packet{}, Sent: 0})
 	require.Equal(t, true, q)
 	require.NotNil(t, cl.Inflight.internal[1])
 	require.NotEqual(t, 0, cl.Inflight.internal[1].Sent)
 
-	q = cl.Inflight.Set(1, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	q = cl.Inflight.Set(1, InflightMessage{Packet: packets2.Packet{}, Sent: 0})
 	require.Equal(t, false, q)
 }
 
 func BenchmarkInflightSet(b *testing.B) {
 	cl := genClient()
-	in := InflightMessage{Packet: packets.Packet{}, Sent: 0}
+	in := InflightMessage{Packet: packets2.Packet{}, Sent: 0}
 	for n := 0; n < b.N; n++ {
 		cl.Inflight.Set(1, in)
 	}
@@ -708,7 +708,7 @@ func BenchmarkInflightSet(b *testing.B) {
 
 func TestInflightGet(t *testing.T) {
 	cl := genClient()
-	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	cl.Inflight.Set(2, InflightMessage{Packet: packets2.Packet{}, Sent: 0})
 
 	msg, ok := cl.Inflight.Get(2)
 	require.Equal(t, true, ok)
@@ -717,7 +717,7 @@ func TestInflightGet(t *testing.T) {
 
 func BenchmarkInflightGet(b *testing.B) {
 	cl := genClient()
-	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	cl.Inflight.Set(2, InflightMessage{Packet: packets2.Packet{}, Sent: 0})
 	for n := 0; n < b.N; n++ {
 		cl.Inflight.Get(2)
 	}
@@ -736,7 +736,7 @@ func TestInflightGetAll(t *testing.T) {
 
 func BenchmarkInflightGetAll(b *testing.B) {
 	cl := genClient()
-	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	cl.Inflight.Set(2, InflightMessage{Packet: packets2.Packet{}, Sent: 0})
 	for n := 0; n < b.N; n++ {
 		cl.Inflight.Get(2)
 	}
@@ -744,13 +744,13 @@ func BenchmarkInflightGetAll(b *testing.B) {
 
 func TestInflightLen(t *testing.T) {
 	cl := genClient()
-	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	cl.Inflight.Set(2, InflightMessage{Packet: packets2.Packet{}, Sent: 0})
 	require.Equal(t, 1, cl.Inflight.Len())
 }
 
 func BenchmarkInflightLen(b *testing.B) {
 	cl := genClient()
-	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	cl.Inflight.Set(2, InflightMessage{Packet: packets2.Packet{}, Sent: 0})
 	for n := 0; n < b.N; n++ {
 		cl.Inflight.Len()
 	}
@@ -758,7 +758,7 @@ func BenchmarkInflightLen(b *testing.B) {
 
 func TestInflightDelete(t *testing.T) {
 	cl := genClient()
-	cl.Inflight.Set(3, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+	cl.Inflight.Set(3, InflightMessage{Packet: packets2.Packet{}, Sent: 0})
 	require.NotNil(t, cl.Inflight.internal[3])
 
 	q := cl.Inflight.Delete(3)
@@ -775,7 +775,7 @@ func TestInflightDelete(t *testing.T) {
 func BenchmarkInflightDelete(b *testing.B) {
 	cl := genClient()
 	for n := 0; n < b.N; n++ {
-		cl.Inflight.Set(4, InflightMessage{Packet: packets.Packet{}, Sent: 0})
+		cl.Inflight.Set(4, InflightMessage{Packet: packets2.Packet{}, Sent: 0})
 		cl.Inflight.Delete(4)
 	}
 }
@@ -783,11 +783,11 @@ func BenchmarkInflightDelete(b *testing.B) {
 var (
 	pkTable = []struct {
 		bytes  []byte
-		packet packets.Packet
+		packet packets2.Packet
 	}{
 		{
 			bytes: []byte{
-				byte(packets.Connect << 4), 16, // Fixed header
+				byte(packets2.Connect << 4), 16, // Fixed header
 				0, 4, // Protocol Name - MSB+LSB
 				'M', 'Q', 'T', 'T', // Protocol Name
 				4,     // Protocol Version
@@ -796,9 +796,9 @@ var (
 				0, 4, // Client ID - MSB+LSB
 				'z', 'e', 'n', '3',
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Connect,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Connect,
 					Remaining: 16,
 				},
 				ProtocolName:     []byte("MQTT"),
@@ -810,29 +810,29 @@ var (
 		},
 		{
 			bytes: []byte{
-				byte(packets.Connack << 4), 2,
+				byte(packets2.Connack << 4), 2,
 				0,
-				packets.Accepted,
+				packets2.Accepted,
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Connack,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Connack,
 					Remaining: 2,
 				},
 				SessionPresent: false,
-				ReturnCode:     packets.Accepted,
+				ReturnCode:     packets2.Accepted,
 			},
 		},
 		{
 			bytes: []byte{
-				byte(packets.Publish << 4), 18,
+				byte(packets2.Publish << 4), 18,
 				0, 5,
 				'a', '/', 'b', '/', 'c',
 				'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i',
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Publish,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Publish,
 					Remaining: 18,
 				},
 				TopicName: "a/b/c",
@@ -841,12 +841,12 @@ var (
 		},
 		{
 			bytes: []byte{
-				byte(packets.Puback << 4), 2, // Fixed header
+				byte(packets2.Puback << 4), 2, // Fixed header
 				0, 11, // Packet ID - LSB+MSB
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Puback,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Puback,
 					Remaining: 2,
 				},
 				PacketID: 11,
@@ -854,12 +854,12 @@ var (
 		},
 		{
 			bytes: []byte{
-				byte(packets.Pubrec << 4), 2, // Fixed header
+				byte(packets2.Pubrec << 4), 2, // Fixed header
 				0, 12, // Packet ID - LSB+MSB
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Pubrec,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Pubrec,
 					Remaining: 2,
 				},
 				PacketID: 12,
@@ -867,12 +867,12 @@ var (
 		},
 		{
 			bytes: []byte{
-				byte(packets.Pubrel<<4) | 2, 2, // Fixed header
+				byte(packets2.Pubrel<<4) | 2, 2, // Fixed header
 				0, 12, // Packet ID - LSB+MSB
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Pubrel,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Pubrel,
 					Remaining: 2,
 					Qos:       1,
 				},
@@ -881,12 +881,12 @@ var (
 		},
 		{
 			bytes: []byte{
-				byte(packets.Pubcomp << 4), 2, // Fixed header
+				byte(packets2.Pubcomp << 4), 2, // Fixed header
 				0, 14, // Packet ID - LSB+MSB
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Pubcomp,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Pubcomp,
 					Remaining: 2,
 				},
 				PacketID: 14,
@@ -894,7 +894,7 @@ var (
 		},
 		{
 			bytes: []byte{
-				byte(packets.Subscribe << 4), 30, // Fixed header
+				byte(packets2.Subscribe << 4), 30, // Fixed header
 				0, 15, // Packet ID - LSB+MSB
 
 				0, 3, // Topic Name - LSB+MSB
@@ -909,9 +909,9 @@ var (
 				'x', '/', 'y', '/', 'z', // Topic Name
 				2, // QoS
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Subscribe,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Subscribe,
 					Remaining: 30,
 				},
 				PacketID: 15,
@@ -925,16 +925,16 @@ var (
 		},
 		{
 			bytes: []byte{
-				byte(packets.Suback << 4), 6, // Fixed header
+				byte(packets2.Suback << 4), 6, // Fixed header
 				0, 17, // Packet ID - LSB+MSB
 				0,    // Return Code QoS 0
 				1,    // Return Code QoS 1
 				2,    // Return Code QoS 2
 				0x80, // Return Code fail
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Suback,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Suback,
 					Remaining: 6,
 				},
 				PacketID:    17,
@@ -943,7 +943,7 @@ var (
 		},
 		{
 			bytes: []byte{
-				byte(packets.Unsubscribe << 4), 27, // Fixed header
+				byte(packets2.Unsubscribe << 4), 27, // Fixed header
 				0, 35, // Packet ID - LSB+MSB
 
 				0, 3, // Topic Name - LSB+MSB
@@ -955,9 +955,9 @@ var (
 				0, 5, // Topic Name - LSB+MSB
 				'x', '/', 'y', '/', 'z', // Topic Name
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Unsubscribe,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Unsubscribe,
 					Remaining: 27,
 				},
 				PacketID: 35,
@@ -970,13 +970,13 @@ var (
 		},
 		{
 			bytes: []byte{
-				byte(packets.Unsuback << 4), 2, // Fixed header
+				byte(packets2.Unsuback << 4), 2, // Fixed header
 				0, 37, // Packet ID - LSB+MSB
 
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Unsuback,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Unsuback,
 					Remaining: 2,
 				},
 				PacketID: 37,
@@ -984,33 +984,33 @@ var (
 		},
 		{
 			bytes: []byte{
-				byte(packets.Pingreq << 4), 0, // fixed header
+				byte(packets2.Pingreq << 4), 0, // fixed header
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Pingreq,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Pingreq,
 					Remaining: 0,
 				},
 			},
 		},
 		{
 			bytes: []byte{
-				byte(packets.Pingresp << 4), 0, // fixed header
+				byte(packets2.Pingresp << 4), 0, // fixed header
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Pingresp,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Pingresp,
 					Remaining: 0,
 				},
 			},
 		},
 		{
 			bytes: []byte{
-				byte(packets.Disconnect << 4), 0, // fixed header
+				byte(packets2.Disconnect << 4), 0, // fixed header
 			},
-			packet: packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type:      packets.Disconnect,
+			packet: packets2.Packet{
+				FixedHeader: packets2.FixedHeader{
+					Type:      packets2.Disconnect,
 					Remaining: 0,
 				},
 			},

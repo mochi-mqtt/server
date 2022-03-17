@@ -126,7 +126,7 @@ func TestWriteRetrieveDeleteSubscription(t *testing.T) {
 	defer teardown(s, t)
 
 	v := persistence.Subscription{
-		ID:     "test:a/b/c",
+		ID:     "sub_test:a/b/c",
 		Client: "test",
 		Filter: "a/b/c",
 		QoS:    1,
@@ -136,7 +136,7 @@ func TestWriteRetrieveDeleteSubscription(t *testing.T) {
 	require.NoError(t, err)
 
 	v2 := persistence.Subscription{
-		ID:     "test:d/e/f",
+		ID:     "sub_test:d/e/f",
 		Client: "test",
 		Filter: "d/e/f",
 		QoS:    2,
@@ -150,7 +150,7 @@ func TestWriteRetrieveDeleteSubscription(t *testing.T) {
 	require.Equal(t, persistence.KSubscription, subs[0].T)
 	require.Equal(t, 2, len(subs))
 
-	err = s.DeleteSubscription("test:d/e/f")
+	err = s.DeleteSubscription(v2.Client, "d/e/f")
 	require.NoError(t, err)
 
 	subs, err = s.ReadSubscriptions()
@@ -195,7 +195,7 @@ func TestWriteRetrieveDeleteInflight(t *testing.T) {
 	defer teardown(s, t)
 
 	v := persistence.Message{
-		ID:        "client1_if_0",
+		ID:        "ifm_client1_0",
 		T:         persistence.KInflight,
 		PacketID:  0,
 		TopicName: "a/b/c",
@@ -207,9 +207,10 @@ func TestWriteRetrieveDeleteInflight(t *testing.T) {
 	require.NoError(t, err)
 
 	v2 := persistence.Message{
-		ID:        "client1_if_100",
+		ID:        "ifm_client1_100",
 		T:         persistence.KInflight,
 		PacketID:  100,
+		Client:    "client1",
 		TopicName: "d/e/f",
 		Payload:   []byte{'y', 'e', 's'},
 		Sent:      200,
@@ -223,7 +224,7 @@ func TestWriteRetrieveDeleteInflight(t *testing.T) {
 	require.Equal(t, persistence.KInflight, msgs[0].T)
 	require.Equal(t, 2, len(msgs))
 
-	err = s.DeleteInflight("client1_if_100")
+	err = s.DeleteInflight(v2.Client, v2.PacketID)
 	require.NoError(t, err)
 
 	msgs, err = s.ReadInflight()
@@ -284,7 +285,7 @@ func TestWriteRetrieveDeleteRetained(t *testing.T) {
 	require.NoError(t, err)
 
 	v2 := persistence.Message{
-		ID: "client1_ret_300",
+		ID: "ret_d/e/f",
 		T:  persistence.KRetained,
 		FixedHeader: persistence.FixedHeader{
 			Retain: true,
@@ -304,7 +305,7 @@ func TestWriteRetrieveDeleteRetained(t *testing.T) {
 	require.Equal(t, true, msgs[0].FixedHeader.Retain)
 	require.Equal(t, 2, len(msgs))
 
-	err = s.DeleteRetained("client1_ret_300")
+	err = s.DeleteRetained(v2.TopicName)
 	require.NoError(t, err)
 
 	msgs, err = s.ReadRetained()
@@ -427,7 +428,7 @@ func TestReadClientFail(t *testing.T) {
 
 func TestDeleteSubscriptionNoDB(t *testing.T) {
 	s := New(tmpPath, nil)
-	err := s.DeleteSubscription("a")
+	err := s.DeleteSubscription("test","a")
 	require.Error(t, err)
 }
 
@@ -436,7 +437,7 @@ func TestDeleteSubscriptionFail(t *testing.T) {
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
-	err = s.DeleteSubscription("a")
+	err = s.DeleteSubscription("test", "a")
 	require.Error(t, err)
 }
 
@@ -457,7 +458,7 @@ func TestDeleteClientFail(t *testing.T) {
 
 func TestDeleteInflightNoDB(t *testing.T) {
 	s := New(tmpPath, nil)
-	err := s.DeleteInflight("a")
+	err := s.DeleteInflight("test", 1)
 	require.Error(t, err)
 }
 
@@ -466,7 +467,7 @@ func TestDeleteInflightFail(t *testing.T) {
 	err := s.Open()
 	require.NoError(t, err)
 	s.Close()
-	err = s.DeleteInflight("a")
+	err = s.DeleteInflight("test", 1)
 	require.Error(t, err)
 }
 

@@ -18,22 +18,48 @@ const (
 type Store interface {
 	Open() error
 	Close()
+
+	GenEntityId
+	WriteEntity
+	DeleteEntity
+	ReadClient
+	ReadAll
+}
+
+type WriteEntity interface {
 	WriteSubscription(v Subscription) error
 	WriteClient(v Client) error
 	WriteInflight(v Message) error
 	WriteServerInfo(v ServerInfo) error
 	WriteRetained(v Message) error
+}
 
-	DeleteSubscription(id string) error
+type DeleteEntity interface {
+	DeleteSubscription(cid, filter string) error
 	DeleteClient(id string) error
-	DeleteInflight(id string) error
-	DeleteRetained(id string) error
+	DeleteInflight(cid string, pid uint16) error
+	DeleteRetained(topic string) error
+}
 
+type ReadAll interface {
 	ReadSubscriptions() (v []Subscription, err error)
 	ReadInflight() (v []Message, err error)
 	ReadRetained() (v []Message, err error)
 	ReadClients() (v []Client, err error)
 	ReadServerInfo() (v ServerInfo, err error)
+}
+
+type ReadClient interface {
+	ReadSubscriptionsByCid(cid string) (v []Subscription, err error)
+	ReadInflightByCid(cid string) (v []Message, err error)
+	ReadRetainedByTopic(topic string) (v Message, err error)
+	ReadClientByCid(cid string) (v Client, err error)
+}
+
+type GenEntityId interface {
+	GenInflightId(cid string, pid uint16) string
+	GenSubscriptionId(cid, filter string) string
+	GenRetainedId(topic string) string
 }
 
 // ServerInfo contains information and statistics about the server.
@@ -155,7 +181,7 @@ func (s *MockStore) WriteServerInfo(v ServerInfo) error {
 }
 
 // DeleteSubscription deletes a subscription from the persistent store.
-func (s *MockStore) DeleteSubscription(id string) error {
+func (s *MockStore) DeleteSubscription(cid, filter string) error {
 	if _, ok := s.Fail["delete_subs"]; ok {
 		return errors.New("test")
 	}
@@ -173,7 +199,7 @@ func (s *MockStore) DeleteClient(id string) error {
 }
 
 // DeleteInflight deletes an inflight message from the persistent store.
-func (s *MockStore) DeleteInflight(id string) error {
+func (s *MockStore) DeleteInflight(cid string, pid uint16) error {
 	if _, ok := s.Fail["delete_inflight"]; ok {
 		return errors.New("test")
 	}
@@ -182,7 +208,7 @@ func (s *MockStore) DeleteInflight(id string) error {
 }
 
 // DeleteRetained deletes a retained message from the persistent store.
-func (s *MockStore) DeleteRetained(id string) error {
+func (s *MockStore) DeleteRetained(topic string) error {
 	if _, ok := s.Fail["delete_retained"]; ok {
 		return errors.New("test")
 	}
@@ -278,4 +304,83 @@ func (s *MockStore) ReadServerInfo() (v ServerInfo, err error) {
 		},
 		KServerInfo,
 	}, nil
+}
+
+func (s *MockStore) ReadSubscriptionsByCid(cid string) (v []Subscription, err error) {
+	if _, ok := s.Fail["read_subs_by_cid"]; ok {
+		return v, errors.New("test_subs")
+	}
+
+	return []Subscription{
+		Subscription{
+			ID:     "test:a/b/c",
+			Client: "test",
+			Filter: "a/b/c",
+			QoS:    1,
+			T:      KSubscription,
+		},
+	}, nil
+}
+
+func (s *MockStore) ReadInflightByCid(cid string) (v []Message, err error) {
+	if _, ok := s.Fail["read_inflight_by_cid"]; ok {
+		return v, errors.New("test_inflight")
+	}
+
+	return []Message{
+		Message{
+			ID:        "client1_if_100",
+			T:         KInflight,
+			Client:    "client1",
+			PacketID:  100,
+			TopicName: "d/e/f",
+			Payload:   []byte{'y', 'e', 's'},
+			Sent:      200,
+			Resends:   1,
+		},
+	}, nil
+}
+
+func (s *MockStore) ReadRetainedByTopic(topic string) (v Message, err error) {
+	if _, ok := s.Fail["read_retained_by_topic"]; ok {
+		return v, errors.New("test_retained")
+	}
+
+	return Message{
+			ID: "client1_ret_200",
+			T:  KRetained,
+			FixedHeader: FixedHeader{
+				Retain: true,
+			},
+			PacketID:  200,
+			TopicName: "a/b/c",
+			Payload:   []byte{'h', 'e', 'l', 'l', 'o'},
+			Sent:      100,
+			Resends:   0,
+		}, nil
+}
+
+func (s *MockStore) ReadClientByCid(cid string) (v Client, err error) {
+	if _, ok := s.Fail["read_client_by_cid"]; ok {
+		return v, errors.New("test_clients")
+	}
+
+	return Client{
+			ID:       "cl_client1",
+			ClientID: "client1",
+			T:        KClient,
+			Listener: "tcp1",
+		}, nil
+}
+
+func (s *MockStore) GenInflightId(cid string, pid uint16) string {
+	return "ifm_client1_101"
+}
+
+func (s *MockStore) GenSubscriptionId(cid, filter string) string {
+	return "sub_client1_a/b/c"
+}
+
+func (s *MockStore) GenRetainedId(topic string) string {
+	return "ret_client1_102"
 }

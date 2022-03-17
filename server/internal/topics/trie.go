@@ -1,10 +1,9 @@
 package topics
 
 import (
+	packets2 "github.com/mochi-co/mqtt/server/packets"
 	"strings"
 	"sync"
-
-	"github.com/mochi-co/mqtt/server/internal/packets"
 )
 
 // Subscriptions is a map of subscriptions keyed on client.
@@ -29,16 +28,16 @@ func New() *Index {
 // RetainMessage saves a message payload to the end of a topic branch. Returns
 // 1 if a retained message was added, 0 if there was no change, and -1 if the
 // retained message was removed.
-func (x *Index) RetainMessage(msg packets.Packet) int64 {
+func (x *Index) RetainMessage(msg packets2.Packet) int64 {
 	var q int64
 
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	n := x.poperate(msg.TopicName)
 	if len(msg.Payload) > 0 {
-		if n.Message.FixedHeader.Retain == false {
-			q = 1
-		}
+		//if n.Message.FixedHeader.Retain == false {
+			q = 1   //Always return 1 to replace the old retain message with the new message
+		//}
 		n.Message = msg
 	} else {
 		if n.Message.FixedHeader.Retain == true {
@@ -109,7 +108,7 @@ func (x *Index) unpoperate(filter string, client string, message bool) bool {
 				delete(e.Clients, client)
 			}
 			if message {
-				e.Message = packets.Packet{}
+				e.Message = packets2.Packet{}
 			}
 			end = false
 		}
@@ -166,16 +165,16 @@ func (x *Index) Subscribers(topic string) Subscriptions {
 }
 
 // Messages returns a slice of retained topic messages which match a filter.
-func (x *Index) Messages(filter string) []packets.Packet {
+func (x *Index) Messages(filter string) []packets2.Packet {
 	// ReLeaf("messages", x.Root, 0)
 	x.mu.RLock()
 	defer x.mu.RUnlock()
-	return x.Root.scanMessages(filter, 0, make([]packets.Packet, 0, 32))
+	return x.Root.scanMessages(filter, 0, make([]packets2.Packet, 0, 32))
 }
 
 // Leaf is a child node on the tree.
 type Leaf struct {
-	Message packets.Packet   // a message which has been retained for a specific topic.
+	Message packets2.Packet  // a message which has been retained for a specific topic.
 	Key     string           // the key that was used to create the leaf.
 	Filter  string           // the path of the topic filter being matched.
 	Parent  *Leaf            // a pointer to the parent node for the leaf.
@@ -239,7 +238,7 @@ func (l *Leaf) scanSubscribers(topic string, d int, clients Subscriptions) Subsc
 // scanMessages recursively steps through a branch of leaves finding retained messages
 // that match a topic filter. Setting `d` to -1 will enable wildhash mode, and will
 // recursively check ALL child leaves in every subsequent branch.
-func (l *Leaf) scanMessages(filter string, d int, messages []packets.Packet) []packets.Packet {
+func (l *Leaf) scanMessages(filter string, d int, messages []packets2.Packet) []packets2.Packet {
 
 	// If a wildhash mode has been set, continue recursively checking through all
 	// child leaves regardless of their particle key.

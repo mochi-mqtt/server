@@ -2,7 +2,7 @@ package events
 
 import (
 	"github.com/mochi-co/mqtt/server/internal/clients"
-	"github.com/mochi-co/mqtt/server/internal/packets"
+	"github.com/mochi-co/mqtt/server/packets"
 )
 
 type Events struct {
@@ -10,8 +10,6 @@ type Events struct {
 	OnConnect    // client connected.
 	OnDisconnect // client disconnected.
 }
-
-type Packet packets.Packet
 
 type Client struct {
 	ID       string
@@ -35,10 +33,10 @@ func FromClient(cl *clients.Client) Client {
 // be dispatched as if the event hook had not been triggered.
 // This function will block message dispatching until it returns. To minimise this,
 // have the function open a new goroutine on the embedding side.
-type OnMessage func(Client, Packet) (Packet, error)
+type OnMessage func(Client, packets.Packet) (packets.Packet, error)
 
 // OnConnect is called when a client successfully connects to the broker.
-type OnConnect func(Client, Packet)
+type OnConnect func(Client, packets.Packet)
 
 // OnDisconnect is called when a client disconnects to the broker. An error value
 // is passed to the function if the client disconnected abnormally, otherwise it

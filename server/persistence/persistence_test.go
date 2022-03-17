@@ -108,7 +108,7 @@ func TestMockStoreWriteServerInfoFail(t *testing.T) {
 
 func TestMockStoreDeleteSubscription(t *testing.T) {
 	s := new(MockStore)
-	err := s.DeleteSubscription("client1:d/e/f")
+	err := s.DeleteSubscription("client1", "d/e/f")
 	require.NoError(t, err)
 }
 
@@ -118,7 +118,7 @@ func TestMockStoreDeleteSubscriptionFail(t *testing.T) {
 			"delete_subs": true,
 		},
 	}
-	err := s.DeleteSubscription("client1:a/b/c")
+	err := s.DeleteSubscription("client1", "a/b/c")
 	require.Error(t, err)
 }
 
@@ -140,7 +140,7 @@ func TestMockStoreDeleteClientFail(t *testing.T) {
 
 func TestMockStoreDeleteInflight(t *testing.T) {
 	s := new(MockStore)
-	err := s.DeleteInflight("client1-if-100")
+	err := s.DeleteInflight("client1", 100)
 	require.NoError(t, err)
 }
 
@@ -150,7 +150,7 @@ func TestMockStoreDeleteInflightFail(t *testing.T) {
 			"delete_inflight": true,
 		},
 	}
-	err := s.DeleteInflight("client1-if-100")
+	err := s.DeleteInflight("client1", 100)
 	require.Error(t, err)
 }
 
