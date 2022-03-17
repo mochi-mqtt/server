@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strconv"
 )
 
 // All of the valid packet types and their packet identifier.
@@ -661,4 +662,9 @@ func (pk *Packet) UnsubscribeValidate() (byte, error) {
 	}
 
 	return Accepted, nil
+}
+
+// FormatID returns the PacketID field as a decimal integer.
+func (pk *Packet) FormatID() string {
+	return strconv.FormatUint(uint64(pk.PacketID), 10)
 }
