@@ -268,13 +268,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		}
 		existing.Stop(fmt.Errorf("connection from %s: %w", cl.Info().Remote, ErrSessionReestablished))
 		if pk.CleanSession {
-			for k := range existing.Subscriptions {
-				delete(existing.Subscriptions, k)
-				q := s.Topics.Unsubscribe(k, existing.ID)
-				if q {
-					atomic.AddInt64(&s.System.Subscriptions, -1)
-				}
-			}
+			s.cleanSubscriptions(existing)
 		} else {
 			cl.Inflight = existing.Inflight // Take address of existing session.
 			cl.Subscriptions = existing.Subscriptions
@@ -330,6 +324,14 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	}
 	err = cl.StopCause()
 
+	if pk.CleanSession {
+		// The state associated with a CleanSession MUST NOT be reused in any subsequent session [MQTT-3.1.2-6]
+		cl.Lock()
+		s.cleanSubscriptions(cl)
+		cl.Unlock()
+		s.Clients.Delete(cl.ID)
+	}
+
 	s.bytepool.Put(xbr) // Return byte buffers to pools when the client has finished.
 	s.bytepool.Put(xbw)
 
@@ -341,6 +343,17 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	}
 
 	return err
+}
+
+// cleanSubscriptions cleans all the subscriptions of the client
+func (s *Server) cleanSubscriptions(cl *clients.Client) {
+	for k := range cl.Subscriptions {
+		delete(cl.Subscriptions, k)
+		q := s.Topics.Unsubscribe(k, cl.ID)
+		if q {
+			atomic.AddInt64(&s.System.Subscriptions, -1)
+		}
+	}
 }
 
 // writeClient writes packets to a client connection.
