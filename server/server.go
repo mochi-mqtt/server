@@ -470,6 +470,13 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 		return nil
 	}
 
+	// if an OnProcessMessage hook exists, potentially modify the packet.
+	if s.Events.OnProcessMessage != nil {
+		if pkx, err := s.Events.OnProcessMessage(cl.Info(), events.Packet(pk)); err == nil {
+			pk = packets.Packet(pkx)
+		}
+	}
+
 	if pk.FixedHeader.Retain {
 		s.retainMessage(cl, pk)
 	}

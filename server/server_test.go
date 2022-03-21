@@ -1396,6 +1396,161 @@ func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
 	require.Equal(t, int64(24), s.System.BytesSent)
 }
 
+func TestServerEventOnProcessMessage(t *testing.T) {
+	s, cl1, r1, w1 := setupClient()
+	s.Clients.Add(cl1)
+	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
+
+	var hookedPacket events.Packet
+	var hookedClient events.Client
+	s.Events.OnProcessMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
+		hookedClient = cl
+		hookedPacket = pk
+		return pk, nil
+	}
+
+	ack1 := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r1)
+		if err != nil {
+			panic(err)
+		}
+		ack1 <- buf
+	}()
+
+	pk1 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+	}
+	err := s.processPacket(cl1, pk1)
+
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
+
+	require.Equal(t, events.Client{
+		ID:       "mochi",
+		Remote:   "pipe",
+		Listener: "",
+	}, hookedClient)
+
+	require.Equal(t, events.Packet(pk1), hookedPacket)
+
+	w1.Close()
+
+	require.Equal(t, []byte{
+		byte(packets.Publish << 4), 12,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		'h', 'e', 'l', 'l', 'o',
+	}, <-ack1)
+
+	require.Equal(t, int64(14), s.System.BytesSent)
+}
+
+func TestServerProcessPublishHookOnProcessMessageModify(t *testing.T) {
+	s, cl1, r1, w1 := setupClient()
+	s.Clients.Add(cl1)
+	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
+
+	var hookedPacket events.Packet
+	var hookedClient events.Client
+	s.Events.OnProcessMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
+		hookedPacket = pk
+		hookedPacket.FixedHeader.Retain = true
+		hookedPacket.Payload = []byte("world")
+		hookedClient = cl
+		return hookedPacket, nil
+	}
+
+	ack1 := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r1)
+		if err != nil {
+			panic(err)
+		}
+		ack1 <- buf
+	}()
+
+	pk1 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+	}
+	err := s.processPacket(cl1, pk1)
+
+	retained := s.Topics.Messages("a/b/c")
+	require.Equal(t, 1, len(retained))
+
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
+
+	require.Equal(t, events.Client{
+		ID:       "mochi",
+		Remote:   "pipe",
+		Listener: "",
+	}, hookedClient)
+
+	w1.Close()
+
+	require.Equal(t, []byte{
+		byte(packets.Publish<<4 | 1), 12,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		'w', 'o', 'r', 'l', 'd',
+	}, <-ack1)
+
+	require.Equal(t, int64(14), s.System.BytesSent)
+}
+
+func TestServerProcessPublishHookOnProcessMessageModifyError(t *testing.T) {
+	s, cl1, r1, w1 := setupClient()
+	s.Clients.Add(cl1)
+	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
+
+	s.Events.OnProcessMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
+		pkx := pk
+		pkx.Payload = []byte("world")
+		return pkx, fmt.Errorf("error")
+	}
+
+	ack1 := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(r1)
+		if err != nil {
+			panic(err)
+		}
+		ack1 <- buf
+	}()
+
+	pk1 := packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("hello"),
+	}
+	err := s.processPacket(cl1, pk1)
+
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
+
+	w1.Close()
+
+	require.Equal(t, []byte{
+		byte(packets.Publish << 4), 12,
+		0, 5,
+		'a', '/', 'b', '/', 'c',
+		'h', 'e', 'l', 'l', 'o',
+	}, <-ack1)
+
+	require.Equal(t, int64(14), s.System.BytesSent)
+}
+
 func TestServerProcessPuback(t *testing.T) {
 	s, cl, _, _ := setupClient()
 	cl.Inflight.Set(11, clients.InflightMessage{Packet: packets.Packet{PacketID: 11}, Sent: 0})
