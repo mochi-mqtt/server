@@ -3,6 +3,7 @@ package packets
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/jinzhu/copier"
@@ -1079,5 +1080,12 @@ func BenchmarkUnsubscribeValidate(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		pk.UnsubscribeValidate()
+	}
+}
+
+func TestFormatPacketID(t *testing.T) {
+	for _, id := range []uint16{0, 7, 0x100, 0xffff} {
+		packet := &Packet{PacketID: id}
+		require.Equal(t, fmt.Sprint(id), packet.FormatID())
 	}
 }

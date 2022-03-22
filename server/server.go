@@ -564,7 +564,7 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 
 				if s.Store != nil {
 					s.onStorage(client, s.Store.WriteInflight(persistence.Message{
-						ID:          "if_" + client.ID + "_" + strconv.Itoa(int(out.PacketID)),
+						ID:          persistentID(client, out),
 						T:           persistence.KRetained,
 						FixedHeader: persistence.FixedHeader(out.FixedHeader),
 						TopicName:   out.TopicName,
@@ -586,7 +586,7 @@ func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) error {
 		atomic.AddInt64(&s.System.Inflight, -1)
 	}
 	if s.Store != nil {
-		s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID+"_"+strconv.Itoa(int(pk.PacketID))))
+		s.onStorage(cl, s.Store.DeleteInflight(persistentID(cl, pk)))
 	}
 	return nil
 }
@@ -628,7 +628,7 @@ func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
 	}
 
 	if s.Store != nil {
-		s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID+"_"+strconv.Itoa(int(pk.PacketID))))
+		s.onStorage(cl, s.Store.DeleteInflight(persistentID(cl, pk)))
 	}
 
 	return nil
@@ -641,7 +641,7 @@ func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
 		atomic.AddInt64(&s.System.Inflight, -1)
 	}
 	if s.Store != nil {
-		s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID+"_"+strconv.Itoa(int(pk.PacketID))))
+		s.onStorage(cl, s.Store.DeleteInflight(persistentID(cl, pk)))
 	}
 	return nil
 }
@@ -721,6 +721,17 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error
 	return nil
 }
 
+// atomicItoa reads an *int64 and formats a decimal string.
+func atomicItoa(ptr *int64) string {
+	return strconv.FormatInt(atomic.LoadInt64(ptr), 10)
+}
+
+// persistentID return a string combining the client and packet
+// identifiers for use with the persistence layer.
+func persistentID(client *clients.Client, pk packets.Packet) string {
+	return "if_" + client.ID + "_" + pk.FormatID()
+}
+
 // publishSysTopics publishes the current values to the server $SYS topics.
 // Due to the int to string conversions this method is not as cheap as
 // some of the others so the publishing interval should be set appropriately.
@@ -732,26 +743,27 @@ func (s *Server) publishSysTopics() {
 		},
 	}
 
-	s.System.Uptime = time.Now().Unix() - s.System.Started
+	uptime := time.Now().Unix() - atomic.LoadInt64(&s.System.Started)
+	atomic.StoreInt64(&s.System.Uptime, uptime)
 	topics := map[string]string{
 		"$SYS/broker/version":                   s.System.Version,
-		"$SYS/broker/uptime":                    strconv.Itoa(int(s.System.Uptime)),
-		"$SYS/broker/timestamp":                 strconv.Itoa(int(s.System.Started)),
-		"$SYS/broker/load/bytes/received":       strconv.Itoa(int(s.System.BytesRecv)),
-		"$SYS/broker/load/bytes/sent":           strconv.Itoa(int(s.System.BytesSent)),
-		"$SYS/broker/clients/connected":         strconv.Itoa(int(s.System.ClientsConnected)),
-		"$SYS/broker/clients/disconnected":      strconv.Itoa(int(s.System.ClientsDisconnected)),
-		"$SYS/broker/clients/maximum":           strconv.Itoa(int(s.System.ClientsMax)),
-		"$SYS/broker/clients/total":             strconv.Itoa(int(s.System.ClientsTotal)),
-		"$SYS/broker/connections/total":         strconv.Itoa(int(s.System.ConnectionsTotal)),
-		"$SYS/broker/messages/received":         strconv.Itoa(int(s.System.MessagesRecv)),
-		"$SYS/broker/messages/sent":             strconv.Itoa(int(s.System.MessagesSent)),
-		"$SYS/broker/messages/publish/dropped":  strconv.Itoa(int(s.System.PublishDropped)),
-		"$SYS/broker/messages/publish/received": strconv.Itoa(int(s.System.PublishRecv)),
-		"$SYS/broker/messages/publish/sent":     strconv.Itoa(int(s.System.PublishSent)),
-		"$SYS/broker/messages/retained/count":   strconv.Itoa(int(s.System.Retained)),
-		"$SYS/broker/messages/inflight":         strconv.Itoa(int(s.System.Inflight)),
-		"$SYS/broker/subscriptions/count":       strconv.Itoa(int(s.System.Subscriptions)),
+		"$SYS/broker/uptime":                    atomicItoa(&s.System.Uptime),
+		"$SYS/broker/timestamp":                 atomicItoa(&s.System.Started),
+		"$SYS/broker/load/bytes/received":       atomicItoa(&s.System.BytesRecv),
+		"$SYS/broker/load/bytes/sent":           atomicItoa(&s.System.BytesSent),
+		"$SYS/broker/clients/connected":         atomicItoa(&s.System.ClientsConnected),
+		"$SYS/broker/clients/disconnected":      atomicItoa(&s.System.ClientsDisconnected),
+		"$SYS/broker/clients/maximum":           atomicItoa(&s.System.ClientsMax),
+		"$SYS/broker/clients/total":             atomicItoa(&s.System.ClientsTotal),
+		"$SYS/broker/connections/total":         atomicItoa(&s.System.ConnectionsTotal),
+		"$SYS/broker/messages/received":         atomicItoa(&s.System.MessagesRecv),
+		"$SYS/broker/messages/sent":             atomicItoa(&s.System.MessagesSent),
+		"$SYS/broker/messages/publish/dropped":  atomicItoa(&s.System.PublishDropped),
+		"$SYS/broker/messages/publish/received": atomicItoa(&s.System.PublishRecv),
+		"$SYS/broker/messages/publish/sent":     atomicItoa(&s.System.PublishSent),
+		"$SYS/broker/messages/retained/count":   atomicItoa(&s.System.Retained),
+		"$SYS/broker/messages/inflight":         atomicItoa(&s.System.Inflight),
+		"$SYS/broker/subscriptions/count":       atomicItoa(&s.System.Subscriptions),
 	}
 
 	for topic, payload := range topics {
@@ -786,7 +798,7 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 			}
 
 			if s.Store != nil {
-				s.onStorage(cl, s.Store.DeleteInflight("if_"+cl.ID+"_"+strconv.Itoa(int(tk.Packet.PacketID))))
+				s.onStorage(cl, s.Store.DeleteInflight(persistentID(cl, tk.Packet)))
 			}
 
 			continue
@@ -811,7 +823,7 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 
 		if s.Store != nil {
 			s.onStorage(cl, s.Store.WriteInflight(persistence.Message{
-				ID:          "if_" + cl.ID + "_" + strconv.Itoa(int(tk.Packet.PacketID)),
+				ID:          persistentID(cl, tk.Packet),
 				T:           persistence.KRetained,
 				FixedHeader: persistence.FixedHeader(tk.Packet.FixedHeader),
 				TopicName:   tk.Packet.TopicName,

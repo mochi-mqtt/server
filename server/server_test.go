@@ -127,6 +127,16 @@ func BenchmarkServerAddStore(b *testing.B) {
 	}
 }
 
+func TestPersistentID(t *testing.T) {
+	s := New()
+	pk := packets.Packet{
+		PacketID: 1234,
+	}
+	cl := clients.NewClientStub(s.System)
+	cl.ID = "test"
+	require.Equal(t, "if_test_1234", persistentID(cl, pk))
+}
+
 func TestServerAddListener(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
@@ -1055,7 +1065,7 @@ func TestServerProcessPublishSystemPrefix(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, int64(0), s.System.BytesSent)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.BytesSent))
 }
 
 func TestServerProcessPublishBadACL(t *testing.T) {
@@ -1120,8 +1130,7 @@ func TestServerPublishInline(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, <-ack1)
 
-	bsent := atomic.LoadInt64(&s.System.BytesSent)
-	require.Equal(t, int64(14), bsent)
+	require.Equal(t, int64(14), atomic.LoadInt64(&s.System.BytesSent))
 
 	close(s.inline.done)
 }
@@ -1159,7 +1168,7 @@ func TestServerPublishInlineRetain(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, <-ack1)
 
-	require.Equal(t, int64(14), s.System.BytesSent)
+	require.Equal(t, int64(14), atomic.LoadInt64(&s.System.BytesSent))
 
 	close(s.inline.done)
 }
@@ -1169,7 +1178,7 @@ func TestServerPublishInlineSysTopicError(t *testing.T) {
 
 	err := s.Publish("$SYS/stuff", []byte("hello"), false)
 	require.Error(t, err)
-	require.Equal(t, int64(0), s.System.BytesSent)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.System.BytesSent))
 }
 
 func TestServerEventOnMessage(t *testing.T) {
@@ -1218,7 +1227,7 @@ func TestServerEventOnMessage(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, <-ack1)
 
-	require.Equal(t, int64(14), s.System.BytesSent)
+	require.Equal(t, int64(14), atomic.LoadInt64(&s.System.BytesSent))
 }
 
 func TestServerProcessPublishHookOnMessageModify(t *testing.T) {
@@ -1270,7 +1279,7 @@ func TestServerProcessPublishHookOnMessageModify(t *testing.T) {
 		'w', 'o', 'r', 'l', 'd',
 	}, <-ack1)
 
-	require.Equal(t, int64(14), s.System.BytesSent)
+	require.Equal(t, int64(14), atomic.LoadInt64(&s.System.BytesSent))
 }
 
 func TestServerProcessPublishHookOnMessageModifyError(t *testing.T) {
@@ -1314,7 +1323,7 @@ func TestServerProcessPublishHookOnMessageModifyError(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, <-ack1)
 
-	require.Equal(t, int64(14), s.System.BytesSent)
+	require.Equal(t, int64(14), atomic.LoadInt64(&s.System.BytesSent))
 }
 
 func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
@@ -1393,7 +1402,7 @@ func TestServerProcessPublishHookOnMessageAllowClients(t *testing.T) {
 		'a',
 	}, <-ack2)
 
-	require.Equal(t, int64(24), s.System.BytesSent)
+	require.Equal(t, int64(24), atomic.LoadInt64(&s.System.BytesSent))
 }
 
 func TestServerProcessPuback(t *testing.T) {
