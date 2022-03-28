@@ -34,6 +34,7 @@ type Listener interface {
 	Serve(EstablishFunc)         // starting actively listening for new connections.
 	ID() string                  // return the id of the listener.
 	Close(CloseFunc)             // stop and close the listener.
+	SetSystemStat(s *system.Info)
 }
 
 // Listeners contains the network listeners for the broker.
@@ -117,6 +118,23 @@ func (l *Listeners) Close(id string, closer CloseFunc) {
 	listener := l.internal[id]
 	l.RUnlock()
 	listener.Close(closer)
+}
+
+// SetSystemStat call all listeners and set new server Info reference
+func (l *Listeners) SetSystemStat(s *system.Info) {
+	l.RLock()
+	i := 0
+	ids := make([]string, len(l.internal))
+	for id := range l.internal {
+		ids[i] = id
+		i++
+	}
+	l.RUnlock()
+
+	for _, id := range ids {
+		listener := l.internal[id]
+		listener.SetSystemStat(s)
+	}
 }
 
 // CloseAll iterates and closes all registered listeners.
