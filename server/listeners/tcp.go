@@ -34,6 +34,10 @@ func NewTCP(id, address string) *TCP {
 	}
 }
 
+func (l *TCP) SetSystemStat(s *system.Info) {
+
+}
+
 // SetConfig sets the configuration values for the listener config.
 func (l *TCP) SetConfig(config *Config) {
 	l.Lock()

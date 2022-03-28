@@ -836,6 +836,7 @@ func (s *Server) loadServerInfo(v persistence.ServerInfo) {
 	version := s.System.Version
 	s.System = &v.Info
 	s.System.Version = version
+	s.Listeners.SetSystemStat(s.System)
 }
 
 // loadSubscriptions restores subscriptions from the datastore.

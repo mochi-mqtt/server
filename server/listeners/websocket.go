@@ -89,6 +89,10 @@ func NewWebsocket(id, address string) *Websocket {
 	}
 }
 
+func (l *Websocket) SetSystemStat(s *system.Info) {
+
+}
+
 // SetConfig sets the configuration values for the listener config.
 func (l *Websocket) SetConfig(config *Config) {
 	l.Lock()
