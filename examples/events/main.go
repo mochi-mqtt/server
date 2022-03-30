@@ -51,7 +51,7 @@ func main() {
 
 	// Add OnDisconnect Event Hook
 	server.Events.OnDisconnect = func(cl events.Client, err error) {
-		fmt.Printf("<< OnDisconnect client dicconnected %s: %v\n", cl.ID, err)
+		fmt.Printf("<< OnDisconnect client disconnected %s: %v\n", cl.ID, err)
 	}
 
 	// Add OnMessage Event Hook
