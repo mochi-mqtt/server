@@ -475,8 +475,16 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 	// if an OnProcessMessage hook exists, potentially modify the packet.
 	if s.Events.OnProcessMessage != nil {
-		if pkx, err := s.Events.OnProcessMessage(cl.Info(), events.Packet(pk)); err == nil {
-			pk = packets.Packet(pkx)
+		pkx, err := s.Events.OnProcessMessage(cl.Info(), events.Packet(pk))
+		if err == nil {
+			pk = packets.Packet(pkx) // Only use the new package changes if there's no errors.
+		} else {
+			// If the ErrRejectPacket is return, abandon processing the packet.
+			if err == ErrRejectPacket {
+				return nil
+			}
+
+			s.Events.OnError(cl.Info(), err)
 		}
 	}
 
