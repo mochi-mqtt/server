@@ -166,12 +166,11 @@ Any options which is not set or is `0` will use default values.
 
 ```go
 opts := &mqtt.Options{
-		BufferSize:      512 * 1024,
-		BufferBlockSize: 16 * 1024,
+    BufferSize:      512 * 1024,
+    BufferBlockSize: 16 * 1024,
 }
 
 s := mqtt.NewServer(opts)
-
 ```
 
 > See `examples/tcp/main.go` for an example implementation.
