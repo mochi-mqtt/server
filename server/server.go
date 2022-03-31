@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"strconv"
 	"sync/atomic"
 	"time"
 
-	"github.com/logrusorgru/aurora"
 	"github.com/mochi-co/mqtt/server/events"
 	"github.com/mochi-co/mqtt/server/internal/circ"
 	"github.com/mochi-co/mqtt/server/internal/clients"
@@ -95,7 +93,6 @@ type inlineMessages struct {
 // This method has been deprecated and will be removed in a future release.
 // Please use NewServer instead.
 func New() *Server {
-	log.Println(aurora.Red("mqtt.New() has been deprecated and will be removed in a future release - please use mqtt.NewServer(opts *Options) instead!"))
 	return NewServer(nil)
 }
 
