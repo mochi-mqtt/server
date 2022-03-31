@@ -135,9 +135,18 @@ server.Events.OnDisconnect = func(cl events.Client, err error) {
 ```
 
 ##### OnMessage
-`server.Events.OnMessage` is called when a Publish packet is received. The method receives the published message and information about the client who published it. 
+`server.Events.OnMessage` is called when a Publish packet (message) is received. The method receives the published message and information about the client who published it. 
 
 > This hook is only triggered when a message is received by clients. It is not triggered when using the direct `server.Publish` method.
+
+
+##### OnProcessMessage
+`server.Events.OnMessage` is called before a publish packet (message) is processed. Specifically, the method callback is triggered after topic and ACL validation has occurred, but before the headers and payload are processed. You can use this if you want to programmatically change the data of the packet, such as setting it to retain, or altering the QoS flag. 
+
+If an error is returned, the packet will not be modified. and the existing packet will be used. If this is an unwanted outcome, the `mqtt.ErrRejectPacket` error can be returned from the callback, and the packet will be dropped/ignored, any further processing is abandoned.
+
+> This hook is only triggered when a message is received by clients. It is not triggered when using the direct `server.Publish` method.
+
 
 ```go
 import "github.com/mochi-co/mqtt/server/events"
