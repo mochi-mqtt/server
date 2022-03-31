@@ -6,10 +6,11 @@ import (
 
 // Events provides callback handlers for different event hooks.
 type Events struct {
-	OnMessage    // published message receieved.
-	OnError      // server error.
-	OnConnect    // client connected.
-	OnDisconnect // client disconnected.
+	OnProcessMessage // published message receieved before evaluation.
+	OnMessage        // published message receieved.
+	OnError          // server error.
+	OnConnect        // client connected.
+	OnDisconnect     // client disconnected.
 }
 
 // Packets is an alias for packets.Packet.
@@ -27,6 +28,19 @@ type Client struct {
 type Clientlike interface {
 	Info() Client
 }
+
+// OnProcessMessage function is called right after a publish message is received.
+// It is called right after ACL checking and before any other data gets evaluated
+// for publishing. So this event e.g. allows changing the Retain flag. Note,
+// this hook is ONLY called by connected client publishers, it is not triggered when
+// using the direct s.Publish method. The function receives the sent message and the
+// data of the client who published it, and allows the packet to be modified
+// before it is dispatched to subscribers. If no modification is required, return
+// the original packet data. If an error occurs, the original packet will
+// be dispatched as if the event hook had not been triggered.
+// This function will block message dispatching until it returns. To minimise this,
+// have the function open a new goroutine on the embedding side.
+type OnProcessMessage func(Client, Packet) (Packet, error)
 
 // OnMessage function is called when a publish message is received. Note,
 // this hook is ONLY called by connected client publishers, it is not triggered when
