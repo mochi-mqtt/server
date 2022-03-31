@@ -1521,6 +1521,9 @@ func TestServerProcessPublishHookOnProcessMessageModifyError(t *testing.T) {
 	s.Clients.Add(cl1)
 	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
 
+	var hook errorHook
+	s.Events.OnError = hook.onError
+
 	s.Events.OnProcessMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
 		pkx := pk
 		pkx.Payload = []byte("world")
@@ -1570,6 +1573,9 @@ func TestServerProcessPublishHookOnProcessMessageModifyError(t *testing.T) {
 	}, <-ack1)
 
 	require.Equal(t, int64(14), s.System.BytesSent)
+
+	require.Equal(t, 1, hook.cnt)
+	require.Equal(t, fmt.Errorf("error"), hook.err)
 }
 
 func TestServerProcessPuback(t *testing.T) {
