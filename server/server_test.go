@@ -99,6 +99,33 @@ func BenchmarkNew(b *testing.B) {
 	}
 }
 
+func TestNewServer(t *testing.T) {
+	opts := &Options{
+		BufferSize:      1000,
+		BufferBlockSize: 100,
+	}
+	s := NewServer(opts)
+	require.NotNil(t, s)
+	require.NotNil(t, s.Listeners)
+	require.NotNil(t, s.Clients)
+	require.NotNil(t, s.Topics)
+	require.Nil(t, s.Store)
+	require.NotEmpty(t, s.System.Version)
+	require.Equal(t, true, s.System.Started > 0)
+	require.Equal(t, 1000, s.Options.BufferSize)
+	require.Equal(t, 100, s.Options.BufferBlockSize)
+}
+
+func BenchmarkNewServer(b *testing.B) {
+	opts := &Options{
+		BufferSize:      1000,
+		BufferBlockSize: 100,
+	}
+	for n := 0; n < b.N; n++ {
+		NewServer(opts)
+	}
+}
+
 func TestServerAddStore(t *testing.T) {
 	s := New()
 	require.NotNil(t, s)
