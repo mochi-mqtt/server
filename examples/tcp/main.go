@@ -25,7 +25,13 @@ func main() {
 
 	fmt.Println(aurora.Magenta("Mochi MQTT Server initializing..."), aurora.Cyan("TCP"))
 
-	server := mqtt.NewServer(nil)
+	// An example of configuring various server options...
+	options := &mqtt.Options{
+		BufferSize:      0, // Use default values
+		BufferBlockSize: 0, // Use default values
+	}
+
+	server := mqtt.NewServer(options)
 	tcp := listeners.NewTCP("t1", ":1883")
 	err := server.AddListener(tcp, &listeners.Config{
 		Auth: new(auth.Allow),
