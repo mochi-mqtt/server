@@ -41,6 +41,9 @@ var (
 	// ErrInvalidTopic indicates that the specified topic was not valid.
 	ErrInvalidTopic = errors.New("cannot publish to $ and $SYS topics")
 
+	// ErrRejectPacket indicates that a packet should be dropped instead of processed.
+	ErrRejectPacket = errors.New("packet rejected")
+
 	ErrClientDisconnect     = errors.New("Client disconnected")
 	ErrClientReconnect      = errors.New("Client attemped to reconnect")
 	ErrServerShutdown       = errors.New("Server is shutting down")
