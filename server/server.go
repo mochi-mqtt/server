@@ -484,7 +484,9 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 				return nil
 			}
 
-			s.Events.OnError(cl.Info(), err)
+			if s.Events.OnError != nil {
+				s.Events.OnError(cl.Info(), err)
+			}
 		}
 	}
 
