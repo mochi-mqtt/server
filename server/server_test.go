@@ -1524,6 +1524,11 @@ func TestServerProcessPublishHookOnProcessMessageModifyError(t *testing.T) {
 	s.Events.OnProcessMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
 		pkx := pk
 		pkx.Payload = []byte("world")
+
+		if string(pk.Payload) == "dropme" {
+			return pk, ErrRejectPacket
+		}
+
 		return pkx, fmt.Errorf("error")
 	}
 
@@ -1536,14 +1541,21 @@ func TestServerProcessPublishHookOnProcessMessageModifyError(t *testing.T) {
 		ack1 <- buf
 	}()
 
-	pk1 := packets.Packet{
+	err := s.processPacket(cl1, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("dropme"),
+	})
+
+	err = s.processPacket(cl1, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Publish,
 		},
 		TopicName: "a/b/c",
 		Payload:   []byte("hello"),
-	}
-	err := s.processPacket(cl1, pk1)
+	})
 
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond)
