@@ -572,7 +572,7 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 				if s.Store != nil {
 					s.onStorage(client, s.Store.WriteInflight(persistence.Message{
 						ID:          persistentID(client, out),
-						T:           persistence.KRetained,
+						T:           persistence.KInflight,
 						FixedHeader: persistence.FixedHeader(out.FixedHeader),
 						TopicName:   out.TopicName,
 						Payload:     out.Payload,
@@ -831,7 +831,7 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 		if s.Store != nil {
 			s.onStorage(cl, s.Store.WriteInflight(persistence.Message{
 				ID:          persistentID(cl, tk.Packet),
-				T:           persistence.KRetained,
+				T:           persistence.KInflight,
 				FixedHeader: persistence.FixedHeader(tk.Packet.FixedHeader),
 				TopicName:   tk.Packet.TopicName,
 				Payload:     tk.Packet.Payload,
