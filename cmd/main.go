@@ -33,7 +33,7 @@ func main() {
 	fmt.Println(aurora.Cyan("Websocket"), *wsAddr)
 	fmt.Println(aurora.Cyan("$SYS Dashboard"), *infoAddr)
 
-	server := mqtt.New()
+	server := mqtt.NewServer(nil)
 	tcp := listeners.NewTCP("t1", *tcpAddr)
 	err := server.AddListener(tcp, nil)
 	if err != nil {

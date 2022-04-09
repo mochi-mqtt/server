@@ -24,7 +24,7 @@ func main() {
 
 	fmt.Println(aurora.Magenta("Mochi MQTT Server initializing..."), aurora.Cyan("TCP"))
 
-	server := mqtt.New()
+	server := mqtt.NewServer(nil)
 	ws := listeners.NewWebsocket("ws1", ":1882")
 	err := server.AddListener(ws, nil)
 	if err != nil {

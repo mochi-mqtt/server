@@ -164,6 +164,25 @@ server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.P
 
 The OnMessage hook can also be used to selectively only deliver messages to one or more clients based on their id, using the `AllowClients []string` field on the packet structure.  
 
+#### Server Options
+A few options can be passed to the `mqtt.NewServer(opts *Options)` function in order to override the default broker configuration. Currently these options are:
+
+
+- BufferSize (default 1024 * 256 bytes) - The default value is sufficient for most messaging sizes, but if you are sending many kilobytes of data (such as images), you should increase this to a value of (n*s) where is the typical size of your message and n is the number of messages you may have backlogged for a client at any given time.
+- BufferBlockSize (default 1024 * 8) - The minimum size in which R/W data will be allocated. If you are expecting only tiny or large payloads, you can alter this accordingly.
+
+Any options which is not set or is `0` will use default values.
+
+```go
+opts := &mqtt.Options{
+    BufferSize:      512 * 1024,
+    BufferBlockSize: 16 * 1024,
+}
+
+s := mqtt.NewServer(opts)
+```
+
+> See `examples/tcp/main.go` for an example implementation.
 
 #### Direct Publishing
 When the broker is being embedded in a larger codebase, it can be useful to be able to publish messages directly to clients without having to implement a loopback TCP connection with an MQTT client. The `Publish` method allows you to inject publish messages directly into a queue to be delivered to any clients with matching topic filters. The `Retain` flag is supported.

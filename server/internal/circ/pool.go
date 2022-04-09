@@ -11,6 +11,10 @@ type BytesPool struct {
 
 // NewBytesPool returns a sync.pool of []byte.
 func NewBytesPool(n int) *BytesPool {
+	if n == 0 {
+		n = DefaultBufferSize
+	}
+
 	return &BytesPool{
 		pool: &sync.Pool{
 			New: func() interface{} {
