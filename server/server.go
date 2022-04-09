@@ -259,8 +259,10 @@ func (s *Server) onStorage(cl events.Clientlike, err error) {
 // EstablishConnection establishes a new client when a listener
 // accepts a new connection.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
-	xbr := s.bytepool.Get() // Get byte buffer from pools for receiving packet data.
-	xbw := s.bytepool.Get() // and for sending.
+	xbr := s.bytepool.Get()   // Get byte buffer from pools for receiving packet data.
+	xbw := s.bytepool.Get()   // and for sending.
+	defer s.bytepool.Put(xbr) // Return byte buffers to pools when the client has finished.
+	defer s.bytepool.Put(xbw)
 
 	cl := clients.NewClient(c,
 		circ.NewReaderFromSlice(s.Options.BufferBlockSize, xbr),
@@ -284,6 +286,8 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	atomic.AddInt64(&s.System.ConnectionsTotal, 1)
 	atomic.AddInt64(&s.System.ClientsConnected, 1)
+	defer atomic.AddInt64(&s.System.ClientsConnected, -1)
+	defer atomic.AddInt64(&s.System.ClientsDisconnected, 1)
 
 	var sessionPresent bool
 	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
@@ -354,12 +358,6 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		s.closeClient(cl, true, err)
 	}
 	err = cl.StopCause()
-
-	s.bytepool.Put(xbr) // Return byte buffers to pools when the client has finished.
-	s.bytepool.Put(xbw)
-
-	atomic.AddInt64(&s.System.ClientsConnected, -1)
-	atomic.AddInt64(&s.System.ClientsDisconnected, 1)
 
 	if s.Events.OnDisconnect != nil {
 		s.Events.OnDisconnect(cl.Info(), err)
