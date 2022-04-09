@@ -1521,9 +1521,17 @@ func TestServerProcessPublishHookOnProcessMessageModifyError(t *testing.T) {
 	s.Clients.Add(cl1)
 	s.Topics.Subscribe("a/b/+", cl1.ID, 0)
 
+	var hook errorHook
+	s.Events.OnError = hook.onError
+
 	s.Events.OnProcessMessage = func(cl events.Client, pk events.Packet) (events.Packet, error) {
 		pkx := pk
 		pkx.Payload = []byte("world")
+
+		if string(pk.Payload) == "dropme" {
+			return pk, ErrRejectPacket
+		}
+
 		return pkx, fmt.Errorf("error")
 	}
 
@@ -1536,14 +1544,21 @@ func TestServerProcessPublishHookOnProcessMessageModifyError(t *testing.T) {
 		ack1 <- buf
 	}()
 
-	pk1 := packets.Packet{
+	err := s.processPacket(cl1, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Publish,
+		},
+		TopicName: "a/b/c",
+		Payload:   []byte("dropme"),
+	})
+
+	err = s.processPacket(cl1, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Publish,
 		},
 		TopicName: "a/b/c",
 		Payload:   []byte("hello"),
-	}
-	err := s.processPacket(cl1, pk1)
+	})
 
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond)
@@ -1558,6 +1573,9 @@ func TestServerProcessPublishHookOnProcessMessageModifyError(t *testing.T) {
 	}, <-ack1)
 
 	require.Equal(t, int64(14), s.System.BytesSent)
+
+	require.Equal(t, 1, hook.cnt)
+	require.Equal(t, fmt.Errorf("error"), hook.err)
 }
 
 func TestServerProcessPuback(t *testing.T) {

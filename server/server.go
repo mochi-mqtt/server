@@ -41,6 +41,9 @@ var (
 	// ErrInvalidTopic indicates that the specified topic was not valid.
 	ErrInvalidTopic = errors.New("cannot publish to $ and $SYS topics")
 
+	// ErrRejectPacket indicates that a packet should be dropped instead of processed.
+	ErrRejectPacket = errors.New("packet rejected")
+
 	ErrClientDisconnect     = errors.New("Client disconnected")
 	ErrClientReconnect      = errors.New("Client attemped to reconnect")
 	ErrServerShutdown       = errors.New("Server is shutting down")
@@ -472,8 +475,18 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 	// if an OnProcessMessage hook exists, potentially modify the packet.
 	if s.Events.OnProcessMessage != nil {
-		if pkx, err := s.Events.OnProcessMessage(cl.Info(), events.Packet(pk)); err == nil {
-			pk = packets.Packet(pkx)
+		pkx, err := s.Events.OnProcessMessage(cl.Info(), events.Packet(pk))
+		if err == nil {
+			pk = packets.Packet(pkx) // Only use the new package changes if there's no errors.
+		} else {
+			// If the ErrRejectPacket is return, abandon processing the packet.
+			if err == ErrRejectPacket {
+				return nil
+			}
+
+			if s.Events.OnError != nil {
+				s.Events.OnError(cl.Info(), err)
+			}
 		}
 	}
 
