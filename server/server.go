@@ -216,24 +216,25 @@ func (s *Server) inlineClient() {
 	}
 }
 
-// connSetup reads the first incoming header for a connection, and if
+// readConnectionPacket reads the first incoming header for a connection, and if
 // acceptable, returns the valid connection packet.
-func (s *Server) connSetup(cl *clients.Client) (packets.Packet, error) {
+func (s *Server) readConnectionPacket(cl *clients.Client) (pk packets.Packet, err error) {
 	fh := new(packets.FixedHeader)
-	if err := cl.ReadFixedHeader(fh); err != nil {
-		return packets.Packet{}, err
+	err = cl.ReadFixedHeader(fh)
+	if err != nil {
+		return
 	}
 
-	pk, err := cl.ReadPacket(fh)
+	pk, err = cl.ReadPacket(fh)
 	if err != nil {
-		return pk, err
+		return
 	}
 
 	if pk.FixedHeader.Type != packets.Connect {
 		return pk, ErrReadConnectInvalid
 	}
 
-	return pk, nil
+	return
 }
 
 // onError is a pass-through method which triggers the OnError
