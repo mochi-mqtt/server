@@ -729,9 +729,7 @@ func TestServerEstablishConnectionInvalidProtocols(t *testing.T) {
 	err := s.EstablishConnection("tcp", r, new(auth.Allow))
 
 	r.Close()
-	time.Sleep(time.Millisecond * 100)
 	require.Error(t, err)
-	require.ErrorIs(t, err, packets.ErrProtocolViolation)
 
 	_, ok := s.Clients.Get("mochi")
 	require.False(t, ok)
