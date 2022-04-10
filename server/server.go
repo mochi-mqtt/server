@@ -269,9 +269,9 @@ func (s *Server) onStorage(cl events.Clientlike, err error) {
 // EstablishConnection establishes a new client when a listener
 // accepts a new connection.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
-	xbr := s.bytepool.Get()   // Get byte buffer from pools for receiving packet data.
-	xbw := s.bytepool.Get()   // and for sending.
-	defer s.bytepool.Put(xbr) // Return byte buffers to pools when the client has finished.
+	xbr := s.bytepool.Get() // Get byte buffer from pools for receiving packet data.
+	xbw := s.bytepool.Get() // and for sending.
+	defer s.bytepool.Put(xbr)
 	defer s.bytepool.Put(xbw)
 
 	cl := clients.NewClient(c,
@@ -281,17 +281,29 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	)
 
 	cl.Start()
+	defer cl.Stop(nil)
+	// defer cl.ClearBuffers()
 
-	pk, err := s.connSetup(cl)
+	pk, err := s.readConnectionPacket(cl)
 	if err != nil {
-		return s.onError(cl.Info(), fmt.Errorf("setup: %w", err))
+		return s.onError(cl.Info(), fmt.Errorf("read connection: %w", err))
 	}
 
-	cl.Identify(lid, pk, ac)
+	ackCode, err := pk.ConnectValidate()
+	if err != nil {
+		if err := s.ackConnection(cl, ackCode, false); err != nil {
+			return s.onError(cl.Info(), fmt.Errorf("invalid connection send ack: %w", err))
+		}
+		return s.onError(cl.Info(), fmt.Errorf("validate connection packet: %w", err))
+	}
 
-	retcode, _ := pk.ConnectValidate()
+	cl.Identify(lid, pk, ac) // Set client identity values from the connection packet.
+
 	if !ac.Authenticate(pk.Username, pk.Password) {
-		retcode = packets.CodeConnectBadAuthValues
+		if err := s.ackConnection(cl, packets.CodeConnectBadAuthValues, false); err != nil {
+			return s.onError(cl.Info(), fmt.Errorf("invalid connection send ack: %w", err))
+		}
+		return s.onError(cl.Info(), ErrConnectionFailed)
 	}
 
 	atomic.AddInt64(&s.System.ConnectionsTotal, 1)
@@ -299,54 +311,17 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	defer atomic.AddInt64(&s.System.ClientsConnected, -1)
 	defer atomic.AddInt64(&s.System.ClientsDisconnected, 1)
 
-	var sessionPresent bool
-	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
-		existing.Lock()
-		if atomic.LoadUint32(&existing.State.Done) == 1 {
-			atomic.AddInt64(&s.System.ClientsDisconnected, -1)
-		}
-		existing.Stop(fmt.Errorf("connection from %s: %w", cl.Info().Remote, ErrSessionReestablished))
-		if pk.CleanSession {
-			for k := range existing.Subscriptions {
-				delete(existing.Subscriptions, k)
-				q := s.Topics.Unsubscribe(k, existing.ID)
-				if q {
-					atomic.AddInt64(&s.System.Subscriptions, -1)
-				}
-			}
-		} else {
-			cl.Inflight = existing.Inflight // Take address of existing session.
-			cl.Subscriptions = existing.Subscriptions
-			sessionPresent = true
-		}
-		existing.Unlock()
-	} else {
-		atomic.AddInt64(&s.System.ClientsTotal, 1)
-		if atomic.LoadInt64(&s.System.ClientsConnected) > atomic.LoadInt64(&s.System.ClientsMax) {
-			atomic.AddInt64(&s.System.ClientsMax, 1)
-		}
+	sessionPresent := s.inheritClientSession(pk, cl)
+	s.Clients.Add(cl)
+
+	err = s.ackConnection(cl, ackCode, sessionPresent)
+	if err != nil {
+		return s.onError(cl.Info(), fmt.Errorf("ack connection packet: %w", err))
 	}
 
-	s.Clients.Add(cl) // Overwrite any existing client with the same name.
-
-	if err := s.writeClient(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Connack,
-		},
-		SessionPresent: sessionPresent,
-		ReturnCode:     retcode,
-	}); err != nil {
-		return s.onError(cl.Info(), err)
-	}
-	if retcode != packets.Accepted {
-		err = ErrConnectionFailed
-		return s.onError(cl.Info(), err)
-	}
-
-	if err := s.ResendClientInflight(cl, true); err != nil {
-		err = fmt.Errorf("resend in flight: %w ", err)
-		s.onError(cl.Info(), err)
-		// Note: Pass through after resend error.
+	err = s.ResendClientInflight(cl, true)
+	if err != nil {
+		s.onError(cl.Info(), fmt.Errorf("resend in flight: %w", err)) // pass-through, no return.
 	}
 
 	if s.Store != nil {
@@ -365,9 +340,11 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	}
 
 	if err := cl.Read(s.processPacket); err != nil {
-		s.closeClient(cl, true, err)
+		s.sendLWT(cl)
+		cl.Stop(err)
 	}
-	err = cl.StopCause()
+
+	err = cl.StopCause() // Determine true cause of stop.
 
 	if s.Events.OnDisconnect != nil {
 		s.Events.OnDisconnect(cl.Info(), err)
@@ -376,13 +353,53 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	return err
 }
 
+// ackConnection returns a Connack packet to a client.
+func (s *Server) ackConnection(cl *clients.Client, ack byte, present bool) error {
+	return s.writeClient(cl, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Connack,
+		},
+		SessionPresent: present,
+		ReturnCode:     ack,
+	})
+}
+
+// inheritClientSession inherits the state of an existing client sharing the same
+// connection ID. If cleanSession is true, the state of any previously existing client
+// session is abandoned.
+func (s *Server) inheritClientSession(pk packets.Packet, cl *clients.Client) bool {
+	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
+		existing.Lock()
+		defer existing.Unlock()
+
+		existing.Stop(ErrSessionReestablished) // Issue a stop on the old client.
+
+		if pk.CleanSession {
+			s.unsubscribeClient(existing)
+			return false
+		}
+
+		cl.Inflight = existing.Inflight // Take address of existing session.
+		cl.Subscriptions = existing.Subscriptions
+		return true
+
+	} else {
+		atomic.AddInt64(&s.System.ClientsTotal, 1)
+		if atomic.LoadInt64(&s.System.ClientsConnected) > atomic.LoadInt64(&s.System.ClientsMax) {
+			atomic.AddInt64(&s.System.ClientsMax, 1)
+		}
+		return false
+	}
+}
+
 // writeClient writes packets to a client connection.
 func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 	_, err := cl.WritePacket(pk)
 	if err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
-	return err
+
+	return nil
 }
 
 // processPacket processes an inbound packet for a client. Since the method is
@@ -430,13 +447,14 @@ func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
 // establish a new connection on an existing connection. See EstablishConnection
 // instead.
 func (s *Server) processConnect(cl *clients.Client, pk packets.Packet) error {
-	s.closeClient(cl, true, ErrClientReconnect)
+	s.sendLWT(cl)
+	cl.Stop(ErrClientReconnect)
 	return nil
 }
 
 // processDisconnect processes a Disconnect packet.
 func (s *Server) processDisconnect(cl *clients.Client, pk packets.Packet) error {
-	s.closeClient(cl, false, ErrClientDisconnect)
+	cl.Stop(ErrClientDisconnect)
 	return nil
 }
 
@@ -887,6 +905,16 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 	return nil
 }
 
+// unsubscribeClient unsubscribes a client from all of their subscriptions.
+func (s *Server) unsubscribeClient(cl *clients.Client) {
+	for k := range cl.Subscriptions {
+		delete(cl.Subscriptions, k)
+		if s.Topics.Unsubscribe(k, cl.ID) {
+			atomic.AddInt64(&s.System.Subscriptions, -1)
+		}
+	}
+}
+
 // Close attempts to gracefully shutdown the server, all listeners, clients, and stores.
 func (s *Server) Close() error {
 	close(s.done)
@@ -903,14 +931,14 @@ func (s *Server) Close() error {
 func (s *Server) closeListenerClients(listener string) {
 	clients := s.Clients.GetByListener(listener)
 	for _, cl := range clients {
-		s.closeClient(cl, false, ErrServerShutdown)
+		cl.Stop(ErrServerShutdown)
 	}
 }
 
-// closeClient closes a client connection and publishes any LWT messages.
-func (s *Server) closeClient(cl *clients.Client, sendLWT bool, cause error) {
-	if sendLWT && cl.LWT.Topic != "" {
-		if err := s.processPublish(cl, packets.Packet{
+// sendLWT issues an LWT message to a topic when a client disconnects.
+func (s *Server) sendLWT(cl *clients.Client) error {
+	if cl.LWT.Topic != "" {
+		err := s.processPublish(cl, packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type:   packets.Publish,
 				Retain: cl.LWT.Retain,
@@ -918,12 +946,13 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool, cause error) {
 			},
 			TopicName: cl.LWT.Topic,
 			Payload:   cl.LWT.Message,
-		}); err != nil {
-			s.onError(cl.Info(), fmt.Errorf("publish will: %w", err))
+		})
+		if err != nil {
+			return s.onError(cl.Info(), fmt.Errorf("send lwt: %s %w; %+v", cl.ID, err, cl.LWT))
 		}
 	}
 
-	cl.Stop(cause)
+	return nil
 }
 
 // readStore reads in any data from the persistent datastore (if applicable).
