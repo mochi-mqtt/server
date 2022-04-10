@@ -26,7 +26,7 @@ var (
 
 	// ErrConnectionClosed is returned when operating on a closed
 	// connection and/or when no error cause has been given.
-	ErrConnectionClosed = errors.New("Connection not open")
+	ErrConnectionClosed = errors.New("connection not open")
 )
 
 // Clients contains a map of the clients known by the broker.
@@ -96,13 +96,13 @@ type Client struct {
 	Listener      string               // the id of the listener the client is connected to.
 	ID            string               // the client id.
 	conn          net.Conn             // the net.Conn used to establish the connection.
-	r             *circ.Reader         // a reader for reading incoming bytes.
-	w             *circ.Writer         // a writer for writing outgoing bytes.
+	R             *circ.Reader         // a reader for reading incoming bytes.
+	W             *circ.Writer         // a writer for writing outgoing bytes.
 	Subscriptions topics.Subscriptions // a map of the subscription filters a client maintains.
 	systemInfo    *system.Info         // pointers to server system info.
 	packetID      uint32               // the current highest packetID.
 	keepalive     uint16               // the number of seconds the connection can wait.
-	cleanSession  bool                 // indicates if the client expects a clean-session.
+	CleanSession  bool                 // indicates if the client expects a clean-session.
 }
 
 // State tracks the state of the client.
@@ -112,15 +112,15 @@ type State struct {
 	endedR    *sync.WaitGroup // tracks when the reader has ended.
 	Done      uint32          // atomic counter which indicates that the client has closed.
 	endOnce   sync.Once       // only end once.
-	stopCause atomic.Value    // reason for stopping (error).
+	stopCause atomic.Value    // reason for stopping.
 }
 
 // NewClient returns a new instance of Client.
 func NewClient(c net.Conn, r *circ.Reader, w *circ.Writer, s *system.Info) *Client {
 	cl := &Client{
 		conn:       c,
-		r:          r,
-		w:          w,
+		R:          r,
+		W:          w,
 		systemInfo: s,
 		keepalive:  defaultKeepalive,
 		Inflight: &Inflight{
@@ -163,11 +163,11 @@ func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
 		cl.ID = xid.New().String()
 	}
 
-	cl.r.ID = cl.ID + " READER"
-	cl.w.ID = cl.ID + " WRITER"
+	cl.R.ID = cl.ID + " READER"
+	cl.W.ID = cl.ID + " WRITER"
 
 	cl.Username = pk.Username
-	cl.cleanSession = pk.CleanSession
+	cl.CleanSession = pk.CleanSession
 	cl.keepalive = pk.Keepalive
 
 	if pk.WillFlag {
@@ -193,6 +193,7 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 	}
 }
 
+// Info returns an event-version of a client, containing minimal information.
 func (cl *Client) Info() events.Client {
 	addr := "unknown"
 	if cl.conn != nil && cl.conn.RemoteAddr() != nil {
@@ -239,7 +240,7 @@ func (cl *Client) Start() {
 
 	go func() {
 		cl.State.started.Done()
-		_, err := cl.w.WriteTo(cl.conn)
+		_, err := cl.W.WriteTo(cl.conn)
 		if err != nil {
 			err = fmt.Errorf("writer: %w", err)
 		}
@@ -249,7 +250,7 @@ func (cl *Client) Start() {
 
 	go func() {
 		cl.State.started.Done()
-		_, err := cl.r.ReadFrom(cl.conn)
+		_, err := cl.R.ReadFrom(cl.conn)
 		if err != nil {
 			err = fmt.Errorf("reader: %w", err)
 		}
@@ -260,31 +261,49 @@ func (cl *Client) Start() {
 	cl.State.started.Wait()
 }
 
+// ClearBuffers sets the read/write buffers to nil so they can be
+// deallocated automatically when no longer in use.
+func (cl *Client) ClearBuffers() {
+	cl.R = nil
+	cl.W = nil
+}
+
 // Stop instructs the client to shut down all processing goroutines and disconnect.
-func (cl *Client) Stop(cause error) {
+// A cause error may be passed to identfy the reason for stopping.
+func (cl *Client) Stop(err error) {
 	if atomic.LoadUint32(&cl.State.Done) == 1 {
 		return
 	}
 
 	cl.State.endOnce.Do(func() {
-		if cause == nil {
-			cause = ErrConnectionClosed
-		}
-		cl.State.stopCause.Store(cause)
-		cl.r.Stop()
-		cl.w.Stop()
+		cl.R.Stop()
+		cl.W.Stop()
+
 		cl.State.endedW.Wait()
 
-		_ = cl.conn.Close()
+		_ = cl.conn.Close() // omit close error
 
 		cl.State.endedR.Wait()
 		atomic.StoreUint32(&cl.State.Done, 1)
+
+		if err == nil {
+			err = ErrConnectionClosed
+		}
+		cl.State.stopCause.Store(err)
 	})
+}
+
+// StopCause returns the reason the client connection was stopped, if any.
+func (cl *Client) StopCause() error {
+	if cl.State.stopCause.Load() == nil {
+		return nil
+	}
+	return cl.State.stopCause.Load().(error)
 }
 
 // ReadFixedHeader reads in the values of the next packet's fixed header.
 func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
-	p, err := cl.r.Read(1)
+	p, err := cl.R.Read(1)
 	if err != nil {
 		return err
 	}
@@ -301,7 +320,7 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	i := 1
 	n := 2
 	for ; n < 6; n++ {
-		p, err = cl.r.Read(n)
+		p, err = cl.R.Read(n)
 		if err != nil {
 			return err
 		}
@@ -325,27 +344,17 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	fh.Remaining = int(rem)
 
 	// Having successfully read n bytes, commit the tail forward.
-	cl.r.CommitTail(n)
+	cl.R.CommitTail(n)
 	atomic.AddInt64(&cl.systemInfo.BytesRecv, int64(n))
 
 	return nil
-}
-
-// StopCause returns the original reason that the client connection
-// stopped.
-func (cl *Client) StopCause() error {
-	cause := cl.State.stopCause.Load()
-	if cause == nil {
-		return nil
-	}
-	return cause.(error)
 }
 
 // Read loops forever reading new packets from a client connection until
 // an error is encountered (or the connection is closed).
 func (cl *Client) Read(packetHandler func(*Client, packets.Packet) error) error {
 	for {
-		if atomic.LoadUint32(&cl.State.Done) == 1 && cl.r.CapDelta() == 0 {
+		if atomic.LoadUint32(&cl.State.Done) == 1 && cl.R.CapDelta() == 0 {
 			return nil
 		}
 
@@ -377,7 +386,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 		return
 	}
 
-	p, err := cl.r.Read(pk.FixedHeader.Remaining)
+	p, err := cl.R.Read(pk.FixedHeader.Remaining)
 	if err != nil {
 		return pk, err
 	}
@@ -420,7 +429,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
 	}
 
-	cl.r.CommitTail(pk.FixedHeader.Remaining)
+	cl.R.CommitTail(pk.FixedHeader.Remaining)
 
 	return
 }
@@ -431,8 +440,8 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 		return 0, ErrConnectionClosed
 	}
 
-	cl.w.Mu.Lock()
-	defer cl.w.Mu.Unlock()
+	cl.W.Mu.Lock()
+	defer cl.W.Mu.Unlock()
 
 	buf := new(bytes.Buffer)
 	switch pk.FixedHeader.Type {
@@ -475,7 +484,7 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 	}
 
 	// Write the packet bytes to the client byte buffer.
-	n, err = cl.w.Write(buf.Bytes())
+	n, err = cl.W.Write(buf.Bytes())
 	if err != nil {
 		return
 	}
