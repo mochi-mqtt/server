@@ -26,7 +26,7 @@ var (
 
 	// ErrConnectionClosed is returned when operating on a closed
 	// connection and/or when no error cause has been given.
-	ErrConnectionClosed = errors.New("Connection not open")
+	ErrConnectionClosed = errors.New("connection not open")
 )
 
 // Clients contains a map of the clients known by the broker.
@@ -112,7 +112,7 @@ type State struct {
 	endedR    *sync.WaitGroup // tracks when the reader has ended.
 	Done      uint32          // atomic counter which indicates that the client has closed.
 	endOnce   sync.Once       // only end once.
-	stopCause atomic.Value    // reason for stopping (error).
+	stopCause atomic.Value    // reason for stopping.
 }
 
 // NewClient returns a new instance of Client.
@@ -260,26 +260,44 @@ func (cl *Client) Start() {
 	cl.State.started.Wait()
 }
 
+// ClearBuffers sets the read/write buffers to nil so they can be
+// deallocated automatically when no longer in use.
+func (cl *Client) ClearBuffers() {
+	cl.r = nil
+	cl.w = nil
+}
+
 // Stop instructs the client to shut down all processing goroutines and disconnect.
-func (cl *Client) Stop(cause error) {
+// A cause error may be passed to identfy the reason for stopping.
+func (cl *Client) Stop(err error) {
 	if atomic.LoadUint32(&cl.State.Done) == 1 {
 		return
 	}
 
 	cl.State.endOnce.Do(func() {
-		if cause == nil {
-			cause = ErrConnectionClosed
-		}
-		cl.State.stopCause.Store(cause)
 		cl.r.Stop()
 		cl.w.Stop()
+
 		cl.State.endedW.Wait()
 
-		_ = cl.conn.Close()
+		_ = cl.conn.Close() // omit close error
 
 		cl.State.endedR.Wait()
 		atomic.StoreUint32(&cl.State.Done, 1)
+
+		if err == nil {
+			err = ErrConnectionClosed
+		}
+		cl.State.stopCause.Store(err)
 	})
+}
+
+// StopCause returns the reason the client connection was stopped, if any.
+func (cl *Client) StopCause() error {
+	if cl.State.stopCause.Load() == nil {
+		return nil
+	}
+	return cl.State.stopCause.Load().(error)
 }
 
 // ReadFixedHeader reads in the values of the next packet's fixed header.
@@ -329,16 +347,6 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	atomic.AddInt64(&cl.systemInfo.BytesRecv, int64(n))
 
 	return nil
-}
-
-// StopCause returns the original reason that the client connection
-// stopped.
-func (cl *Client) StopCause() error {
-	cause := cl.State.stopCause.Load()
-	if cause == nil {
-		return nil
-	}
-	return cause.(error)
 }
 
 // Read loops forever reading new packets from a client connection until
