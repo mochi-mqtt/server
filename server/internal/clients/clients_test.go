@@ -206,7 +206,7 @@ func TestClientIdentify(t *testing.T) {
 
 	cl.Identify("tcp1", pk, new(auth.Allow))
 	require.Equal(t, pk.Keepalive, cl.keepalive)
-	require.Equal(t, pk.CleanSession, cl.cleanSession)
+	require.Equal(t, pk.CleanSession, cl.CleanSession)
 	require.Equal(t, pk.ClientIdentifier, cl.ID)
 }
 
