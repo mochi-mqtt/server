@@ -193,12 +193,6 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 	}
 }
 
-// // ReadBufferClear returns true if the read buffer is nil.
-// // This is almost exclusively to be used with unit tests, there's no real
-// func (cl *Client) BuffersClear() (bool, bool) {
-// 	return (cl.r == nil), (cl.w == nil)
-// }
-
 func (cl *Client) Info() events.Client {
 	addr := "unknown"
 	if cl.conn != nil && cl.conn.RemoteAddr() != nil {
