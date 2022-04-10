@@ -520,7 +520,7 @@ func TestServerEventOnDisconnectOnError(t *testing.T) {
 	require.Nil(t, clw.W)
 }
 
-func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
+func TestServerEstablishConnectionInheritSession(t *testing.T) {
 	s := New()
 
 	c, _ := net.Pipe()
@@ -573,6 +573,68 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 	clw, ok := s.Clients.Get("mochi")
 	require.True(t, ok)
 	require.NotEmpty(t, clw.Subscriptions)
+
+	require.Equal(t, int64(0), s.bytepool.InUse())
+	require.Nil(t, clw.R)
+	require.Nil(t, clw.W)
+}
+
+func TestServerEstablishConnectionInheritExistingCleanSession(t *testing.T) {
+	s := New()
+
+	c, _ := net.Pipe()
+	cl := clients.NewClient(c, circ.NewReader(256, 8), circ.NewWriter(256, 8), s.System)
+	cl.ID = "mochi"
+	cl.CleanSession = true
+	cl.Subscriptions = map[string]byte{
+		"a/b/c": 1,
+	}
+	s.Clients.Add(cl)
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r, new(auth.Allow))
+	}()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 17, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'T', // Protocol Name
+			4,     // Protocol Version
+			0,     // Packet Flags
+			0, 45, // Keepalive
+			0, 5, // Client ID - MSB+LSB
+			'm', 'o', 'c', 'h', 'i', // Client ID
+		})
+		w.Write([]byte{byte(packets.Disconnect << 4), 0})
+	}()
+
+	// Receive the Connack
+	recv := make(chan []byte)
+	go func() {
+		buf, err := ioutil.ReadAll(w)
+		if err != nil {
+			panic(err)
+		}
+		recv <- buf
+	}()
+
+	errx := <-o
+	require.ErrorIs(t, errx, ErrClientDisconnect)
+	require.Equal(t, []byte{
+		byte(packets.Connack << 4),
+		2,
+		0, // no session present
+		packets.Accepted,
+	}, <-recv)
+
+	w.Close()
+
+	clw, ok := s.Clients.Get("mochi")
+	require.True(t, ok)
+	require.Empty(t, clw.Subscriptions)
 
 	require.Equal(t, int64(0), s.bytepool.InUse())
 	require.Nil(t, clw.R)
@@ -639,6 +701,35 @@ func TestServerEstablishConnectionNotConnectPacket(t *testing.T) {
 	r.Close()
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrReadConnectInvalid)
+
+	_, ok := s.Clients.Get("mochi")
+	require.False(t, ok)
+	require.Equal(t, int64(0), s.bytepool.InUse())
+}
+
+func TestServerEstablishConnectionInvalidProtocols(t *testing.T) {
+	s := New()
+
+	r, w := net.Pipe()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 17, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'Y', // BAD Protocol Name
+			4,     // Protocol Version
+			0,     // Packet Flags
+			0, 45, // Keepalive
+			0, 5, // Client ID - MSB+LSB
+			'm', 'o', 'c', 'h', 'i', // Client ID
+		})
+		w.Close()
+	}()
+
+	err := s.EstablishConnection("tcp", r, new(auth.Allow))
+
+	r.Close()
+	require.Error(t, err)
 
 	_, ok := s.Clients.Get("mochi")
 	require.False(t, ok)
@@ -803,7 +894,6 @@ func TestServerEstablishConnectionClearBuffersAfterUse(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		require.Equal(t, int64(2), s.bytepool.InUse())
 		recv <- buf
 	}()
 
@@ -811,6 +901,8 @@ func TestServerEstablishConnectionClearBuffersAfterUse(t *testing.T) {
 	require.Equal(t, int64(0), s.bytepool.InUse()) // ensure the buffers have been returned to pool.
 	require.ErrorIs(t, errx, ErrClientDisconnect)
 	w.Close()
+
+	time.Sleep(time.Millisecond * 100)
 
 	clw, ok := s.Clients.Get("mochi")
 	require.True(t, ok)

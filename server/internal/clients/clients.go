@@ -102,7 +102,7 @@ type Client struct {
 	systemInfo    *system.Info         // pointers to server system info.
 	packetID      uint32               // the current highest packetID.
 	keepalive     uint16               // the number of seconds the connection can wait.
-	cleanSession  bool                 // indicates if the client expects a clean-session.
+	CleanSession  bool                 // indicates if the client expects a clean-session.
 }
 
 // State tracks the state of the client.
@@ -167,7 +167,7 @@ func (cl *Client) Identify(lid string, pk packets.Packet, ac auth.Controller) {
 	cl.W.ID = cl.ID + " WRITER"
 
 	cl.Username = pk.Username
-	cl.cleanSession = pk.CleanSession
+	cl.CleanSession = pk.CleanSession
 	cl.keepalive = pk.Keepalive
 
 	if pk.WillFlag {
@@ -193,12 +193,7 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 	}
 }
 
-// // ReadBufferClear returns true if the read buffer is nil.
-// // This is almost exclusively to be used with unit tests, there's no real
-// func (cl *Client) BuffersClear() (bool, bool) {
-// 	return (cl.r == nil), (cl.w == nil)
-// }
-
+// Info returns an event-version of a client, containing minimal information.
 func (cl *Client) Info() events.Client {
 	addr := "unknown"
 	if cl.conn != nil && cl.conn.RemoteAddr() != nil {

@@ -374,7 +374,10 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *clients.Client) boo
 
 		existing.Stop(ErrSessionReestablished) // Issue a stop on the old client.
 
-		if pk.CleanSession {
+		// Per [MQTT-3.1.2-6]:
+		// If CleanSession is set to 1, the Client and Server MUST discard any previous Session and start a new one.
+		// The state associated with a CleanSession MUST NOT be reused in any subsequent session.
+		if pk.CleanSession || existing.CleanSession {
 			s.unsubscribeClient(existing)
 			return false
 		}
@@ -389,6 +392,16 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *clients.Client) boo
 			atomic.AddInt64(&s.System.ClientsMax, 1)
 		}
 		return false
+	}
+}
+
+// unsubscribeClient unsubscribes a client from all of their subscriptions.
+func (s *Server) unsubscribeClient(cl *clients.Client) {
+	for k := range cl.Subscriptions {
+		delete(cl.Subscriptions, k)
+		if s.Topics.Unsubscribe(k, cl.ID) {
+			atomic.AddInt64(&s.System.Subscriptions, -1)
+		}
 	}
 }
 
@@ -904,16 +917,6 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 	}
 
 	return nil
-}
-
-// unsubscribeClient unsubscribes a client from all of their subscriptions.
-func (s *Server) unsubscribeClient(cl *clients.Client) {
-	for k := range cl.Subscriptions {
-		delete(cl.Subscriptions, k)
-		if s.Topics.Unsubscribe(k, cl.ID) {
-			atomic.AddInt64(&s.System.Subscriptions, -1)
-		}
-	}
 }
 
 // Close attempts to gracefully shutdown the server, all listeners, clients, and stores.
