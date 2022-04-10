@@ -30,7 +30,7 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 - Interfaces for Client Authentication and Topic access control.
 - Bolt persistence and storage interfaces (see examples folder).
 - Directly Publishing from embedding service (`s.Publish(topic, message, retain)`).
-- Basic Event Hooks (currently `OnMessage`, `OnConnect`, `OnDisconnect`).
+- Basic Event Hooks (`OnMessage`, `OnConnect`, `OnDisconnect`, `onProcessMessage`, `OnError`, `OnStorage`).
 - ARM32 Compatible.
 
 #### Roadmap
@@ -141,7 +141,7 @@ server.Events.OnDisconnect = func(cl events.Client, err error) {
 
 
 ##### OnProcessMessage
-`server.Events.OnMessage` is called before a publish packet (message) is processed. Specifically, the method callback is triggered after topic and ACL validation has occurred, but before the headers and payload are processed. You can use this if you want to programmatically change the data of the packet, such as setting it to retain, or altering the QoS flag. 
+`server.Events.OnProcessMessage` is called before a publish packet (message) is processed. Specifically, the method callback is triggered after topic and ACL validation has occurred, but before the headers and payload are processed. You can use this if you want to programmatically change the data of the packet, such as setting it to retain, or altering the QoS flag. 
 
 If an error is returned, the packet will not be modified. and the existing packet will be used. If this is an unwanted outcome, the `mqtt.ErrRejectPacket` error can be returned from the callback, and the packet will be dropped/ignored, any further processing is abandoned.
 
@@ -163,6 +163,13 @@ server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.P
 ```
 
 The OnMessage hook can also be used to selectively only deliver messages to one or more clients based on their id, using the `AllowClients []string` field on the packet structure.  
+
+##### OnError
+`server.Events.OnError` is called when an error is encountered on the server, particularly within the use of a client connection status.
+
+##### OnStorage
+`server.Events.OnStorage` is like `onError`, but receives the output of persistent storage methods.
+
 
 #### Server Options
 A few options can be passed to the `mqtt.NewServer(opts *Options)` function in order to override the default broker configuration. Currently these options are:
