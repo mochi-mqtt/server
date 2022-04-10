@@ -894,7 +894,6 @@ func TestServerEstablishConnectionClearBuffersAfterUse(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		require.Equal(t, int64(2), s.bytepool.InUse())
 		recv <- buf
 	}()
 
@@ -903,7 +902,7 @@ func TestServerEstablishConnectionClearBuffersAfterUse(t *testing.T) {
 	require.ErrorIs(t, errx, ErrClientDisconnect)
 	w.Close()
 
-	time.Sleep(time.Millisecond * 50)
+	time.Sleep(time.Millisecond * 100)
 
 	clw, ok := s.Clients.Get("mochi")
 	require.True(t, ok)
