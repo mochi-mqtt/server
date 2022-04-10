@@ -589,20 +589,21 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 // adds the message to the store so it can be reloaded if necessary.
 func (s *Server) retainMessage(cl events.Clientlike, pk packets.Packet) {
 	out := pk.PublishCopy()
-	q := s.Topics.RetainMessage(out)
-	atomic.AddInt64(&s.System.Retained, q)
+	r := s.Topics.RetainMessage(out)
+	atomic.AddInt64(&s.System.Retained, r)
 
 	if s.Store != nil {
-		if q == 1 {
+		id := "ret_" + out.TopicName
+		if r == 1 {
 			s.onStorage(cl, s.Store.WriteRetained(persistence.Message{
-				ID:          "ret_" + out.TopicName,
+				ID:          id,
 				T:           persistence.KRetained,
 				FixedHeader: persistence.FixedHeader(out.FixedHeader),
 				TopicName:   out.TopicName,
 				Payload:     out.Payload,
 			}))
 		} else {
-			s.onStorage(cl, s.Store.DeleteRetained("ret_"+out.TopicName))
+			s.onStorage(cl, s.Store.DeleteRetained(id))
 		}
 	}
 }
