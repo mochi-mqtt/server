@@ -54,7 +54,7 @@ import (
 
 func main() {
     // Create the new MQTT Server.
-    server := mqtt.New()
+    server := mqtt.NewServer(nil)
 	
     // Create a TCP listener on a standard port.
     tcp := listeners.NewTCP("t1", ":1883")
