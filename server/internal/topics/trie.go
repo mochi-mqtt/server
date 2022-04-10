@@ -27,27 +27,28 @@ func New() *Index {
 }
 
 // RetainMessage saves a message payload to the end of a topic branch. Returns
-// 1 if a retained message was added, 0 if there was no change, and -1 if the
-// retained message was removed.
+// 1 if a retained message was added, and -1 if the retained message was removed.
+// 0 is returned if sequential empty payloads are received.
 func (x *Index) RetainMessage(msg packets.Packet) int64 {
-	var q int64
-
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	n := x.poperate(msg.TopicName)
+
+	// If there is a payload, we can store it.
 	if len(msg.Payload) > 0 {
-		if n.Message.FixedHeader.Retain == false {
-			q = 1
-		}
 		n.Message = msg
-	} else {
-		if n.Message.FixedHeader.Retain == true {
-			q = -1
-		}
-		x.unpoperate(msg.TopicName, "", true)
+		return 1
 	}
 
-	return q
+	// Otherwise, we are unsetting it.
+	// If there was a previous retained message, return -1 instead of 0.
+	var r int64 = 0
+	if len(n.Message.Payload) > 0 && n.Message.FixedHeader.Retain == true {
+		r = -1
+	}
+	x.unpoperate(msg.TopicName, "", true)
+
+	return r
 }
 
 // Subscribe creates a subscription filter for a client. Returns true if the

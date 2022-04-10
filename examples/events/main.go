@@ -27,7 +27,7 @@ func main() {
 
 	fmt.Println(aurora.Magenta("Mochi MQTT Server initializing..."), aurora.Cyan("TCP"))
 
-	server := mqtt.New()
+	server := mqtt.NewServer(nil)
 	tcp := listeners.NewTCP("t1", ":1883")
 	err := server.AddListener(tcp, &listeners.Config{
 		Auth: new(auth.Allow),
@@ -51,7 +51,7 @@ func main() {
 
 	// Add OnDisconnect Event Hook
 	server.Events.OnDisconnect = func(cl events.Client, err error) {
-		fmt.Printf("<< OnDisconnect client dicconnected %s: %v\n", cl.ID, err)
+		fmt.Printf("<< OnDisconnect client disconnected %s: %v\n", cl.ID, err)
 	}
 
 	// Add OnMessage Event Hook

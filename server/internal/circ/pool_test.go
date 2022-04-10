@@ -22,6 +22,7 @@ func TestNewBytesPoolGet(t *testing.T) {
 	buf := bpool.Get()
 
 	require.Equal(t, make([]byte, 256), buf)
+	require.Equal(t, int64(1), bpool.InUse())
 }
 
 func BenchmarkBytesPoolGet(b *testing.B) {
@@ -34,7 +35,9 @@ func BenchmarkBytesPoolGet(b *testing.B) {
 func TestNewBytesPoolPut(t *testing.T) {
 	bpool := NewBytesPool(256)
 	buf := bpool.Get()
+	require.Equal(t, int64(1), bpool.InUse())
 	bpool.Put(buf)
+	require.Equal(t, int64(0), bpool.InUse())
 }
 
 func BenchmarkBytesPoolPut(b *testing.B) {

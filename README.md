@@ -30,7 +30,7 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 - Interfaces for Client Authentication and Topic access control.
 - Bolt persistence and storage interfaces (see examples folder).
 - Directly Publishing from embedding service (`s.Publish(topic, message, retain)`).
-- Basic Event Hooks (currently `OnMessage`, `OnConnect`, `OnDisconnect`).
+- Basic Event Hooks (`OnMessage`, `OnConnect`, `OnDisconnect`, `onProcessMessage`, `OnError`, `OnStorage`).
 - ARM32 Compatible.
 
 #### Roadmap
@@ -54,7 +54,7 @@ import (
 
 func main() {
     // Create the new MQTT Server.
-    server := mqtt.New()
+    server := mqtt.NewServer(nil)
 	
     // Create a TCP listener on a standard port.
     tcp := listeners.NewTCP("t1", ":1883")
@@ -135,9 +135,18 @@ server.Events.OnDisconnect = func(cl events.Client, err error) {
 ```
 
 ##### OnMessage
-`server.Events.OnMessage` is called when a Publish packet is received. The method receives the published message and information about the client who published it. 
+`server.Events.OnMessage` is called when a Publish packet (message) is received. The method receives the published message and information about the client who published it. 
 
 > This hook is only triggered when a message is received by clients. It is not triggered when using the direct `server.Publish` method.
+
+
+##### OnProcessMessage
+`server.Events.OnProcessMessage` is called before a publish packet (message) is processed. Specifically, the method callback is triggered after topic and ACL validation has occurred, but before the headers and payload are processed. You can use this if you want to programmatically change the data of the packet, such as setting it to retain, or altering the QoS flag. 
+
+If an error is returned, the packet will not be modified. and the existing packet will be used. If this is an unwanted outcome, the `mqtt.ErrRejectPacket` error can be returned from the callback, and the packet will be dropped/ignored, any further processing is abandoned.
+
+> This hook is only triggered when a message is received by clients. It is not triggered when using the direct `server.Publish` method.
+
 
 ```go
 import "github.com/mochi-co/mqtt/server/events"
@@ -155,6 +164,32 @@ server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.P
 
 The OnMessage hook can also be used to selectively only deliver messages to one or more clients based on their id, using the `AllowClients []string` field on the packet structure.  
 
+##### OnError
+`server.Events.OnError` is called when an error is encountered on the server, particularly within the use of a client connection status.
+
+##### OnStorage
+`server.Events.OnStorage` is like `onError`, but receives the output of persistent storage methods.
+
+
+#### Server Options
+A few options can be passed to the `mqtt.NewServer(opts *Options)` function in order to override the default broker configuration. Currently these options are:
+
+
+- BufferSize (default 1024 * 256 bytes) - The default value is sufficient for most messaging sizes, but if you are sending many kilobytes of data (such as images), you should increase this to a value of (n*s) where is the typical size of your message and n is the number of messages you may have backlogged for a client at any given time.
+- BufferBlockSize (default 1024 * 8) - The minimum size in which R/W data will be allocated. If you are expecting only tiny or large payloads, you can alter this accordingly.
+
+Any options which is not set or is `0` will use default values.
+
+```go
+opts := &mqtt.Options{
+    BufferSize:      512 * 1024,
+    BufferBlockSize: 16 * 1024,
+}
+
+s := mqtt.NewServer(opts)
+```
+
+> See `examples/tcp/main.go` for an example implementation.
 
 #### Direct Publishing
 When the broker is being embedded in a larger codebase, it can be useful to be able to publish messages directly to clients without having to implement a loopback TCP connection with an MQTT client. The `Publish` method allows you to inject publish messages directly into a queue to be delivered to any clients with matching topic filters. The `Retain` flag is supported.

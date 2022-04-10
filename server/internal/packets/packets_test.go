@@ -2,6 +2,8 @@ package packets
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/jinzhu/copier"
@@ -80,7 +82,7 @@ func TestConnectDecode(t *testing.T) {
 		err := pk.ConnectDecode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -180,7 +182,7 @@ func TestConnackDecode(t *testing.T) {
 		err := pk.ConnackDecode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -339,7 +341,7 @@ func TestPubackDecode(t *testing.T) {
 
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -407,7 +409,7 @@ func TestPubcompDecode(t *testing.T) {
 
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -494,7 +496,7 @@ func TestPublishDecode(t *testing.T) {
 		err := pk.PublishDecode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected fh error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -630,7 +632,7 @@ func TestPubrecDecode(t *testing.T) {
 
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -703,7 +705,7 @@ func TestPubrelDecode(t *testing.T) {
 
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -775,7 +777,7 @@ func TestSubackDecode(t *testing.T) {
 		err := pk.SubackDecode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -854,7 +856,7 @@ func TestSubscribeDecode(t *testing.T) {
 		err := pk.SubscribeDecode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -957,7 +959,7 @@ func TestUnsubackDecode(t *testing.T) {
 		err := pk.UnsubackDecode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -1034,7 +1036,7 @@ func TestUnsubscribeDecode(t *testing.T) {
 		err := pk.UnsubscribeDecode(wanted.rawBytes[2:]) // Unpack skips fixedheader.
 		if wanted.failFirst != nil {
 			require.Error(t, err, "Expected error unpacking buffer [i:%d] %s", i, wanted.desc)
-			require.Equal(t, wanted.failFirst, err, "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
+			require.True(t, errors.Is(err, wanted.failFirst), "Expected fail state; %v [i:%d] %s", err.Error(), i, wanted.desc)
 			continue
 		}
 
@@ -1078,5 +1080,12 @@ func BenchmarkUnsubscribeValidate(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		pk.UnsubscribeValidate()
+	}
+}
+
+func TestFormatPacketID(t *testing.T) {
+	for _, id := range []uint16{0, 7, 0x100, 0xffff} {
+		packet := &Packet{PacketID: id}
+		require.Equal(t, fmt.Sprint(id), packet.FormatID())
 	}
 }

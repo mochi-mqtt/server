@@ -4,6 +4,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"sync/atomic"
@@ -33,12 +34,30 @@ var (
 	// ErrReadConnectInvalid indicates that the connection packet was invalid.
 	ErrReadConnectInvalid = errors.New("connect packet was not valid")
 
-	// ErrConnectNotAuthorized indicates that the connection packet had incorrect
-	// authentication parameters.
+	// ErrConnectNotAuthorized indicates that the connection packet had incorrect auth values.
 	ErrConnectNotAuthorized = errors.New("connect packet was not authorized")
 
 	// ErrInvalidTopic indicates that the specified topic was not valid.
 	ErrInvalidTopic = errors.New("cannot publish to $ and $SYS topics")
+
+	// ErrRejectPacket indicates that a packet should be dropped instead of processed.
+	ErrRejectPacket = errors.New("packet rejected")
+
+	// ErrClientDisconnect indicates that a client disconnected from the server.
+	ErrClientDisconnect = errors.New("client disconnected")
+
+	// ErrClientReconnect indicates that a client attempted to reconnect while still connected.
+	ErrClientReconnect = errors.New("client sent connect while connected")
+
+	// ErrServerShutdown is propagated when the server shuts down.
+	ErrServerShutdown = errors.New("server is shutting down")
+
+	// ErrSessionReestablished indicates that an existing client was replaced by a newly connected
+	// client. The existing client is disconnected.
+	ErrSessionReestablished = errors.New("client session re-established")
+
+	// ErrConnectionFailed indicates that a client connection attempt failed for other reasons.
+	ErrConnectionFailed = errors.New("connection attempt failed")
 
 	// SysTopicInterval is the number of milliseconds between $SYS topic publishes.
 	SysTopicInterval time.Duration = 30000
@@ -57,6 +76,7 @@ type Server struct {
 	inline    inlineMessages       // channels for direct publishing.
 	Events    events.Events        // overrideable event hooks.
 	Store     persistence.Store    // a persistent storage backend if desired.
+	Options   *Options             // configurable server options.
 	Listeners *listeners.Listeners // listeners are network interfaces which listen for new connections.
 	Clients   *clients.Clients     // clients which are known to the broker.
 	Topics    *topics.Index        // an index of topic filter subscriptions and retained messages.
@@ -66,17 +86,37 @@ type Server struct {
 	done      chan bool            // indicate that the server is ending.
 }
 
+// Options contains configurable options for the server.
+type Options struct {
+	// BufferSize overrides the default buffer size (circ.DefaultBufferSize) for the client buffers.
+	BufferSize int
+
+	// BufferBlockSize overrides the default buffer block size (DefaultBlockSize) for the client buffers.
+	BufferBlockSize int
+}
+
 // inlineMessages contains channels for handling inline (direct) publishing.
 type inlineMessages struct {
 	done chan bool           // indicate that the server is ending.
 	pub  chan packets.Packet // a channel of packets to publish to clients
 }
 
-// New returns a new instance of an MQTT broker.
+// New returns a new instance of MQTT server with no options.
+// This method has been deprecated and will be removed in a future release.
+// Please use NewServer instead.
 func New() *Server {
+	return NewServer(nil)
+}
+
+// NewServer returns a new instance of an MQTT broker with optional values where applicable.
+func NewServer(opts *Options) *Server {
+	if opts == nil {
+		opts = new(Options)
+	}
+
 	s := &Server{
 		done:     make(chan bool),
-		bytepool: circ.NewBytesPool(circ.DefaultBufferSize),
+		bytepool: circ.NewBytesPool(opts.BufferSize),
 		Clients:  clients.New(),
 		Topics:   topics.New(),
 		System: &system.Info{
@@ -88,7 +128,8 @@ func New() *Server {
 			done: make(chan bool),
 			pub:  make(chan packets.Packet, 1024),
 		},
-		Events: events.Events{},
+		Events:  events.Events{},
+		Options: opts,
 	}
 
 	// Expose server stats using the system listener so it can be used in the
@@ -175,126 +216,200 @@ func (s *Server) inlineClient() {
 	}
 }
 
+// readConnectionPacket reads the first incoming header for a connection, and if
+// acceptable, returns the valid connection packet.
+func (s *Server) readConnectionPacket(cl *clients.Client) (pk packets.Packet, err error) {
+	fh := new(packets.FixedHeader)
+	err = cl.ReadFixedHeader(fh)
+	if err != nil {
+		return
+	}
+
+	pk, err = cl.ReadPacket(fh)
+	if err != nil {
+		return
+	}
+
+	if pk.FixedHeader.Type != packets.Connect {
+		return pk, ErrReadConnectInvalid
+	}
+
+	return
+}
+
+// onError is a pass-through method which triggers the OnError
+// event hook (if applicable), and returns the provided error.
+func (s *Server) onError(cl events.Client, err error) error {
+	if err == nil {
+		return err
+	}
+	// Note: if the error originates from a real cause, it will
+	// have been captured as the StopCause. The two cases ignored
+	// below are ordinary consequences of closing the connection.
+	// If one of these ordinary conditions stops the connection,
+	// then the client closed or broke the connection.
+	if s.Events.OnError != nil &&
+		!errors.Is(err, io.EOF) {
+		s.Events.OnError(cl, err)
+	}
+
+	return err
+}
+
+// onStorage is a pass-through method which delegates errors from
+// the persistent storage adapter to the onError event hook.
+func (s *Server) onStorage(cl events.Clientlike, err error) {
+	if err == nil {
+		return
+	}
+
+	_ = s.onError(cl.Info(), fmt.Errorf("storage: %w", err))
+}
+
 // EstablishConnection establishes a new client when a listener
 // accepts a new connection.
 func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller) error {
 	xbr := s.bytepool.Get() // Get byte buffer from pools for receiving packet data.
 	xbw := s.bytepool.Get() // and for sending.
+	defer s.bytepool.Put(xbr)
+	defer s.bytepool.Put(xbw)
 
 	cl := clients.NewClient(c,
-		circ.NewReaderFromSlice(0, xbr),
-		circ.NewWriterFromSlice(0, xbw),
+		circ.NewReaderFromSlice(s.Options.BufferBlockSize, xbr),
+		circ.NewWriterFromSlice(s.Options.BufferBlockSize, xbw),
 		s.System,
 	)
 
 	cl.Start()
+	defer cl.ClearBuffers()
+	defer cl.Stop(nil)
 
-	fh := new(packets.FixedHeader)
-	err := cl.ReadFixedHeader(fh)
+	pk, err := s.readConnectionPacket(cl)
 	if err != nil {
-		return err
+		return s.onError(cl.Info(), fmt.Errorf("read connection: %w", err))
 	}
 
-	pk, err := cl.ReadPacket(fh)
+	ackCode, err := pk.ConnectValidate()
 	if err != nil {
-		return err
+		if err := s.ackConnection(cl, ackCode, false); err != nil {
+			return s.onError(cl.Info(), fmt.Errorf("invalid connection send ack: %w", err))
+		}
+		return s.onError(cl.Info(), fmt.Errorf("validate connection packet: %w", err))
 	}
 
-	if pk.FixedHeader.Type != packets.Connect {
-		return ErrReadConnectInvalid
-	}
+	cl.Identify(lid, pk, ac) // Set client identity values from the connection packet.
 
-	cl.Identify(lid, pk, ac)
-
-	retcode, _ := pk.ConnectValidate()
 	if !ac.Authenticate(pk.Username, pk.Password) {
-		retcode = packets.CodeConnectBadAuthValues
+		if err := s.ackConnection(cl, packets.CodeConnectBadAuthValues, false); err != nil {
+			return s.onError(cl.Info(), fmt.Errorf("invalid connection send ack: %w", err))
+		}
+		return s.onError(cl.Info(), ErrConnectionFailed)
 	}
 
 	atomic.AddInt64(&s.System.ConnectionsTotal, 1)
 	atomic.AddInt64(&s.System.ClientsConnected, 1)
+	defer atomic.AddInt64(&s.System.ClientsConnected, -1)
+	defer atomic.AddInt64(&s.System.ClientsDisconnected, 1)
 
-	var sessionPresent bool
-	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
-		existing.Lock()
-		if atomic.LoadUint32(&existing.State.Done) == 1 {
-			atomic.AddInt64(&s.System.ClientsDisconnected, -1)
-		}
-		existing.Stop()
-		if pk.CleanSession {
-			for k := range existing.Subscriptions {
-				delete(existing.Subscriptions, k)
-				q := s.Topics.Unsubscribe(k, existing.ID)
-				if q {
-					atomic.AddInt64(&s.System.Subscriptions, -1)
-				}
-			}
-		} else {
-			cl.Inflight = existing.Inflight // Take address of existing session.
-			cl.Subscriptions = existing.Subscriptions
-			sessionPresent = true
-		}
-		existing.Unlock()
-	} else {
-		atomic.AddInt64(&s.System.ClientsTotal, 1)
-		if atomic.LoadInt64(&s.System.ClientsConnected) > atomic.LoadInt64(&s.System.ClientsMax) {
-			atomic.AddInt64(&s.System.ClientsMax, 1)
-		}
+	sessionPresent := s.inheritClientSession(pk, cl)
+	s.Clients.Add(cl)
+
+	err = s.ackConnection(cl, ackCode, sessionPresent)
+	if err != nil {
+		return s.onError(cl.Info(), fmt.Errorf("ack connection packet: %w", err))
 	}
 
-	s.Clients.Add(cl) // Overwrite any existing client with the same name.
-
-	err = s.writeClient(cl, packets.Packet{
-		FixedHeader: packets.FixedHeader{
-			Type: packets.Connack,
-		},
-		SessionPresent: sessionPresent,
-		ReturnCode:     retcode,
-	})
-	if err != nil || retcode != packets.Accepted {
-		return err
+	err = s.ResendClientInflight(cl, true)
+	if err != nil {
+		s.onError(cl.Info(), fmt.Errorf("resend in flight: %w", err)) // pass-through, no return.
 	}
-
-	s.ResendClientInflight(cl, true)
 
 	if s.Store != nil {
-		s.Store.WriteClient(persistence.Client{
+		s.onStorage(cl, s.Store.WriteClient(persistence.Client{
 			ID:       "cl_" + cl.ID,
 			ClientID: cl.ID,
 			T:        persistence.KClient,
 			Listener: cl.Listener,
 			Username: cl.Username,
 			LWT:      persistence.LWT(cl.LWT),
-		})
+		}))
 	}
 
 	if s.Events.OnConnect != nil {
-		s.Events.OnConnect(events.FromClient(cl), events.Packet(pk))
+		s.Events.OnConnect(cl.Info(), events.Packet(pk))
 	}
 
-	err = cl.Read(s.processPacket)
-	if err != nil {
-		s.closeClient(cl, true)
+	if err := cl.Read(s.processPacket); err != nil {
+		s.sendLWT(cl)
+		cl.Stop(err)
 	}
 
-	s.bytepool.Put(xbr) // Return byte buffers to pools when the client has finished.
-	s.bytepool.Put(xbw)
-
-	atomic.AddInt64(&s.System.ClientsConnected, -1)
-	atomic.AddInt64(&s.System.ClientsDisconnected, 1)
+	err = cl.StopCause() // Determine true cause of stop.
 
 	if s.Events.OnDisconnect != nil {
-		s.Events.OnDisconnect(events.FromClient(cl), err)
+		s.Events.OnDisconnect(cl.Info(), err)
 	}
 
 	return err
+}
+
+// ackConnection returns a Connack packet to a client.
+func (s *Server) ackConnection(cl *clients.Client, ack byte, present bool) error {
+	return s.writeClient(cl, packets.Packet{
+		FixedHeader: packets.FixedHeader{
+			Type: packets.Connack,
+		},
+		SessionPresent: present,
+		ReturnCode:     ack,
+	})
+}
+
+// inheritClientSession inherits the state of an existing client sharing the same
+// connection ID. If cleanSession is true, the state of any previously existing client
+// session is abandoned.
+func (s *Server) inheritClientSession(pk packets.Packet, cl *clients.Client) bool {
+	if existing, ok := s.Clients.Get(pk.ClientIdentifier); ok {
+		existing.Lock()
+		defer existing.Unlock()
+
+		existing.Stop(ErrSessionReestablished) // Issue a stop on the old client.
+
+		// Per [MQTT-3.1.2-6]:
+		// If CleanSession is set to 1, the Client and Server MUST discard any previous Session and start a new one.
+		// The state associated with a CleanSession MUST NOT be reused in any subsequent session.
+		if pk.CleanSession || existing.CleanSession {
+			s.unsubscribeClient(existing)
+			return false
+		}
+
+		cl.Inflight = existing.Inflight // Take address of existing session.
+		cl.Subscriptions = existing.Subscriptions
+		return true
+
+	} else {
+		atomic.AddInt64(&s.System.ClientsTotal, 1)
+		if atomic.LoadInt64(&s.System.ClientsConnected) > atomic.LoadInt64(&s.System.ClientsMax) {
+			atomic.AddInt64(&s.System.ClientsMax, 1)
+		}
+		return false
+	}
+}
+
+// unsubscribeClient unsubscribes a client from all of their subscriptions.
+func (s *Server) unsubscribeClient(cl *clients.Client) {
+	for k := range cl.Subscriptions {
+		delete(cl.Subscriptions, k)
+		if s.Topics.Unsubscribe(k, cl.ID) {
+			atomic.AddInt64(&s.System.Subscriptions, -1)
+		}
+	}
 }
 
 // writeClient writes packets to a client connection.
 func (s *Server) writeClient(cl *clients.Client, pk packets.Packet) error {
 	_, err := cl.WritePacket(pk)
 	if err != nil {
-		return err
+		return fmt.Errorf("write: %w", err)
 	}
 
 	return nil
@@ -345,13 +460,14 @@ func (s *Server) processPacket(cl *clients.Client, pk packets.Packet) error {
 // establish a new connection on an existing connection. See EstablishConnection
 // instead.
 func (s *Server) processConnect(cl *clients.Client, pk packets.Packet) error {
-	s.closeClient(cl, true)
+	s.sendLWT(cl)
+	cl.Stop(ErrClientReconnect)
 	return nil
 }
 
 // processDisconnect processes a Disconnect packet.
 func (s *Server) processDisconnect(cl *clients.Client, pk packets.Packet) error {
-	s.closeClient(cl, false)
+	cl.Stop(ErrClientDisconnect)
 	return nil
 }
 
@@ -380,14 +496,15 @@ func (s *Server) Publish(topic string, payload []byte, retain bool) error {
 
 	pk := packets.Packet{
 		FixedHeader: packets.FixedHeader{
-			Type: packets.Publish,
+			Type:   packets.Publish,
+			Retain: retain,
 		},
 		TopicName: topic,
 		Payload:   payload,
 	}
 
 	if retain {
-		s.retainMessage(pk)
+		s.retainMessage(&s.inline, pk)
 	}
 
 	// handoff packet to s.inline.pub channel for writing to client buffers
@@ -395,6 +512,16 @@ func (s *Server) Publish(topic string, payload []byte, retain bool) error {
 	s.inline.pub <- pk
 
 	return nil
+}
+
+// Info provides pseudo-client information for the inline messages processor.
+// It provides a 'client' to which inline retained messages can be assigned.
+func (*inlineMessages) Info() events.Client {
+	return events.Client{
+		ID:       "inline",
+		Remote:   "inline",
+		Listener: "inline",
+	}
 }
 
 // processPublish processes a Publish packet.
@@ -407,8 +534,25 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 		return nil
 	}
 
+	// if an OnProcessMessage hook exists, potentially modify the packet.
+	if s.Events.OnProcessMessage != nil {
+		pkx, err := s.Events.OnProcessMessage(cl.Info(), events.Packet(pk))
+		if err == nil {
+			pk = packets.Packet(pkx) // Only use the new package changes if there's no errors.
+		} else {
+			// If the ErrRejectPacket is return, abandon processing the packet.
+			if err == ErrRejectPacket {
+				return nil
+			}
+
+			if s.Events.OnError != nil {
+				s.Events.OnError(cl.Info(), err)
+			}
+		}
+	}
+
 	if pk.FixedHeader.Retain {
-		s.retainMessage(pk)
+		s.retainMessage(cl, pk)
 	}
 
 	if pk.FixedHeader.Qos > 0 {
@@ -425,12 +569,12 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 		// omit errors in case of broken connection / LWT publish. ack send failures
 		// will be handled by in-flight resending on next reconnect.
-		s.writeClient(cl, ack)
+		s.onError(cl.Info(), s.writeClient(cl, ack))
 	}
 
 	// if an OnMessage hook exists, potentially modify the packet.
 	if s.Events.OnMessage != nil {
-		if pkx, err := s.Events.OnMessage(events.FromClient(cl), events.Packet(pk)); err == nil {
+		if pkx, err := s.Events.OnMessage(cl.Info(), events.Packet(pk)); err == nil {
 			pk = packets.Packet(pkx)
 		}
 	}
@@ -443,21 +587,23 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 
 // retainMessage adds a message to a topic, and if a persistent store is provided,
 // adds the message to the store so it can be reloaded if necessary.
-func (s *Server) retainMessage(pk packets.Packet) {
+func (s *Server) retainMessage(cl events.Clientlike, pk packets.Packet) {
 	out := pk.PublishCopy()
-	q := s.Topics.RetainMessage(out)
-	atomic.AddInt64(&s.System.Retained, q)
+	r := s.Topics.RetainMessage(out)
+	atomic.AddInt64(&s.System.Retained, r)
+
 	if s.Store != nil {
-		if q == 1 {
-			s.Store.WriteRetained(persistence.Message{
-				ID:          "ret_" + out.TopicName,
+		id := "ret_" + out.TopicName
+		if r == 1 {
+			s.onStorage(cl, s.Store.WriteRetained(persistence.Message{
+				ID:          id,
 				T:           persistence.KRetained,
 				FixedHeader: persistence.FixedHeader(out.FixedHeader),
 				TopicName:   out.TopicName,
 				Payload:     out.Payload,
-			})
+			}))
 		} else {
-			s.Store.DeleteRetained("ret_" + out.TopicName)
+			s.onStorage(cl, s.Store.DeleteRetained(id))
 		}
 	}
 }
@@ -499,18 +645,18 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 				}
 
 				if s.Store != nil {
-					s.Store.WriteInflight(persistence.Message{
-						ID:          "if_" + client.ID + "_" + strconv.Itoa(int(out.PacketID)),
-						T:           persistence.KRetained,
+					s.onStorage(client, s.Store.WriteInflight(persistence.Message{
+						ID:          persistentID(client, out),
+						T:           persistence.KInflight,
 						FixedHeader: persistence.FixedHeader(out.FixedHeader),
 						TopicName:   out.TopicName,
 						Payload:     out.Payload,
 						Sent:        sent,
-					})
+					}))
 				}
 			}
 
-			s.writeClient(client, out)
+			s.onError(client.Info(), s.writeClient(client, out))
 		}
 	}
 }
@@ -522,7 +668,7 @@ func (s *Server) processPuback(cl *clients.Client, pk packets.Packet) error {
 		atomic.AddInt64(&s.System.Inflight, -1)
 	}
 	if s.Store != nil {
-		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
+		s.onStorage(cl, s.Store.DeleteInflight(persistentID(cl, pk)))
 	}
 	return nil
 }
@@ -564,7 +710,7 @@ func (s *Server) processPubrel(cl *clients.Client, pk packets.Packet) error {
 	}
 
 	if s.Store != nil {
-		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
+		s.onStorage(cl, s.Store.DeleteInflight(persistentID(cl, pk)))
 	}
 
 	return nil
@@ -577,7 +723,7 @@ func (s *Server) processPubcomp(cl *clients.Client, pk packets.Packet) error {
 		atomic.AddInt64(&s.System.Inflight, -1)
 	}
 	if s.Store != nil {
-		s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(pk.PacketID)))
+		s.onStorage(cl, s.Store.DeleteInflight(persistentID(cl, pk)))
 	}
 	return nil
 }
@@ -597,13 +743,13 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 			retCodes[i] = pk.Qoss[i]
 
 			if s.Store != nil {
-				s.Store.WriteSubscription(persistence.Subscription{
+				s.onStorage(cl, s.Store.WriteSubscription(persistence.Subscription{
 					ID:     "sub_" + cl.ID + ":" + pk.Topics[i],
 					T:      persistence.KSubscription,
 					Filter: pk.Topics[i],
 					Client: cl.ID,
 					QoS:    pk.Qoss[i],
-				})
+				}))
 			}
 		}
 	}
@@ -619,10 +765,15 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 		return err
 	}
 
-	// Publish out any retained messages matching the subscription filter.
+	// Publish out any retained messages matching the subscription filter and the user has
+	// been allowed to subscribe to.
 	for i := 0; i < len(pk.Topics); i++ {
+		if retCodes[i] == packets.ErrSubAckNetworkError {
+			continue
+		}
+
 		for _, pkv := range s.Topics.Messages(pk.Topics[i]) {
-			s.writeClient(cl, pkv) // omit errors, prefer continuing.
+			s.onError(cl.Info(), s.writeClient(cl, pkv))
 		}
 	}
 
@@ -652,6 +803,17 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error
 	return nil
 }
 
+// atomicItoa reads an *int64 and formats a decimal string.
+func atomicItoa(ptr *int64) string {
+	return strconv.FormatInt(atomic.LoadInt64(ptr), 10)
+}
+
+// persistentID return a string combining the client and packet
+// identifiers for use with the persistence layer.
+func persistentID(client *clients.Client, pk packets.Packet) string {
+	return "if_" + client.ID + "_" + pk.FormatID()
+}
+
 // publishSysTopics publishes the current values to the server $SYS topics.
 // Due to the int to string conversions this method is not as cheap as
 // some of the others so the publishing interval should be set appropriately.
@@ -663,26 +825,27 @@ func (s *Server) publishSysTopics() {
 		},
 	}
 
-	s.System.Uptime = time.Now().Unix() - s.System.Started
+	uptime := time.Now().Unix() - atomic.LoadInt64(&s.System.Started)
+	atomic.StoreInt64(&s.System.Uptime, uptime)
 	topics := map[string]string{
 		"$SYS/broker/version":                   s.System.Version,
-		"$SYS/broker/uptime":                    strconv.Itoa(int(s.System.Uptime)),
-		"$SYS/broker/timestamp":                 strconv.Itoa(int(s.System.Started)),
-		"$SYS/broker/load/bytes/received":       strconv.Itoa(int(s.System.BytesRecv)),
-		"$SYS/broker/load/bytes/sent":           strconv.Itoa(int(s.System.BytesSent)),
-		"$SYS/broker/clients/connected":         strconv.Itoa(int(s.System.ClientsConnected)),
-		"$SYS/broker/clients/disconnected":      strconv.Itoa(int(s.System.ClientsDisconnected)),
-		"$SYS/broker/clients/maximum":           strconv.Itoa(int(s.System.ClientsMax)),
-		"$SYS/broker/clients/total":             strconv.Itoa(int(s.System.ClientsTotal)),
-		"$SYS/broker/connections/total":         strconv.Itoa(int(s.System.ConnectionsTotal)),
-		"$SYS/broker/messages/received":         strconv.Itoa(int(s.System.MessagesRecv)),
-		"$SYS/broker/messages/sent":             strconv.Itoa(int(s.System.MessagesSent)),
-		"$SYS/broker/messages/publish/dropped":  strconv.Itoa(int(s.System.PublishDropped)),
-		"$SYS/broker/messages/publish/received": strconv.Itoa(int(s.System.PublishRecv)),
-		"$SYS/broker/messages/publish/sent":     strconv.Itoa(int(s.System.PublishSent)),
-		"$SYS/broker/messages/retained/count":   strconv.Itoa(int(s.System.Retained)),
-		"$SYS/broker/messages/inflight":         strconv.Itoa(int(s.System.Inflight)),
-		"$SYS/broker/subscriptions/count":       strconv.Itoa(int(s.System.Subscriptions)),
+		"$SYS/broker/uptime":                    atomicItoa(&s.System.Uptime),
+		"$SYS/broker/timestamp":                 atomicItoa(&s.System.Started),
+		"$SYS/broker/load/bytes/received":       atomicItoa(&s.System.BytesRecv),
+		"$SYS/broker/load/bytes/sent":           atomicItoa(&s.System.BytesSent),
+		"$SYS/broker/clients/connected":         atomicItoa(&s.System.ClientsConnected),
+		"$SYS/broker/clients/disconnected":      atomicItoa(&s.System.ClientsDisconnected),
+		"$SYS/broker/clients/maximum":           atomicItoa(&s.System.ClientsMax),
+		"$SYS/broker/clients/total":             atomicItoa(&s.System.ClientsTotal),
+		"$SYS/broker/connections/total":         atomicItoa(&s.System.ConnectionsTotal),
+		"$SYS/broker/messages/received":         atomicItoa(&s.System.MessagesRecv),
+		"$SYS/broker/messages/sent":             atomicItoa(&s.System.MessagesSent),
+		"$SYS/broker/messages/publish/dropped":  atomicItoa(&s.System.PublishDropped),
+		"$SYS/broker/messages/publish/received": atomicItoa(&s.System.PublishRecv),
+		"$SYS/broker/messages/publish/sent":     atomicItoa(&s.System.PublishSent),
+		"$SYS/broker/messages/retained/count":   atomicItoa(&s.System.Retained),
+		"$SYS/broker/messages/inflight":         atomicItoa(&s.System.Inflight),
+		"$SYS/broker/subscriptions/count":       atomicItoa(&s.System.Subscriptions),
 	}
 
 	for topic, payload := range topics {
@@ -694,10 +857,10 @@ func (s *Server) publishSysTopics() {
 	}
 
 	if s.Store != nil {
-		s.Store.WriteServerInfo(persistence.ServerInfo{
+		s.onStorage(&s.inline, s.Store.WriteServerInfo(persistence.ServerInfo{
 			Info: *s.System,
 			ID:   persistence.KServerInfo,
-		})
+		}))
 	}
 }
 
@@ -717,7 +880,7 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 			}
 
 			if s.Store != nil {
-				s.Store.DeleteInflight("if_" + cl.ID + "_" + strconv.Itoa(int(tk.Packet.PacketID)))
+				s.onStorage(cl, s.Store.DeleteInflight(persistentID(cl, tk.Packet)))
 			}
 
 			continue
@@ -741,15 +904,15 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 		}
 
 		if s.Store != nil {
-			s.Store.WriteInflight(persistence.Message{
-				ID:          "if_" + cl.ID + "_" + strconv.Itoa(int(tk.Packet.PacketID)),
-				T:           persistence.KRetained,
+			s.onStorage(cl, s.Store.WriteInflight(persistence.Message{
+				ID:          persistentID(cl, tk.Packet),
+				T:           persistence.KInflight,
 				FixedHeader: persistence.FixedHeader(tk.Packet.FixedHeader),
 				TopicName:   tk.Packet.TopicName,
 				Payload:     tk.Packet.Payload,
 				Sent:        tk.Sent,
 				Resends:     tk.Resends,
-			})
+			}))
 		}
 	}
 
@@ -772,15 +935,14 @@ func (s *Server) Close() error {
 func (s *Server) closeListenerClients(listener string) {
 	clients := s.Clients.GetByListener(listener)
 	for _, cl := range clients {
-		s.closeClient(cl, false) // omit errors
+		cl.Stop(ErrServerShutdown)
 	}
-
 }
 
-// closeClient closes a client connection and publishes any LWT messages.
-func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
-	if sendLWT && cl.LWT.Topic != "" {
-		s.processPublish(cl, packets.Packet{
+// sendLWT issues an LWT message to a topic when a client disconnects.
+func (s *Server) sendLWT(cl *clients.Client) error {
+	if cl.LWT.Topic != "" {
+		err := s.processPublish(cl, packets.Packet{
 			FixedHeader: packets.FixedHeader{
 				Type:   packets.Publish,
 				Retain: cl.LWT.Retain,
@@ -789,9 +951,10 @@ func (s *Server) closeClient(cl *clients.Client, sendLWT bool) error {
 			TopicName: cl.LWT.Topic,
 			Payload:   cl.LWT.Message,
 		})
+		if err != nil {
+			return s.onError(cl.Info(), fmt.Errorf("send lwt: %s %w; %+v", cl.ID, err, cl.LWT))
+		}
 	}
-
-	cl.Stop()
 
 	return nil
 }
