@@ -301,7 +301,7 @@ func TestServerEstablishConnectionOKCleanSession(t *testing.T) {
 	require.Equal(t, true, ok)
 
 	errx := <-o
-	require.True(t, errors.Is(errx, ErrClientDisconnect))
+	require.ErrorIs(t, errx, ErrClientDisconnect)
 
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
@@ -353,7 +353,7 @@ func TestServerEventOnConnect(t *testing.T) {
 	require.Equal(t, true, ok)
 
 	errx := <-o
-	require.True(t, errors.Is(errx, ErrClientDisconnect))
+	require.ErrorIs(t, errx, ErrClientDisconnect)
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
 		0, packets.Accepted,
@@ -425,7 +425,7 @@ func TestServerEventOnDisconnect(t *testing.T) {
 	require.Equal(t, true, ok)
 
 	errx := <-o
-	require.True(t, errors.Is(errx, ErrClientDisconnect))
+	require.ErrorIs(t, errx, ErrClientDisconnect)
 
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
@@ -441,7 +441,7 @@ func TestServerEventOnDisconnect(t *testing.T) {
 		Listener: "tcp",
 	}, hook.client)
 
-	require.True(t, errors.Is(hook.err, ErrClientDisconnect))
+	require.ErrorIs(t, ErrClientDisconnect, hook.err)
 }
 
 func TestServerEventOnDisconnectOnError(t *testing.T) {
@@ -451,7 +451,7 @@ func TestServerEventOnDisconnectOnError(t *testing.T) {
 
 	s.Events.OnError = func(cl events.Client, err error) {
 		// Do not allow
-		panic(err)
+		panic(fmt.Errorf("unreachable error"))
 	}
 
 	var hook errorHook
@@ -545,7 +545,7 @@ func TestServerEstablishConnectionOKInheritSession(t *testing.T) {
 	require.Equal(t, true, ok)
 
 	errx := <-o
-	require.True(t, errors.Is(errx, ErrClientDisconnect))
+	require.ErrorIs(t, errx, ErrClientDisconnect)
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
 		1, packets.Accepted,
@@ -572,7 +572,7 @@ func TestServerEstablishConnectionBadFixedHeader(t *testing.T) {
 
 	r.Close()
 	require.Error(t, err)
-	require.True(t, errors.Is(err, packets.ErrInvalidFlags))
+	require.ErrorIs(t, err, packets.ErrInvalidFlags)
 
 	require.Equal(t, err, hookE.err)
 
@@ -610,7 +610,7 @@ func TestServerEstablishConnectionNotConnectPacket(t *testing.T) {
 
 	r.Close()
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrReadConnectInvalid))
+	require.ErrorIs(t, err, ErrReadConnectInvalid)
 }
 
 func TestServerEstablishConnectionBadAuth(t *testing.T) {
@@ -652,7 +652,7 @@ func TestServerEstablishConnectionBadAuth(t *testing.T) {
 	errx := <-o
 	time.Sleep(time.Millisecond)
 	r.Close()
-	require.True(t, errors.Is(errx, ErrConnectionFailed))
+	require.ErrorIs(t, errx, ErrConnectionFailed)
 	require.Equal(t, []byte{
 		byte(packets.Connack << 4), 2,
 		0, packets.CodeConnectBadAuthValues,
@@ -1055,7 +1055,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 	clw.Stop(errTestStop)
 
 	errx := <-o
-	require.True(t, errors.Is(errx, ErrClientDisconnect))
+	require.ErrorIs(t, errx, ErrClientDisconnect)
 	ret := <-recv
 
 	wanted := []byte{
@@ -2042,7 +2042,9 @@ func TestServerCloseClientLWT(t *testing.T) {
 		ack2 <- buf
 	}()
 
-	s.closeClient(cl1, true, fmt.Errorf("goodbye"))
+	s.sendLWT(cl1)
+	cl1.Stop(fmt.Errorf("goodbye"))
+
 	time.Sleep(time.Millisecond)
 	w2.Close()
 
@@ -2070,14 +2072,16 @@ func TestServerCloseClientClosed(t *testing.T) {
 	// seession were taken over or a protocol error had occurred.
 	cl.Stop(errTestStop)
 
-	s.closeClient(cl, true, clients.ErrConnectionClosed)
+	s.sendLWT(cl)
+	cl.Stop(clients.ErrConnectionClosed)
 
 	// We see the original error that caused the connection to stop.
-	require.True(t, errors.Is(cl.StopCause(), errTestStop) || errors.Is(cl.StopCause(), io.EOF))
+	err := cl.StopCause()
+	require.Equal(t, true, errors.Is(err, errTestStop) || errors.Is(err, io.EOF))
 
 	// Errors were generated in the closeClient() code path.
 	require.Equal(t, 1, hook.cnt)
-	require.True(t, errors.Is(hook.err, clients.ErrConnectionClosed))
+	require.ErrorIs(t, hook.err, clients.ErrConnectionClosed)
 }
 
 func TestServerReadStore(t *testing.T) {
