@@ -707,6 +707,37 @@ func TestServerEstablishConnectionNotConnectPacket(t *testing.T) {
 	require.Equal(t, int64(0), s.bytepool.InUse())
 }
 
+func TestServerEstablishConnectionInvalidProtocols(t *testing.T) {
+	s := New()
+
+	r, w := net.Pipe()
+
+	go func() {
+		w.Write([]byte{
+			byte(packets.Connect << 4), 17, // Fixed header
+			0, 4, // Protocol Name - MSB+LSB
+			'M', 'Q', 'T', 'Y', // BAD Protocol Name
+			4,     // Protocol Version
+			0,     // Packet Flags
+			0, 45, // Keepalive
+			0, 5, // Client ID - MSB+LSB
+			'm', 'o', 'c', 'h', 'i', // Client ID
+		})
+		w.Close()
+	}()
+
+	err := s.EstablishConnection("tcp", r, new(auth.Allow))
+
+	r.Close()
+	time.Sleep(time.Millisecond * 100)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrProtocolViolation)
+
+	_, ok := s.Clients.Get("mochi")
+	require.False(t, ok)
+	require.Equal(t, int64(0), s.bytepool.InUse())
+}
+
 func TestServerEstablishConnectionBadAuth(t *testing.T) {
 	s := New()
 
