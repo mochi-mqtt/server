@@ -193,6 +193,7 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 	}
 }
 
+// Info returns an event-version of a client, containing minimal information.
 func (cl *Client) Info() events.Client {
 	addr := "unknown"
 	if cl.conn != nil && cl.conn.RemoteAddr() != nil {
