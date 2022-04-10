@@ -34,8 +34,7 @@ var (
 	// ErrReadConnectInvalid indicates that the connection packet was invalid.
 	ErrReadConnectInvalid = errors.New("connect packet was not valid")
 
-	// ErrConnectNotAuthorized indicates that the connection packet had incorrect
-	// authentication parameters.
+	// ErrConnectNotAuthorized indicates that the connection packet had incorrect auth values.
 	ErrConnectNotAuthorized = errors.New("connect packet was not authorized")
 
 	// ErrInvalidTopic indicates that the specified topic was not valid.
@@ -44,11 +43,21 @@ var (
 	// ErrRejectPacket indicates that a packet should be dropped instead of processed.
 	ErrRejectPacket = errors.New("packet rejected")
 
-	ErrClientDisconnect     = errors.New("Client disconnected")
-	ErrClientReconnect      = errors.New("Client attemped to reconnect")
-	ErrServerShutdown       = errors.New("Server is shutting down")
-	ErrSessionReestablished = errors.New("Session reestablished")
-	ErrConnectionFailed     = errors.New("Connection attempt failed")
+	// ErrClientDisconnect indicates that a client disconnected from the server.
+	ErrClientDisconnect = errors.New("client disconnected")
+
+	// ErrClientReconnect indicates that a client attempted to reconnect while still connected.
+	ErrClientReconnect = errors.New("client sent connect while connected")
+
+	// ErrServerShutdown is propagated when the server shuts down.
+	ErrServerShutdown = errors.New("server is shutting down")
+
+	// ErrSessionReestablished indicates that an existing client was replaced by a newly connected
+	// client. The existing client is disconnected.
+	ErrSessionReestablished = errors.New("client session re-established")
+
+	// ErrConnectionFailed indicates that a client connection attempt failed for other reasons.
+	ErrConnectionFailed = errors.New("connection attempt failed")
 
 	// SysTopicInterval is the number of milliseconds between $SYS topic publishes.
 	SysTopicInterval time.Duration = 30000
