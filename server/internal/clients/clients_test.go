@@ -492,6 +492,16 @@ func TestClientReadOK(t *testing.T) {
 
 }
 
+func TestClientClearBuffers(t *testing.T) {
+	cl := genClient()
+	cl.Start()
+	cl.Stop(testClientStop)
+	cl.ClearBuffers()
+
+	require.Nil(t, cl.w)
+	require.Nil(t, cl.r)
+}
+
 func TestClientReadDone(t *testing.T) {
 	cl := genClient()
 	cl.Start()
