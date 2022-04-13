@@ -70,10 +70,10 @@ type Auth struct {
 }
 
 // Authenticate returns true if a username and password are acceptable.
-// Auth always returns true.
 func (a *Auth) Authenticate(user, password []byte) bool {
 	// If the user exists in the auth users map, and the password is correct,
-	// then they can connect to the server.
+	// then they can connect to the server. In the real world, this could be a database
+	// or cached users lookup.
 	if pass, ok := a.Users[string(user)]; ok && pass == string(password) {
 		return true
 	}
