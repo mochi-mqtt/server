@@ -30,6 +30,14 @@ type MockListener struct {
 	ErrListen bool      // throw an error on listen.
 }
 
+func (l *MockListener) SetSystemStat(s *system.Info) {
+	//TODO implement me
+	if s == nil {
+		panic("implement me")
+	}
+
+}
+
 // NewMockListener returns a new instance of MockListener
 func NewMockListener(id, address string) *MockListener {
 	return &MockListener{

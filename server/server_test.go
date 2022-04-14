@@ -2558,6 +2558,7 @@ func TestServerResendClientInflightBackoff(t *testing.T) {
 	mock.Fail["write_inflight"] = true
 
 	var hook errorHook
+	hook.err = errors.New("storage: test")
 	s.Events.OnError = hook.onError
 
 	r, w := net.Pipe()
@@ -2589,6 +2590,7 @@ func TestServerResendClientInflightBackoff(t *testing.T) {
 	})
 
 	err := s.ResendClientInflight(cl, true)
+	m := cl.Inflight.GetAll()
 	require.NoError(t, err)
 
 	time.Sleep(time.Millisecond)
@@ -2608,7 +2610,7 @@ func TestServerResendClientInflightBackoff(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, rcv)
 
-	m := cl.Inflight.GetAll()
+	m = cl.Inflight.GetAll()
 	require.Equal(t, 1, m[11].Resends) // index is packet id
 
 	// Expect a test persistence error.
