@@ -645,8 +645,13 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 				}
 
 				if s.Store != nil {
+<<<<<<< HEAD
 					s.onStorage(client, s.Store.WriteInflight(persistence.Message{
 						ID:          persistentID(client, out),
+=======
+					s.Store.WriteInflight(persistence.Message{
+						ID:          "if_" + client.ID + "_" + strconv.Itoa(int(out.PacketID)),
+>>>>>>> origin/master
 						T:           persistence.KInflight,
 						FixedHeader: persistence.FixedHeader(out.FixedHeader),
 						TopicName:   out.TopicName,
@@ -904,8 +909,13 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 		}
 
 		if s.Store != nil {
+<<<<<<< HEAD
 			s.onStorage(cl, s.Store.WriteInflight(persistence.Message{
 				ID:          persistentID(cl, tk.Packet),
+=======
+			s.Store.WriteInflight(persistence.Message{
+				ID:          "if_" + cl.ID + "_" + strconv.Itoa(int(tk.Packet.PacketID)),
+>>>>>>> origin/master
 				T:           persistence.KInflight,
 				FixedHeader: persistence.FixedHeader(tk.Packet.FixedHeader),
 				TopicName:   tk.Packet.TopicName,
