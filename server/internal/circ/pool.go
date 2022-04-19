@@ -7,8 +7,10 @@ import (
 
 // BytesPool is a pool of []byte.
 type BytesPool struct {
+	// int64/uint64 has to the first words in order
+	// to be 64-aligned on 32-bit architectures.
+	used int64 // access atomically
 	pool *sync.Pool
-	used int64
 }
 
 // NewBytesPool returns a sync.pool of []byte.
