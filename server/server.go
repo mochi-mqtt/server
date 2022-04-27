@@ -400,6 +400,9 @@ func (s *Server) unsubscribeClient(cl *clients.Client) {
 	for k := range cl.Subscriptions {
 		delete(cl.Subscriptions, k)
 		if s.Topics.Unsubscribe(k, cl.ID) {
+			if s.Events.OnTopicUnsubscribe != nil {
+				s.Events.OnTopicUnsubscribe(k, cl.ID)
+			}
 			atomic.AddInt64(&s.System.Subscriptions, -1)
 		}
 	}
@@ -737,6 +740,9 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 		} else {
 			q := s.Topics.Subscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
 			if q {
+				if s.Events.OnTopicSubscribe != nil {
+					s.Events.OnTopicSubscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
+				}
 				atomic.AddInt64(&s.System.Subscriptions, 1)
 			}
 			cl.NoteSubscription(pk.Topics[i], pk.Qoss[i])
@@ -785,6 +791,9 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error
 	for i := 0; i < len(pk.Topics); i++ {
 		q := s.Topics.Unsubscribe(pk.Topics[i], cl.ID)
 		if q {
+			if s.Events.OnTopicUnsubscribe != nil {
+				s.Events.OnTopicUnsubscribe(pk.Topics[i], cl.ID)
+			}
 			atomic.AddInt64(&s.System.Subscriptions, -1)
 		}
 		cl.ForgetSubscription(pk.Topics[i])
@@ -1004,7 +1013,11 @@ func (s *Server) loadServerInfo(v persistence.ServerInfo) {
 // loadSubscriptions restores subscriptions from the datastore.
 func (s *Server) loadSubscriptions(v []persistence.Subscription) {
 	for _, sub := range v {
-		s.Topics.Subscribe(sub.Filter, sub.Client, sub.QoS)
+		if s.Topics.Subscribe(sub.Filter, sub.Client, sub.QoS) {
+			if s.Events.OnTopicSubscribe != nil {
+				s.Events.OnTopicSubscribe(sub.Filter, sub.Client, sub.QoS)
+			}
+		}
 		if cl, ok := s.Clients.Get(sub.Client); ok {
 			cl.NoteSubscription(sub.Filter, sub.QoS)
 		}
