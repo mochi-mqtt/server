@@ -6,11 +6,13 @@ import (
 
 // Events provides callback handlers for different event hooks.
 type Events struct {
-	OnProcessMessage // published message receieved before evaluation.
-	OnMessage        // published message receieved.
-	OnError          // server error.
-	OnConnect        // client connected.
-	OnDisconnect     // client disconnected.
+	OnProcessMessage   // published message receieved before evaluation.
+	OnMessage          // published message receieved.
+	OnError            // server error.
+	OnConnect          // client connected.
+	OnDisconnect       // client disconnected.
+	OnTopicSubscribe   // topic subscription created.
+	OnTopicUnsubscribe // topic subscription removed.
 }
 
 // Packets is an alias for packets.Packet.
@@ -66,3 +68,9 @@ type OnDisconnect func(Client, error)
 // OnError is called when errors that will not be passed to
 // OnDisconnect are handled by the server.
 type OnError func(Client, error)
+
+// OnTopicSubscribe is called when a new subscription filter for a client is created.
+type OnTopicSubscribe func(filter string, client string, qos byte)
+
+// OnTopicUnsubscribe is called when an existing subscription filter for a client is removed.
+type OnTopicUnsubscribe func(filter string, client string)
