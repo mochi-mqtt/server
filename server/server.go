@@ -400,8 +400,8 @@ func (s *Server) unsubscribeClient(cl *clients.Client) {
 	for k := range cl.Subscriptions {
 		delete(cl.Subscriptions, k)
 		if s.Topics.Unsubscribe(k, cl.ID) {
-			if s.Events.OnTopicUnsubscribe != nil {
-				s.Events.OnTopicUnsubscribe(k, cl.ID)
+			if s.Events.OnUnsubscribe != nil {
+				s.Events.OnUnsubscribe(k, cl.Info())
 			}
 			atomic.AddInt64(&s.System.Subscriptions, -1)
 		}
@@ -738,10 +738,10 @@ func (s *Server) processSubscribe(cl *clients.Client, pk packets.Packet) error {
 		if !cl.AC.ACL(cl.Username, pk.Topics[i], false) {
 			retCodes[i] = packets.ErrSubAckNetworkError
 		} else {
-			q := s.Topics.Subscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
-			if q {
-				if s.Events.OnTopicSubscribe != nil {
-					s.Events.OnTopicSubscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
+			r := s.Topics.Subscribe(pk.Topics[i], cl.ID, pk.Qoss[i])
+			if r {
+				if s.Events.OnSubscribe != nil {
+					s.Events.OnSubscribe(pk.Topics[i], cl.Info(), pk.Qoss[i])
 				}
 				atomic.AddInt64(&s.System.Subscriptions, 1)
 			}
@@ -791,8 +791,8 @@ func (s *Server) processUnsubscribe(cl *clients.Client, pk packets.Packet) error
 	for i := 0; i < len(pk.Topics); i++ {
 		q := s.Topics.Unsubscribe(pk.Topics[i], cl.ID)
 		if q {
-			if s.Events.OnTopicUnsubscribe != nil {
-				s.Events.OnTopicUnsubscribe(pk.Topics[i], cl.ID)
+			if s.Events.OnUnsubscribe != nil {
+				s.Events.OnUnsubscribe(pk.Topics[i], cl.Info())
 			}
 			atomic.AddInt64(&s.System.Subscriptions, -1)
 		}
@@ -1014,12 +1014,12 @@ func (s *Server) loadServerInfo(v persistence.ServerInfo) {
 func (s *Server) loadSubscriptions(v []persistence.Subscription) {
 	for _, sub := range v {
 		if s.Topics.Subscribe(sub.Filter, sub.Client, sub.QoS) {
-			if s.Events.OnTopicSubscribe != nil {
-				s.Events.OnTopicSubscribe(sub.Filter, sub.Client, sub.QoS)
+			if cl, ok := s.Clients.Get(sub.Client); ok {
+				cl.NoteSubscription(sub.Filter, sub.QoS)
+				if s.Events.OnSubscribe != nil {
+					s.Events.OnSubscribe(sub.Filter, cl.Info(), sub.QoS)
+				}
 			}
-		}
-		if cl, ok := s.Clients.Get(sub.Client); ok {
-			cl.NoteSubscription(sub.Filter, sub.QoS)
 		}
 	}
 }

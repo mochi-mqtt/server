@@ -1946,6 +1946,15 @@ func TestServerProcessSubscribeInvalid(t *testing.T) {
 func TestServerProcessSubscribe(t *testing.T) {
 	s, cl, r, w := setupClient()
 
+	subscribeEvent := ""
+	subscribeClient := ""
+	s.Events.OnSubscribe = func(filter string, cl events.Client, qos byte) {
+		if filter == "a/b/c" {
+			subscribeEvent = "a/b/c"
+			subscribeClient = cl.ID
+		}
+	}
+
 	s.Topics.RetainMessage(packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type:   packets.Publish,
@@ -1995,6 +2004,8 @@ func TestServerProcessSubscribe(t *testing.T) {
 	require.Equal(t, byte(1), cl.Subscriptions["d/e/f"])
 	require.Equal(t, topics.Subscriptions{cl.ID: 0}, s.Topics.Subscribers("a/b/c"))
 	require.Equal(t, topics.Subscriptions{cl.ID: 1}, s.Topics.Subscribers("d/e/f"))
+	require.Equal(t, "a/b/c", subscribeEvent)
+	require.Equal(t, cl.ID, subscribeClient)
 }
 
 func TestServerProcessSubscribeFailACL(t *testing.T) {
@@ -2114,6 +2125,16 @@ func TestServerProcessUnsubscribeInvalid(t *testing.T) {
 
 func TestServerProcessUnsubscribe(t *testing.T) {
 	s, cl, r, w := setupClient()
+
+	unsubscribeEvent := ""
+	unsubscribeClient := ""
+	s.Events.OnUnsubscribe = func(filter string, cl events.Client) {
+		if filter == "a/b/c" {
+			unsubscribeEvent = "a/b/c"
+			unsubscribeClient = cl.ID
+		}
+	}
+
 	s.Clients.Add(cl)
 	s.Topics.Subscribe("a/b/c", cl.ID, 0)
 	s.Topics.Subscribe("d/e/f", cl.ID, 1)
@@ -2155,6 +2176,9 @@ func TestServerProcessUnsubscribe(t *testing.T) {
 
 	require.NotEmpty(t, s.Topics.Subscribers("a/b/+"))
 	require.Contains(t, cl.Subscriptions, "a/b/+")
+
+	require.Equal(t, "a/b/c", unsubscribeEvent)
+	require.Equal(t, cl.ID, unsubscribeClient)
 }
 
 func TestServerProcessUnsubscribeWriteError(t *testing.T) {
