@@ -54,6 +54,16 @@ func main() {
 		fmt.Printf("<< OnDisconnect client disconnected %s: %v\n", cl.ID, err)
 	}
 
+	// Add OnSubscribe Event Hook
+	server.Events.OnSubscribe = func(filter string, cl events.Client, qos byte) {
+		fmt.Printf("<< OnSubscribe client subscribed %s: %s %v\n", cl.ID, filter, qos)
+	}
+
+	// Add OnUnsubscribe Event Hook
+	server.Events.OnUnsubscribe = func(filter string, cl events.Client) {
+		fmt.Printf("<< OnUnsubscribe client unsubscribed %s: %s\n", cl.ID, filter)
+	}
+
 	// Add OnMessage Event Hook
 	server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.Packet, err error) {
 		pkx = pk
