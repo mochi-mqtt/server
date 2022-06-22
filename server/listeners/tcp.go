@@ -62,6 +62,9 @@ func (l *TCP) ID() string {
 func (l *TCP) Listen(s *system.Info) error {
 	var err error
 
+	// The following logic is deprecated in favour of passing through the tls.Config
+	// value directly, however it remains in order to provide backwards compatibility.
+	// It will be removed someday, so use the preferred method (l.config.TLSConfig).
 	if l.config.TLS != nil && len(l.config.TLS.Certificate) > 0 && len(l.config.TLS.PrivateKey) > 0 {
 		var cert tls.Certificate
 		cert, err = tls.X509KeyPair(l.config.TLS.Certificate, l.config.TLS.PrivateKey)
@@ -72,9 +75,12 @@ func (l *TCP) Listen(s *system.Info) error {
 		l.listen, err = tls.Listen(l.protocol, l.address, &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		})
+	} else if l.config.TLSConfig != nil {
+		l.listen, err = tls.Listen(l.protocol, l.address, l.config.TLSConfig)
 	} else {
 		l.listen, err = net.Listen(l.protocol, l.address)
 	}
+
 	if err != nil {
 		return err
 	}
