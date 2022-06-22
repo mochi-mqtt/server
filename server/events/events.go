@@ -44,7 +44,7 @@ type Clientlike interface {
 // be dispatched as if the event hook had not been triggered.
 // This function will block message dispatching until it returns. To minimise this,
 // have the function open a new goroutine on the embedding side.
-// The `mqtt.ErrRejectPacket` error can be returned to reject and abandon any futher
+// The `mqtt.ErrRejectPacket` error can be returned to reject and abandon any further
 // processing of the packet.
 type OnProcessMessage func(Client, Packet) (Packet, error)
 
