@@ -20,9 +20,11 @@ type Packet packets.Packet
 
 // Client contains limited information about a connected client.
 type Client struct {
-	ID       string
-	Remote   string
-	Listener string
+	ID           string
+	Remote       string
+	Listener     string
+	Username     []byte
+	CleanSession bool
 }
 
 // Clientlike is an interface for Clients and client-like objects that
