@@ -368,9 +368,10 @@ func TestServerEventOnConnect(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	require.Equal(t, events.Client{
-		ID:       "mochi",
-		Remote:   "pipe",
-		Listener: "tcp",
+		ID:           "mochi",
+		Remote:       "pipe",
+		Listener:     "tcp",
+		CleanSession: true,
 	}, hook.client)
 
 	require.Equal(t, events.Packet(packets.Packet{
@@ -443,9 +444,10 @@ func TestServerEventOnDisconnect(t *testing.T) {
 	w.Close()
 
 	require.Equal(t, events.Client{
-		ID:       "mochi",
-		Remote:   "pipe",
-		Listener: "tcp",
+		ID:           "mochi",
+		Remote:       "pipe",
+		Listener:     "tcp",
+		CleanSession: true,
 	}, hook.client)
 
 	require.ErrorIs(t, ErrClientDisconnect, hook.err)
@@ -506,9 +508,10 @@ func TestServerEventOnDisconnectOnError(t *testing.T) {
 	require.Equal(t, errx, hook.err)
 
 	require.Equal(t, events.Client{
-		ID:       "mochi",
-		Remote:   "pipe",
-		Listener: "tcp",
+		ID:           "mochi",
+		Remote:       "pipe",
+		Listener:     "tcp",
+		CleanSession: true,
 	}, hook.client)
 
 	clw, ok := s.Clients.Get("mochi")

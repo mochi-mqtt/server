@@ -200,9 +200,11 @@ func (cl *Client) Info() events.Client {
 		addr = cl.conn.RemoteAddr().String()
 	}
 	return events.Client{
-		ID:       cl.ID,
-		Remote:   addr,
-		Listener: cl.Listener,
+		ID:           cl.ID,
+		Remote:       addr,
+		Username:     cl.Username,
+		CleanSession: cl.CleanSession,
+		Listener:     cl.Listener,
 	}
 }
 
