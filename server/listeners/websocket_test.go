@@ -77,6 +77,18 @@ func TestWebsocketListen(t *testing.T) {
 	require.NotNil(t, l.listen)
 }
 
+func TestWebsocketListenTLSConfig(t *testing.T) {
+	l := NewWebsocket("t1", testPort)
+	l.SetConfig(&Config{
+		Auth:      new(auth.Allow),
+		TLSConfig: tlsConfigBasic,
+	})
+	err := l.Listen(nil)
+	require.NoError(t, err)
+	require.NotNil(t, l.listen.TLSConfig)
+	l.listen.Close()
+}
+
 func TestWebsocketListenTLS(t *testing.T) {
 	l := NewWebsocket("t1", testPort)
 	l.SetConfig(&Config{
