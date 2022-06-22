@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
 	"os"
@@ -57,14 +58,30 @@ func main() {
 
 	fmt.Println(aurora.Magenta("Mochi MQTT Server initializing..."), aurora.Cyan("TLS/SSL"))
 
+	cert, err := tls.X509KeyPair(testCertificate, testPrivateKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Basic TLS Config
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
+	// Optionally, if you want clients to authenticate only with certs issued by your CA,
+	// you might want to use something like this:
+	// certPool := x509.NewCertPool()
+	// _ = certPool.AppendCertsFromPEM(caCertPem)
+	// tlsConfig := &tls.Config{
+	//	ClientCAs: certPool,
+	// 	ClientAuth: tls.RequireAndVerifyClientCert,
+	// }
+
 	server := mqtt.NewServer(nil)
 	tcp := listeners.NewTCP("t1", ":1883")
-	err := server.AddListener(tcp, &listeners.Config{
-		Auth: new(auth.Allow),
-		TLS: &listeners.TLS{
-			Certificate: testCertificate,
-			PrivateKey:  testPrivateKey,
-		},
+	err = server.AddListener(tcp, &listeners.Config{
+		Auth:      new(auth.Allow),
+		TLSConfig: tlsConfig,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -72,11 +89,8 @@ func main() {
 
 	ws := listeners.NewWebsocket("ws1", ":1882")
 	err = server.AddListener(ws, &listeners.Config{
-		Auth: new(auth.Allow),
-		TLS: &listeners.TLS{
-			Certificate: testCertificate,
-			PrivateKey:  testPrivateKey,
-		},
+		Auth:      new(auth.Allow),
+		TLSConfig: tlsConfig,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -84,11 +98,8 @@ func main() {
 
 	stats := listeners.NewHTTPStats("stats", ":8080")
 	err = server.AddListener(stats, &listeners.Config{
-		Auth: new(auth.Allow),
-		TLS: &listeners.TLS{
-			Certificate: testCertificate,
-			PrivateKey:  testPrivateKey,
-		},
+		Auth:      new(auth.Allow),
+		TLSConfig: tlsConfig,
 	})
 	if err != nil {
 		log.Fatal(err)
