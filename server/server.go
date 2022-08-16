@@ -25,6 +25,9 @@ import (
 const (
 	// Version indicates the current server version.
 	Version = "1.1.1"
+
+	// defaultInflightTTL is the number of seconds a pending inflight message should last.
+	defaultInflightTTL int64 = 60 * 60 * 24
 )
 
 var (
@@ -73,17 +76,19 @@ var (
 // Server is an MQTT broker server. It should be created with server.New()
 // in order to ensure all the internal fields are correctly populated.
 type Server struct {
-	inline    inlineMessages       // channels for direct publishing.
-	Events    events.Events        // overrideable event hooks.
-	Store     persistence.Store    // a persistent storage backend if desired.
-	Options   *Options             // configurable server options.
-	Listeners *listeners.Listeners // listeners are network interfaces which listen for new connections.
-	Clients   *clients.Clients     // clients which are known to the broker.
-	Topics    *topics.Index        // an index of topic filter subscriptions and retained messages.
-	System    *system.Info         // values about the server commonly found in $SYS topics.
-	bytepool  *circ.BytesPool      // a byte pool for incoming and outgoing packets.
-	sysTicker *time.Ticker         // the interval ticker for sending updating $SYS topics.
-	done      chan bool            // indicate that the server is ending.
+	inline               inlineMessages       // channels for direct publishing.
+	Events               events.Events        // overrideable event hooks.
+	Store                persistence.Store    // a persistent storage backend if desired.
+	Options              *Options             // configurable server options.
+	Listeners            *listeners.Listeners // listeners are network interfaces which listen for new connections.
+	Clients              *clients.Clients     // clients which are known to the broker.
+	Topics               *topics.Index        // an index of topic filter subscriptions and retained messages.
+	System               *system.Info         // values about the server commonly found in $SYS topics.
+	bytepool             *circ.BytesPool      // a byte pool for incoming and outgoing packets.
+	sysTicker            *time.Ticker         // the interval ticker for sending updating $SYS topics.
+	inflightExpiryTicker *time.Ticker         // the interval ticker for cleaning up expired messages.
+	inflightResendTicker *time.Ticker         // the interval ticker for resending unresolved inflight messages.
+	done                 chan bool            // indicate that the server is ending.
 }
 
 // Options contains configurable options for the server.
@@ -93,6 +98,9 @@ type Options struct {
 
 	// BufferBlockSize overrides the default buffer block size (DefaultBlockSize) for the client buffers.
 	BufferBlockSize int
+
+	// InflightTTL specifies the duration that a queued inflight message should exist before being purged.
+	InflightTTL int64
 }
 
 // inlineMessages contains channels for handling inline (direct) publishing.
@@ -114,6 +122,10 @@ func NewServer(opts *Options) *Server {
 		opts = new(Options)
 	}
 
+	if opts.InflightTTL < 1 {
+		opts.InflightTTL = defaultInflightTTL
+	}
+
 	s := &Server{
 		done:     make(chan bool),
 		bytepool: circ.NewBytesPool(opts.BufferSize),
@@ -123,7 +135,9 @@ func NewServer(opts *Options) *Server {
 			Version: Version,
 			Started: time.Now().Unix(),
 		},
-		sysTicker: time.NewTicker(SysTopicInterval * time.Millisecond),
+		sysTicker:            time.NewTicker(SysTopicInterval * time.Millisecond),
+		inflightExpiryTicker: time.NewTicker(time.Duration(opts.InflightTTL) * time.Second),
+		inflightResendTicker: time.NewTicker(time.Duration(10) * time.Second),
 		inline: inlineMessages{
 			done: make(chan bool),
 			pub:  make(chan packets.Packet, 1024),
@@ -143,6 +157,8 @@ func NewServer(opts *Options) *Server {
 // called before calling server.Server().
 func (s *Server) AddStore(p persistence.Store) error {
 	s.Store = p
+	s.Store.SetInflightTTL(s.Options.InflightTTL)
+
 	err := s.Store.Open()
 	if err != nil {
 		return err
@@ -198,6 +214,10 @@ func (s *Server) eventLoop() {
 			return
 		case <-s.sysTicker.C:
 			s.publishSysTopics()
+		case <-s.inflightExpiryTicker.C:
+			s.clearExpiredInflights(time.Now().Unix())
+		case <-s.inflightResendTicker.C:
+			s.resendPendingInflights()
 		}
 	}
 }
@@ -319,9 +339,11 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 		return s.onError(cl.Info(), fmt.Errorf("ack connection packet: %w", err))
 	}
 
-	err = s.ResendClientInflight(cl, true)
-	if err != nil {
-		s.onError(cl.Info(), fmt.Errorf("resend in flight: %w", err)) // pass-through, no return.
+	if sessionPresent {
+		err = s.ResendClientInflight(cl, true)
+		if err != nil {
+			s.onError(cl.Info(), fmt.Errorf("resend in flight: %w", err)) // pass-through, no return.
+		}
 	}
 
 	if s.Store != nil {
@@ -345,6 +367,10 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	}
 
 	err = cl.StopCause() // Determine true cause of stop.
+
+	if !sessionPresent {
+
+	}
 
 	if s.Events.OnDisconnect != nil {
 		s.Events.OnDisconnect(cl.Info(), err)
@@ -379,6 +405,7 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *clients.Client) boo
 		// The state associated with a CleanSession MUST NOT be reused in any subsequent session.
 		if pk.CleanSession || existing.CleanSession {
 			s.unsubscribeClient(existing)
+			s.clearAbandonedInflights(existing)
 			return false
 		}
 
@@ -640,8 +667,9 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 				// if an appropriate ack is not received (or if the client is offline).
 				sent := time.Now().Unix()
 				q := client.Inflight.Set(out.PacketID, clients.InflightMessage{
-					Packet: out,
-					Sent:   sent,
+					Packet:  out,
+					Created: time.Now().Unix(),
+					Sent:    sent,
 				})
 				if q {
 					atomic.AddInt64(&s.System.Inflight, 1)
@@ -1047,6 +1075,7 @@ func (s *Server) loadInflight(v []persistence.Message) {
 					TopicName:   msg.TopicName,
 					Payload:     msg.Payload,
 				},
+				Created: msg.Created,
 				Sent:    msg.Sent,
 				Resends: msg.Resends,
 			})
@@ -1062,5 +1091,36 @@ func (s *Server) loadRetained(v []persistence.Message) {
 			TopicName:   msg.TopicName,
 			Payload:     msg.Payload,
 		})
+	}
+}
+
+// clearExpiredInflights deletes all inflight messages older than server inflight TTL.
+func (s *Server) clearExpiredInflights(dt int64) {
+	expiry := dt - s.Options.InflightTTL
+
+	for _, client := range s.Clients.GetAll() {
+		client.Inflight.ClearExpired(expiry)
+	}
+
+	if s.Store != nil {
+		s.Store.ClearExpiredInflight(expiry)
+	}
+}
+
+// clearAbandonedInflights deletes all inflight messages for a disconnected user (eg. with a clean session).
+func (s *Server) clearAbandonedInflights(cl *clients.Client) {
+	for i := range cl.Inflight.GetAll() {
+		cl.Inflight.Delete(i)
+	}
+}
+
+// resendPendingInflights attempts resends of any pending and due inflight messages.
+func (s *Server) resendPendingInflights() {
+	for _, client := range s.Clients.GetAll() {
+		err := s.ResendClientInflight(client, false)
+		if err != nil {
+			// TODO add log-level debugging.
+			continue
+		}
 	}
 }

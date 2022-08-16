@@ -28,22 +28,28 @@ const (
 type Store interface {
 	Open() error
 	Close()
-	WriteSubscription(v Subscription) error
-	WriteClient(v Client) error
-	WriteInflight(v Message) error
-	WriteServerInfo(v ServerInfo) error
-	WriteRetained(v Message) error
-
-	DeleteSubscription(id string) error
-	DeleteClient(id string) error
-	DeleteInflight(id string) error
-	DeleteRetained(id string) error
 
 	ReadSubscriptions() (v []Subscription, err error)
-	ReadInflight() (v []Message, err error)
-	ReadRetained() (v []Message, err error)
+	WriteSubscription(v Subscription) error
+	DeleteSubscription(id string) error
+
 	ReadClients() (v []Client, err error)
+	WriteClient(v Client) error
+	DeleteClient(id string) error
+
+	ReadInflight() (v []Message, err error)
+	WriteInflight(v Message) error
+	DeleteInflight(id string) error
+
+	SetInflightTTL(seconds int64)
+	ClearExpiredInflight(expiry int64) error
+
 	ReadServerInfo() (v ServerInfo, err error)
+	WriteServerInfo(v ServerInfo) error
+
+	ReadRetained() (v []Message, err error)
+	WriteRetained(v Message) error
+	DeleteRetained(id string) error
 }
 
 // ServerInfo contains information and statistics about the server.
@@ -69,6 +75,7 @@ type Message struct {
 	ID          string      // the storage key.
 	Client      string      // the id of the client who sent the message (if inflight).
 	TopicName   string      // the topic the message was sent to (if retained).
+	Created     int64       // the time the message was created in unixtime (if inflight).
 	Sent        int64       // the last time the message was sent (for retries) in unixtime (if inflight).
 	Resends     int         // the number of times the message was attempted to be sent (if inflight).
 	PacketID    uint16      // the unique id of the packet (if inflight).
@@ -103,10 +110,16 @@ type LWT struct {
 
 // MockStore is a mock storage backend for testing.
 type MockStore struct {
-	Fail     map[string]bool // issue errors for different methods.
-	FailOpen bool            // error on open.
-	Closed   bool            // indicate mock store is closed.
-	Opened   bool            // indicate mock store is open.
+	Fail        map[string]bool // issue errors for different methods.
+	FailOpen    bool            // error on open.
+	Closed      bool            // indicate mock store is closed.
+	Opened      bool            // indicate mock store is open.
+	inflightTTL int64           // inflight expiry duration.
+}
+
+// Close closes the storage instance.
+func (s *MockStore) SetInflightTTL(seconds int64) {
+	s.inflightTTL = seconds
 }
 
 // Open opens the storage instance.
@@ -275,7 +288,7 @@ func (s *MockStore) ReadRetained() (v []Message, err error) {
 	}, nil
 }
 
-//ReadServerInfo loads the server info from the storage instance.
+// ReadServerInfo loads the server info from the storage instance.
 func (s *MockStore) ReadServerInfo() (v ServerInfo, err error) {
 	if _, ok := s.Fail["read_info"]; ok {
 		return v, errors.New("test_info")
@@ -288,4 +301,9 @@ func (s *MockStore) ReadServerInfo() (v ServerInfo, err error) {
 		},
 		KServerInfo,
 	}, nil
+}
+
+// ReadServerInfo loads the server info from the storage instance.
+func (s *MockStore) ClearExpiredInflight(d int64) error {
+	return nil
 }

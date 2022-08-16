@@ -49,6 +49,13 @@ func (cl *Clients) Add(val *Client) {
 	cl.Unlock()
 }
 
+// GetAll returns all the clients.
+func (cl *Clients) GetAll() map[string]*Client {
+	cl.RLock()
+	defer cl.RUnlock()
+	return cl.internal
+}
+
 // Get returns the value of a client if it exists.
 func (cl *Clients) Get(id string) (*Client, bool) {
 	cl.RLock()
@@ -511,6 +518,7 @@ type LWT struct {
 type InflightMessage struct {
 	Packet  packets.Packet // the packet currently in-flight.
 	Sent    int64          // the last time the message was sent (for retries) in unixtime.
+	Created int64          // the unix timestamp when the inflight message was created.
 	Resends int            // the number of times the message was attempted to be sent.
 }
 
@@ -557,8 +565,21 @@ func (i *Inflight) GetAll() map[uint16]InflightMessage {
 // message existed.
 func (i *Inflight) Delete(key uint16) bool {
 	i.Lock()
+	defer i.Unlock()
 	_, ok := i.internal[key]
 	delete(i.internal, key)
-	i.Unlock()
+
 	return ok
+}
+
+// ClearExpired deletes any inflight messages that have remained longer than
+// the servers InflightTTL duration.
+func (i *Inflight) ClearExpired(expiry int64) {
+	i.Lock()
+	defer i.Unlock()
+	for k, m := range i.internal {
+		if m.Created < expiry || m.Created == 0 {
+			delete(i.internal, k)
+		}
+	}
 }

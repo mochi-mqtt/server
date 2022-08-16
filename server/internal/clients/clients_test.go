@@ -69,6 +69,36 @@ func BenchmarkClientsGet(b *testing.B) {
 	}
 }
 
+func TestClientsGetAll(t *testing.T) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{ID: "t2"})
+	cl.Add(&Client{ID: "t3"})
+	cl.Add(&Client{ID: "t4"})
+	cl.Add(&Client{ID: "t5"})
+	require.Contains(t, cl.internal, "t1")
+	require.Contains(t, cl.internal, "t2")
+	require.Contains(t, cl.internal, "t3")
+	require.Contains(t, cl.internal, "t4")
+	require.Contains(t, cl.internal, "t5")
+
+	clients := cl.GetAll()
+	require.Len(t, clients, 5)
+}
+
+func BenchmarkClientsGetAll(b *testing.B) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{ID: "t2"})
+	cl.Add(&Client{ID: "t3"})
+	cl.Add(&Client{ID: "t4"})
+	cl.Add(&Client{ID: "t5"})
+	for n := 0; n < b.N; n++ {
+		clients := cl.GetAll()
+		require.Len(b, clients, 5)
+	}
+}
+
 func TestClientsLen(t *testing.T) {
 	cl := New()
 	cl.Add(&Client{ID: "t1"})
@@ -714,12 +744,13 @@ func TestClientWritePacket(t *testing.T) {
 		r.Close()
 
 		require.Equal(t, tt.bytes, <-o, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
+
 		cl.Stop(testClientStop)
+		time.Sleep(time.Millisecond * 1)
 
 		// The stop cause is either the test error, EOF, or a
 		// closed pipe, depending on which goroutine runs first.
 		err = cl.StopCause()
-		time.Sleep(time.Millisecond * 5)
 		require.True(t,
 			errors.Is(err, testClientStop) ||
 				errors.Is(err, io.EOF) ||
@@ -856,6 +887,42 @@ func BenchmarkInflightDelete(b *testing.B) {
 		cl.Inflight.Set(4, InflightMessage{Packet: packets.Packet{}, Sent: 0})
 		cl.Inflight.Delete(4)
 	}
+}
+
+func TestInflightClearExpired(t *testing.T) {
+	n := time.Now().Unix()
+
+	cl := genClient()
+	cl.Inflight.Set(1, InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 1,
+		Sent:    0,
+	})
+	cl.Inflight.Set(2, InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 2,
+		Sent:    0,
+	})
+	cl.Inflight.Set(3, InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 3,
+		Sent:    0,
+	})
+	cl.Inflight.Set(5, InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 5,
+		Sent:    0,
+	})
+
+	require.Len(t, cl.Inflight.internal, 4)
+
+	cl.Inflight.ClearExpired(n - 2)
+	cl.Inflight.RLock()
+	defer cl.Inflight.RUnlock()
+	require.Len(t, cl.Inflight.internal, 2)
+	require.Equal(t, (n - 1), cl.Inflight.internal[1].Created)
+	require.Equal(t, (n - 2), cl.Inflight.internal[2].Created)
+	require.Equal(t, int64(0), cl.Inflight.internal[3].Created)
 }
 
 var (
