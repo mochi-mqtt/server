@@ -38,7 +38,7 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 - MQTT v5 compatibility?
 
 #### Using the Broker from Go
-Mochi MQTT can be used as a standalone broker. Simply checkout this repository and run the `main.go` entrypoint in the `cmd` folder which will expose tcp (:1883), websocket (:1882), and dashboard (:8080) listeners. A docker image is coming soon.
+Mochi MQTT can be used as a standalone broker. Simply checkout this repository and run the `main.go` entrypoint in the `cmd` folder which will expose tcp (:1883), websocket (:1882), and dashboard (:8080) listeners.
 
 ```
 cd cmd
