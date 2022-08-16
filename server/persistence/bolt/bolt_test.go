@@ -49,6 +49,12 @@ func TestNewNoOpts(t *testing.T) {
 	require.Equal(t, defaultTimeout, s.opts.Timeout)
 }
 
+func TestSetInflightTTL(t *testing.T) {
+	s := New("", nil)
+	s.SetInflightTTL(5)
+	require.Equal(t, int64(5), s.inflightTTL)
+}
+
 func TestOpen(t *testing.T) {
 	s := New(tmpPath, nil)
 	err := s.Open()
@@ -483,4 +489,52 @@ func TestDeleteRetainedFail(t *testing.T) {
 	s.Close()
 	err = s.DeleteRetained("a")
 	require.Error(t, err)
+}
+
+func TestClearExpiredInflight(t *testing.T) {
+	n := time.Now().Unix()
+
+	s := New(tmpPath, nil)
+	err := s.Open()
+	defer teardown(s, t)
+
+	require.NoError(t, err)
+
+	err = s.WriteInflight(persistence.Message{
+		ID:      "i1",
+		T:       persistence.KInflight,
+		Created: n - 1,
+	})
+	require.NoError(t, err)
+
+	err = s.WriteInflight(persistence.Message{
+		ID:      "i2",
+		T:       persistence.KInflight,
+		Created: n - 2,
+	})
+	require.NoError(t, err)
+
+	err = s.WriteInflight(persistence.Message{
+		ID:      "i3",
+		T:       persistence.KInflight,
+		Created: n - 3,
+	})
+	require.NoError(t, err)
+
+	err = s.WriteInflight(persistence.Message{
+		ID:      "i5",
+		T:       persistence.KInflight,
+		Created: n - 5,
+	})
+	require.NoError(t, err)
+
+	m, err := s.ReadInflight()
+	require.NoError(t, err)
+	require.Len(t, m, 4)
+
+	s.ClearExpiredInflight(n - 2)
+
+	m, err = s.ReadInflight()
+	require.NoError(t, err)
+	require.Len(t, m, 2)
 }

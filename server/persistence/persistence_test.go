@@ -26,6 +26,12 @@ func TestMockStoreClose(t *testing.T) {
 	require.Equal(t, true, s.Closed)
 }
 
+func TestMockStoreSetInflightTTL(t *testing.T) {
+	s := new(MockStore)
+	s.SetInflightTTL(5)
+	require.Equal(t, int64(5), s.inflightTTL)
+}
+
 func TestMockStoreWriteSubscription(t *testing.T) {
 	s := new(MockStore)
 	err := s.WriteSubscription(Subscription{})
@@ -248,4 +254,10 @@ func TestMockStoreReadRetainedFail(t *testing.T) {
 	}
 	_, err := s.ReadRetained()
 	require.Error(t, err)
+}
+
+func TestMockStoreClearExpiredInflight(t *testing.T) {
+	s := new(MockStore)
+	err := s.ClearExpiredInflight(2)
+	require.NoError(t, err)
 }

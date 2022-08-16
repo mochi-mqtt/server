@@ -2704,3 +2704,74 @@ func TestServerResendClientInflightError(t *testing.T) {
 	err := s.ResendClientInflight(cl, true)
 	require.Error(t, err)
 }
+
+func TestServerClearExpiredInflights(t *testing.T) {
+	n := time.Now().Unix()
+
+	s := New()
+	s.Options.InflightTTL = 2
+	require.NotNil(t, s)
+
+	r, _ := net.Pipe()
+	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+	cl.Inflight.Set(1, clients.InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 1,
+		Sent:    0,
+	})
+	cl.Inflight.Set(2, clients.InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 2,
+		Sent:    0,
+	})
+	cl.Inflight.Set(3, clients.InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 3,
+		Sent:    0,
+	})
+	cl.Inflight.Set(5, clients.InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 5,
+		Sent:    0,
+	})
+	s.Clients.Add(cl)
+
+	require.Len(t, cl.Inflight.GetAll(), 4)
+	s.clearExpiredInflights(n)
+	require.Len(t, cl.Inflight.GetAll(), 2)
+}
+
+func TestServerClearAbandonedInflights(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	r, _ := net.Pipe()
+	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+	cl.Inflight.Set(1, clients.InflightMessage{
+		Packet: packets.Packet{},
+		Sent:   0,
+	})
+	cl.Inflight.Set(2, clients.InflightMessage{
+		Packet: packets.Packet{},
+		Sent:   0,
+	})
+
+	cl2 := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+
+	cl2.Inflight.Set(3, clients.InflightMessage{
+		Packet: packets.Packet{},
+		Sent:   0,
+	})
+	cl2.Inflight.Set(5, clients.InflightMessage{
+		Packet: packets.Packet{},
+		Sent:   0,
+	})
+	s.Clients.Add(cl)
+	s.Clients.Add(cl2)
+
+	require.Len(t, cl.Inflight.GetAll(), 2)
+	require.Len(t, cl2.Inflight.GetAll(), 2)
+	s.clearAbandonedInflights(cl)
+	require.Len(t, cl.Inflight.GetAll(), 0)
+	require.Len(t, cl2.Inflight.GetAll(), 2)
+}
