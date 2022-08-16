@@ -369,7 +369,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 	err = cl.StopCause() // Determine true cause of stop.
 
 	if !sessionPresent {
-
+		s.clearAbandonedInflights(cl)
 	}
 
 	if s.Events.OnDisconnect != nil {
@@ -904,7 +904,7 @@ func (s *Server) publishSysTopics() {
 // ResendClientInflight attempts to resend all undelivered inflight messages
 // to a client.
 func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
-	if cl.Inflight.Len() == 0 {
+	if atomic.LoadUint32(&cl.State.Done) == 1 || cl.Inflight.Len() == 0 {
 		return nil
 	}
 
