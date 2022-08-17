@@ -2739,6 +2739,7 @@ func TestServerClearExpiredInflights(t *testing.T) {
 	require.Len(t, cl.Inflight.GetAll(), 4)
 	s.clearExpiredInflights(n)
 	require.Len(t, cl.Inflight.GetAll(), 2)
+	require.Equal(t, s.System.Inflight, int64(-2))
 }
 
 func TestServerClearAbandonedInflights(t *testing.T) {
@@ -2774,4 +2775,5 @@ func TestServerClearAbandonedInflights(t *testing.T) {
 	s.clearAbandonedInflights(cl)
 	require.Len(t, cl.Inflight.GetAll(), 0)
 	require.Len(t, cl2.Inflight.GetAll(), 2)
+	require.Equal(t, s.System.Inflight, int64(-2))
 }

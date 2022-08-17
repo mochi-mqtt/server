@@ -916,13 +916,14 @@ func TestInflightClearExpired(t *testing.T) {
 
 	require.Len(t, cl.Inflight.internal, 4)
 
-	cl.Inflight.ClearExpired(n - 2)
+	deleted := cl.Inflight.ClearExpired(n - 2)
 	cl.Inflight.RLock()
 	defer cl.Inflight.RUnlock()
 	require.Len(t, cl.Inflight.internal, 2)
 	require.Equal(t, (n - 1), cl.Inflight.internal[1].Created)
 	require.Equal(t, (n - 2), cl.Inflight.internal[2].Created)
 	require.Equal(t, int64(0), cl.Inflight.internal[3].Created)
+	require.Equal(t, deleted, int64(2))
 }
 
 var (
