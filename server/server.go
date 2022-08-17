@@ -1099,7 +1099,8 @@ func (s *Server) clearExpiredInflights(dt int64) {
 	expiry := dt - s.Options.InflightTTL
 
 	for _, client := range s.Clients.GetAll() {
-		client.Inflight.ClearExpired(expiry)
+		deleted := client.Inflight.ClearExpired(expiry)
+		atomic.AddInt64(&s.System.Inflight, deleted*-1)
 	}
 
 	if s.Store != nil {
@@ -1111,6 +1112,7 @@ func (s *Server) clearExpiredInflights(dt int64) {
 func (s *Server) clearAbandonedInflights(cl *clients.Client) {
 	for i := range cl.Inflight.GetAll() {
 		cl.Inflight.Delete(i)
+		atomic.AddInt64(&s.System.Inflight, -1)
 	}
 }
 

@@ -573,13 +573,17 @@ func (i *Inflight) Delete(key uint16) bool {
 }
 
 // ClearExpired deletes any inflight messages that have remained longer than
-// the servers InflightTTL duration.
-func (i *Inflight) ClearExpired(expiry int64) {
+// the servers InflightTTL duration. Returns number of deleted inflights.
+func (i *Inflight) ClearExpired(expiry int64) int64 {
 	i.Lock()
 	defer i.Unlock()
+	var deleted int64
 	for k, m := range i.internal {
 		if m.Created < expiry || m.Created == 0 {
 			delete(i.internal, k)
+			deleted++
 		}
 	}
+
+	return deleted
 }
