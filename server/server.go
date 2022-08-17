@@ -368,7 +368,7 @@ func (s *Server) EstablishConnection(lid string, c net.Conn, ac auth.Controller)
 
 	err = cl.StopCause() // Determine true cause of stop.
 
-	if !sessionPresent {
+	if cl.CleanSession {
 		s.clearAbandonedInflights(cl)
 	}
 
