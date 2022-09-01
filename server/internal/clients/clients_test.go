@@ -69,7 +69,7 @@ func BenchmarkClientsGet(b *testing.B) {
 	}
 }
 
-func TestClientsGetAll(t *testing.T) {
+func TestClientsCopy(t *testing.T) {
 	cl := New()
 	cl.Add(&Client{ID: "t1"})
 	cl.Add(&Client{ID: "t2"})
@@ -82,11 +82,11 @@ func TestClientsGetAll(t *testing.T) {
 	require.Contains(t, cl.internal, "t4")
 	require.Contains(t, cl.internal, "t5")
 
-	clients := cl.GetAll()
+	clients := cl.Copy()
 	require.Len(t, clients, 5)
 }
 
-func BenchmarkClientsGetAll(b *testing.B) {
+func BenchmarkClientsCopy(b *testing.B) {
 	cl := New()
 	cl.Add(&Client{ID: "t1"})
 	cl.Add(&Client{ID: "t2"})
@@ -94,7 +94,7 @@ func BenchmarkClientsGetAll(b *testing.B) {
 	cl.Add(&Client{ID: "t4"})
 	cl.Add(&Client{ID: "t5"})
 	for n := 0; n < b.N; n++ {
-		clients := cl.GetAll()
+		clients := cl.Copy()
 		require.Len(b, clients, 5)
 	}
 }
@@ -832,18 +832,18 @@ func BenchmarkInflightGet(b *testing.B) {
 	}
 }
 
-func TestInflightGetAll(t *testing.T) {
+func TestInflightCopy(t *testing.T) {
 	cl := genClient()
 	cl.Inflight.Set(2, InflightMessage{})
 
-	m := cl.Inflight.GetAll()
+	m := cl.Inflight.Copy()
 	o := map[uint16]InflightMessage{
 		2: {},
 	}
 	require.Equal(t, o, m)
 }
 
-func BenchmarkInflightGetAll(b *testing.B) {
+func BenchmarkInflightCopy(b *testing.B) {
 	cl := genClient()
 	cl.Inflight.Set(2, InflightMessage{Packet: packets.Packet{}, Sent: 0})
 	for n := 0; n < b.N; n++ {

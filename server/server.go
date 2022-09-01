@@ -908,10 +908,12 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 		return nil
 	}
 
+	var innerErr error
+
 	nt := time.Now().Unix()
-	for _, tk := range cl.Inflight.GetAll() {
+	cl.Inflight.ForEachCopy(func(key uint16, tk clients.InflightMessage) bool {
 		if tk.Resends >= inflightMaxResends { // After a reasonable time, drop inflight packets.
-			cl.Inflight.Delete(tk.Packet.PacketID)
+			cl.Inflight.Delete(tk.Packet.PacketID) // ForEach already acquires the lock.
 			if tk.Packet.FixedHeader.Type == packets.Publish {
 				atomic.AddInt64(&s.System.PublishDropped, 1)
 			}
@@ -920,12 +922,12 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 				s.onStorage(cl, s.Store.DeleteInflight(persistentID(cl, tk.Packet)))
 			}
 
-			continue
+			return true
 		}
 
 		// Only continue if the resend backoff time has passed and there's a backoff time.
 		if !force && (nt-tk.Sent < inflightResendBackoff[tk.Resends] || len(inflightResendBackoff) < tk.Resends) {
-			continue
+			return true
 		}
 
 		if tk.Packet.FixedHeader.Type == packets.Publish {
@@ -937,7 +939,8 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 		cl.Inflight.Set(tk.Packet.PacketID, tk)
 		_, err := cl.WritePacket(tk.Packet)
 		if err != nil {
-			return err
+			innerErr = err
+			return false
 		}
 
 		if s.Store != nil {
@@ -951,9 +954,11 @@ func (s *Server) ResendClientInflight(cl *clients.Client, force bool) error {
 				Resends:     tk.Resends,
 			}))
 		}
-	}
 
-	return nil
+		return true
+	})
+
+	return innerErr
 }
 
 // Close attempts to gracefully shutdown the server, all listeners, clients, and stores.
@@ -1098,10 +1103,11 @@ func (s *Server) loadRetained(v []persistence.Message) {
 func (s *Server) clearExpiredInflights(dt int64) {
 	expiry := dt - s.Options.InflightTTL
 
-	for _, client := range s.Clients.GetAll() {
+	s.Clients.ForEachCopy(func(id string, client *clients.Client) bool {
 		deleted := client.Inflight.ClearExpired(expiry)
-		atomic.AddInt64(&s.System.Inflight, deleted*-1)
-	}
+		atomic.AddInt64(&s.System.Inflight, -deleted)
+		return true
+	})
 
 	if s.Store != nil {
 		s.Store.ClearExpiredInflight(expiry)
@@ -1110,19 +1116,18 @@ func (s *Server) clearExpiredInflights(dt int64) {
 
 // clearAbandonedInflights deletes all inflight messages for a disconnected user (eg. with a clean session).
 func (s *Server) clearAbandonedInflights(cl *clients.Client) {
-	for i := range cl.Inflight.GetAll() {
-		cl.Inflight.Delete(i)
-		atomic.AddInt64(&s.System.Inflight, -1)
-	}
+	deleted := cl.Inflight.Clear()
+	atomic.AddInt64(&s.System.Inflight, -deleted)
 }
 
 // resendPendingInflights attempts resends of any pending and due inflight messages.
 func (s *Server) resendPendingInflights() {
-	for _, client := range s.Clients.GetAll() {
+	s.Clients.ForEachCopy(func(id string, client *clients.Client) bool {
 		err := s.ResendClientInflight(client, false)
 		if err != nil {
 			// TODO add log-level debugging.
-			continue
+			return true
 		}
-	}
+		return true
+	})
 }

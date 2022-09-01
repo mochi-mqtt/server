@@ -49,46 +49,82 @@ func (cl *Clients) Add(val *Client) {
 	cl.Unlock()
 }
 
-// GetAll returns all the clients.
-func (cl *Clients) GetAll() map[string]*Client {
+// Copy returns a copy of the internal map of all the clients.
+func (cl *Clients) Copy() map[string]*Client {
 	cl.RLock()
 	defer cl.RUnlock()
-	return cl.internal
+
+	copiedClients := make(map[string]*Client)
+	for k, v := range cl.internal {
+		copiedClients[k] = v
+	}
+
+	return copiedClients
+}
+
+// ForEachCopy loops over a copy of the internal map of all the clients.
+// If the consumer function returns false, the iteration is stopped.
+// Caution: it acquires the internal read lock initially to create the copy of the clients.
+func (cl *Clients) ForEachCopy(consumer func(id string, client *Client) bool) {
+	copiedClients := cl.Copy()
+
+	for k, v := range copiedClients {
+		if !consumer(k, v) {
+			break
+		}
+	}
+}
+
+// ForEach loops over all the clients.
+// If the consumer function returns false, the iteration is stopped.
+func (cl *Clients) ForEach(consumer func(id string, client *Client) bool) {
+	cl.Lock()
+	defer cl.Unlock()
+
+	for k, v := range cl.internal {
+		if !consumer(k, v) {
+			break
+		}
+	}
 }
 
 // Get returns the value of a client if it exists.
 func (cl *Clients) Get(id string) (*Client, bool) {
 	cl.RLock()
+	defer cl.RUnlock()
+
 	val, ok := cl.internal[id]
-	cl.RUnlock()
 	return val, ok
 }
 
 // Len returns the length of the clients map.
 func (cl *Clients) Len() int {
 	cl.RLock()
+	defer cl.RUnlock()
+
 	val := len(cl.internal)
-	cl.RUnlock()
 	return val
 }
 
 // Delete removes a client from the internal map.
 func (cl *Clients) Delete(id string) {
 	cl.Lock()
+	defer cl.Unlock()
+
 	delete(cl.internal, id)
-	cl.Unlock()
 }
 
 // GetByListener returns clients matching a listener id.
 func (cl *Clients) GetByListener(id string) []*Client {
 	clients := make([]*Client, 0, cl.Len())
 	cl.RLock()
+	defer cl.RUnlock()
+
 	for _, v := range cl.internal {
 		if v.Listener == id && atomic.LoadUint32(&v.State.Done) == 0 {
 			clients = append(clients, v)
 		}
 	}
-	cl.RUnlock()
 	return clients
 }
 
@@ -230,15 +266,17 @@ func (cl *Client) NextPacketID() uint32 {
 // NoteSubscription makes a note of a subscription for the client.
 func (cl *Client) NoteSubscription(filter string, qos byte) {
 	cl.Lock()
+	defer cl.Unlock()
+
 	cl.Subscriptions[filter] = qos
-	cl.Unlock()
 }
 
 // ForgetSubscription forgests a subscription note for the client.
 func (cl *Client) ForgetSubscription(filter string) {
 	cl.Lock()
+	defer cl.Unlock()
+
 	delete(cl.Subscriptions, filter)
-	cl.Unlock()
 }
 
 // Start begins the client goroutines reading and writing packets.
@@ -528,55 +566,115 @@ type Inflight struct {
 	internal map[uint16]InflightMessage // internal contains the inflight messages.
 }
 
-// Set stores the packet of an Inflight message, keyed on message id. Returns
-// true if the inflight message was new.
-func (i *Inflight) Set(key uint16, in InflightMessage) bool {
-	i.Lock()
+// SetWithoutLocking stores the packet of an Inflight message, keyed on message id.
+// Returns true if the inflight message was new.
+// Caution: It does not acquire the internal lock.
+func (i *Inflight) SetWithoutLocking(key uint16, in InflightMessage) bool {
 	_, ok := i.internal[key]
 	i.internal[key] = in
-	i.Unlock()
 	return !ok
+}
+
+// Set stores the packet of an Inflight message, keyed on message id.
+// Returns true if the inflight message was new.
+func (i *Inflight) Set(key uint16, in InflightMessage) bool {
+	i.Lock()
+	defer i.Unlock()
+
+	return i.SetWithoutLocking(key, in)
 }
 
 // Get returns the value of an in-flight message if it exists.
 func (i *Inflight) Get(key uint16) (InflightMessage, bool) {
 	i.RLock()
+	defer i.RUnlock()
+
 	val, ok := i.internal[key]
-	i.RUnlock()
 	return val, ok
 }
 
 // Len returns the size of the in-flight messages map.
 func (i *Inflight) Len() int {
 	i.RLock()
+	defer i.RUnlock()
+
 	v := len(i.internal)
-	i.RUnlock()
 	return v
 }
 
-// GetAll returns all the in-flight messages.
-func (i *Inflight) GetAll() map[uint16]InflightMessage {
+// Copy returns a copy of the internal map of all the in-flight messages.
+func (i *Inflight) Copy() map[uint16]InflightMessage {
 	i.RLock()
 	defer i.RUnlock()
-	return i.internal
+
+	copiedInflights := make(map[uint16]InflightMessage)
+	for k, v := range i.internal {
+		copiedInflights[k] = v
+	}
+
+	return copiedInflights
 }
 
-// Delete removes an in-flight message from the map. Returns true if the
-// message existed.
-func (i *Inflight) Delete(key uint16) bool {
+// ForEachCopy loops over a copy of the internal map of all the in-flight messages.
+// If the consumer function returns false, the iteration is stopped.
+// Caution: it acquires the internal read lock initially to create the copy of the in-flight messages.
+func (i *Inflight) ForEachCopy(consumer func(key uint16, in InflightMessage) bool) {
+	copiedInflights := i.Copy()
+
+	for k, v := range copiedInflights {
+		if !consumer(k, v) {
+			break
+		}
+	}
+}
+
+// ForEach loops over all the in-flight messages.
+// If the consumer function returns false, the iteration is stopped.
+func (i *Inflight) ForEach(consumer func(key uint16, in InflightMessage) bool) {
 	i.Lock()
 	defer i.Unlock()
+
+	for k, v := range i.internal {
+		if !consumer(k, v) {
+			break
+		}
+	}
+}
+
+// Clear clears all the in-flight messages.
+// It returns the amount of cleared messages.
+func (i *Inflight) Clear() int64 {
+	i.Lock()
+	defer i.Unlock()
+
+	deleted := int64(len(i.internal))
+	i.internal = make(map[uint16]InflightMessage)
+	return deleted
+}
+
+// DeleteWithoutLocking removes an in-flight message from the map.
+// Returns true if the message existed.
+// Caution: It does not acquire the internal lock.
+func (i *Inflight) DeleteWithoutLocking(key uint16) bool {
 	_, ok := i.internal[key]
 	delete(i.internal, key)
 
 	return ok
 }
 
-// ClearExpired deletes any inflight messages that have remained longer than
-// the servers InflightTTL duration. Returns number of deleted inflights.
-func (i *Inflight) ClearExpired(expiry int64) int64 {
+// Delete removes an in-flight message from the map.
+// Returns true if the message existed.
+func (i *Inflight) Delete(key uint16) bool {
 	i.Lock()
 	defer i.Unlock()
+
+	return i.DeleteWithoutLocking(key)
+}
+
+// ClearExpiredWithoutLocking deletes any inflight messages that have remained longer than
+// the servers InflightTTL duration. Returns number of deleted inflights.
+// Caution: It does not acquire the internal lock.
+func (i *Inflight) ClearExpiredWithoutLocking(expiry int64) int64 {
 	var deleted int64
 	for k, m := range i.internal {
 		if m.Created < expiry || m.Created == 0 {
@@ -586,4 +684,13 @@ func (i *Inflight) ClearExpired(expiry int64) int64 {
 	}
 
 	return deleted
+}
+
+// ClearExpired deletes any inflight messages that have remained longer than
+// the servers InflightTTL duration. Returns number of deleted inflights.
+func (i *Inflight) ClearExpired(expiry int64) int64 {
+	i.Lock()
+	defer i.Unlock()
+
+	return i.ClearExpiredWithoutLocking(expiry)
 }

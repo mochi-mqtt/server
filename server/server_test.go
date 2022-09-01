@@ -1209,7 +1209,7 @@ func TestServerProcessPublishOfflineQueuing(t *testing.T) {
 		0, 2,
 	}, <-ack1)
 
-	queued := cl2.Inflight.GetAll()
+	queued := cl2.Inflight.Copy()
 	require.Equal(t, 2, len(queued))
 	require.Equal(t, "qos1", queued[1].Packet.TopicName)
 	require.Equal(t, "qos2", queued[2].Packet.TopicName)
@@ -2571,7 +2571,7 @@ func TestServerResendClientInflight(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, rcv)
 
-	m := cl.Inflight.GetAll()
+	m := cl.Inflight.Copy()
 	require.Equal(t, 1, m[11].Resends) // index is packet id
 }
 
@@ -2635,7 +2635,7 @@ func TestServerResendClientInflightBackoff(t *testing.T) {
 		'h', 'e', 'l', 'l', 'o',
 	}, rcv)
 
-	m := cl.Inflight.GetAll()
+	m := cl.Inflight.Copy()
 	require.Equal(t, 1, m[11].Resends) // index is packet id
 
 	// Expect a test persistence error.
@@ -2684,7 +2684,7 @@ func TestServerResendClientInflightDropMessage(t *testing.T) {
 	require.NoError(t, err)
 	r.Close()
 
-	m := cl.Inflight.GetAll()
+	m := cl.Inflight.Copy()
 	require.Equal(t, 0, len(m))
 	require.Equal(t, int64(1), atomic.LoadInt64(&s.System.PublishDropped))
 }
@@ -2736,9 +2736,9 @@ func TestServerClearExpiredInflights(t *testing.T) {
 	})
 	s.Clients.Add(cl)
 
-	require.Len(t, cl.Inflight.GetAll(), 4)
+	require.Len(t, cl.Inflight.Copy(), 4)
 	s.clearExpiredInflights(n)
-	require.Len(t, cl.Inflight.GetAll(), 2)
+	require.Len(t, cl.Inflight.Copy(), 2)
 	require.Equal(t, int64(-2), s.System.Inflight)
 }
 
@@ -2770,10 +2770,10 @@ func TestServerClearAbandonedInflights(t *testing.T) {
 	s.Clients.Add(cl)
 	s.Clients.Add(cl2)
 
-	require.Len(t, cl.Inflight.GetAll(), 2)
-	require.Len(t, cl2.Inflight.GetAll(), 2)
+	require.Len(t, cl.Inflight.Copy(), 2)
+	require.Len(t, cl2.Inflight.Copy(), 2)
 	s.clearAbandonedInflights(cl)
-	require.Len(t, cl.Inflight.GetAll(), 0)
-	require.Len(t, cl2.Inflight.GetAll(), 2)
+	require.Len(t, cl.Inflight.Copy(), 0)
+	require.Len(t, cl2.Inflight.Copy(), 2)
 	require.Equal(t, int64(-2), s.System.Inflight)
 }
