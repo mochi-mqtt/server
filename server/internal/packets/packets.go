@@ -215,7 +215,7 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 	}
 
 	if pk.PasswordFlag {
-		pk.Password, offset, err = decodeBytes(buf, offset)
+		pk.Password, _, err = decodeBytes(buf, offset)
 		if err != nil {
 			return fmt.Errorf("%s: %w", err, ErrMalformedPassword)
 		}
@@ -287,7 +287,7 @@ func (pk *Packet) ConnackDecode(buf []byte) error {
 		return fmt.Errorf("%s: %w", err, ErrMalformedSessionPresent)
 	}
 
-	pk.ReturnCode, offset, err = decodeByte(buf, offset)
+	pk.ReturnCode, _, err = decodeByte(buf, offset)
 	if err != nil {
 		return fmt.Errorf("%s: %w", err, ErrMalformedReturnCode)
 	}

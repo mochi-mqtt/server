@@ -11,6 +11,8 @@ type Events struct {
 	OnError          // server error.
 	OnConnect        // client connected.
 	OnDisconnect     // client disconnected.
+	OnSubscribe      // topic subscription created.
+	OnUnsubscribe    // topic subscription removed.
 }
 
 // Packets is an alias for packets.Packet.
@@ -18,9 +20,11 @@ type Packet packets.Packet
 
 // Client contains limited information about a connected client.
 type Client struct {
-	ID       string
-	Remote   string
-	Listener string
+	ID           string
+	Remote       string
+	Listener     string
+	Username     []byte
+	CleanSession bool
 }
 
 // Clientlike is an interface for Clients and client-like objects that
@@ -40,7 +44,7 @@ type Clientlike interface {
 // be dispatched as if the event hook had not been triggered.
 // This function will block message dispatching until it returns. To minimise this,
 // have the function open a new goroutine on the embedding side.
-// The `mqtt.ErrRejectPacket` error can be returned to reject and abandon any futher
+// The `mqtt.ErrRejectPacket` error can be returned to reject and abandon any further
 // processing of the packet.
 type OnProcessMessage func(Client, Packet) (Packet, error)
 
@@ -66,3 +70,9 @@ type OnDisconnect func(Client, error)
 // OnError is called when errors that will not be passed to
 // OnDisconnect are handled by the server.
 type OnError func(Client, error)
+
+// OnSubscribe is called when a new subscription filter for a client is created.
+type OnSubscribe func(filter string, cl Client, qos byte)
+
+// OnUnsubscribe is called when an existing subscription filter for a client is removed.
+type OnUnsubscribe func(filter string, cl Client)

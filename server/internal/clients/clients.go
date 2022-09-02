@@ -49,6 +49,17 @@ func (cl *Clients) Add(val *Client) {
 	cl.Unlock()
 }
 
+// GetAll returns all the clients.
+func (cl *Clients) GetAll() map[string]*Client {
+	m := map[string]*Client{}
+	cl.RLock()
+	defer cl.RUnlock()
+	for k, v := range cl.internal {
+		m[k] = v
+	}
+	return m
+}
+
 // Get returns the value of a client if it exists.
 func (cl *Clients) Get(id string) (*Client, bool) {
 	cl.RLock()
@@ -200,9 +211,11 @@ func (cl *Client) Info() events.Client {
 		addr = cl.conn.RemoteAddr().String()
 	}
 	return events.Client{
-		ID:       cl.ID,
-		Remote:   addr,
-		Listener: cl.Listener,
+		ID:           cl.ID,
+		Remote:       addr,
+		Username:     cl.Username,
+		CleanSession: cl.CleanSession,
+		Listener:     cl.Listener,
 	}
 }
 
@@ -426,7 +439,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 	case packets.Pingresp:
 	case packets.Disconnect:
 	default:
-		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
+		err = fmt.Errorf("no valid packet available; %v", pk.FixedHeader.Type)
 	}
 
 	cl.R.CommitTail(pk.FixedHeader.Remaining)
@@ -477,7 +490,7 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 	case packets.Disconnect:
 		err = pk.DisconnectEncode(buf)
 	default:
-		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
+		err = fmt.Errorf("no valid packet available; %v", pk.FixedHeader.Type)
 	}
 	if err != nil {
 		return
@@ -509,6 +522,7 @@ type LWT struct {
 type InflightMessage struct {
 	Packet  packets.Packet // the packet currently in-flight.
 	Sent    int64          // the last time the message was sent (for retries) in unixtime.
+	Created int64          // the unix timestamp when the inflight message was created.
 	Resends int            // the number of times the message was attempted to be sent.
 }
 
@@ -546,17 +560,39 @@ func (i *Inflight) Len() int {
 
 // GetAll returns all the in-flight messages.
 func (i *Inflight) GetAll() map[uint16]InflightMessage {
+	m := map[uint16]InflightMessage{}
 	i.RLock()
 	defer i.RUnlock()
-	return i.internal
+	for k, v := range i.internal {
+		m[k] = v
+	}
+
+	return m
 }
 
 // Delete removes an in-flight message from the map. Returns true if the
 // message existed.
 func (i *Inflight) Delete(key uint16) bool {
 	i.Lock()
+	defer i.Unlock()
 	_, ok := i.internal[key]
 	delete(i.internal, key)
-	i.Unlock()
+
 	return ok
+}
+
+// ClearExpired deletes any inflight messages that have remained longer than
+// the servers InflightTTL duration. Returns number of deleted inflights.
+func (i *Inflight) ClearExpired(expiry int64) int64 {
+	i.Lock()
+	defer i.Unlock()
+	var deleted int64
+	for k, m := range i.internal {
+		if m.Created < expiry || m.Created == 0 {
+			delete(i.internal, k)
+			deleted++
+		}
+	}
+
+	return deleted
 }

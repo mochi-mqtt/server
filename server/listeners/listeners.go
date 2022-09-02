@@ -1,6 +1,7 @@
 package listeners
 
 import (
+	"crypto/tls"
 	"net"
 	"sync"
 
@@ -10,11 +11,25 @@ import (
 
 // Config contains configuration values for a listener.
 type Config struct {
-	Auth auth.Controller // an authentication controller containing auth and ACL logic.
-	TLS  *TLS            // the TLS certficates and settings for the connection.
+	// Auth controller containing auth and ACL logic for
+	// allowing or denying access to the server and topics.
+	Auth auth.Controller
+
+	// TLS certficates and settings for the connection.
+	//
+	// Deprecated: Prefer exposing the tls.Config directly for greater flexibility.
+	// Please use TLSConfig instead.
+	TLS *TLS
+
+	// TLSConfig is a tls.Config configuration to be used with the listener.
+	// See examples folder for basic and mutual-tls use.
+	TLSConfig *tls.Config
 }
 
 // TLS contains the TLS certificates and settings for the listener connection.
+//
+// Deprecated: Prefer exposing the tls.Config directly for greater flexibility.
+// Please use TLSConfig instead.
 type TLS struct {
 	Certificate []byte // the body of a public certificate.
 	PrivateKey  []byte // the body of a private key.

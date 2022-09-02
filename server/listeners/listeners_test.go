@@ -1,6 +1,8 @@
 package listeners
 
 import (
+	"crypto/tls"
+	"log"
 	"testing"
 	"time"
 
@@ -37,7 +39,21 @@ WoFPqImhrfryaHi3H0C7XFnC30S7GGOJIy0kfI7mn9St9x50eUkKj/yv7YjpSGHy
 w0lcV9npyleNEOqxLXECQBL3VRGCfZfhfFpL8z+5+HPKXw6FxWr+p5h8o3CZ6Yi3
 OJVN3Mfo6mbz34wswrEdMXn25MzAwbhFQvCVpPZrFwc=
 -----END RSA PRIVATE KEY-----`)
+
+	tlsConfigBasic *tls.Config
 )
+
+func init() {
+	cert, err := tls.X509KeyPair(testCertificate, testPrivateKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Basic TLS Config
+	tlsConfigBasic = &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+}
 
 func TestNew(t *testing.T) {
 	l := New(nil)

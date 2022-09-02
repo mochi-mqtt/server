@@ -74,6 +74,9 @@ func (l *HTTPStats) Listen(s *system.Info) error {
 		Handler: mux,
 	}
 
+	// The following logic is deprecated in favour of passing through the tls.Config
+	// value directly, however it remains in order to provide backwards compatibility.
+	// It will be removed someday, so use the preferred method (l.config.TLSConfig).
 	if l.config.TLS != nil && len(l.config.TLS.Certificate) > 0 && len(l.config.TLS.PrivateKey) > 0 {
 		cert, err := tls.X509KeyPair(l.config.TLS.Certificate, l.config.TLS.PrivateKey)
 		if err != nil {
@@ -83,6 +86,8 @@ func (l *HTTPStats) Listen(s *system.Info) error {
 		l.listen.TLSConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		}
+	} else {
+		l.listen.TLSConfig = l.config.TLSConfig
 	}
 
 	return nil

@@ -30,15 +30,15 @@ MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely sim
 - Interfaces for Client Authentication and Topic access control.
 - Bolt persistence and storage interfaces (see examples folder).
 - Directly Publishing from embedding service (`s.Publish(topic, message, retain)`).
-- Basic Event Hooks (`OnMessage`, `OnConnect`, `OnDisconnect`, `onProcessMessage`, `OnError`, `OnStorage`).
-- ARM32 Compatible.
+- Basic Event Hooks (`OnMessage`, `onSubscribe`, `onUnsubscribe`, `OnConnect`, `OnDisconnect`, `onProcessMessage`, `OnError`, `OnStorage`).
+- ARM32 Compatible (v1.1.1).
 
 #### Roadmap
 - Please open an issue to request new features or event hooks.
 - MQTT v5 compatibility?
 
 #### Using the Broker from Go
-Mochi MQTT can be used as a standalone broker. Simply checkout this repository and run the `main.go` entrypoint in the `cmd` folder which will expose tcp (:1883), websocket (:1882), and dashboard (:8080) listeners. A docker image is coming soon.
+Mochi MQTT can be used as a standalone broker. Simply checkout this repository and run the `main.go` entrypoint in the `cmd` folder which will expose tcp (:1883), websocket (:1882), and dashboard (:8080) listeners.
 
 ```
 cd cmd
@@ -141,7 +141,25 @@ server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.P
 
 ```go
 server.Events.OnDisconnect = func(cl events.Client, err error) {
-    fmt.Printf("<< OnDisconnect client dicconnected %s: %v\n", cl.ID, err)
+    fmt.Printf("<< OnDisconnect client disconnected %s: %v\n", cl.ID, err)
+}
+```
+
+##### OnSubscribe
+`server.Events.OnSubscribe` is called when a client subscribes to a new topic filter.
+
+```go
+server.Events.OnSubscribe = func(filter string, cl events.Client, qos byte) {
+    fmt.Printf("<< OnSubscribe client subscribed %s: %s %v\n", cl.ID, filter, qos)
+}
+```
+
+##### OnUnsubscribe
+`server.Events.OnUnsubscribe` is called when a client unsubscribes from a topic filter.
+
+```go
+server.Events.OnUnsubscribe = func(filter string, cl events.Client) {
+    fmt.Printf("<< OnUnsubscribe client unsubscribed %s: %s\n", cl.ID, filter)
 }
 ```
 
@@ -158,7 +176,6 @@ If an error is returned, the packet will not be modified. and the existing packe
 
 > This hook is only triggered when a message is received by clients. It is not triggered when using the direct `server.Publish` method.
 
-
 ```go
 import "github.com/mochi-co/mqtt/server/events"
 
@@ -174,6 +191,8 @@ server.Events.OnMessage = func(cl events.Client, pk events.Packet) (pkx events.P
 ```
 
 The OnMessage hook can also be used to selectively only deliver messages to one or more clients based on their id, using the `AllowClients []string` field on the packet structure.  
+
+
 
 ##### OnError
 `server.Events.OnError` is called when an error is encountered on the server, particularly within the use of a client connection status.

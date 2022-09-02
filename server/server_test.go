@@ -368,9 +368,10 @@ func TestServerEventOnConnect(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	require.Equal(t, events.Client{
-		ID:       "mochi",
-		Remote:   "pipe",
-		Listener: "tcp",
+		ID:           "mochi",
+		Remote:       "pipe",
+		Listener:     "tcp",
+		CleanSession: true,
 	}, hook.client)
 
 	require.Equal(t, events.Packet(packets.Packet{
@@ -443,9 +444,10 @@ func TestServerEventOnDisconnect(t *testing.T) {
 	w.Close()
 
 	require.Equal(t, events.Client{
-		ID:       "mochi",
-		Remote:   "pipe",
-		Listener: "tcp",
+		ID:           "mochi",
+		Remote:       "pipe",
+		Listener:     "tcp",
+		CleanSession: true,
 	}, hook.client)
 
 	require.ErrorIs(t, ErrClientDisconnect, hook.err)
@@ -506,9 +508,10 @@ func TestServerEventOnDisconnectOnError(t *testing.T) {
 	require.Equal(t, errx, hook.err)
 
 	require.Equal(t, events.Client{
-		ID:       "mochi",
-		Remote:   "pipe",
-		Listener: "tcp",
+		ID:           "mochi",
+		Remote:       "pipe",
+		Listener:     "tcp",
+		CleanSession: true,
 	}, hook.client)
 
 	clw, ok := s.Clients.Get("mochi")
@@ -1946,6 +1949,15 @@ func TestServerProcessSubscribeInvalid(t *testing.T) {
 func TestServerProcessSubscribe(t *testing.T) {
 	s, cl, r, w := setupClient()
 
+	subscribeEvent := ""
+	subscribeClient := ""
+	s.Events.OnSubscribe = func(filter string, cl events.Client, qos byte) {
+		if filter == "a/b/c" {
+			subscribeEvent = "a/b/c"
+			subscribeClient = cl.ID
+		}
+	}
+
 	s.Topics.RetainMessage(packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type:   packets.Publish,
@@ -1995,6 +2007,8 @@ func TestServerProcessSubscribe(t *testing.T) {
 	require.Equal(t, byte(1), cl.Subscriptions["d/e/f"])
 	require.Equal(t, topics.Subscriptions{cl.ID: 0}, s.Topics.Subscribers("a/b/c"))
 	require.Equal(t, topics.Subscriptions{cl.ID: 1}, s.Topics.Subscribers("d/e/f"))
+	require.Equal(t, "a/b/c", subscribeEvent)
+	require.Equal(t, cl.ID, subscribeClient)
 }
 
 func TestServerProcessSubscribeFailACL(t *testing.T) {
@@ -2114,6 +2128,16 @@ func TestServerProcessUnsubscribeInvalid(t *testing.T) {
 
 func TestServerProcessUnsubscribe(t *testing.T) {
 	s, cl, r, w := setupClient()
+
+	unsubscribeEvent := ""
+	unsubscribeClient := ""
+	s.Events.OnUnsubscribe = func(filter string, cl events.Client) {
+		if filter == "a/b/c" {
+			unsubscribeEvent = "a/b/c"
+			unsubscribeClient = cl.ID
+		}
+	}
+
 	s.Clients.Add(cl)
 	s.Topics.Subscribe("a/b/c", cl.ID, 0)
 	s.Topics.Subscribe("d/e/f", cl.ID, 1)
@@ -2155,6 +2179,9 @@ func TestServerProcessUnsubscribe(t *testing.T) {
 
 	require.NotEmpty(t, s.Topics.Subscribers("a/b/+"))
 	require.Contains(t, cl.Subscriptions, "a/b/+")
+
+	require.Equal(t, "a/b/c", unsubscribeEvent)
+	require.Equal(t, cl.ID, unsubscribeClient)
 }
 
 func TestServerProcessUnsubscribeWriteError(t *testing.T) {
@@ -2678,4 +2705,77 @@ func TestServerResendClientInflightError(t *testing.T) {
 	r.Close()
 	err := s.ResendClientInflight(cl, true)
 	require.Error(t, err)
+}
+
+func TestServerClearExpiredInflights(t *testing.T) {
+	n := time.Now().Unix()
+
+	s := New()
+	s.Options.InflightTTL = 2
+	require.NotNil(t, s)
+
+	r, _ := net.Pipe()
+	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+	cl.Inflight.Set(1, clients.InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 1,
+		Sent:    0,
+	})
+	cl.Inflight.Set(2, clients.InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 2,
+		Sent:    0,
+	})
+	cl.Inflight.Set(3, clients.InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 3,
+		Sent:    0,
+	})
+	cl.Inflight.Set(5, clients.InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 5,
+		Sent:    0,
+	})
+	s.Clients.Add(cl)
+
+	require.Len(t, cl.Inflight.GetAll(), 4)
+	s.clearExpiredInflights(n)
+	require.Len(t, cl.Inflight.GetAll(), 2)
+	require.Equal(t, int64(-2), s.System.Inflight)
+}
+
+func TestServerClearAbandonedInflights(t *testing.T) {
+	s := New()
+	require.NotNil(t, s)
+
+	r, _ := net.Pipe()
+	cl := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+	cl.Inflight.Set(1, clients.InflightMessage{
+		Packet: packets.Packet{},
+		Sent:   0,
+	})
+	cl.Inflight.Set(2, clients.InflightMessage{
+		Packet: packets.Packet{},
+		Sent:   0,
+	})
+
+	cl2 := clients.NewClient(r, circ.NewReader(128, 8), circ.NewWriter(128, 8), new(system.Info))
+
+	cl2.Inflight.Set(3, clients.InflightMessage{
+		Packet: packets.Packet{},
+		Sent:   0,
+	})
+	cl2.Inflight.Set(5, clients.InflightMessage{
+		Packet: packets.Packet{},
+		Sent:   0,
+	})
+	s.Clients.Add(cl)
+	s.Clients.Add(cl2)
+
+	require.Len(t, cl.Inflight.GetAll(), 2)
+	require.Len(t, cl2.Inflight.GetAll(), 2)
+	s.clearAbandonedInflights(cl)
+	require.Len(t, cl.Inflight.GetAll(), 0)
+	require.Len(t, cl2.Inflight.GetAll(), 2)
+	require.Equal(t, int64(-2), s.System.Inflight)
 }

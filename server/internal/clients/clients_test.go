@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var testClientStop = errors.New("test stop")
+var errClientStop = errors.New("test stop")
 
 func genClient() *Client {
 	c, _ := net.Pipe()
@@ -66,6 +66,36 @@ func BenchmarkClientsGet(b *testing.B) {
 	cl.Add(&Client{ID: "t1"})
 	for n := 0; n < b.N; n++ {
 		cl.Get("t1")
+	}
+}
+
+func TestClientsGetAll(t *testing.T) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{ID: "t2"})
+	cl.Add(&Client{ID: "t3"})
+	cl.Add(&Client{ID: "t4"})
+	cl.Add(&Client{ID: "t5"})
+	require.Contains(t, cl.internal, "t1")
+	require.Contains(t, cl.internal, "t2")
+	require.Contains(t, cl.internal, "t3")
+	require.Contains(t, cl.internal, "t4")
+	require.Contains(t, cl.internal, "t5")
+
+	clients := cl.GetAll()
+	require.Len(t, clients, 5)
+}
+
+func BenchmarkClientsGetAll(b *testing.B) {
+	cl := New()
+	cl.Add(&Client{ID: "t1"})
+	cl.Add(&Client{ID: "t2"})
+	cl.Add(&Client{ID: "t3"})
+	cl.Add(&Client{ID: "t4"})
+	cl.Add(&Client{ID: "t5"})
+	for n := 0; n < b.N; n++ {
+		clients := cl.GetAll()
+		require.Len(b, clients, 5)
 	}
 }
 
@@ -345,7 +375,7 @@ func BenchmarkClientRefreshDeadline(b *testing.B) {
 func TestClientStart(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 	time.Sleep(time.Millisecond)
 	require.Equal(t, uint32(1), atomic.LoadUint32(&cl.R.State))
 	require.Equal(t, uint32(2), atomic.LoadUint32(&cl.W.State))
@@ -353,7 +383,7 @@ func TestClientStart(t *testing.T) {
 
 func BenchmarkClientStart(b *testing.B) {
 	cl := genClient()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	for n := 0; n < b.N; n++ {
 		cl.Start()
@@ -363,7 +393,7 @@ func BenchmarkClientStart(b *testing.B) {
 func TestClientReadFixedHeader(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	cl.R.Set([]byte{packets.Connect << 4, 0x00}, 0, 2)
 	cl.R.SetPos(0, 2)
@@ -382,7 +412,7 @@ func TestClientReadFixedHeader(t *testing.T) {
 func TestClientReadFixedHeaderDecodeError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	o := make(chan error)
 	go func() {
@@ -398,7 +428,7 @@ func TestClientReadFixedHeaderDecodeError(t *testing.T) {
 func TestClientReadFixedHeaderReadEOF(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	o := make(chan error)
 	go func() {
@@ -417,7 +447,7 @@ func TestClientReadFixedHeaderReadEOF(t *testing.T) {
 func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	o := make(chan error)
 	go func() {
@@ -434,7 +464,7 @@ func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
 func TestClientReadOK(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	// Two packets in a row...
 	b := []byte{
@@ -495,7 +525,7 @@ func TestClientReadOK(t *testing.T) {
 func TestClientClearBuffers(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	cl.Stop(testClientStop)
+	cl.Stop(errClientStop)
 	cl.ClearBuffers()
 
 	require.Nil(t, cl.W)
@@ -505,7 +535,7 @@ func TestClientClearBuffers(t *testing.T) {
 func TestClientReadDone(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 	cl.State.Done = 1
 
 	err := cl.Read(func(cl *Client, pk packets.Packet) error {
@@ -518,7 +548,7 @@ func TestClientReadDone(t *testing.T) {
 func TestClientReadPacketError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	b := []byte{
 		0, 18,
@@ -562,15 +592,15 @@ func TestClientReadPacketEOF(t *testing.T) {
 	}()
 
 	cl.R.Stop()
-	cl.Stop(testClientStop)
+	cl.Stop(errClientStop)
 	require.Error(t, <-o)
-	require.True(t, errors.Is(cl.StopCause(), testClientStop))
+	require.True(t, errors.Is(cl.StopCause(), errClientStop))
 }
 
 func TestClientReadHandlerErr(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	b := []byte{
 		byte(packets.Publish << 4), 11, // Fixed header
@@ -593,7 +623,7 @@ func TestClientReadHandlerErr(t *testing.T) {
 func TestClientReadPacketOK(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	err := cl.R.Set([]byte{
 		byte(packets.Publish << 4), 11, // Fixed header
@@ -625,7 +655,7 @@ func TestClientReadPacketOK(t *testing.T) {
 func TestClientReadPacket(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	for i, tt := range pkTable {
 		err := cl.R.Set(tt.bytes, 0, len(tt.bytes))
@@ -650,7 +680,7 @@ func TestClientReadPacket(t *testing.T) {
 func TestClientReadPacketReadingError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 
 	err := cl.R.Set([]byte{
 		0, 11, // Fixed header
@@ -671,7 +701,7 @@ func TestClientReadPacketReadingError(t *testing.T) {
 func TestClientReadPacketReadError(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 	cl.R.Stop()
 
 	_, err := cl.ReadPacket(&packets.FixedHeader{
@@ -684,7 +714,7 @@ func TestClientReadPacketReadError(t *testing.T) {
 func TestClientReadPacketReadUnknown(t *testing.T) {
 	cl := genClient()
 	cl.Start()
-	defer cl.Stop(testClientStop)
+	defer cl.Stop(errClientStop)
 	cl.R.Stop()
 
 	_, err := cl.ReadPacket(&packets.FixedHeader{
@@ -714,14 +744,15 @@ func TestClientWritePacket(t *testing.T) {
 		r.Close()
 
 		require.Equal(t, tt.bytes, <-o, "Mismatched packet: [i:%d] %d", i, tt.bytes[0])
-		cl.Stop(testClientStop)
+
+		cl.Stop(errClientStop)
+		time.Sleep(time.Millisecond * 1)
 
 		// The stop cause is either the test error, EOF, or a
 		// closed pipe, depending on which goroutine runs first.
 		err = cl.StopCause()
-		time.Sleep(time.Millisecond * 5)
 		require.True(t,
-			errors.Is(err, testClientStop) ||
+			errors.Is(err, errClientStop) ||
 				errors.Is(err, io.EOF) ||
 				errors.Is(err, io.ErrClosedPipe))
 
@@ -737,7 +768,7 @@ func TestClientWritePacketWriteNoConn(t *testing.T) {
 	c, _ := net.Pipe()
 	cl := NewClient(c, circ.NewReader(16, 4), circ.NewWriter(16, 4), new(system.Info))
 	cl.W.SetPos(0, 16)
-	cl.Stop(testClientStop)
+	cl.Stop(errClientStop)
 
 	_, err := cl.WritePacket(pkTable[1].packet)
 	require.Error(t, err)
@@ -856,6 +887,43 @@ func BenchmarkInflightDelete(b *testing.B) {
 		cl.Inflight.Set(4, InflightMessage{Packet: packets.Packet{}, Sent: 0})
 		cl.Inflight.Delete(4)
 	}
+}
+
+func TestInflightClearExpired(t *testing.T) {
+	n := time.Now().Unix()
+
+	cl := genClient()
+	cl.Inflight.Set(1, InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 1,
+		Sent:    0,
+	})
+	cl.Inflight.Set(2, InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 2,
+		Sent:    0,
+	})
+	cl.Inflight.Set(3, InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 3,
+		Sent:    0,
+	})
+	cl.Inflight.Set(5, InflightMessage{
+		Packet:  packets.Packet{},
+		Created: n - 5,
+		Sent:    0,
+	})
+
+	require.Len(t, cl.Inflight.internal, 4)
+
+	deleted := cl.Inflight.ClearExpired(n - 2)
+	cl.Inflight.RLock()
+	defer cl.Inflight.RUnlock()
+	require.Len(t, cl.Inflight.internal, 2)
+	require.Equal(t, (n - 1), cl.Inflight.internal[1].Created)
+	require.Equal(t, (n - 2), cl.Inflight.internal[2].Created)
+	require.Equal(t, int64(0), cl.Inflight.internal[3].Created)
+	require.Equal(t, int64(2), deleted)
 }
 
 var (

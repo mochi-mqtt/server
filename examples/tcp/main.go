@@ -27,8 +27,9 @@ func main() {
 
 	// An example of configuring various server options...
 	options := &mqtt.Options{
-		BufferSize:      0, // Use default values
-		BufferBlockSize: 0, // Use default values
+		BufferSize:      0,       // Use default values
+		BufferBlockSize: 0,       // Use default values
+		InflightTTL:     60 * 15, // Set an example custom 15-min TTL for inflight messages
 	}
 
 	server := mqtt.NewServer(options)

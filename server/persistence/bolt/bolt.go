@@ -27,9 +27,10 @@ var (
 
 // Store is a backend for writing and reading to bolt persistent storage.
 type Store struct {
-	path string         // the path on which to store the db file.
-	opts *bbolt.Options // options for configuring the boltdb instance.
-	db   *storm.DB      // the boltdb instance.
+	path        string         // the path on which to store the db file.
+	opts        *bbolt.Options // options for configuring the boltdb instance.
+	db          *storm.DB      // the boltdb instance.
+	inflightTTL int64          // the number of seconds an inflight message should be retained before being dropped.
 }
 
 // New returns a configured instance of the boltdb store.
@@ -48,6 +49,13 @@ func New(path string, opts *bbolt.Options) *Store {
 		path: path,
 		opts: opts,
 	}
+}
+
+// SetInflightTTL sets the number of seconds an inflight message should be kept
+// before being dropped, in the event it is not delivered. Unless you have a good reason,
+// you should allow this to be called by the server (in AddStore) instead of directly.
+func (s *Store) SetInflightTTL(seconds int64) {
+	s.inflightTTL = seconds
 }
 
 // Open opens the boltdb instance.
@@ -251,7 +259,7 @@ func (s *Store) ReadRetained() (v []persistence.Message, err error) {
 	return v, nil
 }
 
-//ReadServerInfo loads the server info from the boltdb instance.
+// ReadServerInfo loads the server info from the boltdb instance.
 func (s *Store) ReadServerInfo() (v persistence.ServerInfo, err error) {
 	if s.db == nil {
 		return v, ErrDBNotOpen
@@ -263,4 +271,28 @@ func (s *Store) ReadServerInfo() (v persistence.ServerInfo, err error) {
 	}
 
 	return v, nil
+}
+
+// ClearExpiredInflight deletes any inflight messages older than the provided unix timestamp.
+func (s *Store) ClearExpiredInflight(expiry int64) error {
+	if s.db == nil {
+		return ErrDBNotOpen
+	}
+
+	var v []persistence.Message
+	err := s.db.Find("T", persistence.KInflight, &v)
+	if err != nil && err != storm.ErrNotFound {
+		return err
+	}
+
+	for _, m := range v {
+		if m.Created < expiry || m.Created == 0 {
+			err := s.db.DeleteStruct(&persistence.Message{ID: m.ID})
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }

@@ -73,6 +73,17 @@ func TestTCPListen(t *testing.T) {
 	l.listen.Close()
 }
 
+func TestTCPListenTLSConfig(t *testing.T) {
+	l := NewTCP("t1", testPort)
+	l.SetConfig(&Config{
+		Auth:      new(auth.Allow),
+		TLSConfig: tlsConfigBasic,
+	})
+	err := l.Listen(nil)
+	require.NoError(t, err)
+	l.listen.Close()
+}
+
 func TestTCPListenTLS(t *testing.T) {
 	l := NewTCP("t1", testPort)
 	l.SetConfig(&Config{

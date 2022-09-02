@@ -21,7 +21,7 @@ func BenchmarkBytesToString(b *testing.B) {
 
 func TestDecodeString(t *testing.T) {
 	expect := []struct {
-		name string
+		name       string
 		rawBytes   []byte
 		result     string
 		offset     int
@@ -88,8 +88,8 @@ func TestDecodeString(t *testing.T) {
 			shouldFail: ErrOffsetBytesOutOfRange,
 		},
 		{
-			offset:   0,
-			rawBytes: []byte{0, 7, 0xc3, 0x28, 98, 47, 99, 47, 100},
+			offset:     0,
+			rawBytes:   []byte{0, 7, 0xc3, 0x28, 98, 47, 99, 47, 100},
 			shouldFail: ErrOffsetStrInvalidUTF8,
 		},
 	}
@@ -101,7 +101,7 @@ func TestDecodeString(t *testing.T) {
 				require.True(t, errors.Is(err, wanted.shouldFail), "want %v to be a %v", err, wanted.shouldFail)
 				return
 			}
-			
+
 			require.NoError(t, err)
 			require.Equal(t, wanted.result, result)
 		})
@@ -209,7 +209,7 @@ func TestDecodeByte(t *testing.T) {
 				require.True(t, errors.Is(err, wanted.shouldFail), "want %v to be a %v", err, wanted.shouldFail)
 				return
 			}
-			
+
 			require.NoError(t, err)
 			require.Equal(t, wanted.result, result)
 			require.Equal(t, i+1, offset)
@@ -250,12 +250,11 @@ func TestDecodeUint16(t *testing.T) {
 
 	for i, wanted := range expect {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-		result, offset, err := decodeUint16(wanted.rawBytes, wanted.offset)
+			result, offset, err := decodeUint16(wanted.rawBytes, wanted.offset)
 			if wanted.shouldFail != nil {
 				require.True(t, errors.Is(err, wanted.shouldFail), "want %v to be a %v", err, wanted.shouldFail)
 				return
 			}
-			
 
 			require.NoError(t, err)
 			require.Equal(t, wanted.result, result)
@@ -295,7 +294,7 @@ func TestDecodeByteBool(t *testing.T) {
 
 	for i, wanted := range expect {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-		result, offset, err := decodeByteBool(wanted.rawBytes, wanted.offset)
+			result, offset, err := decodeByteBool(wanted.rawBytes, wanted.offset)
 			if wanted.shouldFail != nil {
 				require.True(t, errors.Is(err, wanted.shouldFail), "want %v to be a %v", err, wanted.shouldFail)
 				return

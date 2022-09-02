@@ -73,6 +73,18 @@ func TestHTTPStatsListen(t *testing.T) {
 	l.listen.Close()
 }
 
+func TestHTTPStatsListenTLSConfig(t *testing.T) {
+	l := NewHTTPStats("t1", testPort)
+	l.SetConfig(&Config{
+		Auth:      new(auth.Allow),
+		TLSConfig: tlsConfigBasic,
+	})
+	err := l.Listen(new(system.Info))
+	require.NoError(t, err)
+	require.NotNil(t, l.listen.TLSConfig)
+	l.listen.Close()
+}
+
 func TestHTTPStatsListenTLS(t *testing.T) {
 	l := NewHTTPStats("t1", testPort)
 	l.SetConfig(&Config{
