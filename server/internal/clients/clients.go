@@ -51,9 +51,13 @@ func (cl *Clients) Add(val *Client) {
 
 // GetAll returns all the clients.
 func (cl *Clients) GetAll() map[string]*Client {
+	m := map[string]*Client{}
 	cl.RLock()
 	defer cl.RUnlock()
-	return cl.internal
+	for k, v := range cl.internal {
+		m[k] = v
+	}
+	return m
 }
 
 // Get returns the value of a client if it exists.
@@ -435,7 +439,7 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 	case packets.Pingresp:
 	case packets.Disconnect:
 	default:
-		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
+		err = fmt.Errorf("no valid packet available; %v", pk.FixedHeader.Type)
 	}
 
 	cl.R.CommitTail(pk.FixedHeader.Remaining)
@@ -486,7 +490,7 @@ func (cl *Client) WritePacket(pk packets.Packet) (n int, err error) {
 	case packets.Disconnect:
 		err = pk.DisconnectEncode(buf)
 	default:
-		err = fmt.Errorf("No valid packet available; %v", pk.FixedHeader.Type)
+		err = fmt.Errorf("no valid packet available; %v", pk.FixedHeader.Type)
 	}
 	if err != nil {
 		return
@@ -556,9 +560,14 @@ func (i *Inflight) Len() int {
 
 // GetAll returns all the in-flight messages.
 func (i *Inflight) GetAll() map[uint16]InflightMessage {
+	m := map[uint16]InflightMessage{}
 	i.RLock()
 	defer i.RUnlock()
-	return i.internal
+	for k, v := range i.internal {
+		m[k] = v
+	}
+
+	return m
 }
 
 // Delete removes an in-flight message from the map. Returns true if the
