@@ -1,9 +1,15 @@
 package circ
 
 import (
+	"errors"
 	"io"
 	"log"
 	"sync/atomic"
+)
+
+var (
+	// ErrWriterBufferFull indicates that there were not enough free bytes in the buffer to write.
+	ErrWriterBufferFull = errors.New("buffer is full, not enough space to write")
 )
 
 // Writer is a circular buffer for writing data to an io.Writer.
@@ -77,9 +83,8 @@ func (b *Writer) WriteTo(w io.Writer) (total int64, err error) {
 // Write writes the buffer to the buffer p, returning the number of bytes written.
 // The bytes written to the buffer are picked up by WriteTo.
 func (b *Writer) Write(p []byte) (total int, err error) {
-	err = b.awaitEmpty(len(p))
-	if err != nil {
-		return
+	if !b.checkEmpty(len(p)) {
+		return 0, ErrWriterBufferFull
 	}
 
 	total = b.writeBytes(p)
