@@ -10,7 +10,7 @@
 </p>
 
 ```diff
-! NOTE Development on v1.x.x is now frozen due to v2.0.0 being under development.
+! NOTE Contributions to v1.x.x are now frozen due to v2.0.0 being under development.
 ! 	updates to this matter will be forthcoming.
 ```
 
