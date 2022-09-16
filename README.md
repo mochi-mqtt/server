@@ -9,6 +9,8 @@
 
 </p>
 
+> NOTE Development on v1.x.x is frozen. v2.0.0 is under development, updates to this matter will be forthcoming.
+
 # Mochi MQTT 
 ### A High-performance MQTT server in Go (v3.0 | v3.1.1) 
 
