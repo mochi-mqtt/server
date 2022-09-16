@@ -5,11 +5,14 @@
 [![Coverage Status](https://coveralls.io/repos/github/mochi-co/mqtt/badge.svg?branch=master)](https://coveralls.io/github/mochi-co/mqtt?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mochi-co/mqtt)](https://goreportcard.com/report/github.com/mochi-co/mqtt)
 [![Go Reference](https://pkg.go.dev/badge/github.com/mochi-co/mqtt.svg)](https://pkg.go.dev/github.com/mochi-co/mqtt)
-[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/mochi-co/mqtt/issues)
+[![contributions paused](https://img.shields.io/badge/contributions-paused-orange.svg?style=flat)](https://github.com/mochi-co/mqtt/issues)
 
 </p>
 
-> NOTE Development on v1.x.x is frozen. v2.0.0 is under development, updates to this matter will be forthcoming.
+```diff
+! NOTE Development on v1.x.x is now frozen due to v2.0.0 being under development.
+! 	updates to this matter will be forthcoming.
+```
 
 # Mochi MQTT 
 ### A High-performance MQTT server in Go (v3.0 | v3.1.1) 
