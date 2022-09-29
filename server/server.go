@@ -423,6 +423,10 @@ func (s *Server) processPublish(cl *clients.Client, pk packets.Packet) error {
 			ack.FixedHeader.Type = packets.Pubrec
 		}
 
+		cl.Inflight.Set(pk.PacketID, clients.InflightMessage{
+			Packet: pk,
+			Sent:   time.Now().Unix(),
+		})
 		// omit errors in case of broken connection / LWT publish. ack send failures
 		// will be handled by in-flight resending on next reconnect.
 		s.writeClient(cl, ack)
