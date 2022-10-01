@@ -9,9 +9,6 @@
 
 </p>
 
-```diff
-! NOTE Contributions to v1.x.x are now frozen due to v2.0.0 being close to pre-release! 
-```
 
 # Mochi MQTT
 ### A High-performance MQTT server in Go (v3.0 | v3.1.1) 
@@ -21,6 +18,9 @@ Mochi MQTT is an embeddable high-performance MQTT broker server written in Go, a
 > #### 📦 💬 See Github Discussions for discussions about releases
 > Ongoing discussion about current and future releases can be found at https://github.com/mochi-co/mqtt/discussions
 
+```diff
+@ Pull Requests to v1.x.x are now frozen due to v2.0.0 being close to pre-release!
+```
 
 #### What is MQTT?
 MQTT stands for MQ Telemetry Transport. It is a publish/subscribe, extremely simple and lightweight messaging protocol, designed for constrained devices and low-bandwidth, high-latency or unreliable networks. [Learn more](https://mqtt.org/faq)
