@@ -20,9 +20,9 @@ Mochi MQTT is an embeddable high-performance MQTT broker server written in Go, a
 
 ```diff
 @ Pull Requests to v1.x.x are now frozen due to v2.0.0 being close to pre-release!
-# 14-11-2022 v2.0.0 is close to completion, however it is taking a little time to ensure
-# that it fully complies with the MQTT v5 specification and paho test suites. 
-# Thank you for your patience!
+# 14-11-2022 v2.0.0 is close to completion, however it is a total rebuild from scratch
+# and as such is taking a little extra time to ensure that it fully complies with the
+# MQTT v5 specification and paho test suites. Thank you for your patience!
 ```
 
 #### What is MQTT?
