@@ -18,7 +18,7 @@ jobs:
       run: go vet ./...
     
     - name: Test
-      run: go test -v -race ./...
+      run: go test -race ./... && echo true
       
 
   coverage:
