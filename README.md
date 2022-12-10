@@ -10,7 +10,7 @@
 </p>
 
 # Mochi MQTT Broker
-## The fully compliant, embeddable high-performance Go MQTT v5 server (v5 | v3.1.1 | v3.0)
+## The fully compliant, embeddable high-performance Go MQTT v5 (and v3.1.1) broker server 
 Mochi MQTT is an embeddable [fully compliant](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) MQTT v5 broker server written in Go, designed for the development of telemetry and internet-of-things projects. The server can be used either as a standalone binary or embedded as a library in your own applications, and has been designed to be as lightweight and fast as possible, with great care taken to ensure the quality and maintainability of the project. 
 
 ### What is MQTT?
