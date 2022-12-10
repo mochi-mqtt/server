@@ -1,18 +1,18 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileContributor: mochi-co
 package main
 
 import (
 	"crypto/tls"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/logrusorgru/aurora"
-
-	mqtt "github.com/mochi-co/mqtt/server"
-	"github.com/mochi-co/mqtt/server/listeners"
-	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt"
+	"github.com/mochi-co/mqtt/hooks/auth"
+	"github.com/mochi-co/mqtt/listeners"
 )
 
 var (
@@ -56,8 +56,6 @@ func main() {
 		done <- true
 	}()
 
-	fmt.Println(aurora.Magenta("Mochi MQTT Server initializing..."), aurora.Cyan("TLS/SSL"))
-
 	cert, err := tls.X509KeyPair(testCertificate, testPrivateKey)
 	if err != nil {
 		log.Fatal(err)
@@ -77,40 +75,42 @@ func main() {
 	// 	ClientAuth: tls.RequireAndVerifyClientCert,
 	// }
 
-	server := mqtt.NewServer(nil)
-	tcp := listeners.NewTCP("t1", ":1883")
-	err = server.AddListener(tcp, &listeners.Config{
-		Auth:      new(auth.Allow),
+	server := mqtt.New(nil)
+	_ = server.AddHook(new(auth.AllowHook), nil)
+
+	tcp := listeners.NewTCP("t1", ":1883", &listeners.Config{
 		TLSConfig: tlsConfig,
 	})
+	err = server.AddListener(tcp)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	ws := listeners.NewWebsocket("ws1", ":1882")
-	err = server.AddListener(ws, &listeners.Config{
-		Auth:      new(auth.Allow),
+	ws := listeners.NewWebsocket("ws1", ":1882", &listeners.Config{
 		TLSConfig: tlsConfig,
 	})
+	err = server.AddListener(ws)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	stats := listeners.NewHTTPStats("stats", ":8080")
-	err = server.AddListener(stats, &listeners.Config{
-		Auth:      new(auth.Allow),
+	stats := listeners.NewHTTPStats("stats", ":8080", &listeners.Config{
 		TLSConfig: tlsConfig,
-	})
+	}, nil)
+	err = server.AddListener(stats)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	go server.Serve()
-	fmt.Println(aurora.BgMagenta("  Started!  "))
+	go func() {
+		err := server.Serve()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	<-done
-	fmt.Println(aurora.BgRed("  Caught Signal  "))
-
+	server.Log.Warn().Msg("caught signal, stopping...")
 	server.Close()
-	fmt.Println(aurora.BgGreen("  Finished  "))
+	server.Log.Info().Msg("main.go finished")
 }

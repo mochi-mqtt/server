@@ -1,17 +1,18 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileContributor: mochi-co
 package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/logrusorgru/aurora"
-
-	mqtt "github.com/mochi-co/mqtt/server"
-	"github.com/mochi-co/mqtt/server/listeners"
+	"github.com/mochi-co/mqtt"
+	"github.com/mochi-co/mqtt/hooks/auth"
+	"github.com/mochi-co/mqtt/listeners"
 )
 
 func main() {
@@ -28,37 +29,36 @@ func main() {
 		done <- true
 	}()
 
-	fmt.Println(aurora.Magenta("Mochi MQTT Broker initializing..."))
-	fmt.Println(aurora.Cyan("TCP"), *tcpAddr)
-	fmt.Println(aurora.Cyan("Websocket"), *wsAddr)
-	fmt.Println(aurora.Cyan("$SYS Dashboard"), *infoAddr)
+	server := mqtt.New(nil)
+	_ = server.AddHook(new(auth.AllowHook), nil)
 
-	server := mqtt.NewServer(nil)
-	tcp := listeners.NewTCP("t1", *tcpAddr)
-	err := server.AddListener(tcp, nil)
+	tcp := listeners.NewTCP("t1", *tcpAddr, nil)
+	err := server.AddListener(tcp)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	ws := listeners.NewWebsocket("ws1", *wsAddr)
-	err = server.AddListener(ws, nil)
+	ws := listeners.NewWebsocket("ws1", *wsAddr, nil)
+	err = server.AddListener(ws)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	stats := listeners.NewHTTPStats("stats", *infoAddr)
-	err = server.AddListener(stats, nil)
+	stats := listeners.NewHTTPStats("stats", *infoAddr, nil, server.Info)
+	err = server.AddListener(stats)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	go server.Serve()
-	fmt.Println(aurora.BgMagenta("  Started!  "))
+	go func() {
+		err := server.Serve()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	<-done
-	fmt.Println(aurora.BgRed("  Caught Signal  "))
-
+	server.Log.Warn().Msg("caught signal, stopping...")
 	server.Close()
-	fmt.Println(aurora.BgGreen("  Finished  "))
-
+	server.Log.Info().Msg("main.go finished")
 }

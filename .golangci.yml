@@ -1,0 +1,103 @@
+linters:
+  disable-all: false
+  fix: false # Fix found issues (if it's supported by the linter).
+  enable:
+    # - asasalint
+    # - asciicheck
+    # - bidichk
+    # - bodyclose
+    # - containedctx
+    # - contextcheck
+    #- cyclop
+    # - deadcode
+    - decorder
+    # - depguard
+    # - dogsled
+    # - dupl
+    - durationcheck
+    # - errchkjson
+    # - errname
+    - errorlint
+    # - execinquery
+    # - exhaustive
+    # - exhaustruct
+    # - exportloopref
+    #- forcetypeassert
+    #- forbidigo
+    #- funlen
+    #- gci
+    # - gochecknoglobals
+    # - gochecknoinits
+    # - gocognit
+    # - goconst
+    # - gocritic
+    - gocyclo
+    - godot
+    # - godox
+    # - goerr113
+    # - gofmt
+    # - gofumpt
+    # - goheader
+    - goimports
+    # - golint
+    # - gomnd
+    # - gomoddirectives
+    # - gomodguard
+    # - goprintffuncname
+    - gosec
+    - gosimple
+    - govet
+    # - grouper
+    # - ifshort
+    - importas
+    - ineffassign
+    # - interfacebloat
+    # - interfacer
+    # - ireturn
+    # - lll
+    # - maintidx
+    # - makezero
+    - maligned
+    - misspell
+    # - nakedret
+    # - nestif
+    # - nilerr
+    # - nilnil
+    # - nlreturn
+    # - noctx
+    # - nolintlint
+    # - nonamedreturns
+    # - nosnakecase
+    # - nosprintfhostport
+    # - paralleltest
+    # - prealloc
+    # - predeclared
+    # - promlinter
+    - reassign
+    # - revive
+    # - rowserrcheck
+    # - scopelint
+    # - sqlclosecheck
+    # - staticcheck
+    # - structcheck
+    # - stylecheck
+    # - tagliatelle
+    # - tenv
+    # - testpackage
+    # - thelper
+    - tparallel
+    # - typecheck
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    # - varcheck
+    # - varnamelen
+    - wastedassign
+    - whitespace
+    # - wrapcheck
+    # - wsl
+  disable:
+    - errcheck
+
+

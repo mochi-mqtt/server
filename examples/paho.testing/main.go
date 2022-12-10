@@ -1,16 +1,18 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileContributor: mochi-co
 package main
 
 import (
-	"fmt"
+	"bytes"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/logrusorgru/aurora"
-
-	mqtt "github.com/mochi-co/mqtt/server"
-	"github.com/mochi-co/mqtt/server/listeners"
+	"github.com/mochi-co/mqtt"
+	"github.com/mochi-co/mqtt/listeners"
+	"github.com/mochi-co/mqtt/packets"
 )
 
 func main() {
@@ -22,38 +24,51 @@ func main() {
 		done <- true
 	}()
 
-	fmt.Println(aurora.Magenta("Mochi MQTT Server initializing..."), aurora.Cyan("PAHO Testing Suite"))
+	server := mqtt.New(nil)
+	server.Options.Capabilities.ServerKeepAlive = 60
+	server.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true
+	server.Options.Capabilities.Compatibilities.PassiveClientDisconnect = true
+	server.Options.Capabilities.Compatibilities.AlwaysReturnResponseInfo = true
 
-	server := mqtt.New()
-	tcp := listeners.NewTCP("t1", ":1883")
-	err := server.AddListener(tcp, &listeners.Config{
-		Auth: new(Auth),
-	})
+	_ = server.AddHook(new(pahoAuthHook), nil)
+	tcp := listeners.NewTCP("t1", ":1883", nil)
+	err := server.AddListener(tcp)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	go server.Serve()
-	fmt.Println(aurora.BgMagenta("  Started!  "))
+	go func() {
+		err := server.Serve()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	<-done
-	fmt.Println(aurora.BgRed("  Caught Signal  "))
-
+	server.Log.Warn().Msg("caught signal, stopping...")
 	server.Close()
-	fmt.Println(aurora.BgGreen("  Finished  "))
+	server.Log.Info().Msg("main.go finished")
 }
 
-// Auth is an example auth provider for the server.
-type Auth struct{}
+type pahoAuthHook struct {
+	mqtt.HookBase
+}
 
-// Authenticate returns true if a username and password are acceptable.
-// Auth always returns true.
-func (a *Auth) Authenticate(user, password []byte) bool {
+func (h *pahoAuthHook) ID() string {
+	return "allow-all-auth"
+}
+
+func (h *pahoAuthHook) Provides(b byte) bool {
+	return bytes.Contains([]byte{
+		mqtt.OnConnectAuthenticate,
+		mqtt.OnACLCheck,
+	}, []byte{b})
+}
+
+func (h *pahoAuthHook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet) bool {
 	return true
 }
 
-// ACL returns true if a user has access permissions to read or write on a topic.
-// ACL is used to deny access to a specific topic to satisfy Test.test_subscribe_failure.
-func (a *Auth) ACL(user []byte, topic string, write bool) bool {
+func (h *pahoAuthHook) OnACLCheck(cl *mqtt.Client, topic string, write bool) bool {
 	return topic != "test/nosubscribe"
 }

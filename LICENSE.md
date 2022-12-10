@@ -1,7 +1,7 @@
 
 The MIT License (MIT)
 
-Copyright (c) 2019 Jonathan Blake (mochi)
+Copyright (c) 2019, 2022 Jonathan Blake (mochi-co)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

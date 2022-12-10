@@ -1,17 +1,17 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileContributor: mochi-co
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/logrusorgru/aurora"
-
-	mqtt "github.com/mochi-co/mqtt/server"
-	"github.com/mochi-co/mqtt/server/listeners"
-	"github.com/mochi-co/mqtt/server/listeners/auth"
+	"github.com/mochi-co/mqtt"
+	"github.com/mochi-co/mqtt/hooks/auth"
+	"github.com/mochi-co/mqtt/listeners"
 )
 
 func main() {
@@ -23,20 +23,22 @@ func main() {
 		done <- true
 	}()
 
-	fmt.Println(aurora.Magenta("Mochi MQTT Server initializing..."), aurora.Cyan("TCP"))
-
 	// An example of configuring various server options...
 	options := &mqtt.Options{
-		BufferSize:      0,       // Use default values
-		BufferBlockSize: 0,       // Use default values
-		InflightTTL:     60 * 15, // Set an example custom 15-min TTL for inflight messages
+		// InflightTTL: 60 * 15, // Set an example custom 15-min TTL for inflight messages
 	}
 
-	server := mqtt.NewServer(options)
-	tcp := listeners.NewTCP("t1", ":1883")
-	err := server.AddListener(tcp, &listeners.Config{
-		Auth: new(auth.Allow),
-	})
+	server := mqtt.New(options)
+
+	// For security reasons, the default implementation disallows all connections.
+	// If you want to allow all connections, you must specifically allow it.
+	err := server.AddHook(new(auth.AllowHook), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tcp := listeners.NewTCP("t1", ":1883", nil)
+	err = server.AddListener(tcp)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -47,12 +49,9 @@ func main() {
 			log.Fatal(err)
 		}
 	}()
-	fmt.Println(aurora.BgMagenta("  Started!  "))
 
 	<-done
-	fmt.Println(aurora.BgRed("  Caught Signal  "))
-
+	server.Log.Warn().Msg("caught signal, stopping...")
 	server.Close()
-	fmt.Println(aurora.BgGreen("  Finished  "))
-
+	server.Log.Info().Msg("main.go finished")
 }

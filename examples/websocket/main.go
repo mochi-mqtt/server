@@ -1,16 +1,17 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileContributor: mochi-co
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/logrusorgru/aurora"
-
-	mqtt "github.com/mochi-co/mqtt/server"
-	"github.com/mochi-co/mqtt/server/listeners"
+	"github.com/mochi-co/mqtt"
+	"github.com/mochi-co/mqtt/hooks/auth"
+	"github.com/mochi-co/mqtt/listeners"
 )
 
 func main() {
@@ -22,11 +23,11 @@ func main() {
 		done <- true
 	}()
 
-	fmt.Println(aurora.Magenta("Mochi MQTT Server initializing..."), aurora.Cyan("TCP"))
+	server := mqtt.New(nil)
+	_ = server.AddHook(new(auth.AllowHook), nil)
 
-	server := mqtt.NewServer(nil)
-	ws := listeners.NewWebsocket("ws1", ":1882")
-	err := server.AddListener(ws, nil)
+	ws := listeners.NewWebsocket("ws1", ":1882", nil)
+	err := server.AddListener(ws)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -37,11 +38,9 @@ func main() {
 			log.Fatal(err)
 		}
 	}()
-	fmt.Println(aurora.BgMagenta("  Started!  "))
 
 	<-done
-	fmt.Println(aurora.BgRed("  Caught Signal  "))
-
+	server.Log.Warn().Msg("caught signal, stopping...")
 	server.Close()
-	fmt.Println(aurora.BgGreen("  Finished  "))
+	server.Log.Info().Msg("main.go finished")
 }
