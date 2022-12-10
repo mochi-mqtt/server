@@ -334,7 +334,7 @@ You can check the broker against the [Paho Interoperability Test](https://github
 
 
 ## Performance Benchmarks
-Mochi MQTT performance is comparable with popular brokers such as Mosquitto, Mosca, and VerneMQ.
+Mochi MQTT performance is comparable with popular brokers such as Mosquitto, EMQX, and others.
 
 Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inovex/mqtt-stresser) on a Apple Macbook Air M2, using `cmd/main.go` default settings. Taking into account bursts of high and low throughput, the median scores are the most useful. Higher is better.
 
