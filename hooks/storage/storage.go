@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/system"
+	"github.com/mochi-co/mqtt/v2/packets"
+	"github.com/mochi-co/mqtt/v2/system"
 )
 
 const (

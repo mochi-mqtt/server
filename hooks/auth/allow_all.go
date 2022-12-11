@@ -6,8 +6,8 @@ package auth
 import (
 	"bytes"
 
-	"github.com/mochi-co/mqtt"
-	"github.com/mochi-co/mqtt/packets"
+	"github.com/mochi-co/mqtt/v2"
+	"github.com/mochi-co/mqtt/v2/packets"
 )
 
 // AllowHook is an authentication hook which allows connection access

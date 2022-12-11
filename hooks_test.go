@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mochi-co/mqtt/hooks/storage"
-	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/system"
+	"github.com/mochi-co/mqtt/v2/hooks/storage"
+	"github.com/mochi-co/mqtt/v2/packets"
+	"github.com/mochi-co/mqtt/v2/system"
 
 	"github.com/stretchr/testify/require"
 )

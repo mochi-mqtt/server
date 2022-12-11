@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mochi-co/mqtt/system"
+	"github.com/mochi-co/mqtt/v2/system"
 
 	"github.com/stretchr/testify/require"
 )

@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mochi-co/mqtt/hooks/storage"
-	"github.com/mochi-co/mqtt/listeners"
-	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/system"
+	"github.com/mochi-co/mqtt/v2/hooks/storage"
+	"github.com/mochi-co/mqtt/v2/listeners"
+	"github.com/mochi-co/mqtt/v2/packets"
+	"github.com/mochi-co/mqtt/v2/system"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"

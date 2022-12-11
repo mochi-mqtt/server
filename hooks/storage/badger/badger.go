@@ -8,10 +8,10 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/mochi-co/mqtt"
-	"github.com/mochi-co/mqtt/hooks/storage"
-	"github.com/mochi-co/mqtt/packets"
-	"github.com/mochi-co/mqtt/system"
+	"github.com/mochi-co/mqtt/v2"
+	"github.com/mochi-co/mqtt/v2/hooks/storage"
+	"github.com/mochi-co/mqtt/v2/packets"
+	"github.com/mochi-co/mqtt/v2/system"
 
 	"github.com/timshannon/badgerhold"
 )

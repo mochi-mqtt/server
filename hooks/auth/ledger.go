@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mochi-co/mqtt"
-	"github.com/mochi-co/mqtt/packets"
+	"github.com/mochi-co/mqtt/v2"
+	"github.com/mochi-co/mqtt/v2/packets"
 	"gopkg.in/yaml.v3"
 )
 

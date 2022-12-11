@@ -78,7 +78,7 @@ docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 mochi:latest
 Importing Mochi MQTT as a package requires just a few lines of code to get started.
 ``` go
 import (
-  "github.com/mochi-co/mqtt"
+  "github.com/mochi-co/mqtt/v2"
 )
 
 func main() {

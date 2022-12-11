@@ -8,7 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/mochi-co/mqtt/packets"
+	"github.com/mochi-co/mqtt/v2/packets"
 )
 
 var (
