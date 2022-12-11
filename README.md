@@ -19,6 +19,11 @@ MQTT stands for [MQ Telemetry Transport](https://en.wikipedia.org/wiki/MQTT). It
 ## What's new in Version 2.0.0?
 Version 2.0.0 takes all the great things we loved about Mochi MQTT v1.0.0, learns from the mistakes, and improves on the things we wished we'd had. It's a total from-scratch rewrite, designed to fully implement MQTT v5 as a first-class feature. 
 
+Don't forget to use the new v2 import paths:
+```go
+import "github.com/mochi-co/mqtt/v2"
+```
+
 - Full MQTTv5 Feature Compliance, compatibility for MQTT v3.1.1 and v3.0.0:
     - User and MQTTv5 Packet Properties
     - Topic Aliases
