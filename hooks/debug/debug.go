@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-co
 // SPDX-FileContributor: mochi-co
+
 package debug
 
 import (

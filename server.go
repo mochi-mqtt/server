@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-co
 // SPDX-FileContributor: mochi-co
+
 // package mqtt provides a high performance, fully compliant MQTT v5 broker server with v3.1.1 backward compatibility.
 package mqtt
 
