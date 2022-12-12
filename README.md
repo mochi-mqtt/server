@@ -305,13 +305,22 @@ The function signatures for all the hooks and `mqtt.Hook` interface can be found
 
 If you are building a persistent storage hook, see the existing persistent hooks for inspiration and patterns. If you are building an auth hook, you will need `OnACLCheck` and `OnConnectAuthenticate`.
 
-### Packet Injection
-It's also possible to inject custom MQTT packets directly into the runtime as though they had been received by a specific client. This special client is called an InlineClient, and it has unique privileges: it bypasses all ACL and topic validation checks, meaning it can even publish to $SYS topics. 
 
-Packet injection can be used with MQTT packet, including ping requests, subscriptions, etc. And because the Clients structs and methods are now exported, you can even inject packets on behalf of a connected client (if you have a very custom requirement).
+### Direct Publish
+To publish basic message to a topic from within the embedding application, you can use the `server.Publish(topic string, payload []byte, retain bool, qos byte) error` method.
 
 ```go
-cl := mqtt.NewInlineClient("inline", "local")
+err := server.Publish("direct/publish", []byte("packet scheduled message"), false, 0)
+```
+> The Qos byte in this case is only used to set the upper qos limit available for subscribers, as per MQTT v5 spec.
+
+### Packet Injection
+If you want more control, or want to set specific MQTT v5 properties and other values you can create your own publish packets from a client of your choice. This method allows you to inject MQTT packets (no just publish) directly into the runtime as though they had been received by a specific client. Most of the time you'll want to use the special client flag `inline=true`, as it has unique privileges: it bypasses all ACL and topic validation checks, meaning it can even publish to $SYS topics. 
+
+Packet injection can be used for any MQTT packet, including ping requests, subscriptions, etc. And because the Clients structs and methods are now exported, you can even inject packets on behalf of a connected client (if you have a very custom requirements).
+
+```go
+cl := server.NewClient(nil, "local", "inline", true)
 server.InjectPacket(cl, packets.Packet{
   FixedHeader: packets.FixedHeader{
     Type: packets.Publish,
