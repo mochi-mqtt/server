@@ -13,7 +13,7 @@ import (
 )
 
 func TestInflightSet(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 
 	r := cl.State.Inflight.Set(packets.Packet{PacketID: 1})
 	require.True(t, r)
@@ -25,7 +25,7 @@ func TestInflightSet(t *testing.T) {
 }
 
 func TestInflightGet(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	cl.State.Inflight.Set(packets.Packet{PacketID: 2})
 
 	msg, ok := cl.State.Inflight.Get(2)
@@ -34,7 +34,7 @@ func TestInflightGet(t *testing.T) {
 }
 
 func TestInflightGetAllAndImmediate(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	cl.State.Inflight.Set(packets.Packet{PacketID: 1, Created: 1})
 	cl.State.Inflight.Set(packets.Packet{PacketID: 2, Created: 2})
 	cl.State.Inflight.Set(packets.Packet{PacketID: 3, Created: 3, Expiry: -1})
@@ -56,13 +56,13 @@ func TestInflightGetAllAndImmediate(t *testing.T) {
 }
 
 func TestInflightLen(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	cl.State.Inflight.Set(packets.Packet{PacketID: 2})
 	require.Equal(t, 1, cl.State.Inflight.Len())
 }
 
 func TestInflightDelete(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 
 	cl.State.Inflight.Set(packets.Packet{PacketID: 3})
 	require.NotNil(t, cl.State.Inflight.internal[3])
@@ -163,7 +163,7 @@ func TestSendQuota(t *testing.T) {
 }
 
 func TestNextImmediate(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	cl.State.Inflight.Set(packets.Packet{PacketID: 1, Created: 1})
 	cl.State.Inflight.Set(packets.Packet{PacketID: 2, Created: 2})
 	cl.State.Inflight.Set(packets.Packet{PacketID: 3, Created: 3, Expiry: -1})

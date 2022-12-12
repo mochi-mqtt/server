@@ -22,10 +22,10 @@ const pkInfo = "packet type %v, %s"
 
 var errClientStop = errors.New("test stop")
 
-func newClient() (cl *Client, r net.Conn, w net.Conn) {
+func newTestClient() (cl *Client, r net.Conn, w net.Conn) {
 	r, w = net.Pipe()
 
-	cl = NewClient(w, &ops{
+	cl = newClient(w, &ops{
 		info:  new(system.Info),
 		hooks: new(Hooks),
 		log:   &logger,
@@ -119,34 +119,21 @@ func TestClientsGetByListener(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 
 	require.NotNil(t, cl)
 	require.NotNil(t, cl.State.Inflight.internal)
 	require.NotNil(t, cl.State.Subscriptions)
-	require.Nil(t, cl.StopCause())
-}
-
-func TestNewClientStub(t *testing.T) {
-	cl := newClientStub()
-	require.NotNil(t, cl)
-	require.NotNil(t, cl.State.Inflight.internal)
-	require.NotNil(t, cl.State.Subscriptions)
-	require.Equal(t, uint32(1), atomic.LoadUint32(&cl.State.done))
-}
-
-func TestNewInlineClient(t *testing.T) {
-	cl := NewInlineClient("inline", "local")
-	require.NotNil(t, cl)
-	require.NotNil(t, cl.State.Inflight.internal)
-	require.NotNil(t, cl.State.Subscriptions)
-	require.Equal(t, uint32(0), atomic.LoadUint32(&cl.State.done))
-	require.Equal(t, "inline", cl.ID)
-	require.Equal(t, "local", cl.Net.Remote)
+	require.NotNil(t, cl.State.TopicAliases)
+	require.Equal(t, defaultKeepalive, cl.State.keepalive)
+	require.Equal(t, defaultClientProtocolVersion, cl.Properties.ProtocolVersion)
+	require.NotNil(t, cl.Net.conn)
+	require.NotNil(t, cl.Net.bconn)
+	require.False(t, cl.Net.Inline)
 }
 
 func TestClientParseConnect(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 
 	pk := packets.Packet{
 		ProtocolVersion: 4,
@@ -183,7 +170,7 @@ func TestClientParseConnect(t *testing.T) {
 }
 
 func TestClientParseConnectOverrideWillDelay(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 
 	pk := packets.Packet{
 		ProtocolVersion: 4,
@@ -208,13 +195,13 @@ func TestClientParseConnectOverrideWillDelay(t *testing.T) {
 }
 
 func TestClientParseConnectNoID(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	cl.ParseConnect("tcp1", packets.Packet{})
 	require.NotEmpty(t, cl.ID)
 }
 
 func TestClientNextPacketID(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 
 	i, err := cl.NextPacketID()
 	require.NoError(t, err)
@@ -226,7 +213,7 @@ func TestClientNextPacketID(t *testing.T) {
 }
 
 func TestClientNextPacketIDInUse(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 
 	// skip over 2
 	cl.State.Inflight.Set(packets.Packet{PacketID: 2})
@@ -249,7 +236,7 @@ func TestClientNextPacketIDInUse(t *testing.T) {
 }
 
 func TestClientNextPacketIDExhausted(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	for i := 0; i <= 65535; i++ {
 		cl.State.Inflight.Set(packets.Packet{PacketID: uint16(i)})
 	}
@@ -261,7 +248,7 @@ func TestClientNextPacketIDExhausted(t *testing.T) {
 }
 
 func TestClientNextPacketIDOverflow(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 
 	cl.State.packetID = uint32(65534)
 
@@ -275,7 +262,7 @@ func TestClientNextPacketIDOverflow(t *testing.T) {
 }
 
 func TestClientClearInflights(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 
 	n := time.Now().Unix()
 	cl.State.Inflight.Set(packets.Packet{PacketID: 1, Expiry: n - 1})
@@ -291,7 +278,7 @@ func TestClientClearInflights(t *testing.T) {
 
 func TestClientResendInflightMessages(t *testing.T) {
 	pk1 := packets.TPacketData[packets.Puback].Get(packets.TPuback)
-	cl, r, w := newClient()
+	cl, r, w := newTestClient()
 
 	cl.State.Inflight.Set(*pk1.Packet)
 	require.Equal(t, 1, cl.State.Inflight.Len())
@@ -311,7 +298,7 @@ func TestClientResendInflightMessages(t *testing.T) {
 
 func TestClientResendInflightMessagesWriteFailure(t *testing.T) {
 	pk1 := packets.TPacketData[packets.Publish].Get(packets.TPublishQos1Dup)
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	r.Close()
 
 	cl.State.Inflight.Set(*pk1.Packet)
@@ -323,19 +310,19 @@ func TestClientResendInflightMessagesWriteFailure(t *testing.T) {
 }
 
 func TestClientResendInflightMessagesNoMessages(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	err := cl.ResendInflightMessages(true)
 	require.NoError(t, err)
 }
 
 func TestClientRefreshDeadline(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	cl.refreshDeadline(10)
 	require.NotNil(t, cl.Net.conn) // how do we check net.Conn deadline?
 }
 
 func TestClientReadFixedHeader(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 
 	defer cl.Stop(errClientStop)
 	go func() {
@@ -350,7 +337,7 @@ func TestClientReadFixedHeader(t *testing.T) {
 }
 
 func TestClientReadFixedHeaderDecodeError(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 
 	go func() {
@@ -364,7 +351,7 @@ func TestClientReadFixedHeaderDecodeError(t *testing.T) {
 }
 
 func TestClientReadFixedHeaderReadEOF(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 
 	go func() {
@@ -378,7 +365,7 @@ func TestClientReadFixedHeaderReadEOF(t *testing.T) {
 }
 
 func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 
 	go func() {
@@ -392,7 +379,7 @@ func TestClientReadFixedHeaderNoLengthTerminator(t *testing.T) {
 }
 
 func TestClientReadOK(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 	go func() {
 		r.Write([]byte{
@@ -446,7 +433,7 @@ func TestClientReadOK(t *testing.T) {
 }
 
 func TestClientReadDone(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 	cl.State.done = 1
 
@@ -461,15 +448,16 @@ func TestClientReadDone(t *testing.T) {
 }
 
 func TestClientStop(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	cl.Stop(nil)
 	require.Equal(t, nil, cl.State.stopCause.Load())
 	require.Equal(t, time.Now().Unix(), cl.State.disconnected)
 	require.Equal(t, uint32(1), cl.State.done)
+	require.Equal(t, nil, cl.StopCause())
 }
 
 func TestClientReadFixedHeaderError(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 	go func() {
 		r.Write([]byte{
@@ -486,7 +474,7 @@ func TestClientReadFixedHeaderError(t *testing.T) {
 }
 
 func TestClientReadReadHandlerErr(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 	go func() {
 		r.Write([]byte{
@@ -506,7 +494,7 @@ func TestClientReadReadHandlerErr(t *testing.T) {
 }
 
 func TestClientReadReadPacketOK(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 	go func() {
 		r.Write([]byte{
@@ -538,7 +526,7 @@ func TestClientReadReadPacketOK(t *testing.T) {
 }
 
 func TestClientReadPacket(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 
 	for _, tx := range pkTable {
@@ -571,9 +559,17 @@ func TestClientReadPacket(t *testing.T) {
 	}
 }
 
+func TestClientReadPacketInvalidTypeError(t *testing.T) {
+	cl, _, _ := newTestClient()
+	cl.Net.conn.Close()
+	_, err := cl.ReadPacket(&packets.FixedHeader{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid packet type")
+}
+
 func TestClientWritePacket(t *testing.T) {
 	for _, tt := range pkTable {
-		cl, r, _ := newClient()
+		cl, r, _ := newTestClient()
 		defer cl.Stop(errClientStop)
 
 		cl.Properties.ProtocolVersion = tt.Packet.ProtocolVersion
@@ -613,7 +609,7 @@ func TestClientWritePacket(t *testing.T) {
 }
 
 func TestWriteClientOversizePacket(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	cl.Properties.Props.MaximumPacketSize = 2
 	pk := *packets.TPacketData[packets.Publish].Get(packets.TPublishDropOversize).Packet
 	err := cl.WritePacket(pk)
@@ -622,7 +618,7 @@ func TestWriteClientOversizePacket(t *testing.T) {
 }
 
 func TestClientReadPacketReadingError(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 	go func() {
 		r.Write([]byte{
@@ -642,7 +638,7 @@ func TestClientReadPacketReadingError(t *testing.T) {
 }
 
 func TestClientReadPacketReadUnknown(t *testing.T) {
-	cl, r, _ := newClient()
+	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
 	go func() {
 		r.Write([]byte{
@@ -661,7 +657,7 @@ func TestClientReadPacketReadUnknown(t *testing.T) {
 }
 
 func TestClientWritePacketWriteNoConn(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	cl.Stop(errClientStop)
 
 	err := cl.WritePacket(*pkTable[1].Packet)
@@ -670,7 +666,7 @@ func TestClientWritePacketWriteNoConn(t *testing.T) {
 }
 
 func TestClientWritePacketWriteError(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	cl.Net.conn.Close()
 
 	err := cl.WritePacket(*pkTable[1].Packet)
@@ -678,7 +674,7 @@ func TestClientWritePacketWriteError(t *testing.T) {
 }
 
 func TestClientWritePacketInvalidPacket(t *testing.T) {
-	cl, _, _ := newClient()
+	cl, _, _ := newTestClient()
 	err := cl.WritePacket(packets.Packet{})
 	require.Error(t, err)
 }

@@ -52,15 +52,30 @@ func main() {
 	// `server.Publish` method. Subscribe to `direct/publish` using your
 	// MQTT client to see the messages.
 	go func() {
-		cl := mqtt.NewInlineClient("inline", "local")
-		for range time.Tick(time.Second * 10) {
-			server.InjectPacket(cl, packets.Packet{
+		cl := server.NewClient(nil, "local", "inline", true)
+		for range time.Tick(time.Second * 1) {
+			err := server.InjectPacket(cl, packets.Packet{
 				FixedHeader: packets.FixedHeader{
 					Type: packets.Publish,
 				},
 				TopicName: "direct/publish",
-				Payload:   []byte("scheduled message"),
+				Payload:   []byte("injected scheduled message"),
 			})
+			if err != nil {
+				server.Log.Error().Err(err).Msg("server.InjectPacket")
+			}
+			server.Log.Info().Msgf("main.go injected packet to direct/publish")
+		}
+	}()
+
+	// There is also a shorthand convenience function, Publish, for easily sending
+	// publish packets if you are not concerned with creating your own packets.
+	go func() {
+		for range time.Tick(time.Second * 5) {
+			err := server.Publish("direct/publish", []byte("packet scheduled message"), false, 0)
+			if err != nil {
+				server.Log.Error().Err(err).Msg("server.Publish")
+			}
 			server.Log.Info().Msgf("main.go issued direct message to direct/publish")
 		}
 	}()

@@ -146,14 +146,10 @@ type ClientState struct {
 	keepalive     uint16         // the number of seconds the connection can wait
 }
 
-// NewClient returns a new instance of Client.
-func NewClient(c net.Conn, o *ops) *Client {
+// newClient returns a new instance of Client. This is almost exclusively used by Server
+// for creating new clients, but it lives here because it's not dependent.
+func newClient(c net.Conn, o *ops) *Client {
 	cl := &Client{
-		Net: ClientConnection{
-			conn:   c,
-			bconn:  bufio.NewReadWriter(bufio.NewReader(c), bufio.NewWriter(c)),
-			Remote: c.RemoteAddr().String(),
-		},
 		State: ClientState{
 			Inflight:      NewInflights(),
 			Subscriptions: NewSubscriptions(),
@@ -166,44 +162,17 @@ func NewClient(c net.Conn, o *ops) *Client {
 		ops: o,
 	}
 
+	if c != nil {
+		cl.Net = ClientConnection{
+			conn:   c,
+			bconn:  bufio.NewReadWriter(bufio.NewReader(c), bufio.NewWriter(c)),
+			Remote: c.RemoteAddr().String(),
+		}
+	}
+
 	cl.refreshDeadline(cl.State.keepalive)
 
 	return cl
-}
-
-// NewInlineClient returns a client used when publishing from the embedding system.
-func NewInlineClient(id, remote string) *Client {
-	return &Client{
-		ID: id,
-		Net: ClientConnection{
-			Remote: remote,
-			Inline: true,
-		},
-		State: ClientState{
-			Inflight:      NewInflights(),
-			Subscriptions: NewSubscriptions(),
-			TopicAliases:  NewTopicAliases(0),
-		},
-		Properties: ClientProperties{
-			ProtocolVersion: defaultClientProtocolVersion, // default protocol version
-		},
-	}
-}
-
-// newClientStub returns an instance of Client with minimal initializations, such as
-// restoring client data from a db. In particular, the client is marked as offline (done).
-func newClientStub() *Client {
-	return &Client{
-		State: ClientState{
-			Inflight:      NewInflights(),
-			Subscriptions: NewSubscriptions(),
-			TopicAliases:  NewTopicAliases(0),
-			done:          1,
-		},
-		Properties: ClientProperties{
-			ProtocolVersion: defaultClientProtocolVersion, // default protocol version
-		},
-	}
 }
 
 // ParseConnect parses the connect parameters and properties for a client.
