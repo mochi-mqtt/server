@@ -52,7 +52,7 @@ func main() {
 	// `server.Publish` method. Subscribe to `direct/publish` using your
 	// MQTT client to see the messages.
 	go func() {
-		cl := mqtt.NewInlineClient("inline", "local")
+		cl := server.NewInlineClient("inline", "local")
 		for range time.Tick(time.Second * 10) {
 			server.InjectPacket(cl, packets.Packet{
 				FixedHeader: packets.FixedHeader{

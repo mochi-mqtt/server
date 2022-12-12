@@ -146,8 +146,8 @@ type ClientState struct {
 	keepalive     uint16         // the number of seconds the connection can wait
 }
 
-// NewClient returns a new instance of Client.
-func NewClient(c net.Conn, o *ops) *Client {
+// newClientTest returns a new instance of Client.
+func newClientTest(c net.Conn, o *ops) *Client {
 	cl := &Client{
 		Net: ClientConnection{
 			conn:   c,
@@ -171,8 +171,63 @@ func NewClient(c net.Conn, o *ops) *Client {
 	return cl
 }
 
+// NewClient returns a new instance of Client.
+func (s *Server) NewClient(c net.Conn) *Client {
+	cl := &Client{
+		Net: ClientConnection{
+			conn:   c,
+			bconn:  bufio.NewReadWriter(bufio.NewReader(c), bufio.NewWriter(c)),
+			Remote: c.RemoteAddr().String(),
+		},
+		State: ClientState{
+			Inflight:      NewInflights(),
+			Subscriptions: NewSubscriptions(),
+			TopicAliases:  NewTopicAliases(s.Options.Capabilities.TopicAliasMaximum),
+			keepalive:     defaultKeepalive,
+		},
+		Properties: ClientProperties{
+			ProtocolVersion: defaultClientProtocolVersion, // default protocol version
+		},
+		ops: &ops{
+			capabilities: s.Options.Capabilities,
+			info:         s.Info,
+			hooks:        s.hooks,
+			log:          s.Log,
+		},
+	}
+
+	cl.refreshDeadline(cl.State.keepalive)
+
+	return cl
+}
+
 // NewInlineClient returns a client used when publishing from the embedding system.
-func NewInlineClient(id, remote string) *Client {
+func (s *Server) NewInlineClient(id, remote string) *Client {
+	return &Client{
+		ID: id,
+		Net: ClientConnection{
+			Remote: remote,
+			Inline: true,
+		},
+		State: ClientState{
+			Inflight:      NewInflights(),
+			Subscriptions: NewSubscriptions(),
+			TopicAliases:  NewTopicAliases(0),
+		},
+		Properties: ClientProperties{
+			ProtocolVersion: defaultClientProtocolVersion, // default protocol version
+		},
+		ops: &ops{
+			capabilities: s.Options.Capabilities,
+			info:         s.Info,
+			hooks:        s.hooks,
+			log:          s.Log,
+		},
+	}
+}
+
+// newInlineClientTest returns a client used when publishing from the embedding system.
+func newInlineClientTest(id, remote string) *Client {
 	return &Client{
 		ID: id,
 		Net: ClientConnection{

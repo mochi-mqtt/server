@@ -25,7 +25,7 @@ var errClientStop = errors.New("test stop")
 func newClient() (cl *Client, r net.Conn, w net.Conn) {
 	r, w = net.Pipe()
 
-	cl = NewClient(w, &ops{
+	cl = newClientTest(w, &ops{
 		info:  new(system.Info),
 		hooks: new(Hooks),
 		log:   &logger,
@@ -136,7 +136,7 @@ func TestNewClientStub(t *testing.T) {
 }
 
 func TestNewInlineClient(t *testing.T) {
-	cl := NewInlineClient("inline", "local")
+	cl := newInlineClientTest("inline", "local")
 	require.NotNil(t, cl)
 	require.NotNil(t, cl.State.Inflight.internal)
 	require.NotNil(t, cl.State.Subscriptions)

@@ -311,7 +311,7 @@ It's also possible to inject custom MQTT packets directly into the runtime as th
 Packet injection can be used with MQTT packet, including ping requests, subscriptions, etc. And because the Clients structs and methods are now exported, you can even inject packets on behalf of a connected client (if you have a very custom requirement).
 
 ```go
-cl := mqtt.NewInlineClient("inline", "local")
+cl := server.NewInlineClient("inline", "local")
 server.InjectPacket(cl, packets.Packet{
   FixedHeader: packets.FixedHeader{
     Type: packets.Publish,

@@ -282,13 +282,7 @@ func (s *Server) eventLoop() {
 
 // EstablishConnection establishes a new client when a listener accepts a new connection.
 func (s *Server) EstablishConnection(lid string, c net.Conn) error {
-	cl := NewClient(c, &ops{ // [MQTT-3.1.2-6] implicit
-		capabilities: s.Options.Capabilities,
-		info:         s.Info,
-		hooks:        s.hooks,
-		log:          s.Log,
-	})
-
+	cl := s.NewClient(c)
 	return s.attachClient(cl, lid)
 }
 
