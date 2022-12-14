@@ -7,6 +7,7 @@ package listeners
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -137,25 +138,35 @@ type wsConn struct {
 }
 
 // Read reads the next span of bytes from the websocket connection and returns the number of bytes read.
-func (ws *wsConn) Read(p []byte) (n int, err error) {
+func (ws *wsConn) Read(p []byte) (int, error) {
 	op, r, err := ws.c.NextReader()
 	if err != nil {
-		return
+		return 0, err
 	}
 
 	if op != websocket.BinaryMessage {
 		err = ErrInvalidMessage
-		return
+		return 0, err
 	}
 
-	return r.Read(p)
+	var n, br int
+	for {
+		br, err = r.Read(p[n:])
+		n += br
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return n, err
+		}
+	}
 }
 
 // Write writes bytes to the websocket connection.
-func (ws *wsConn) Write(p []byte) (n int, err error) {
-	err = ws.c.WriteMessage(websocket.BinaryMessage, p)
+func (ws *wsConn) Write(p []byte) (int, error) {
+	err := ws.c.WriteMessage(websocket.BinaryMessage, p)
 	if err != nil {
-		return
+		return 0, err
 	}
 
 	return len(p), nil
