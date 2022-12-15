@@ -351,7 +351,7 @@ func (h *Hooks) OnUnsubscribed(cl *Client, pk packets.Packet) {
 	}
 }
 
-// OnPublish is called when a client publishes a message. This method differs from OnMessage
+// OnPublish is called when a client publishes a message. This method differs from OnPublished
 // in that it allows you to modify you to modify the incoming packet before it is processed.
 // The return values of the hook methods are passed-through in the order the hooks were attached.
 func (h *Hooks) OnPublish(cl *Client, pk packets.Packet) (pkx packets.Packet, err error) {

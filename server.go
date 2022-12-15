@@ -26,10 +26,10 @@ import (
 )
 
 const (
-	Version                        = "2.0.0"  // the current server version.
-	defaultSysTopicInterval int64  = 1        // the interval between $SYS topic publishes
-	defaultFanPoolSize      uint64 = 64       // the number of concurrent workers in the pool
-	defaultFanPoolQueueSize uint64 = 32 * 128 // the capacity of each worker queue
+	Version                        = "2.0.5" // the current server version.
+	defaultSysTopicInterval int64  = 1       // the interval between $SYS topic publishes
+	defaultFanPoolSize      uint64 = 32      // the number of concurrent workers in the pool
+	defaultFanPoolQueueSize uint64 = 1024    // the capacity of each worker queue
 )
 
 var (
@@ -697,6 +697,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 			s.publishToSubscribers(pk)
 		})
 
+		s.hooks.OnPublished(cl, pk)
 		return nil
 	}
 
@@ -727,8 +728,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		s.publishToSubscribers(pk)
 	})
 
-	s.hooks.OnPublish(cl, pk)
-
+	s.hooks.OnPublished(cl, pk)
 	return nil
 }
 
