@@ -350,6 +350,22 @@ func TestClientReadFixedHeaderDecodeError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestClientReadFixedHeaderPacketOversized(t *testing.T) {
+	cl, r, _ := newTestClient()
+	cl.ops.capabilities.MaximumPacketSize = 2
+	defer cl.Stop(errClientStop)
+
+	go func() {
+		r.Write(packets.TPacketData[packets.Publish].Get(packets.TPublishQos1Dup).RawBytes)
+		r.Close()
+	}()
+
+	fh := new(packets.FixedHeader)
+	err := cl.ReadFixedHeader(fh)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrPacketTooLarge)
+}
+
 func TestClientReadFixedHeaderReadEOF(t *testing.T) {
 	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)

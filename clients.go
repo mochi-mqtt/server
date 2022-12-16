@@ -383,6 +383,10 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 		return err
 	}
 
+	if cl.ops.capabilities.MaximumPacketSize > 0 && uint32(fh.Remaining+1) > cl.ops.capabilities.MaximumPacketSize {
+		return packets.ErrPacketTooLarge // [MQTT-3.2.2-15]
+	}
+
 	atomic.AddInt64(&cl.ops.info.BytesReceived, int64(bu+1))
 	return nil
 }
