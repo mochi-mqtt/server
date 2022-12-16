@@ -2291,6 +2291,21 @@ func TestServerRecievePacketDisconnectClientZeroNonZero(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectZeroNonZeroExpiry).RawBytes, buf)
 }
 
+func TestServerRecievePacketDisconnectClient(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+
+	go func() {
+		err := s.DisconnectClient(cl, packets.CodeDisconnect)
+		require.NoError(t, err)
+		w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes, buf)
+}
+
 func TestServerProcessPacketDisconnect(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()

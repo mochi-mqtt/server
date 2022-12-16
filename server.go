@@ -1129,6 +1129,9 @@ func (s *Server) DisconnectClient(cl *Client, code packets.Code) error {
 	err := cl.WritePacket(out)
 	if !s.Options.Capabilities.Compatibilities.PassiveClientDisconnect {
 		cl.Stop(code)
+		if code.Code >= packets.ErrUnspecifiedError.Code {
+			return code
+		}
 	}
 
 	return err
