@@ -376,7 +376,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryIntervalFlag && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
 	s.hooks.OnDisconnect(cl, err, expire)
 	if expire {
-		s.unsubscribeClient(cl)
+		s.UnsubscribeClient(cl)
 		cl.ClearInflights(math.MaxInt64, 0)
 		s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
 	}
@@ -455,7 +455,7 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 		defer existing.Unlock()
 		s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                 // [MQTT-3.1.4-3]
 		if pk.Connect.Clean || (existing.Properties.Clean && cl.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
-			s.unsubscribeClient(existing)
+			s.UnsubscribeClient(existing)
 			existing.ClearInflights(math.MaxInt64, 0)
 			return false // [MQTT-3.2.2-3]
 		}
@@ -1072,14 +1072,20 @@ func (s *Server) processUnsubscribe(cl *Client, pk packets.Packet) error {
 	return cl.WritePacket(ack)
 }
 
-// unsubscribeClient unsubscribes a client from all of their subscriptions.
-func (s *Server) unsubscribeClient(cl *Client) {
-	for k := range cl.State.Subscriptions.GetAll() {
+// UnsubscribeClient unsubscribes a client from all of their subscriptions.
+func (s *Server) UnsubscribeClient(cl *Client) {
+	i := 0
+	filterMap := cl.State.Subscriptions.GetAll()
+	filters := make([]packets.Subscription, len(filterMap))
+	for k, v := range filterMap {
 		cl.State.Subscriptions.Delete(k)
 		if s.Topics.Unsubscribe(k, cl.ID) {
 			atomic.AddInt64(&s.Info.Subscriptions, -1)
 		}
+		filters[i] = v
+		i++
 	}
+	s.hooks.OnUnsubscribed(cl, packets.Packet{Filters: filters})
 }
 
 // processAuth processes an Auth packet.

@@ -844,7 +844,7 @@ func TestServerUnsubscribeClient(t *testing.T) {
 	s.Topics.Subscribe(cl.ID, pk)
 	subs := s.Topics.Subscribers("a/b/c")
 	require.Equal(t, 1, len(subs.Subscriptions))
-	s.unsubscribeClient(cl)
+	s.UnsubscribeClient(cl)
 	subs = s.Topics.Subscribers("a/b/c")
 	require.Equal(t, 0, len(subs.Subscriptions))
 }
