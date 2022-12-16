@@ -1126,12 +1126,12 @@ func (s *Server) DisconnectClient(cl *Client, code packets.Code) error {
 
 	// We already have a code we are using to disconnect the client, so we are not
 	// interested if the write packet fails due to a closed connection (as we are closing it).
-	_ = cl.WritePacket(out)
+	err := cl.WritePacket(out)
 	if !s.Options.Capabilities.Compatibilities.PassiveClientDisconnect {
 		cl.Stop(code)
 	}
 
-	return code
+	return err
 }
 
 // publishSysTopics publishes the current values to the server $SYS topics.
