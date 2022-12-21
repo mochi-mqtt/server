@@ -113,6 +113,7 @@ Examples of running the broker with various configurations can be found in the [
 The server comes with a variety of pre-packaged network listeners which allow the broker to accept connections on different protocols. The current listeners are:
 
 - `listeners.NewTCP(...)` - A TCP listener.
+- `listeners.NewUnixSock(...)` - A Unix Socket listener.
 - `listeners.NewWebsocket(...)` A Websocket listener.
 - `listeners.NewHTTPStats(...)` An HTTP $SYS info dashboard.
 - Use the `listeners.Listener` interface to develop new listeners. If you do, please let us know!
