@@ -1460,8 +1460,10 @@ func (s *Server) clearExpiredRetainedMessages(now int64) {
 // clearExpiredInflights deletes any inflight messages which have expired.
 func (s *Server) clearExpiredInflights(now int64) {
 	for _, client := range s.Clients.GetAll() {
-		if d := client.ClearInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); d > 0 {
-			s.hooks.OnExpireInflights(client, now)
+		if deleted := client.ClearInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); len(deleted) > 0 {
+			for _, id := range deleted {
+				s.hooks.OnQosDropped(client, packets.Packet{PacketID: id})
+			}
 		}
 	}
 }

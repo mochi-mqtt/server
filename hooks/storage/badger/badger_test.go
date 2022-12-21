@@ -5,13 +5,11 @@
 package badger
 
 import (
-	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/asdine/storm/v3"
 	"github.com/mochi-co/mqtt/v2"
 	"github.com/mochi-co/mqtt/v2/hooks/storage"
 	"github.com/mochi-co/mqtt/v2/packets"
@@ -168,6 +166,21 @@ func TestOnClientExpired(t *testing.T) {
 	err = h.db.Get(clientKey, r)
 	require.Error(t, err)
 	require.ErrorIs(t, badgerhold.ErrNotFound, err)
+}
+
+func TestOnClientExpiredNoDB(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(&logger, nil)
+	h.OnClientExpired(client)
+}
+
+func TestOnClientExpiredClosedDB(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(&logger, nil)
+	err := h.Init(nil)
+	require.NoError(t, err)
+	teardown(t, h.config.Path, h)
+	h.OnClientExpired(client)
 }
 
 func TestOnSessionEstablishedNoDB(t *testing.T) {
@@ -333,6 +346,21 @@ func TestOnRetainedExpired(t *testing.T) {
 	require.ErrorIs(t, err, badgerhold.ErrNotFound)
 }
 
+func TestOnRetainExpiredNoDB(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(&logger, nil)
+	h.OnRetainedExpired("a/b/c")
+}
+
+func TestOnRetainExpiredClosedDB(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(&logger, nil)
+	err := h.Init(nil)
+	require.NoError(t, err)
+	teardown(t, h.config.Path, h)
+	h.OnRetainedExpired("a/b/c")
+}
+
 func TestOnRetainMessageNoDB(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(&logger, nil)
@@ -417,48 +445,6 @@ func TestOnQosDroppedNoDB(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(&logger, nil)
 	h.OnQosDropped(client, packets.Packet{})
-}
-
-func TestOnExpireInflights(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(&logger, nil)
-
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
-
-	err = h.db.Upsert("i1", &storage.Message{ID: "i1", T: storage.InflightKey, Created: time.Now().Unix() - 1})
-	require.NoError(t, err)
-	err = h.db.Upsert("i2", &storage.Message{ID: "i2", T: storage.InflightKey, Created: time.Now().Unix() - 20})
-	require.NoError(t, err)
-	err = h.db.Upsert("i3", &storage.Message{ID: "i3", T: storage.InflightKey})
-	require.NoError(t, err)
-
-	h.OnExpireInflights(client, time.Now().Unix()-10)
-
-	var v []storage.Message
-	err = h.db.Find(&v, badgerhold.Where("T").Eq(storage.InflightKey))
-	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		return
-	}
-
-	require.Len(t, v, 1)
-	require.Equal(t, "i1", v[0].ID)
-}
-
-func TestOnExpireInflightsNoDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(&logger, nil)
-	h.OnExpireInflights(client, time.Now().Unix()-10)
-}
-
-func TestOnExpireInflightsClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(&logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
-	h.OnExpireInflights(client, time.Now().Unix()-10)
 }
 
 func TestOnSysInfoTick(t *testing.T) {

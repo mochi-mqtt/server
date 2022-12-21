@@ -47,7 +47,6 @@ const (
 	OnWillSent
 	OnClientExpired
 	OnRetainedExpired
-	OnExpireInflights
 	StoredClients
 	StoredSubscriptions
 	StoredInflightMessages
@@ -96,7 +95,6 @@ type Hook interface {
 	OnWillSent(cl *Client, pk packets.Packet)
 	OnClientExpired(cl *Client)
 	OnRetainedExpired(filter string)
-	OnExpireInflights(cl *Client, expiry int64)
 	StoredClients() ([]storage.Client, error)
 	StoredSubscriptions() ([]storage.Subscription, error)
 	StoredInflightMessages() ([]storage.Message, error)
@@ -414,8 +412,8 @@ func (h *Hooks) OnQosComplete(cl *Client, pk packets.Packet) {
 }
 
 // OnQosDropped is called the Qos flow for a message expires. In other words, when
-// an inflight message expires or is abandoned.
-// It is typically used to delete an inflight message from a store.
+// an inflight message expires or is abandoned. It is typically used to delete an
+// inflight message from a store.
 func (h *Hooks) OnQosDropped(cl *Client, pk packets.Packet) {
 	for _, hook := range h.internal {
 		if hook.Provides(OnQosDropped) {
@@ -601,19 +599,6 @@ func (h *Hooks) OnACLCheck(cl *Client, topic string, write bool) bool {
 	return false
 }
 
-// OnExpireInflights is called when the server issues a clear request for expired
-// inflight messages. Expiry should be the time after which the message is no longer
-// valid (usually some time in the past). A message has expired if it's created time
-// is older than time.Now() minus Inflight TTL. This method can be used to expire
-// old inflight messages in a persistent store which doesnt support per-item TTL.
-func (h *Hooks) OnExpireInflights(cl *Client, expiry int64) {
-	for _, hook := range h.internal {
-		if hook.Provides(OnExpireInflights) {
-			hook.OnExpireInflights(cl, expiry)
-		}
-	}
-}
-
 // HookBase provides a set of default methods for each hook. It should be embedded in
 // all hooks.
 type HookBase struct {
@@ -754,9 +739,6 @@ func (h *HookBase) OnClientExpired(cl *Client) {}
 
 // OnRetainedExpired is called when a retained message for a topic has expired.
 func (h *HookBase) OnRetainedExpired(topic string) {}
-
-// OnExpireInflights is called when the server issues a clear request for expired inflight messages.
-func (h *HookBase) OnExpireInflights(cl *Client, expiry int64) {}
 
 // StoredClients returns all clients from a store.
 func (h *HookBase) StoredClients() (v []storage.Client, err error) {
