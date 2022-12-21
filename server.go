@@ -962,7 +962,7 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 		code = packets.ErrPacketIdentifierInUse
 	}
 
-	existedMarks := make([]bool, len(pk.Filters))
+	filterExisted := make([]bool, len(pk.Filters))
 	reasonCodes := make([]byte, len(pk.Filters))
 	for i, sub := range pk.Filters {
 		if code != packets.CodeSuccess {
@@ -987,8 +987,8 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 			if sub.Qos > s.Options.Capabilities.MaximumQos {
 				sub.Qos = s.Options.Capabilities.MaximumQos // [MQTT-3.2.2-9]
 			}
-			
-                        existedMarks[i] = !isNew
+
+			filterExisted[i] = !isNew
 			reasonCodes[i] = sub.Qos // [MQTT-3.9.3-1] [MQTT-3.8.4-7]
 		}
 
@@ -1023,7 +1023,7 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 			continue
 		}
 
-		s.publishRetainedToClient(cl, sub, existedMarks[i])
+		s.publishRetainedToClient(cl, sub, filterExisted[i])
 	}
 
 	return nil
@@ -1460,8 +1460,10 @@ func (s *Server) clearExpiredRetainedMessages(now int64) {
 // clearExpiredInflights deletes any inflight messages which have expired.
 func (s *Server) clearExpiredInflights(now int64) {
 	for _, client := range s.Clients.GetAll() {
-		if d := client.ClearInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); d > 0 {
-			s.hooks.OnExpireInflights(client, now)
+		if deleted := client.ClearInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); len(deleted) > 0 {
+			for _, id := range deleted {
+				s.hooks.OnQosDropped(client, packets.Packet{PacketID: id})
+			}
 		}
 	}
 }

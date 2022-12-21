@@ -80,7 +80,6 @@ func (h *Hook) Provides(b byte) bool {
 		mqtt.OnSysInfoTick,
 		mqtt.OnClientExpired,
 		mqtt.OnRetainedExpired,
-		mqtt.OnExpireInflights,
 		mqtt.StoredClients,
 		mqtt.StoredInflightMessages,
 		mqtt.StoredRetainedMessages,
@@ -348,32 +347,13 @@ func (h *Hook) OnSysInfoTick(sys *system.Info) {
 	}
 }
 
-// OnExpireInflights removes all inflight messages which have passed the provided expiry time.
-func (h *Hook) OnExpireInflights(cl *mqtt.Client, expiry int64) {
+// OnRetainedExpired deletes expired retained messages from the store.
+func (h *Hook) OnRetainedExpired(filter string) {
 	if h.db == nil {
 		h.Log.Error().Err(storage.ErrDBFileNotOpen)
 		return
 	}
 
-	var v []storage.Message
-	err := h.db.Find(&v, badgerhold.Where("T").Eq(storage.InflightKey))
-	if err != nil && !errors.Is(err, badgerhold.ErrNotFound) {
-		h.Log.Error().Err(err).Str("client", cl.ID).Msg("failed to read inflight data")
-		return
-	}
-
-	for _, m := range v {
-		if m.Created < expiry || m.Created == 0 {
-			err := h.db.Delete(m.ID, new(storage.Message))
-			if err != nil {
-				h.Log.Error().Err(err).Interface("data", m.ID).Msg("failed to delete inflight message data")
-			}
-		}
-	}
-}
-
-// OnRetainedExpired deletes expired retained messages from the store.
-func (h *Hook) OnRetainedExpired(filter string) {
 	err := h.db.Delete(retainedKey(filter), new(storage.Message))
 	if err != nil {
 		h.Log.Error().Err(err).Str("id", retainedKey(filter)).Msg("failed to delete expired retained message data")
@@ -382,6 +362,11 @@ func (h *Hook) OnRetainedExpired(filter string) {
 
 // OnClientExpired deleted expired clients from the store.
 func (h *Hook) OnClientExpired(cl *mqtt.Client) {
+	if h.db == nil {
+		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		return
+	}
+
 	err := h.db.Delete(clientKey(cl), new(storage.Client))
 	if err != nil {
 		h.Log.Error().Err(err).Str("id", clientKey(cl)).Msg("failed to delete expired client data")

@@ -272,7 +272,9 @@ func TestClientClearInflights(t *testing.T) {
 	cl.State.Inflight.Set(packets.Packet{PacketID: 7, Created: n})
 	require.Equal(t, 5, cl.State.Inflight.Len())
 
-	cl.ClearInflights(n, 4)
+	deleted := cl.ClearInflights(n, 4)
+	require.Len(t, deleted, 3)
+	require.ElementsMatch(t, []uint16{1, 2, 5}, deleted)
 	require.Equal(t, 2, cl.State.Inflight.Len())
 }
 

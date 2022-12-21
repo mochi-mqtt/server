@@ -296,7 +296,6 @@ The function signatures for all the hooks and `mqtt.Hook` interface can be found
 | OnWillSent | Called when an LWT message has been issued from a disconnecting client. | 
 | OnClientExpired | Called when a client session has expired and should be deleted. | 
 | OnRetainedExpired | Called when a retained message has expired and should be deleted. | 
-| OnExpireInflights | Called when the server issues a clear request for expired inflight messages.| 
 | StoredClients |  Returns clients, eg. from a persistent store. | 
 | StoredSubscriptions |  Returns client subscriptions, eg. from a persistent store. | 
 | StoredInflightMessages | Returns inflight messages, eg. from a persistent store.  | 

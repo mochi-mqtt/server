@@ -5,7 +5,6 @@
 package bolt
 
 import (
-	"errors"
 	"os"
 	"testing"
 	"time"
@@ -212,6 +211,21 @@ func TestOnClientExpired(t *testing.T) {
 	require.ErrorIs(t, storm.ErrNotFound, err)
 }
 
+func TestOnClientExpiredClosedDB(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(&logger, nil)
+	err := h.Init(nil)
+	require.NoError(t, err)
+	teardown(t, h.config.Path, h)
+	h.OnClientExpired(client)
+}
+
+func TestOnClientExpiredNoDB(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(&logger, nil)
+	h.OnClientExpired(client)
+}
+
 func TestOnDisconnectNoDB(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(&logger, nil)
@@ -341,6 +355,21 @@ func TestOnRetainedExpired(t *testing.T) {
 	require.Equal(t, storm.ErrNotFound, err)
 }
 
+func TestOnRetainedExpiredClosedDB(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(&logger, nil)
+	err := h.Init(nil)
+	require.NoError(t, err)
+	teardown(t, h.config.Path, h)
+	h.OnRetainedExpired("a/b/c")
+}
+
+func TestOnRetainedExpiredNoDB(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(&logger, nil)
+	h.OnRetainedExpired("a/b/c")
+}
+
 func TestOnRetainMessageNoDB(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(&logger, nil)
@@ -425,48 +454,6 @@ func TestOnQosDroppedNoDB(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(&logger, nil)
 	h.OnQosDropped(client, packets.Packet{})
-}
-
-func TestOnExpireInflights(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(&logger, nil)
-
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
-
-	err = h.db.Save(&storage.Message{ID: "i1", T: storage.InflightKey, Created: time.Now().Unix() - 1})
-	require.NoError(t, err)
-	err = h.db.Save(&storage.Message{ID: "i2", T: storage.InflightKey, Created: time.Now().Unix() - 20})
-	require.NoError(t, err)
-	err = h.db.Save(&storage.Message{ID: "i3", T: storage.InflightKey})
-	require.NoError(t, err)
-
-	h.OnExpireInflights(client, time.Now().Unix()-10)
-
-	var v []storage.Message
-	err = h.db.Find("T", storage.InflightKey, &v)
-	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		return
-	}
-
-	require.Len(t, v, 1)
-	require.Equal(t, "i1", v[0].ID)
-}
-
-func TestOnExpireInflightsClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(&logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
-	h.OnExpireInflights(client, time.Now().Unix()-10)
-}
-
-func TestOnExpireInflightsNoDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(&logger, nil)
-	h.OnExpireInflights(client, time.Now().Unix()-10)
 }
 
 func TestOnSysInfoTick(t *testing.T) {
