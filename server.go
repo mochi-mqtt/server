@@ -962,7 +962,7 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 		code = packets.ErrPacketIdentifierInUse
 	}
 
-	existed := false
+	existedMarks := make([]bool, len(pk.Filters))
 	reasonCodes := make([]byte, len(pk.Filters))
 	for i, sub := range pk.Filters {
 		if code != packets.CodeSuccess {
@@ -978,8 +978,8 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 		} else if sub.NoLocal && IsSharedFilter(sub.Filter) {
 			reasonCodes[i] = packets.ErrProtocolViolationInvalidSharedNoLocal.Code // [MQTT-3.8.3-4]
 		} else {
-			existed = !s.Topics.Subscribe(cl.ID, sub) // [MQTT-3.8.4-3]
-			if !existed {
+			isNew := s.Topics.Subscribe(cl.ID, sub) // [MQTT-3.8.4-3]
+			if isNew {
 				atomic.AddInt64(&s.Info.Subscriptions, 1)
 			}
 			cl.State.Subscriptions.Add(sub.Filter, sub) // [MQTT-3.2.2-10]
@@ -987,7 +987,8 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 			if sub.Qos > s.Options.Capabilities.MaximumQos {
 				sub.Qos = s.Options.Capabilities.MaximumQos // [MQTT-3.2.2-9]
 			}
-
+			
+                        existedMarks[i] = !isNew
 			reasonCodes[i] = sub.Qos // [MQTT-3.9.3-1] [MQTT-3.8.4-7]
 		}
 
@@ -1022,7 +1023,7 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 			continue
 		}
 
-		s.publishRetainedToClient(cl, sub, existed)
+		s.publishRetainedToClient(cl, sub, existedMarks[i])
 	}
 
 	return nil
