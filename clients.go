@@ -477,8 +477,8 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		pk.Mods.DisallowProblemInfo = true // [MQTT-3.1.2-29] strict, no problem info on any packet if set
 	}
 
-	if cl.Properties.Props.RequestResponseInfo == 0x1 || cl.ops.capabilities.Compatibilities.AlwaysReturnResponseInfo {
-		pk.Mods.AllowResponseInfo = true // NB we need to know which properties we can encode
+	if pk.FixedHeader.Type != packets.Connack || cl.Properties.Props.RequestResponseInfo == 0x1 || cl.ops.capabilities.Compatibilities.AlwaysReturnResponseInfo {
+		pk.Mods.AllowResponseInfo = true // [MQTT-3.1.2-28] we need to know which properties we can encode
 	}
 
 	pk = cl.ops.hooks.OnPacketEncode(cl, pk)

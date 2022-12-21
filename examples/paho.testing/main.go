@@ -29,7 +29,6 @@ func main() {
 	server.Options.Capabilities.ServerKeepAlive = 60
 	server.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true
 	server.Options.Capabilities.Compatibilities.PassiveClientDisconnect = true
-	server.Options.Capabilities.Compatibilities.AlwaysReturnResponseInfo = true
 
 	_ = server.AddHook(new(pahoAuthHook), nil)
 	tcp := listeners.NewTCP("t1", ":1883", nil)
