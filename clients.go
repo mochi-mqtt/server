@@ -362,6 +362,11 @@ func (cl *Client) StopCause() error {
 	return cl.State.stopCause.Load().(error)
 }
 
+// Closed returns true if client connection is closed
+func (cl *Client) Closed() bool {
+	return atomic.LoadUint32(&cl.State.done) == 1
+}
+
 // ReadFixedHeader reads in the values of the next packet's fixed header.
 func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 	if cl.Net.bconn == nil {
