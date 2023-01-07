@@ -649,7 +649,7 @@ func (s *Server) InjectPacket(cl *Client, pk packets.Packet) error {
 
 // processPublish processes a Publish packet.
 func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
-	if !IsValidFilter(pk.TopicName, true) && !cl.Net.Inline {
+	if !cl.Net.Inline && !IsValidFilter(pk.TopicName, true) {
 		return nil
 	}
 
@@ -657,20 +657,22 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		return s.DisconnectClient(cl, packets.ErrReceiveMaximum) // ~[MQTT-3.3.4-7] ~[MQTT-3.3.4-8]
 	}
 
-	if !s.hooks.OnACLCheck(cl, pk.TopicName, true) && !cl.Net.Inline {
+	if !cl.Net.Inline && !s.hooks.OnACLCheck(cl, pk.TopicName, true) {
 		return nil
 	}
 
 	pk.Origin = cl.ID
 	pk.Created = time.Now().Unix()
 
-	if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok && !cl.Net.Inline {
-		if pki.FixedHeader.Type == packets.Pubrec { // [MQTT-4.3.3-10]
-			ack := s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.ErrPacketIdentifierInUse)
-			return cl.WritePacket(ack)
-		}
-		if ok := cl.State.Inflight.Delete(pk.PacketID); ok { // [MQTT-4.3.2-5]
-			atomic.AddInt64(&s.Info.Inflight, -1)
+	if !cl.Net.Inline {
+		if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok {
+			if pki.FixedHeader.Type == packets.Pubrec { // [MQTT-4.3.3-10]
+				ack := s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.ErrPacketIdentifierInUse)
+				return cl.WritePacket(ack)
+			}
+			if ok := cl.State.Inflight.Delete(pk.PacketID); ok { // [MQTT-4.3.2-5]
+				atomic.AddInt64(&s.Info.Inflight, -1)
+			}
 		}
 	}
 
