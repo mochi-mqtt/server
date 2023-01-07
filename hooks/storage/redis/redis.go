@@ -215,19 +215,17 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 	var in *storage.Subscription
 	for i := 0; i < len(pk.Filters); i++ {
 		in = &storage.Subscription{
-			ID:     subscriptionKey(cl, pk.Filters[i].Filter),
-			T:      storage.SubscriptionKey,
-			Client: cl.ID,
-			Filter: pk.Filters[i].Filter,
-			Qos:    reasonCodes[i],
+			ID:                subscriptionKey(cl, pk.Filters[i].Filter),
+			T:                 storage.SubscriptionKey,
+			Client:            cl.ID,
+			Qos:               reasonCodes[i],
+			Filter:            pk.Filters[i].Filter,
+			Identifier:        pk.Filters[i].Identifier,
+			NoLocal:           pk.Filters[i].NoLocal,
+			RetainHandling:    pk.Filters[i].RetainHandling,
+			RetainAsPublished: pk.Filters[i].RetainAsPublished,
 		}
-                if pk.ProtocolVersion == 5 {
-			in.Identifier = pk.Filters[i].Identifier
-			in.NoLocal = pk.Filters[i].NoLocal
-			in.RetainHandling = pk.Filters[i].RetainHandling
-			in.RetainAsPublished = pk.Filters[i].RetainAsPublished
-		}
-		
+
 		err := h.db.HSet(h.ctx, h.hKey(storage.SubscriptionKey), subscriptionKey(cl, pk.Filters[i].Filter), in).Err()
 		if err != nil {
 			h.Log.Error().Err(err).Interface("data", in).Msg("failed to hset subscription data")
