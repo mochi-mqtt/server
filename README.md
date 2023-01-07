@@ -89,16 +89,16 @@ import (
 func main() {
   // Create the new MQTT Server.
   server := mqtt.New(nil)
-
+  
   // Allow all connections.
-	_ = server.AddHook(new(auth.AllowHook), nil)
-
+  _ = server.AddHook(new(auth.AllowHook), nil)
+  
   // Create a TCP listener on a standard port.
-	tcp := listeners.NewTCP("t1", *tcpAddr, nil)
-	err := server.AddListener(tcp)
-	if err != nil {
-		log.Fatal(err)
-	}
+  tcp := listeners.NewTCP("t1", *tcpAddr, nil)
+  err := server.AddListener(tcp)
+  if err != nil {
+    log.Fatal(err)
+  }
   
   err = server.Serve()
   if err != nil {
@@ -115,7 +115,7 @@ The server comes with a variety of pre-packaged network listeners which allow th
 | Listener | Usage |
 | --- | --- |
 | listeners.NewTCP | A TCP listener |
-| listeners.NewUnixSock | A TCP listener |
+| listeners.NewUnixSock | A Unix Socket listener |
 | listeners.NewWebsocket | A Websocket listener |
 | listeners.NewHTTPStats | An HTTP $SYS info dashboard |
 
