@@ -206,6 +206,13 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 			Filter: pk.Filters[i].Filter,
 			Qos:    reasonCodes[i],
 		}
+		if pk.ProtocolVersion == 5 {
+			in.Identifier = pk.Filters[i].Identifier
+			in.NoLocal = pk.Filters[i].NoLocal
+			in.RetainHandling = pk.Filters[i].RetainHandling
+			in.RetainAsPublished = pk.Filters[i].RetainAsPublished
+		}
+		
 		err := h.db.Save(in)
 		if err != nil {
 			h.Log.Error().Err(err).
