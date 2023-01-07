@@ -474,6 +474,13 @@ func TestClientStop(t *testing.T) {
 	require.Equal(t, nil, cl.StopCause())
 }
 
+func TestClientClosed(t *testing.T) {
+	cl, _, _ := newTestClient()
+	require.False(t, cl.Closed())
+	cl.Stop(nil)
+	require.True(t, cl.Closed())
+}
+
 func TestClientReadFixedHeaderError(t *testing.T) {
 	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
