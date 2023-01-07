@@ -272,7 +272,9 @@ func TestClientClearInflights(t *testing.T) {
 	cl.State.Inflight.Set(packets.Packet{PacketID: 7, Created: n})
 	require.Equal(t, 5, cl.State.Inflight.Len())
 
-	cl.ClearInflights(n, 4)
+	deleted := cl.ClearInflights(n, 4)
+	require.Len(t, deleted, 3)
+	require.ElementsMatch(t, []uint16{1, 2, 5}, deleted)
 	require.Equal(t, 2, cl.State.Inflight.Len())
 }
 
@@ -470,6 +472,13 @@ func TestClientStop(t *testing.T) {
 	require.Equal(t, time.Now().Unix(), cl.State.disconnected)
 	require.Equal(t, uint32(1), cl.State.done)
 	require.Equal(t, nil, cl.StopCause())
+}
+
+func TestClientClosed(t *testing.T) {
+	cl, _, _ := newTestClient()
+	require.False(t, cl.Closed())
+	cl.Stop(nil)
+	require.True(t, cl.Closed())
 }
 
 func TestClientReadFixedHeaderError(t *testing.T) {

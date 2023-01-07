@@ -231,7 +231,6 @@ func TestHooksNonReturns(t *testing.T) {
 			h.OnWillSent(cl, packets.Packet{})
 			h.OnClientExpired(cl)
 			h.OnRetainedExpired("a/b/c")
-			h.OnExpireInflights(cl, time.Now().Unix()-1)
 
 			// on second iteration, check added hook methods
 			err := h.Add(new(modifiedHookBase), nil)

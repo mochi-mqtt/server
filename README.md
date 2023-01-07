@@ -2,7 +2,7 @@
 <p align="center">
 
 ![build status](https://github.com/mochi-co/mqtt/actions/workflows/build.yml/badge.svg) 
-[![Coverage Status](https://coveralls.io/repos/github/mochi-co/mqtt/badge.svg?branch=master)](https://coveralls.io/github/mochi-co/mqtt?branch=master)
+[![Coverage Status](https://coveralls.io/repos/github/mochi-co/mqtt/badge.svg?branch=master&v2)](https://coveralls.io/github/mochi-co/mqtt?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mochi-co/mqtt)](https://goreportcard.com/report/github.com/mochi-co/mqtt/v2)
 [![Go Reference](https://pkg.go.dev/badge/github.com/mochi-co/mqtt.svg)](https://pkg.go.dev/github.com/mochi-co/mqtt/v2)
 [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/mochi-co/mqtt/issues)
@@ -112,10 +112,14 @@ Examples of running the broker with various configurations can be found in the [
 #### Network Listeners
 The server comes with a variety of pre-packaged network listeners which allow the broker to accept connections on different protocols. The current listeners are:
 
-- `listeners.NewTCP(...)` - A TCP listener.
-- `listeners.NewWebsocket(...)` A Websocket listener.
-- `listeners.NewHTTPStats(...)` An HTTP $SYS info dashboard.
-- Use the `listeners.Listener` interface to develop new listeners. If you do, please let us know!
+| Listener | Usage |
+| --- | --- |
+| listeners.NewTCP | A TCP listener |
+| listeners.NewUnixSock | A TCP listener |
+| listeners.NewWebsocket | A Websocket listener |
+| listeners.NewHTTPStats | An HTTP $SYS info dashboard |
+
+> Use the `listeners.Listener` interface to develop new listeners. If you do, please let us know!
 
 A `*listeners.Config` may be passed to configure TLS. 
 
@@ -296,7 +300,6 @@ The function signatures for all the hooks and `mqtt.Hook` interface can be found
 | OnWillSent | Called when an LWT message has been issued from a disconnecting client. | 
 | OnClientExpired | Called when a client session has expired and should be deleted. | 
 | OnRetainedExpired | Called when a retained message has expired and should be deleted. | 
-| OnExpireInflights | Called when the server issues a clear request for expired inflight messages.| 
 | StoredClients |  Returns clients, eg. from a persistent store. | 
 | StoredSubscriptions |  Returns client subscriptions, eg. from a persistent store. | 
 | StoredInflightMessages | Returns inflight messages, eg. from a persistent store.  | 

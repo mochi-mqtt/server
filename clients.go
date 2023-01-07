@@ -290,17 +290,18 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 }
 
 // ClearInflights deletes all inflight messages for the client, eg. for a disconnected user with a clean session.
-func (cl *Client) ClearInflights(now, maximumExpiry int64) int64 {
-	var deleted int64
+func (cl *Client) ClearInflights(now, maximumExpiry int64) []uint16 {
+	deleted := []uint16{}
 	for _, tk := range cl.State.Inflight.GetAll(false) {
 		if (tk.Expiry > 0 && tk.Expiry < now) || tk.Created+maximumExpiry < now {
 			if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
 				cl.ops.hooks.OnQosDropped(cl, tk)
 				atomic.AddInt64(&cl.ops.info.Inflight, -1)
-				deleted++
+				deleted = append(deleted, uint16(tk.PacketID))
 			}
 		}
 	}
+
 	return deleted
 }
 
@@ -359,6 +360,11 @@ func (cl *Client) StopCause() error {
 		return nil
 	}
 	return cl.State.stopCause.Load().(error)
+}
+
+// Closed returns true if client connection is closed
+func (cl *Client) Closed() bool {
+	return atomic.LoadUint32(&cl.State.done) == 1
 }
 
 // ReadFixedHeader reads in the values of the next packet's fixed header.
@@ -476,8 +482,8 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		pk.Mods.DisallowProblemInfo = true // [MQTT-3.1.2-29] strict, no problem info on any packet if set
 	}
 
-	if cl.Properties.Props.RequestResponseInfo == 0x1 || cl.ops.capabilities.Compatibilities.AlwaysReturnResponseInfo {
-		pk.Mods.AllowResponseInfo = true // NB we need to know which properties we can encode
+	if pk.FixedHeader.Type != packets.Connack || cl.Properties.Props.RequestResponseInfo == 0x1 || cl.ops.capabilities.Compatibilities.AlwaysReturnResponseInfo {
+		pk.Mods.AllowResponseInfo = true // [MQTT-3.1.2-28] we need to know which properties we can encode
 	}
 
 	pk = cl.ops.hooks.OnPacketEncode(cl, pk)

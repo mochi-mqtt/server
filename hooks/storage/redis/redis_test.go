@@ -253,6 +253,22 @@ func TestOnClientExpired(t *testing.T) {
 	require.ErrorIs(t, redis.Nil, err)
 }
 
+func TestOnClientExpiredClosedDB(t *testing.T) {
+	s := miniredis.RunT(t)
+	defer s.Close()
+	h := newHook(t, s.Addr())
+	teardown(t, h)
+	h.OnClientExpired(client)
+}
+
+func TestOnClientExpiredNoDB(t *testing.T) {
+	s := miniredis.RunT(t)
+	defer s.Close()
+	h := newHook(t, s.Addr())
+	h.db = nil
+	h.OnClientExpired(client)
+}
+
 func TestOnDisconnectNoDB(t *testing.T) {
 	s := miniredis.RunT(t)
 	defer s.Close()
@@ -392,6 +408,22 @@ func TestOnRetainedExpired(t *testing.T) {
 	require.ErrorIs(t, err, redis.Nil)
 }
 
+func TestOnRetainedExpiredClosedDB(t *testing.T) {
+	s := miniredis.RunT(t)
+	defer s.Close()
+	h := newHook(t, s.Addr())
+	teardown(t, h)
+	h.OnRetainedExpired("a/b/c")
+}
+
+func TestOnRetainedExpiredNoDB(t *testing.T) {
+	s := miniredis.RunT(t)
+	defer s.Close()
+	h := newHook(t, s.Addr())
+	h.db = nil
+	h.OnRetainedExpired("a/b/c")
+}
+
 func TestOnRetainMessageNoDB(t *testing.T) {
 	s := miniredis.RunT(t)
 	defer s.Close()
@@ -482,60 +514,6 @@ func TestOnQosDroppedNoDB(t *testing.T) {
 	h := newHook(t, s.Addr())
 	h.db = nil
 	h.OnQosDropped(client, packets.Packet{})
-}
-
-func TestOnExpireInflights(t *testing.T) {
-	s := miniredis.RunT(t)
-	defer s.Close()
-	h := newHook(t, s.Addr())
-	defer teardown(t, h)
-
-	n := time.Now().Unix()
-	err := h.db.HSet(h.ctx, h.hKey(storage.InflightKey), "i1",
-		&storage.Message{ID: "i1", T: storage.InflightKey, Created: n - 1},
-	).Err()
-	require.NoError(t, err)
-
-	err = h.db.HSet(h.ctx, h.hKey(storage.InflightKey), "i2",
-		&storage.Message{ID: "i2", T: storage.InflightKey, Created: n - 20},
-	).Err()
-	require.NoError(t, err)
-
-	err = h.db.HSet(h.ctx, h.hKey(storage.InflightKey), "i3",
-		&storage.Message{ID: "i3", T: storage.InflightKey},
-	).Err()
-	require.NoError(t, err)
-
-	h.OnExpireInflights(client, time.Now().Unix()-10)
-
-	var r []storage.Message
-	rows, err := h.db.HGetAll(h.ctx, h.hKey(storage.InflightKey)).Result()
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	for _, row := range rows {
-		var d storage.Message
-		err = d.UnmarshalBinary([]byte(row))
-		require.NoError(t, err)
-		r = append(r, d)
-	}
-	require.Len(t, r, 1)
-	require.Equal(t, "i1", r[0].ID)
-}
-
-func TestOnExpireInflightsClosedDB(t *testing.T) {
-	s := miniredis.RunT(t)
-	defer s.Close()
-	h := newHook(t, s.Addr())
-	teardown(t, h)
-	h.OnExpireInflights(client, time.Now().Unix()-10)
-}
-
-func TestOnExpireInflightsNoDB(t *testing.T) {
-	s := miniredis.RunT(t)
-	defer s.Close()
-	h := newHook(t, s.Addr())
-	h.db = nil
-	h.OnExpireInflights(client, time.Now().Unix()-10)
 }
 
 func TestOnSysInfoTick(t *testing.T) {
