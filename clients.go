@@ -362,7 +362,7 @@ func (cl *Client) StopCause() error {
 	return cl.State.stopCause.Load().(error)
 }
 
-// Closed returns true if client connection is closed
+// Closed returns true if client connection is closed.
 func (cl *Client) Closed() bool {
 	return atomic.LoadUint32(&cl.State.done) == 1
 }
