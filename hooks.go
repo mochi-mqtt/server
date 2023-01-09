@@ -110,7 +110,7 @@ type HookOptions struct {
 // Hooks is a slice of Hook interfaces to be called in sequence.
 type Hooks struct {
 	Log        *zerolog.Logger // a logger for the hook (from the server)
-	internal   atomic.Value    // a slice of hooks
+	internal   atomic.Value    // Value stores a slice of hooks
 	wg         sync.WaitGroup  // a waitgroup for syncing hook shutdown
 	qty        int64           // the number of hooks in use
 	sync.Mutex                 // a mutex
