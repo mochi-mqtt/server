@@ -83,7 +83,11 @@ docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 mochi:latest
 Importing Mochi MQTT as a package requires just a few lines of code to get started.
 ``` go
 import (
+  "log"
+
   "github.com/mochi-co/mqtt/v2"
+  "github.com/mochi-co/mqtt/v2/hooks/auth"
+  "github.com/mochi-co/mqtt/v2/listeners"
 )
 
 func main() {
@@ -94,7 +98,7 @@ func main() {
   _ = server.AddHook(new(auth.AllowHook), nil)
   
   // Create a TCP listener on a standard port.
-  tcp := listeners.NewTCP("t1", *tcpAddr, nil)
+  tcp := listeners.NewTCP("t1", ":1883", nil)
   err := server.AddListener(tcp)
   if err != nil {
     log.Fatal(err)
