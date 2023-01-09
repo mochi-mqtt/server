@@ -89,6 +89,7 @@ const (
 	TConnackServerUnavailable
 	TConnackBadUsernamePassword
 	TConnackBadUsernamePasswordNoSession
+	TConnackMqtt5BadUsernamePasswordNoSession
 	TConnackNotAuthorised
 	TConnackMalSessionPresent
 	TConnackMalReturnCode
@@ -1316,10 +1317,28 @@ var TPacketData = map[byte]TPacketCases{
 			Desc: "bad username or password no session",
 			RawBytes: []byte{
 				Connack << 4, 2, // fixed header
-				0, // No session present
-				ErrBadUsernameOrPassword.Code,
+				0,                      // No session present
+				Err3NotAuthorized.Code, // use v3 remapping
 			},
 			Packet: &Packet{
+				FixedHeader: FixedHeader{
+					Type:      Connack,
+					Remaining: 2,
+				},
+				ReasonCode: Err3NotAuthorized.Code,
+			},
+		},
+		{
+			Case: TConnackMqtt5BadUsernamePasswordNoSession,
+			Desc: "mqtt5 bad username or password no session",
+			RawBytes: []byte{
+				Connack << 4, 3, // fixed header
+				0, // No session present
+				ErrBadUsernameOrPassword.Code,
+				0,
+			},
+			Packet: &Packet{
+				ProtocolVersion: 5,
 				FixedHeader: FixedHeader{
 					Type:      Connack,
 					Remaining: 2,
@@ -1327,6 +1346,7 @@ var TPacketData = map[byte]TPacketCases{
 				ReasonCode: ErrBadUsernameOrPassword.Code,
 			},
 		},
+
 		{
 			Case: TConnackNotAuthorised,
 			Desc: "not authorised",

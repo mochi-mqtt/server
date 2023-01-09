@@ -124,4 +124,23 @@ var (
 	ErrMaxConnectTime                         = Code{Code: 0xA0, Reason: "maximum connect time"}
 	ErrSubscriptionIdentifiersNotSupported    = Code{Code: 0xA1, Reason: "subscription identifiers not supported"}
 	ErrWildcardSubscriptionsNotSupported      = Code{Code: 0xA2, Reason: "wildcard subscriptions not supported"}
+
+	// MQTTv3 specific bytes.
+	Err3UnsupportedProtocolVersion = Code{Code: 0x01}
+	Err3ClientIdentifierNotValid   = Code{Code: 0x02}
+	Err3ServerUnavailable          = Code{Code: 0x03}
+	ErrMalformedUsernameOrPassword = Code{Code: 0x04}
+	Err3NotAuthorized              = Code{Code: 0x05}
+
+	// V5CodesToV3 maps MQTTv5 Connack reason codes to MQTTv3 return codes.
+	// This is required because MQTTv3 has different return byte specification.
+	// See http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc385349257
+	V5CodesToV3 = map[Code]Code{
+		ErrUnsupportedProtocolVersion: Err3UnsupportedProtocolVersion,
+		ErrClientIdentifierNotValid:   Err3ClientIdentifierNotValid,
+		ErrServerUnavailable:          Err3ServerUnavailable,
+		ErrMalformedUsername:          ErrMalformedUsernameOrPassword,
+		ErrMalformedPassword:          ErrMalformedUsernameOrPassword,
+		ErrBadUsernameOrPassword:      Err3NotAuthorized,
+	}
 )

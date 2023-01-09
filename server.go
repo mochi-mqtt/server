@@ -489,6 +489,12 @@ func (s *Server) sendConnack(cl *Client, reason packets.Code, present bool) erro
 	}
 
 	if reason.Code >= packets.ErrUnspecifiedError.Code {
+		if cl.Properties.ProtocolVersion < 5 {
+			if v3reason, ok := packets.V5CodesToV3[reason]; ok { // NB v3 3.2.2.3 Connack return codes
+				reason = v3reason
+			}
+		}
+
 		properties.ReasonString = reason.Reason
 		ack := packets.Packet{
 			FixedHeader: packets.FixedHeader{
