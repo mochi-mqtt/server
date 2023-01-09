@@ -117,7 +117,7 @@ func TestServerNewClient(t *testing.T) {
 	require.NotNil(t, cl.State.TopicAliases)
 	require.Equal(t, defaultKeepalive, cl.State.keepalive)
 	require.Equal(t, defaultClientProtocolVersion, cl.Properties.ProtocolVersion)
-	require.NotNil(t, cl.Net.conn)
+	require.NotNil(t, cl.Net.Conn)
 	require.NotNil(t, cl.Net.bconn)
 	require.NotNil(t, cl.ops)
 	require.Equal(t, s.Log, cl.ops.log)
@@ -806,7 +806,7 @@ func TestInheritClientSession(t *testing.T) {
 	n := time.Now().Unix()
 
 	existing, _, _ := newTestClient()
-	existing.Net.conn = nil
+	existing.Net.Conn = nil
 	existing.ID = "mochi"
 	existing.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
 	existing.State.Inflight = NewInflights()
@@ -1440,7 +1440,7 @@ func TestPublishToClientExhaustedPacketID(t *testing.T) {
 func TestPublishToClientNoConn(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
-	cl.Net.conn = nil
+	cl.Net.Conn = nil
 
 	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c"}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 	require.Error(t, err)
@@ -1863,7 +1863,7 @@ func TestServerProcessInboundQos2Flow(t *testing.T) {
 	for i, tx := range tt {
 		t.Run("qos step"+strconv.Itoa(i), func(t *testing.T) {
 			r, w = net.Pipe()
-			cl.Net.conn = w
+			cl.Net.Conn = w
 
 			recv := make(chan []byte)
 			go func() { // receive the ack
@@ -1937,7 +1937,7 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 	for i, tx := range tt {
 		t.Run("qos step"+strconv.Itoa(i), func(t *testing.T) {
 			r, w := net.Pipe()
-			cl.Net.conn = w
+			cl.Net.Conn = w
 
 			recv := make(chan []byte)
 			go func() { // receive the ack

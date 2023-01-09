@@ -106,7 +106,7 @@ type Client struct {
 
 // ClientConnection contains the connection transport and metadata for the client.
 type ClientConnection struct {
-	conn     net.Conn          // the net.Conn used to establish the connection
+	Conn     net.Conn          // the net.Conn used to establish the connection
 	bconn    *bufio.ReadWriter // a buffered net.Conn for reading packets
 	Remote   string            // the remote address of the client
 	Listener string            // listener id of the client
@@ -164,7 +164,7 @@ func newClient(c net.Conn, o *ops) *Client {
 
 	if c != nil {
 		cl.Net = ClientConnection{
-			conn:   c,
+			Conn:   c,
 			bconn:  bufio.NewReadWriter(bufio.NewReader(c), bufio.NewWriter(c)),
 			Remote: c.RemoteAddr().String(),
 		}
@@ -223,13 +223,13 @@ func (cl *Client) ParseConnect(lid string, pk packets.Packet) {
 
 // refreshDeadline refreshes the read/write deadline for the net.Conn connection.
 func (cl *Client) refreshDeadline(keepalive uint16) {
-	if cl.Net.conn != nil {
+	if cl.Net.Conn != nil {
 		var expiry time.Time // nil time can be used to disable deadline if keepalive = 0
 		if keepalive > 0 {
 			expiry = time.Now().Add(time.Duration(keepalive+(keepalive/2)) * time.Second) // [MQTT-3.1.2-22]
 		}
 
-		_ = cl.Net.conn.SetDeadline(expiry) // [MQTT-3.1.2-22]
+		_ = cl.Net.Conn.SetDeadline(expiry) // [MQTT-3.1.2-22]
 	}
 }
 
@@ -297,7 +297,7 @@ func (cl *Client) ClearInflights(now, maximumExpiry int64) []uint16 {
 			if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
 				cl.ops.hooks.OnQosDropped(cl, tk)
 				atomic.AddInt64(&cl.ops.info.Inflight, -1)
-				deleted = append(deleted, uint16(tk.PacketID))
+				deleted = append(deleted, tk.PacketID)
 			}
 		}
 	}
@@ -341,8 +341,8 @@ func (cl *Client) Stop(err error) {
 	}
 
 	cl.State.endOnce.Do(func() {
-		if cl.Net.conn != nil {
-			_ = cl.Net.conn.Close() // omit close error
+		if cl.Net.Conn != nil {
+			_ = cl.Net.Conn.Close() // omit close error
 		}
 
 		if err != nil {
@@ -464,7 +464,7 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		return ErrConnectionClosed
 	}
 
-	if cl.Net.conn == nil {
+	if cl.Net.Conn == nil {
 		return nil
 	}
 
@@ -533,7 +533,7 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 	}
 
 	nb := net.Buffers{buf.Bytes()}
-	n, err := nb.WriteTo(cl.Net.conn)
+	n, err := nb.WriteTo(cl.Net.Conn)
 	if err != nil {
 		return err
 	}

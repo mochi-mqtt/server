@@ -127,7 +127,7 @@ func TestNewClient(t *testing.T) {
 	require.NotNil(t, cl.State.TopicAliases)
 	require.Equal(t, defaultKeepalive, cl.State.keepalive)
 	require.Equal(t, defaultClientProtocolVersion, cl.Properties.ProtocolVersion)
-	require.NotNil(t, cl.Net.conn)
+	require.NotNil(t, cl.Net.Conn)
 	require.NotNil(t, cl.Net.bconn)
 	require.False(t, cl.Net.Inline)
 }
@@ -320,7 +320,7 @@ func TestClientResendInflightMessagesNoMessages(t *testing.T) {
 func TestClientRefreshDeadline(t *testing.T) {
 	cl, _, _ := newTestClient()
 	cl.refreshDeadline(10)
-	require.NotNil(t, cl.Net.conn) // how do we check net.Conn deadline?
+	require.NotNil(t, cl.Net.Conn) // how do we check net.Conn deadline?
 }
 
 func TestClientReadFixedHeader(t *testing.T) {
@@ -586,7 +586,7 @@ func TestClientReadPacket(t *testing.T) {
 
 func TestClientReadPacketInvalidTypeError(t *testing.T) {
 	cl, _, _ := newTestClient()
-	cl.Net.conn.Close()
+	cl.Net.Conn.Close()
 	_, err := cl.ReadPacket(&packets.FixedHeader{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid packet type")
@@ -610,7 +610,7 @@ func TestClientWritePacket(t *testing.T) {
 		require.NoError(t, err, pkInfo, tt.Case, tt.Desc)
 
 		time.Sleep(2 * time.Millisecond)
-		cl.Net.conn.Close()
+		cl.Net.Conn.Close()
 
 		require.Equal(t, tt.RawBytes, <-o, pkInfo, tt.Case, tt.Desc)
 
@@ -692,7 +692,7 @@ func TestClientWritePacketWriteNoConn(t *testing.T) {
 
 func TestClientWritePacketWriteError(t *testing.T) {
 	cl, _, _ := newTestClient()
-	cl.Net.conn.Close()
+	cl.Net.Conn.Close()
 
 	err := cl.WritePacket(*pkTable[1].Packet)
 	require.Error(t, err)
