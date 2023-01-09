@@ -21,7 +21,7 @@ Version 2.0.0 takes all the great things we loved about Mochi MQTT v1.0.0, learn
 
 Don't forget to use the new v2 import paths:
 ```go
-import "github.com/mochi-co/mqtt/v2"
+import "github.com/mochi-co/mqtt"
 ```
 
 - Full MQTTv5 Feature Compliance, compatibility for MQTT v3.1.1 and v3.0.0:
@@ -83,7 +83,11 @@ docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 mochi:latest
 Importing Mochi MQTT as a package requires just a few lines of code to get started.
 ``` go
 import (
-  "github.com/mochi-co/mqtt/v2"
+  "log"
+  "flag"
+  "github.com/mochi-co/mqtt"
+  "github.com/mochi-co/mqtt/hooks/auth"
+	"github.com/mochi-co/mqtt/listeners"
 )
 
 func main() {
