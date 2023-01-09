@@ -154,7 +154,7 @@ func (ws *wsConn) Read(p []byte) (int, error) {
 		br, err = r.Read(p[n:])
 		n += br
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = nil
 			}
 			return n, err

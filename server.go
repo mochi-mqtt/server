@@ -773,12 +773,12 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 	}
 }
 
-func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packets.Packet) (out packets.Packet, err error) {
+func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packets.Packet) (packets.Packet, error) {
 	if sub.NoLocal && pk.Origin == cl.ID {
 		return pk, nil // [MQTT-3.8.3-3]
 	}
 
-	out = pk.Copy(false)
+	out := pk.Copy(false)
 	if !sub.RetainAsPublished { // ![MQTT-3.3.1-13]
 		out.FixedHeader.Retain = false // [MQTT-3.3.1-12]
 	}
