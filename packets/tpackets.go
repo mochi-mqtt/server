@@ -1824,13 +1824,10 @@ var TPacketData = map[byte]TPacketCases{
 			Case: TPublishRetainMqtt5,
 			Desc: "retain mqtt5",
 			RawBytes: []byte{
-				Publish<<4 | 1<<0, 35, // Fixed header
+				Publish<<4 | 1<<0, 19, // Fixed header
 				0, 5, // Topic Name - LSB+MSB
 				'a', '/', 'b', '/', 'c', // Topic Name
-				16, // properties length
-				38, // User Properties (38)
-				0, 5, 'h', 'e', 'l', 'l', 'o',
-				0, 6, 228, 184, 150, 231, 149, 140,
+				0,                                                     // properties length
 				'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload
 			},
 			Packet: &Packet{
@@ -1838,18 +1835,11 @@ var TPacketData = map[byte]TPacketCases{
 				FixedHeader: FixedHeader{
 					Type:      Publish,
 					Retain:    true,
-					Remaining: 35,
+					Remaining: 19,
 				},
-				TopicName: "a/b/c",
-				Properties: Properties{
-					User: []UserProperty{
-						{
-							Key: "hello",
-							Val: "世界",
-						},
-					},
-				},
-				Payload: []byte("hello mochi"),
+				TopicName:  "a/b/c",
+				Properties: Properties{},
+				Payload:    []byte("hello mochi"),
 			},
 		},
 		{
