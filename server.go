@@ -61,13 +61,13 @@ type Capabilities struct {
 	ReceiveMaximum               uint16
 	TopicAliasMaximum            uint16
 	ServerKeepAlive              uint16
+	SharedSubAvailable           byte
+	MinimumProtocolVersion       byte
 	Compatibilities              Compatibilities
 	MaximumQos                   byte
 	RetainAvailable              byte
 	WildcardSubAvailable         byte
 	SubIDAvailable               byte
-	SharedSubAvailable           byte
-	MinimumProtocolVersion       byte
 }
 
 // Compatibilities provides flags for using compatibility modes.
