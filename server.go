@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	Version                        = "2.1.4" // the current server version.
+	Version                        = "2.1.5" // the current server version.
 	defaultSysTopicInterval int64  = 1       // the interval between $SYS topic publishes
 	defaultFanPoolSize      uint64 = 32      // the number of concurrent workers in the pool
 	defaultFanPoolQueueSize uint64 = 1024    // the capacity of each worker queue
@@ -785,7 +785,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	}
 
 	out := pk.Copy(false)
-	if !sub.RetainAsPublished { // ![MQTT-3.3.1-13]
+	if cl.Properties.ProtocolVersion == 5 && !sub.RetainAsPublished { // ![MQTT-3.3.1-13]
 		out.FixedHeader.Retain = false // [MQTT-3.3.1-12]
 	}
 
