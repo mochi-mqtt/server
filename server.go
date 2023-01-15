@@ -354,6 +354,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	s.loop.willDelayed.Delete(cl.ID) // [MQTT-3.1.3-9]
 
 	if sessionPresent {
+		s.publishInheritedRetainedToClient(cl)
 		err = cl.ResendInflightMessages(true)
 		if err != nil {
 			return fmt.Errorf("resend inflight: %w", err)
@@ -461,14 +462,7 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 		}
 
 		cl.State.Inflight = existing.State.Inflight // [MQTT-3.1.2-5]
-		for _, sub := range existing.State.Subscriptions.GetAll() {
-			existed := !s.Topics.Subscribe(cl.ID, sub) // [MQTT-3.8.4-3]
-			if !existed {
-				atomic.AddInt64(&s.Info.Subscriptions, 1)
-			}
-			cl.State.Subscriptions.Add(sub.Filter, sub)
-			s.publishRetainedToClient(cl, sub, existed)
-		}
+		cl.State.inheritedSubscriptions = existing.State.Subscriptions.GetAll()
 
 		return true // [MQTT-3.2.2-3]
 	}
@@ -841,6 +835,23 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	cl.State.Inflight.TakeSendQuota()
 
 	return out, cl.WritePacket(out)
+}
+
+func (s *Server) publishInheritedRetainedToClient(cl *Client) {
+	if cl.State.inheritedSubscriptions == nil {
+		return
+	}
+
+	for _, sub := range cl.State.inheritedSubscriptions {
+		existed := !s.Topics.Subscribe(cl.ID, sub) // [MQTT-3.8.4-3]
+		if !existed {
+			atomic.AddInt64(&s.Info.Subscriptions, 1)
+		}
+		cl.State.Subscriptions.Add(sub.Filter, sub)
+		s.publishRetainedToClient(cl, sub, existed)
+	}
+
+	cl.State.inheritedSubscriptions = nil
 }
 
 func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, existed bool) {
