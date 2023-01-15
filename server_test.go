@@ -825,7 +825,7 @@ func TestInheritClientSession(t *testing.T) {
 	b := s.inheritClientSession(packets.Packet{Connect: packets.ConnectParams{ClientIdentifier: "mochi"}}, cl)
 	require.True(t, b)
 	require.Equal(t, 2, cl.State.Inflight.Len())
-	require.Equal(t, 1, cl.State.Subscriptions.Len())
+	require.Equal(t, 1, len(cl.State.inheritedSubscriptions))
 
 	// On clean, clear existing properties
 	cl, _, _ = newTestClient()
@@ -833,7 +833,7 @@ func TestInheritClientSession(t *testing.T) {
 	b = s.inheritClientSession(packets.Packet{Connect: packets.ConnectParams{ClientIdentifier: "mochi", Clean: true}}, cl)
 	require.False(t, b)
 	require.Equal(t, 0, cl.State.Inflight.Len())
-	require.Equal(t, 0, cl.State.Subscriptions.Len())
+	require.Equal(t, 0, len(cl.State.inheritedSubscriptions))
 }
 
 func TestServerUnsubscribeClient(t *testing.T) {
@@ -1527,6 +1527,40 @@ func TestPublishToSubscribersNoConnection(t *testing.T) {
 	s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 	time.Sleep(time.Millisecond)
 	w.Close()
+}
+
+func TestPublishInheritedRetainedToClient(t *testing.T) {
+	s := newServer()
+
+	existing, _, _ := newTestClient()
+	existing.Net.Conn = nil
+	existing.ID = "mochi"
+	existing.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
+
+	s.Clients.Add(existing)
+
+	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetainMqtt5).Packet)
+	require.Equal(t, int64(1), retained)
+
+	cl, r, w := newTestClient()
+	b := s.inheritClientSession(packets.Packet{Connect: packets.ConnectParams{ClientIdentifier: "mochi"}}, cl)
+	require.True(t, b)
+	require.Equal(t, 1, len(cl.State.inheritedSubscriptions))
+	require.Equal(t, 0, cl.State.Subscriptions.Len())
+
+	s.Clients.Add(cl)
+
+	go func() {
+		s.publishInheritedRetainedToClient(cl)
+		time.Sleep(time.Millisecond)
+		w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes, buf)
+	require.Equal(t, 0, len(cl.State.inheritedSubscriptions))
+	require.Equal(t, 1, cl.State.Subscriptions.Len())
 }
 
 func TestPublishRetainedToClient(t *testing.T) {
