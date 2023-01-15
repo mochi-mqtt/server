@@ -135,15 +135,16 @@ type Will struct {
 
 // State tracks the state of the client.
 type ClientState struct {
-	TopicAliases  TopicAliases   // a map of topic aliases
-	stopCause     atomic.Value   // reason for stopping
-	Inflight      *Inflight      // a map of in-flight qos messages
-	Subscriptions *Subscriptions // a map of the subscription filters a client maintains
-	disconnected  int64          // the time the client disconnected in unix time, for calculating expiry
-	endOnce       sync.Once      // only end once
-	packetID      uint32         // the current highest packetID
-	done          uint32         // atomic counter which indicates that the client has closed
-	keepalive     uint16         // the number of seconds the connection can wait
+	TopicAliases           TopicAliases                    // a map of topic aliases
+	stopCause              atomic.Value                    // reason for stopping
+	Inflight               *Inflight                       // a map of in-flight qos messages
+	Subscriptions          *Subscriptions                  // a map of the subscription filters a client maintains
+	inheritedSubscriptions map[string]packets.Subscription // a map of the inherted subscriptions
+	disconnected           int64                           // the time the client disconnected in unix time, for calculating expiry
+	endOnce                sync.Once                       // only end once
+	packetID               uint32                          // the current highest packetID
+	done                   uint32                          // atomic counter which indicates that the client has closed
+	keepalive              uint16                          // the number of seconds the connection can wait
 }
 
 // newClient returns a new instance of Client. This is almost exclusively used by Server
