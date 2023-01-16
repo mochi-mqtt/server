@@ -410,6 +410,9 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
 	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
 
+	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(1), retained)
+
 	s.Clients.Add(cl)
 
 	r, w := net.Pipe()
@@ -445,7 +448,11 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 		require.ErrorIs(t, v.StopCause(), packets.CodeDisconnect) // true error is disconnect
 	}
 
-	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedSessionExists).RawBytes, <-recv)
+	connackPlusPacket := append(
+		packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedSessionExists).RawBytes,
+		packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes...,
+	)
+	require.Equal(t, connackPlusPacket, <-recv)
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectTakeover).RawBytes, <-takeover)
 
 	w.Close()
