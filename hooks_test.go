@@ -27,6 +27,10 @@ type modifiedHookBase struct {
 
 var errTestHook = errors.New("error")
 
+func (h *modifiedHookBase) ID() string {
+	return "modified"
+}
+
 func (h *modifiedHookBase) Init(config any) error {
 	if config != nil {
 		return errTestHook
@@ -178,12 +182,20 @@ func TestHooksProvides(t *testing.T) {
 	require.False(t, h.Provides(OnDisconnect))
 }
 
-func TestHooksAddAndLen(t *testing.T) {
+func TestHooksAddLenGetAll(t *testing.T) {
 	h := new(Hooks)
 	err := h.Add(new(HookBase), nil)
 	require.NoError(t, err)
-	require.Equal(t, int64(1), atomic.LoadInt64(&h.qty))
-	require.Equal(t, int64(1), h.Len())
+
+	err = h.Add(new(modifiedHookBase), nil)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(2), atomic.LoadInt64(&h.qty))
+	require.Equal(t, int64(2), h.Len())
+
+	all := h.GetAll()
+	require.Equal(t, "base", all[0].ID())
+	require.Equal(t, "modified", all[1].ID())
 }
 
 func TestHooksAddInitFailure(t *testing.T) {

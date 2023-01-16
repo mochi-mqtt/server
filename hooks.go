@@ -109,11 +109,11 @@ type HookOptions struct {
 
 // Hooks is a slice of Hook interfaces to be called in sequence.
 type Hooks struct {
-	Log          *zerolog.Logger // a logger for the hook (from the server)
-	internal     []Hook          // a slice of hooks
-	wg           sync.WaitGroup  // a waitgroup for syncing hook shutdown
-	qty          int64           // the number of hooks in use
-	sync.RWMutex                 // a mutex
+	Log        *zerolog.Logger // a logger for the hook (from the server)
+	internal   atomic.Value    // a slice of []Hook
+	wg         sync.WaitGroup  // a waitgroup for syncing hook shutdown
+	qty        int64           // the number of hooks in use
+	sync.Mutex                 // a mutex for locking when adding hooks
 }
 
 // Len returns the number of hooks added.
@@ -138,16 +138,19 @@ func (h *Hooks) Provides(b ...byte) bool {
 func (h *Hooks) Add(hook Hook, config any) error {
 	h.Lock()
 	defer h.Unlock()
-	if h.internal == nil {
-		h.internal = []Hook{}
-	}
 
 	err := hook.Init(config)
 	if err != nil {
 		return fmt.Errorf("failed initialising %s hook: %w", hook.ID(), err)
 	}
 
-	h.internal = append(h.internal, hook)
+	i, ok := h.internal.Load().([]Hook)
+	if !ok {
+		i = []Hook{}
+	}
+
+	i = append(i, hook)
+	h.internal.Store(i)
 	atomic.AddInt64(&h.qty, 1)
 	h.wg.Add(1)
 
@@ -156,9 +159,12 @@ func (h *Hooks) Add(hook Hook, config any) error {
 
 // GetAll returns a slice of all the hooks.
 func (h *Hooks) GetAll() []Hook {
-	h.RLock()
-	defer h.RUnlock()
-	return append([]Hook{}, h.internal...)
+	i, ok := h.internal.Load().([]Hook)
+	if !ok {
+		return []Hook{}
+	}
+
+	return i
 }
 
 // Stop indicates all attached hooks to gracefully end.
