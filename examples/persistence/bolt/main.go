@@ -30,12 +30,15 @@ func main() {
 	server := mqtt.New(nil)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
-	err := server.AddHook(new(bolt.Hook), bolt.Options{
+	err := server.AddHook(new(bolt.Hook), &bolt.Options{
 		Path: "bolt.db",
 		Options: &bbolt.Options{
 			Timeout: 500 * time.Millisecond,
 		},
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	tcp := listeners.NewTCP("t1", ":1883", nil)
 	err = server.AddListener(tcp)
