@@ -95,12 +95,12 @@ func TestReceiveQuota(t *testing.T) {
 	require.Equal(t, int32(4), atomic.LoadInt32(&i.receiveQuota))
 
 	// Return 1
-	i.ReturnReceiveQuota()
+	i.IncreaseReceiveQuota()
 	require.Equal(t, int32(5), atomic.LoadInt32(&i.maximumReceiveQuota))
 	require.Equal(t, int32(5), atomic.LoadInt32(&i.receiveQuota))
 
 	// Try to go over max limit
-	i.ReturnReceiveQuota()
+	i.IncreaseReceiveQuota()
 	require.Equal(t, int32(5), atomic.LoadInt32(&i.maximumReceiveQuota))
 	require.Equal(t, int32(5), atomic.LoadInt32(&i.receiveQuota))
 
@@ -110,12 +110,12 @@ func TestReceiveQuota(t *testing.T) {
 	require.Equal(t, int32(1), atomic.LoadInt32(&i.receiveQuota))
 
 	// Take 1
-	i.TakeReceiveQuota()
+	i.DecreaseReceiveQuota()
 	require.Equal(t, int32(1), atomic.LoadInt32(&i.maximumReceiveQuota))
 	require.Equal(t, int32(0), atomic.LoadInt32(&i.receiveQuota))
 
 	// Try to go below zero
-	i.TakeReceiveQuota()
+	i.DecreaseReceiveQuota()
 	require.Equal(t, int32(1), atomic.LoadInt32(&i.maximumReceiveQuota))
 	require.Equal(t, int32(0), atomic.LoadInt32(&i.receiveQuota))
 }
@@ -137,12 +137,12 @@ func TestSendQuota(t *testing.T) {
 	require.Equal(t, int32(4), atomic.LoadInt32(&i.sendQuota))
 
 	// Return 1
-	i.ReturnSendQuota()
+	i.IncreaseSendQuota()
 	require.Equal(t, int32(5), atomic.LoadInt32(&i.maximumSendQuota))
 	require.Equal(t, int32(5), atomic.LoadInt32(&i.sendQuota))
 
 	// Try to go over max limit
-	i.ReturnSendQuota()
+	i.IncreaseSendQuota()
 	require.Equal(t, int32(5), atomic.LoadInt32(&i.maximumSendQuota))
 	require.Equal(t, int32(5), atomic.LoadInt32(&i.sendQuota))
 
@@ -152,12 +152,12 @@ func TestSendQuota(t *testing.T) {
 	require.Equal(t, int32(1), atomic.LoadInt32(&i.sendQuota))
 
 	// Take 1
-	i.TakeSendQuota()
+	i.DecreaseSendQuota()
 	require.Equal(t, int32(1), atomic.LoadInt32(&i.maximumSendQuota))
 	require.Equal(t, int32(0), atomic.LoadInt32(&i.sendQuota))
 
 	// Try to go below zero
-	i.TakeSendQuota()
+	i.DecreaseSendQuota()
 	require.Equal(t, int32(1), atomic.LoadInt32(&i.maximumSendQuota))
 	require.Equal(t, int32(0), atomic.LoadInt32(&i.sendQuota))
 }
