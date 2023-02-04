@@ -104,14 +104,14 @@ func (i *Inflight) Delete(id uint16) bool {
 }
 
 // TakeRecieveQuota reduces the receive quota by 1.
-func (i *Inflight) TakeReceiveQuota() {
+func (i *Inflight) DecreaseReceiveQuota() {
 	if atomic.LoadInt32(&i.receiveQuota) > 0 {
 		atomic.AddInt32(&i.receiveQuota, -1)
 	}
 }
 
 // TakeRecieveQuota increases the receive quota by 1.
-func (i *Inflight) ReturnReceiveQuota() {
+func (i *Inflight) IncreaseReceiveQuota() {
 	if atomic.LoadInt32(&i.receiveQuota) < atomic.LoadInt32(&i.maximumReceiveQuota) {
 		atomic.AddInt32(&i.receiveQuota, 1)
 	}
@@ -123,15 +123,15 @@ func (i *Inflight) ResetReceiveQuota(n int32) {
 	atomic.StoreInt32(&i.maximumReceiveQuota, n)
 }
 
-// TakeSendQuota reduces the send quota by 1.
-func (i *Inflight) TakeSendQuota() {
+// DecreaseSendQuota reduces the send quota by 1.
+func (i *Inflight) DecreaseSendQuota() {
 	if atomic.LoadInt32(&i.sendQuota) > 0 {
 		atomic.AddInt32(&i.sendQuota, -1)
 	}
 }
 
-// ReturnSendQuota increases the send quota by 1.
-func (i *Inflight) ReturnSendQuota() {
+// IncreaseSendQuota increases the send quota by 1.
+func (i *Inflight) IncreaseSendQuota() {
 	if atomic.LoadInt32(&i.sendQuota) < atomic.LoadInt32(&i.maximumSendQuota) {
 		atomic.AddInt32(&i.sendQuota, 1)
 	}

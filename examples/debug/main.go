@@ -36,7 +36,7 @@ func main() {
 	}
 
 	err = server.AddHook(new(debug.Hook), &debug.Options{
-		ShowPacketData: true,
+		// ShowPacketData: true,
 	})
 	if err != nil {
 		log.Fatal(err)

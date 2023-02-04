@@ -272,7 +272,7 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 			tk.FixedHeader.Dup = true // [MQTT-3.3.1-1] [MQTT-3.3.1-3]
 		}
 
-		//	cl.ops.hooks.OnQosPublish(cl, tk.Packet, nt, tk.Resends)
+		cl.ops.hooks.OnQosPublish(cl, tk, tk.Created, 0)
 		err := cl.WritePacket(tk)
 		if err != nil {
 			return err
