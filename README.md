@@ -120,6 +120,7 @@ The server comes with a variety of pre-packaged network listeners which allow th
 | --- | --- |
 | listeners.NewTCP | A TCP listener |
 | listeners.NewUnixSock | A Unix Socket listener |
+| listeners.NewNet | A net.Listener listener |
 | listeners.NewWebsocket | A Websocket listener |
 | listeners.NewHTTPStats | An HTTP $SYS info dashboard |
 

@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	Version                        = "2.1.6" // the current server version.
+	Version                        = "2.1.7" // the current server version.
 	defaultSysTopicInterval int64  = 1       // the interval between $SYS topic publishes
 	defaultFanPoolSize      uint64 = 32      // the number of concurrent workers in the pool
 	defaultFanPoolQueueSize uint64 = 1024    // the capacity of each worker queue
@@ -607,7 +607,7 @@ func (s *Server) processPacket(cl *Client, pk packets.Packet) error {
 			if ok := cl.State.Inflight.Delete(next.PacketID); ok {
 				atomic.AddInt64(&s.Info.Inflight, -1)
 			}
-			cl.State.Inflight.TakeSendQuota()
+			cl.State.Inflight.DecreaseSendQuota()
 		}
 	}
 
@@ -722,7 +722,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		return nil
 	}
 
-	cl.State.Inflight.TakeReceiveQuota()
+	cl.State.Inflight.DecreaseReceiveQuota()
 	ack := s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, packets.QosCodes[pk.FixedHeader.Qos]) // [MQTT-4.3.2-4]
 	if pk.FixedHeader.Qos == 2 {
 		ack = s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.CodeSuccess) // [MQTT-3.3.4-1] [MQTT-4.3.3-8]
@@ -741,7 +741,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		if ok := cl.State.Inflight.Delete(ack.PacketID); ok {
 			atomic.AddInt64(&s.Info.Inflight, -1)
 		}
-		cl.State.Inflight.ReturnReceiveQuota()
+		cl.State.Inflight.IncreaseReceiveQuota()
 		s.hooks.OnQosComplete(cl, pk)
 	}
 
@@ -838,6 +838,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 		if ok := cl.State.Inflight.Set(out); ok { // [MQTT-4.3.2-3] [MQTT-4.3.3-3]
 			atomic.AddInt64(&s.Info.Inflight, 1)
 			s.hooks.OnQosPublish(cl, out, out.Created, 0)
+			cl.State.Inflight.DecreaseSendQuota()
 		}
 
 		if sentQuota == 0 && atomic.LoadInt32(&cl.State.Inflight.maximumSendQuota) > 0 {
@@ -850,8 +851,6 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	if cl.Net.Conn == nil || atomic.LoadUint32(&cl.State.done) == 1 {
 		return pk, packets.CodeDisconnect
 	}
-
-	cl.State.Inflight.TakeSendQuota()
 
 	return out, cl.WritePacket(out)
 }
@@ -902,7 +901,7 @@ func (s *Server) processPuback(cl *Client, pk packets.Packet) error {
 	}
 
 	if ok := cl.State.Inflight.Delete(pk.PacketID); ok { // [MQTT-4.3.2-5]
-		cl.State.Inflight.ReturnSendQuota()
+		cl.State.Inflight.IncreaseSendQuota()
 		atomic.AddInt64(&s.Info.Inflight, -1)
 		s.hooks.OnQosComplete(cl, pk)
 	}
@@ -925,7 +924,7 @@ func (s *Server) processPubrec(cl *Client, pk packets.Packet) error {
 	}
 
 	ack := s.buildAck(pk.PacketID, packets.Pubrel, 1, pk.Properties, packets.CodeSuccess) // [MQTT-4.3.3-4] ![MQTT-4.3.3-6]
-	cl.State.Inflight.TakeReceiveQuota()                                                  // -1 RECV QUOTA
+	cl.State.Inflight.DecreaseReceiveQuota()                                              // -1 RECV QUOTA
 	cl.State.Inflight.Set(ack)                                                            // [MQTT-4.3.3-5]
 	return cl.WritePacket(ack)
 }
@@ -952,8 +951,8 @@ func (s *Server) processPubrel(cl *Client, pk packets.Packet) error {
 		return err
 	}
 
-	cl.State.Inflight.ReturnReceiveQuota()               // +1 RECV QUOTA
-	cl.State.Inflight.ReturnSendQuota()                  // +1 SENT QUOTA
+	cl.State.Inflight.IncreaseReceiveQuota()             // +1 RECV QUOTA
+	cl.State.Inflight.IncreaseSendQuota()                // +1 SENT QUOTA
 	if ok := cl.State.Inflight.Delete(pk.PacketID); ok { // [MQTT-4.3.3-12]
 		atomic.AddInt64(&s.Info.Inflight, -1)
 		s.hooks.OnQosComplete(cl, pk)
@@ -965,8 +964,8 @@ func (s *Server) processPubrel(cl *Client, pk packets.Packet) error {
 // processPubcomp processes a Pubcomp packet, denoting completion of a QOS 2 packet sent from the server.
 func (s *Server) processPubcomp(cl *Client, pk packets.Packet) error {
 	// regardless of whether the pubcomp is a success or failure, we end the qos flow, delete inflight, and restore the quotas.
-	cl.State.Inflight.ReturnReceiveQuota() // +1 RECV QUOTA
-	cl.State.Inflight.ReturnSendQuota()    // +1 SENT QUOTA
+	cl.State.Inflight.IncreaseReceiveQuota() // +1 RECV QUOTA
+	cl.State.Inflight.IncreaseSendQuota()    // +1 SENT QUOTA
 	if ok := cl.State.Inflight.Delete(pk.PacketID); ok {
 		atomic.AddInt64(&s.Info.Inflight, -1)
 		s.hooks.OnQosComplete(cl, pk)
