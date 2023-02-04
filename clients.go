@@ -468,7 +468,6 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		return nil
 	}
 
-	defer cl.refreshDeadline(cl.State.keepalive)
 	if pk.Expiry > 0 {
 		pk.Properties.MessageExpiryInterval = uint32(pk.Expiry - time.Now().Unix()) // [MQTT-3.3.2-6]
 	}
@@ -544,6 +543,7 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		atomic.AddInt64(&cl.ops.info.MessagesSent, 1)
 	}
 
+	cl.refreshDeadline(cl.State.keepalive)
 	cl.ops.hooks.OnPacketSent(cl, pk, buf.Bytes())
 
 	return err
