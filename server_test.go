@@ -7,6 +7,7 @@ package mqtt
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -54,10 +55,9 @@ func newServer() *Server {
 	cc.ReceiveMaximum = 0
 
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
-		Capabilities:     &cc,
+		Logger:       &logger,
+		PoolSize:     2,
+		Capabilities: &cc,
 	})
 	s.AddHook(new(AllowHook), nil)
 	return s
@@ -68,8 +68,7 @@ func TestOptionsSetDefaults(t *testing.T) {
 	opts.ensureDefaults()
 
 	require.Equal(t, defaultSysTopicInterval, opts.SysTopicResendInterval)
-	require.Equal(t, defaultFanPoolSize, opts.FanPoolSize)
-	require.Equal(t, defaultFanPoolQueueSize, opts.FanPoolQueueSize)
+	require.Equal(t, defaultPoolSize, opts.PoolSize)
 	require.Equal(t, DefaultServerCapabilities, opts.Capabilities)
 
 	opts = new(Options)
@@ -86,7 +85,7 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.Info)
 	require.NotNil(t, s.Log)
 	require.NotNil(t, s.Options)
-	require.NotNil(t, s.fanpool)
+	require.NotNil(t, s.pool)
 	require.NotNil(t, s.loop)
 	require.NotNil(t, s.loop.sysTopics)
 	require.NotNil(t, s.loop.inflightExpiry)
@@ -418,11 +417,13 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	r, w := net.Pipe()
 	o := make(chan error)
 	go func() {
-		o <- s.EstablishConnection("tcp", r)
+		err := s.EstablishConnection("tcp", r)
+		o <- err
 	}()
 
 	go func() {
 		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
+		time.Sleep(time.Millisecond) // we want to receive the retained message, so we need to wait a moment before sending the disconnect.
 		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
@@ -455,6 +456,7 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	require.Equal(t, connackPlusPacket, <-recv)
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectTakeover).RawBytes, <-takeover)
 
+	time.Sleep(time.Microsecond * 100)
 	w.Close()
 	r.Close()
 
@@ -560,9 +562,8 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 
 func TestEstablishConnectionBadAuthentication(t *testing.T) {
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
+		Logger:   &logger,
+		PoolSize: 2,
 	})
 	defer s.Close()
 
@@ -596,9 +597,8 @@ func TestEstablishConnectionBadAuthentication(t *testing.T) {
 
 func TestEstablishConnectionBadAuthenticationAckFailure(t *testing.T) {
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
+		Logger:   &logger,
+		PoolSize: 2,
 	})
 	defer s.Close()
 
@@ -1105,9 +1105,8 @@ func TestServerProcessPublishInvalidTopic(t *testing.T) {
 
 func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
+		Logger:   &logger,
+		PoolSize: 2,
 	})
 	s.Serve()
 	defer s.Close()
@@ -1390,6 +1389,7 @@ func TestPublishToClientServerDowngradeQos(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 		pkx.FixedHeader.Qos = 2
 		s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, pkx)
+		time.Sleep(time.Microsecond * 100)
 		w.Close()
 	}()
 
@@ -1403,6 +1403,25 @@ func TestPublishToClientServerDowngradeQos(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes, <-receiverBuf)
 }
 
+func TestPublishToClientExceedClientWritesPending(t *testing.T) {
+	s := newServer()
+	s.Options.Capabilities.MaximumClientWritesPending = 2
+
+	cl, _, _ := newTestClient()
+	s.Clients.Add(cl)
+
+	for i := int32(0); i < s.Options.Capabilities.MaximumClientWritesPending; i++ {
+		// cl.State.outbound <- packets.Packet{} // <- we can't do this, because the write loop will immediately decrement the outboundQty value.
+		atomic.AddInt32(&cl.State.outboundQty, 1)
+		fmt.Println("i,", i, atomic.LoadInt32(&cl.State.outboundQty))
+	}
+	fmt.Println(atomic.LoadInt32(&cl.State.outboundQty), s.Options.Capabilities.MaximumClientWritesPending)
+
+	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, packets.Packet{})
+	require.Error(t, err)
+	require.ErrorIs(t, packets.ErrPendingClientWritesExceeded, err)
+}
+
 func TestPublishToClientServerTopicAlias(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
@@ -1414,6 +1433,7 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).Packet
 		s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
 		s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
+		time.Sleep(time.Microsecond * 100)
 		w.Close()
 	}()
 
@@ -1944,6 +1964,7 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 	for i, tx := range tt {
 		t.Run("qos step"+strconv.Itoa(i), func(t *testing.T) {
 			r, w := net.Pipe()
+			time.Sleep(time.Millisecond)
 			cl.Net.Conn = w
 
 			recv := make(chan []byte)
@@ -1960,6 +1981,7 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			time.Sleep(time.Millisecond)
 			w.Close()
 
 			if i != 2 {
@@ -2171,9 +2193,8 @@ func TestServerProcessSubscribeNoConnection(t *testing.T) {
 
 func TestServerProcessSubscribeACLCheckDeny(t *testing.T) {
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
+		Logger:   &logger,
+		PoolSize: 2,
 	})
 	s.Serve()
 	cl, r, w := newTestClient()
@@ -2192,9 +2213,8 @@ func TestServerProcessSubscribeACLCheckDeny(t *testing.T) {
 
 func TestServerProcessSubscribeACLCheckDenyObscure(t *testing.T) {
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
+		Logger:   &logger,
+		PoolSize: 2,
 	})
 	s.Serve()
 	s.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true
@@ -2580,7 +2600,7 @@ func TestServerClose(t *testing.T) {
 	err := s.AddListener(listeners.NewMockListener("t1", ":1882"))
 	require.NoError(t, err)
 	s.Serve()
-	require.Equal(t, uint64(2), s.fanpool.Size())
+	require.NotNil(t, s.pool.queue)
 
 	// receive the disconnect
 	recv := make(chan []byte)
@@ -2600,8 +2620,8 @@ func TestServerClose(t *testing.T) {
 	s.Close()
 	time.Sleep(time.Millisecond)
 	require.Equal(t, false, listener.(*listeners.MockListener).IsServing())
-	require.Equal(t, uint64(0), s.fanpool.Size())
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectShuttingDown).RawBytes, <-recv)
+	require.Nil(t, s.pool.queue)
 }
 
 func TestServerClearExpiredInflights(t *testing.T) {

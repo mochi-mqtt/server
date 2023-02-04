@@ -41,10 +41,10 @@ import "github.com/mochi-co/mqtt/v2"
     - Direct Packet Injection using special inline client, or masquerade as existing clients.
 - Performant and Stable:
     - Our classic trie-based Topic-Subscription model.
-    - A new fixed 'FanPool' worker queues to ensure consistent resource allocation and throughput reliability. 
+    - A new fixed-sized worker queue ensures consistent resource allocation and throughput reliability, and write queues per client.
     - Passes all [Paho Interoperability Tests](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) for MQTT v5 and MQTT v3.
     - Over a thousand carefully considered unit test scenarios.
-- TCP, Websocket, (including SSL/TLS) and $SYS Dashboard listeners.
+- TCP, Websocket (including SSL/TLS), and $SYS Dashboard listeners.
 - Built-in Redis, Badger, and Bolt Persistence using Hooks (but you can also make your own).
 - Built-in Rule-based Authentication and ACL Ledger using Hooks (also make your own).
 
@@ -366,23 +366,23 @@ Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inov
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=2 -num-messages=10000`
 | Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
 | --                | --             | --   | --   | --             | --   | --   |
-| Mochi v2.0.0      | 139,860 | 135,960 | 132,059 | 217,499 | 211,027 | 204,555 |
+| Mochi v2.2.0      | 127,216 | 125,748 | 124,279 | 319,250 | 309,327 | 299,405 |
 | Mosquitto v2.0.15 | 155,920 | 155,919 | 155,918 | 185,485 | 185,097 | 184,709 |
-| EMQX v5.0.11      | 156,945 | 156,257 | 155,568 | 17,918 | 17,783 | 17649 |
+| EMQX v5.0.11      | 156,945 | 156,257 | 155,568 | 17,918 | 17,783 | 17,649 |
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
 | Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
 | --                | --             | --   | --   | --             | --   | --   |
-| Mochi v2.0.0      | 55,189 | 34,840 | 21,298 | 56,980 | 28,557 | 23,781 |
+| Mochi v2.2.0      | 39,941 | 32,206 | 22,486 | 281,987 | 77,211 | 56,538 |
 | Mosquitto v2.0.15 | 42,729 | 38,633 | 29,879 | 23,241 | 19,714 | 18,806 |
-| EMQX v5.0.11      | 21,553 | 17,418 | 14,356 | 4,257 | 3,980 | 3756 |
+| EMQX v5.0.11      | 21,553 | 17,418 | 14,356 | 4,257 | 3,980 | 3,756 |
 
 Million Message Challenge (hit the server with 1 million messages immediately):
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=100 -num-messages=10000`
 | Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
 | --                | --             | --   | --   | --             | --   | --   |
-| Mochi v2.0.0      | 13,573 | 3,678 | 1,848 | 34,309 | 2,470 | 5,636  |
+| Mochi v2.2.0      | 9,544 | 3,856 | 2,272 | 26,746 | 5,937 | 2,896 |
 | Mosquitto v2.0.15 | 3,826 | 3,395 | 3,032 | 1,200 | 1,150 | 1,118 |
 | EMQX v5.0.11      | 4,086 | 2,432 | 2,274 | 434 | 333 | 311 |
 
