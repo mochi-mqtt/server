@@ -474,7 +474,7 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 				cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))    // client receive max
 			}
 		}
-		
+
 		for _, sub := range existing.State.Subscriptions.GetAll() {
 			existed := !s.Topics.Subscribe(cl.ID, sub) // [MQTT-3.8.4-3]
 			if !existed {
