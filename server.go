@@ -730,6 +730,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 
 	if ok := cl.State.Inflight.Set(ack); ok {
 		atomic.AddInt64(&s.Info.Inflight, 1)
+		s.hooks.OnQosPublish(cl, ack, ack.Created, 0)
 	}
 
 	err := cl.WritePacket(ack)
@@ -742,7 +743,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 			atomic.AddInt64(&s.Info.Inflight, -1)
 		}
 		cl.State.Inflight.IncreaseReceiveQuota()
-		s.hooks.OnQosComplete(cl, pk)
+		s.hooks.OnQosComplete(cl, ack)
 	}
 
 	s.fanpool.Enqueue(cl.ID, func() {
