@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	Version                        = "2.1.7" // the current server version.
+	Version                        = "2.1.8" // the current server version.
 	defaultSysTopicInterval int64  = 1       // the interval between $SYS topic publishes
 	defaultFanPoolSize      uint64 = 32      // the number of concurrent workers in the pool
 	defaultFanPoolQueueSize uint64 = 1024    // the capacity of each worker queue
