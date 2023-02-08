@@ -4,6 +4,8 @@
 
 package system
 
+import "sync/atomic"
+
 // Info contains atomic counters and values for various server statistics
 // commonly found in $SYS topics (and others).
 // based on https://github.com/mqtt/mqtt.org/wiki/SYS-Topics
