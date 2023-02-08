@@ -33,5 +33,5 @@ func TestClone(t *testing.T) {
 
 	n := o.Clone()
 
-	require.True(t, reflect.DeepEqual(o, n))
+	require.Equal(t, o, n)
 }
