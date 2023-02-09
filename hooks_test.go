@@ -236,6 +236,7 @@ func TestHooksNonReturns(t *testing.T) {
 			h.OnSubscribed(cl, packets.Packet{}, []byte{1})
 			h.OnUnsubscribed(cl, packets.Packet{})
 			h.OnPublished(cl, packets.Packet{})
+			h.OnPublishDropped(cl, packets.Packet{})
 			h.OnRetainMessage(cl, packets.Packet{}, 0)
 			h.OnQosPublish(cl, packets.Packet{}, time.Now().Unix(), 0)
 			h.OnQosComplete(cl, packets.Packet{})

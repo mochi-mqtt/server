@@ -30,8 +30,9 @@ func newTestClient() (cl *Client, r net.Conn, w net.Conn) {
 		hooks: new(Hooks),
 		log:   &logger,
 		capabilities: &Capabilities{
-			ReceiveMaximum:    10,
-			TopicAliasMaximum: 10000,
+			ReceiveMaximum:             10,
+			TopicAliasMaximum:          10000,
+			MaximumClientWritesPending: 3,
 		},
 	})
 
@@ -42,6 +43,9 @@ func newTestClient() (cl *Client, r net.Conn, w net.Conn) {
 	cl.State.Inflight.receiveQuota = 10
 	cl.Properties.Props.TopicAliasMaximum = 0
 	cl.Properties.Props.RequestResponseInfo = 0x1
+
+	go cl.WriteLoop()
+
 	return
 }
 
