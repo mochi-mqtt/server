@@ -4,6 +4,8 @@
 
 package system
 
+import "sync/atomic"
+
 // Info contains atomic counters and values for various server statistics
 // commonly found in $SYS topics (and others).
 // based on https://github.com/mqtt/mqtt.org/wiki/SYS-Topics
@@ -28,4 +30,29 @@ type Info struct {
 	PacketsSent         int64  `json:"packets_sent"`         // total number of messages of any type sent since the broker started
 	MemoryAlloc         int64  `json:"memory_alloc"`         // memory currently allocated
 	Threads             int64  `json:"threads"`              // number of active goroutines, named as threads for platform ambiguity
+}
+
+func (i *Info) Clone() *Info {
+	return &Info{
+		Version:             i.Version,
+		Started:             atomic.LoadInt64(&i.Started),
+		Time:                atomic.LoadInt64(&i.Time),
+		Uptime:              atomic.LoadInt64(&i.Uptime),
+		BytesReceived:       atomic.LoadInt64(&i.BytesReceived),
+		BytesSent:           atomic.LoadInt64(&i.BytesSent),
+		ClientsConnected:    atomic.LoadInt64(&i.ClientsConnected),
+		ClientsMaximum:      atomic.LoadInt64(&i.ClientsMaximum),
+		ClientsTotal:        atomic.LoadInt64(&i.ClientsTotal),
+		ClientsDisconnected: atomic.LoadInt64(&i.ClientsDisconnected),
+		MessagesReceived:    atomic.LoadInt64(&i.MessagesReceived),
+		MessagesSent:        atomic.LoadInt64(&i.MessagesSent),
+		Retained:            atomic.LoadInt64(&i.Retained),
+		Inflight:            atomic.LoadInt64(&i.Inflight),
+		InflightDropped:     atomic.LoadInt64(&i.InflightDropped),
+		Subscriptions:       atomic.LoadInt64(&i.Subscriptions),
+		PacketsReceived:     atomic.LoadInt64(&i.PacketsReceived),
+		PacketsSent:         atomic.LoadInt64(&i.PacketsSent),
+		MemoryAlloc:         atomic.LoadInt64(&i.MemoryAlloc),
+		Threads:             atomic.LoadInt64(&i.Threads),
+	}
 }
