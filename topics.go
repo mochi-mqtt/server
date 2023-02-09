@@ -347,6 +347,8 @@ func (x *TopicsIndex) Unsubscribe(filter, client string) bool {
 // 0 is returned if sequential empty payloads are received.
 func (x *TopicsIndex) RetainMessage(pk packets.Packet) int64 {
 	n := x.set(pk.TopicName, 0)
+	n.Lock()
+	defer n.Unlock()
 	if len(pk.Payload) > 0 {
 		n.retainPath = pk.TopicName
 		x.Retained.Add(pk.TopicName, pk)
@@ -361,6 +363,7 @@ func (x *TopicsIndex) RetainMessage(pk packets.Packet) int64 {
 	n.retainPath = ""
 	x.Retained.Delete(pk.TopicName) // [MQTT-3.3.1-6] [MQTT-3.3.1-7]
 	x.trim(n)
+
 	return out
 }
 
@@ -619,6 +622,7 @@ type particle struct {
 	subscriptions *Subscriptions       // a map of subscriptions made by clients to this ending address
 	shared        *SharedSubscriptions // a map of shared subscriptions keyed on group name
 	retainPath    string               // path of a retained message
+	sync.Mutex                         // mutex for when making changes to the particle
 }
 
 // newParticle returns a pointer to a new instance of particle.

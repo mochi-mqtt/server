@@ -39,6 +39,7 @@ const (
 	OnUnsubscribed
 	OnPublish
 	OnPublished
+	OnPublishDropped
 	OnRetainMessage
 	OnQosPublish
 	OnQosComplete
@@ -87,6 +88,7 @@ type Hook interface {
 	OnUnsubscribed(cl *Client, pk packets.Packet)
 	OnPublish(cl *Client, pk packets.Packet) (packets.Packet, error)
 	OnPublished(cl *Client, pk packets.Packet)
+	OnPublishDropped(cl *Client, pk packets.Packet)
 	OnRetainMessage(cl *Client, pk packets.Packet, r int64)
 	OnQosPublish(cl *Client, pk packets.Packet, sent int64, resends int)
 	OnQosComplete(cl *Client, pk packets.Packet)
@@ -389,6 +391,16 @@ func (h *Hooks) OnPublished(cl *Client, pk packets.Packet) {
 	for _, hook := range h.GetAll() {
 		if hook.Provides(OnPublished) {
 			hook.OnPublished(cl, pk)
+		}
+	}
+}
+
+// OnPublishDropped is called when a message to a client was dropped instead of delivered
+// such as when a client is too slow to respond.
+func (h *Hooks) OnPublishDropped(cl *Client, pk packets.Packet) {
+	for _, hook := range h.GetAll() {
+		if hook.Provides(OnPublishDropped) {
+			hook.OnPublishDropped(cl, pk)
 		}
 	}
 }
@@ -726,6 +738,9 @@ func (h *HookBase) OnPublish(cl *Client, pk packets.Packet) (packets.Packet, err
 
 // OnPublished is called when a client has published a message to subscribers.
 func (h *HookBase) OnPublished(cl *Client, pk packets.Packet) {}
+
+// OnPublishDropped is called when a message to a client is dropped instead of being delivered.
+func (h *HookBase) OnPublishDropped(cl *Client, pk packets.Packet) {}
 
 // OnRetainMessage is called then a published message is retained.
 func (h *HookBase) OnRetainMessage(cl *Client, pk packets.Packet, r int64) {}
