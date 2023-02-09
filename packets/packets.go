@@ -208,7 +208,10 @@ func (pk *Packet) Copy(allowTransfer bool) Packet {
 		Created:        pk.Created,
 		Expiry:         pk.Expiry,
 		Origin:         pk.Origin,
-		PacketID:       pk.PacketID, // ... ? Packet ID must not be transferred (in this manner)
+	}
+
+	if allowTransfer {
+		p.PacketID = pk.PacketID
 	}
 
 	if len(pk.Connect.ProtocolName) > 0 {

@@ -335,13 +335,6 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 		return fmt.Errorf("ack connection packet: %w", err)
 	}
 
-	// Publish any retained messages for subscriptions which already existed on client takeover.
-	if sessionPresent {
-		for _, sub := range cl.State.Subscriptions.GetAll() {
-			s.publishRetainedToClient(cl, sub, true)
-		}
-	}
-
 	s.loop.willDelayed.Delete(cl.ID) // [MQTT-3.1.3-9]
 
 	if sessionPresent {

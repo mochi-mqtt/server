@@ -403,11 +403,7 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	cl.Properties.ProtocolVersion = 5
 	cl.ID = packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier
 	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
-	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
-
-	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
-	require.Equal(t, int64(1), retained)
-
+	cl.State.Inflight.Set(*packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 	s.Clients.Add(cl)
 
 	r, w := net.Pipe()
@@ -419,7 +415,7 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 
 	go func() {
 		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
-		time.Sleep(time.Millisecond) // we want to receive the retained message, so we need to wait a moment before sending the disconnect.
+		time.Sleep(time.Millisecond) // we want to receive the queued inflight, so we need to wait a moment before sending the disconnect.
 		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
@@ -447,7 +443,7 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 
 	connackPlusPacket := append(
 		packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedSessionExists).RawBytes,
-		packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes...,
+		packets.TPacketData[packets.Publish].Get(packets.TPublishQos1Dup).RawBytes...,
 	)
 	require.Equal(t, connackPlusPacket, <-recv)
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectTakeover).RawBytes, <-takeover)
