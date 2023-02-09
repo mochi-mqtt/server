@@ -41,7 +41,7 @@ import "github.com/mochi-co/mqtt/v2"
     - Direct Packet Injection using special inline client, or masquerade as existing clients.
 - Performant and Stable:
     - Our classic trie-based Topic-Subscription model.
-    - A new fixed-sized worker queue ensures consistent resource allocation and throughput reliability, and write queues per client.
+    - Client-specific write buffers to avoid issues with slow-reading or irregular client behaviour.
     - Passes all [Paho Interoperability Tests](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) for MQTT v5 and MQTT v3.
     - Over a thousand carefully considered unit test scenarios.
 - TCP, Websocket (including SSL/TLS), and $SYS Dashboard listeners.
