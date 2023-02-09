@@ -1432,7 +1432,7 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).Packet
 		s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
 		s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
-		time.Sleep(time.Microsecond * 100)
+		time.Sleep(time.Millisecond)
 		w.Close()
 	}()
 
