@@ -1325,6 +1325,7 @@ func (s *Server) loadServerInfo(v system.Info) {
 		atomic.StoreInt64(&s.Info.ClientsDisconnected, v.ClientsDisconnected)
 		atomic.StoreInt64(&s.Info.MessagesReceived, v.MessagesReceived)
 		atomic.StoreInt64(&s.Info.MessagesSent, v.MessagesSent)
+		atomic.StoreInt64(&s.Info.PublishDropped, v.PublishDropped)
 		atomic.StoreInt64(&s.Info.PacketsReceived, v.PacketsReceived)
 		atomic.StoreInt64(&s.Info.PacketsSent, v.PacketsSent)
 		atomic.StoreInt64(&s.Info.InflightDropped, v.InflightDropped)
