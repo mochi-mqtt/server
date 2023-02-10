@@ -58,6 +58,7 @@ type Capabilities struct {
 	MaximumClientWritesPending   int32
 	MaximumSessionExpiryInterval uint32
 	MaximumPacketSize            uint32
+	maximumPacketID              uint32 // unexported, used for testing only
 	ReceiveMaximum               uint16
 	TopicAliasMaximum            uint16
 	ServerKeepAlive              uint16
@@ -170,6 +171,8 @@ func (o *Options) ensureDefaults() {
 	if o.Capabilities == nil {
 		o.Capabilities = DefaultServerCapabilities
 	}
+
+	o.Capabilities.maximumPacketID = math.MaxUint16 // spec maximum is 65535
 
 	if o.SysTopicResendInterval == 0 {
 		o.SysTopicResendInterval = defaultSysTopicInterval
