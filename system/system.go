@@ -22,7 +22,7 @@ type Info struct {
 	ClientsTotal        int64  `json:"clients_total"`        // total number of connected and disconnected clients with a persistent session currently connected and registered
 	MessagesReceived    int64  `json:"messages_received"`    // total number of publish messages received
 	MessagesSent        int64  `json:"messages_sent"`        // total number of publish messages sent
-	PublishDropped      int64  `json:"publish_droopped"`     // total number of messages dropped to slow subscriber
+	PublishDropped      int64  `json:"publish_dropped"`     // total number of messages dropped to slow subscriber
 	Retained            int64  `json:"retained"`             // total number of retained messages active on the broker
 	Inflight            int64  `json:"inflight"`             // the number of messages currently in-flight
 	InflightDropped     int64  `json:"inflight_dropped"`     // the number of inflight messages which were dropped
