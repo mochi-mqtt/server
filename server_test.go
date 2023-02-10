@@ -1450,7 +1450,7 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
-	for i := 0; i <= 65535; i++ {
+	for i := uint32(0); i <= cl.ops.capabilities.maximumPacketID; i++ {
 		cl.State.Inflight.Set(packets.Packet{PacketID: uint16(i)})
 	}
 
@@ -1519,7 +1519,7 @@ func TestPublishToSubscribersExhaustedPacketIDs(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
 	s.Clients.Add(cl)
-	for i := 0; i <= 65535; i++ {
+	for i := uint32(0); i <= cl.ops.capabilities.maximumPacketID; i++ {
 		cl.State.Inflight.Set(packets.Packet{PacketID: 1})
 	}
 

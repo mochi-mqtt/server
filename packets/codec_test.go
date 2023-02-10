@@ -376,7 +376,7 @@ func TestEncodeUint16(t *testing.T) {
 	result = encodeUint16(32767)
 	require.Equal(t, []byte{0x7f, 0xff}, result)
 
-	result = encodeUint16(65535)
+	result = encodeUint16(math.MaxUint16)
 	require.Equal(t, []byte{0xff, 0xff}, result)
 }
 

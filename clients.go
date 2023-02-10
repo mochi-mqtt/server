@@ -252,28 +252,28 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 func (cl *Client) NextPacketID() (i uint32, err error) {
 	cl.Lock()
 	defer cl.Unlock()
+
 	i = atomic.LoadUint32(&cl.State.packetID)
-	started := i + 1
+	started := i
 	overflowed := false
 	for {
-		if i >= 65535 {
-			overflowed = true
-			i = 1
-		} else {
-			i++
-		}
-
 		if overflowed && i == started {
 			return 0, packets.ErrQuotaExceeded
 		}
 
+		if i >= cl.ops.capabilities.maximumPacketID {
+			overflowed = true
+			i = 0
+			continue
+		}
+
+		i++
+
 		if _, ok := cl.State.Inflight.Get(uint16(i)); !ok {
-			break
+			atomic.StoreUint32(&cl.State.packetID, i)
+			return i, nil
 		}
 	}
-
-	atomic.StoreUint32(&cl.State.packetID, i)
-	return i, nil
 }
 
 // ResendInflightMessages attempts to resend any pending inflight messages to connected clients.
