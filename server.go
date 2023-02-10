@@ -831,6 +831,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	case cl.State.outbound <- out:
 		atomic.AddInt32(&cl.State.outboundQty, 1)
 	default:
+		atomic.AddInt64(&s.Info.PublishDropped, 1)
 		cl.ops.hooks.OnPublishDropped(cl, pk)
 		cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
 		cl.State.Inflight.IncreaseSendQuota()
