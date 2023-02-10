@@ -20,7 +20,7 @@ func TestClone(t *testing.T) {
 		ClientsDisconnected: 9,
 		MessagesReceived:    10,
 		MessagesSent:        11,
-		PublishDropped:      20,
+		MessagesDropped:     20,
 		Retained:            12,
 		Inflight:            13,
 		InflightDropped:     14,
