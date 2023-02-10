@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -442,11 +443,11 @@ func (pk *Packet) ConnectValidate() Code {
 		return ErrProtocolViolationReservedBit // [MQTT-3.1.2-3]
 	}
 
-	if len(pk.Connect.Password) > 65535 {
+	if len(pk.Connect.Password) > math.MaxUint16 {
 		return ErrProtocolViolationPasswordTooLong
 	}
 
-	if len(pk.Connect.Username) > 65535 {
+	if len(pk.Connect.Username) > math.MaxUint16 {
 		return ErrProtocolViolationUsernameTooLong
 	}
 
@@ -466,7 +467,7 @@ func (pk *Packet) ConnectValidate() Code {
 		return ErrProtocolViolationPasswordNoFlag // [MQTT-3.1.2-18]
 	}
 
-	if len(pk.Connect.ClientIdentifier) > 65535 {
+	if len(pk.Connect.ClientIdentifier) > math.MaxUint16 {
 		return ErrClientIdentifierNotValid
 	}
 
