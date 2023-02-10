@@ -252,7 +252,12 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 func (cl *Client) NextPacketID() (i uint32, err error) {
 	cl.Lock()
 	defer cl.Unlock()
+
 	i = atomic.LoadUint32(&cl.State.packetID)
+	if i >= 65535 {
+		i = 0
+	}
+
 	started := i + 1
 	overflowed := false
 	for {

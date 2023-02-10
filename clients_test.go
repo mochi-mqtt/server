@@ -253,16 +253,20 @@ func TestClientNextPacketIDExhausted(t *testing.T) {
 
 func TestClientNextPacketIDOverflow(t *testing.T) {
 	cl, _, _ := newTestClient()
+	for i := uint16(0); i < 65535; i++ {
+		cl.State.Inflight.internal[i] = packets.Packet{}
+	}
 
 	cl.State.packetID = uint32(65534)
-
 	i, err := cl.NextPacketID()
 	require.NoError(t, err)
 	require.Equal(t, uint32(65535), i)
+	cl.State.Inflight.internal[65535] = packets.Packet{}
 
-	i, err = cl.NextPacketID()
-	require.NoError(t, err)
-	require.Equal(t, uint32(1), i)
+	cl.State.packetID = uint32(65535)
+	_, err = cl.NextPacketID()
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
 }
 
 func TestClientClearInflights(t *testing.T) {
