@@ -113,6 +113,7 @@ var (
 	ErrPacketTooLarge                         = Code{Code: 0x95, Reason: "packet too large"}
 	ErrMessageRateTooHigh                     = Code{Code: 0x96, Reason: "message rate too high"}
 	ErrQuotaExceeded                          = Code{Code: 0x97, Reason: "quota exceeded"}
+	ErrPendingClientWritesExceeded            = Code{Code: 0x97, Reason: "too many pending writes"}
 	ErrAdministrativeAction                   = Code{Code: 0x98, Reason: "administrative action"}
 	ErrPayloadFormatInvalid                   = Code{Code: 0x99, Reason: "payload format invalid"}
 	ErrRetainNotSupported                     = Code{Code: 0x9A, Reason: "retain not supported"}

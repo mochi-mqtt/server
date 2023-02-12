@@ -54,10 +54,8 @@ func newServer() *Server {
 	cc.ReceiveMaximum = 0
 
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
-		Capabilities:     &cc,
+		Logger:       &logger,
+		Capabilities: &cc,
 	})
 	s.AddHook(new(AllowHook), nil)
 	return s
@@ -68,8 +66,6 @@ func TestOptionsSetDefaults(t *testing.T) {
 	opts.ensureDefaults()
 
 	require.Equal(t, defaultSysTopicInterval, opts.SysTopicResendInterval)
-	require.Equal(t, defaultFanPoolSize, opts.FanPoolSize)
-	require.Equal(t, defaultFanPoolQueueSize, opts.FanPoolQueueSize)
 	require.Equal(t, DefaultServerCapabilities, opts.Capabilities)
 
 	opts = new(Options)
@@ -86,7 +82,6 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.Info)
 	require.NotNil(t, s.Log)
 	require.NotNil(t, s.Options)
-	require.NotNil(t, s.fanpool)
 	require.NotNil(t, s.loop)
 	require.NotNil(t, s.loop.sysTopics)
 	require.NotNil(t, s.loop.inflightExpiry)
@@ -408,21 +403,19 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	cl.Properties.ProtocolVersion = 5
 	cl.ID = packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier
 	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
-	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
-
-	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
-	require.Equal(t, int64(1), retained)
-
+	cl.State.Inflight.Set(*packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 	s.Clients.Add(cl)
 
 	r, w := net.Pipe()
 	o := make(chan error)
 	go func() {
-		o <- s.EstablishConnection("tcp", r)
+		err := s.EstablishConnection("tcp", r)
+		o <- err
 	}()
 
 	go func() {
 		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
+		time.Sleep(time.Millisecond) // we want to receive the queued inflight, so we need to wait a moment before sending the disconnect.
 		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
@@ -450,11 +443,12 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 
 	connackPlusPacket := append(
 		packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedSessionExists).RawBytes,
-		packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes...,
+		packets.TPacketData[packets.Publish].Get(packets.TPublishQos1Dup).RawBytes...,
 	)
 	require.Equal(t, connackPlusPacket, <-recv)
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectTakeover).RawBytes, <-takeover)
 
+	time.Sleep(time.Microsecond * 100)
 	w.Close()
 	r.Close()
 
@@ -560,9 +554,7 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 
 func TestEstablishConnectionBadAuthentication(t *testing.T) {
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
+		Logger: &logger,
 	})
 	defer s.Close()
 
@@ -596,9 +588,7 @@ func TestEstablishConnectionBadAuthentication(t *testing.T) {
 
 func TestEstablishConnectionBadAuthenticationAckFailure(t *testing.T) {
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
+		Logger: &logger,
 	})
 	defer s.Close()
 
@@ -1105,9 +1095,7 @@ func TestServerProcessPublishInvalidTopic(t *testing.T) {
 
 func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
+		Logger: &logger,
 	})
 	s.Serve()
 	defer s.Close()
@@ -1390,6 +1378,7 @@ func TestPublishToClientServerDowngradeQos(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 		pkx.FixedHeader.Qos = 2
 		s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, pkx)
+		time.Sleep(time.Microsecond * 100)
 		w.Close()
 	}()
 
@@ -1403,6 +1392,31 @@ func TestPublishToClientServerDowngradeQos(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes, <-receiverBuf)
 }
 
+func TestPublishToClientExceedClientWritesPending(t *testing.T) {
+	s := newServer()
+
+	_, w := net.Pipe()
+	cl := newClient(w, &ops{
+		info:  new(system.Info),
+		hooks: new(Hooks),
+		log:   &logger,
+		capabilities: &Capabilities{
+			MaximumClientWritesPending: 3,
+		},
+	})
+
+	s.Clients.Add(cl)
+
+	for i := int32(0); i < cl.ops.capabilities.MaximumClientWritesPending; i++ {
+		cl.State.outbound <- packets.Packet{}
+		atomic.AddInt32(&cl.State.outboundQty, 1)
+	}
+
+	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, packets.Packet{})
+	require.Error(t, err)
+	require.ErrorIs(t, packets.ErrPendingClientWritesExceeded, err)
+}
+
 func TestPublishToClientServerTopicAlias(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
@@ -1414,6 +1428,7 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).Packet
 		s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
 		s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
+		time.Sleep(time.Millisecond)
 		w.Close()
 	}()
 
@@ -1435,7 +1450,7 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
-	for i := 0; i <= 65535; i++ {
+	for i := uint32(0); i <= cl.ops.capabilities.maximumPacketID; i++ {
 		cl.State.Inflight.Set(packets.Packet{PacketID: uint16(i)})
 	}
 
@@ -1504,7 +1519,7 @@ func TestPublishToSubscribersExhaustedPacketIDs(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
 	s.Clients.Add(cl)
-	for i := 0; i <= 65535; i++ {
+	for i := uint32(0); i <= cl.ops.capabilities.maximumPacketID; i++ {
 		cl.State.Inflight.Set(packets.Packet{PacketID: 1})
 	}
 
@@ -1944,6 +1959,7 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 	for i, tx := range tt {
 		t.Run("qos step"+strconv.Itoa(i), func(t *testing.T) {
 			r, w := net.Pipe()
+			time.Sleep(time.Millisecond)
 			cl.Net.Conn = w
 
 			recv := make(chan []byte)
@@ -1960,6 +1976,7 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			time.Sleep(time.Millisecond)
 			w.Close()
 
 			if i != 2 {
@@ -2171,9 +2188,7 @@ func TestServerProcessSubscribeNoConnection(t *testing.T) {
 
 func TestServerProcessSubscribeACLCheckDeny(t *testing.T) {
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
+		Logger: &logger,
 	})
 	s.Serve()
 	cl, r, w := newTestClient()
@@ -2192,9 +2207,7 @@ func TestServerProcessSubscribeACLCheckDeny(t *testing.T) {
 
 func TestServerProcessSubscribeACLCheckDenyObscure(t *testing.T) {
 	s := New(&Options{
-		Logger:           &logger,
-		FanPoolSize:      2,
-		FanPoolQueueSize: 10,
+		Logger: &logger,
 	})
 	s.Serve()
 	s.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true
@@ -2580,7 +2593,6 @@ func TestServerClose(t *testing.T) {
 	err := s.AddListener(listeners.NewMockListener("t1", ":1882"))
 	require.NoError(t, err)
 	s.Serve()
-	require.Equal(t, uint64(2), s.fanpool.Size())
 
 	// receive the disconnect
 	recv := make(chan []byte)
@@ -2600,7 +2612,6 @@ func TestServerClose(t *testing.T) {
 	s.Close()
 	time.Sleep(time.Millisecond)
 	require.Equal(t, false, listener.(*listeners.MockListener).IsServing())
-	require.Equal(t, uint64(0), s.fanpool.Size())
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectShuttingDown).RawBytes, <-recv)
 }
 

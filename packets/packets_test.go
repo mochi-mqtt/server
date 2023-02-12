@@ -464,6 +464,9 @@ func TestCopy(t *testing.T) {
 		require.Equal(t, tt.Packet.Created, pkc.Created, pkInfo, tt.Case, tt.Desc)
 		require.Equal(t, tt.Packet.Origin, pkc.Origin, pkInfo, tt.Case, tt.Desc)
 		require.EqualValues(t, pkc.Properties, tt.Packet.Properties)
+
+		pkcc := tt.Packet.Copy(false)
+		require.Equal(t, uint16(0), pkcc.PacketID, pkInfo, tt.Case, tt.Desc)
 	}
 }
 

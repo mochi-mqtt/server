@@ -30,8 +30,10 @@ func newTestClient() (cl *Client, r net.Conn, w net.Conn) {
 		hooks: new(Hooks),
 		log:   &logger,
 		capabilities: &Capabilities{
-			ReceiveMaximum:    10,
-			TopicAliasMaximum: 10000,
+			ReceiveMaximum:             10,
+			TopicAliasMaximum:          10000,
+			MaximumClientWritesPending: 3,
+			maximumPacketID:            10,
 		},
 	})
 
@@ -42,6 +44,9 @@ func newTestClient() (cl *Client, r net.Conn, w net.Conn) {
 	cl.State.Inflight.receiveQuota = 10
 	cl.Properties.Props.TopicAliasMaximum = 0
 	cl.Properties.Props.RequestResponseInfo = 0x1
+
+	go cl.WriteLoop()
+
 	return
 }
 
@@ -237,28 +242,32 @@ func TestClientNextPacketIDInUse(t *testing.T) {
 
 func TestClientNextPacketIDExhausted(t *testing.T) {
 	cl, _, _ := newTestClient()
-	for i := 0; i <= 65535; i++ {
-		cl.State.Inflight.Set(packets.Packet{PacketID: uint16(i)})
+	for i := uint32(1); i <= cl.ops.capabilities.maximumPacketID; i++ {
+		cl.State.Inflight.internal[uint16(i)] = packets.Packet{PacketID: uint16(i)}
 	}
 
 	i, err := cl.NextPacketID()
-	require.Equal(t, uint32(0), i)
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
+	require.Equal(t, uint32(0), i)
 }
 
 func TestClientNextPacketIDOverflow(t *testing.T) {
 	cl, _, _ := newTestClient()
+	for i := uint32(0); i < cl.ops.capabilities.maximumPacketID; i++ {
+		cl.State.Inflight.internal[uint16(i)] = packets.Packet{}
+	}
 
-	cl.State.packetID = uint32(65534)
-
+	cl.State.packetID = uint32(cl.ops.capabilities.maximumPacketID - 1)
 	i, err := cl.NextPacketID()
 	require.NoError(t, err)
-	require.Equal(t, uint32(65535), i)
+	require.Equal(t, cl.ops.capabilities.maximumPacketID, i)
+	cl.State.Inflight.internal[uint16(cl.ops.capabilities.maximumPacketID)] = packets.Packet{}
 
-	i, err = cl.NextPacketID()
-	require.NoError(t, err)
-	require.Equal(t, uint32(1), i)
+	cl.State.packetID = cl.ops.capabilities.maximumPacketID
+	_, err = cl.NextPacketID()
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
 }
 
 func TestClientClearInflights(t *testing.T) {

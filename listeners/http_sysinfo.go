@@ -107,28 +107,7 @@ func (l *HTTPStats) Close(closeClients CloseFn) {
 
 // jsonHandler is an HTTP handler which outputs the $SYS stats as JSON.
 func (l *HTTPStats) jsonHandler(w http.ResponseWriter, req *http.Request) {
-	info := &system.Info{
-		Version:             l.sysInfo.Version,
-		Started:             atomic.LoadInt64(&l.sysInfo.Started),
-		Time:                atomic.LoadInt64(&l.sysInfo.Time),
-		Uptime:              atomic.LoadInt64(&l.sysInfo.Uptime),
-		BytesReceived:       atomic.LoadInt64(&l.sysInfo.BytesReceived),
-		BytesSent:           atomic.LoadInt64(&l.sysInfo.BytesSent),
-		ClientsConnected:    atomic.LoadInt64(&l.sysInfo.ClientsConnected),
-		ClientsMaximum:      atomic.LoadInt64(&l.sysInfo.ClientsMaximum),
-		ClientsTotal:        atomic.LoadInt64(&l.sysInfo.ClientsTotal),
-		ClientsDisconnected: atomic.LoadInt64(&l.sysInfo.ClientsDisconnected),
-		MessagesReceived:    atomic.LoadInt64(&l.sysInfo.MessagesReceived),
-		MessagesSent:        atomic.LoadInt64(&l.sysInfo.MessagesSent),
-		InflightDropped:     atomic.LoadInt64(&l.sysInfo.InflightDropped),
-		Subscriptions:       atomic.LoadInt64(&l.sysInfo.Subscriptions),
-		PacketsReceived:     atomic.LoadInt64(&l.sysInfo.PacketsReceived),
-		PacketsSent:         atomic.LoadInt64(&l.sysInfo.PacketsSent),
-		Retained:            atomic.LoadInt64(&l.sysInfo.Retained),
-		Inflight:            atomic.LoadInt64(&l.sysInfo.Inflight),
-		MemoryAlloc:         atomic.LoadInt64(&l.sysInfo.MemoryAlloc),
-		Threads:             atomic.LoadInt64(&l.sysInfo.Threads),
-	}
+	info := *l.sysInfo.Clone()
 
 	out, err := json.MarshalIndent(info, "", "\t")
 	if err != nil {

@@ -135,15 +135,17 @@ type Will struct {
 
 // State tracks the state of the client.
 type ClientState struct {
-	TopicAliases  TopicAliases   // a map of topic aliases
-	stopCause     atomic.Value   // reason for stopping
-	Inflight      *Inflight      // a map of in-flight qos messages
-	Subscriptions *Subscriptions // a map of the subscription filters a client maintains
-	disconnected  int64          // the time the client disconnected in unix time, for calculating expiry
-	endOnce       sync.Once      // only end once
-	packetID      uint32         // the current highest packetID
-	done          uint32         // atomic counter which indicates that the client has closed
-	keepalive     uint16         // the number of seconds the connection can wait
+	TopicAliases  TopicAliases        // a map of topic aliases
+	stopCause     atomic.Value        // reason for stopping
+	Inflight      *Inflight           // a map of in-flight qos messages
+	Subscriptions *Subscriptions      // a map of the subscription filters a client maintains
+	disconnected  int64               // the time the client disconnected in unix time, for calculating expiry
+	outbound      chan packets.Packet // queue for pending outbound packets
+	endOnce       sync.Once           // only end once
+	packetID      uint32              // the current highest packetID
+	done          uint32              // atomic counter which indicates that the client has closed
+	outboundQty   int32               // number of messages currently in the outbound queue
+	keepalive     uint16              // the number of seconds the connection can wait
 }
 
 // newClient returns a new instance of Client. This is almost exclusively used by Server
@@ -155,6 +157,7 @@ func newClient(c net.Conn, o *ops) *Client {
 			Subscriptions: NewSubscriptions(),
 			TopicAliases:  NewTopicAliases(o.capabilities.TopicAliasMaximum),
 			keepalive:     defaultKeepalive,
+			outbound:      make(chan packets.Packet, o.capabilities.MaximumClientWritesPending),
 		},
 		Properties: ClientProperties{
 			ProtocolVersion: defaultClientProtocolVersion, // default protocol version
@@ -173,6 +176,16 @@ func newClient(c net.Conn, o *ops) *Client {
 	cl.refreshDeadline(cl.State.keepalive)
 
 	return cl
+}
+
+// WriteLoop ranges over pending outbound messages and writes them to the client connection.
+func (cl *Client) WriteLoop() {
+	for pk := range cl.State.outbound {
+		if err := cl.WritePacket(pk); err != nil {
+			cl.ops.log.Debug().Err(err).Str("client", cl.ID).Interface("packet", pk).Msg("failed publishing packet")
+		}
+		atomic.AddInt32(&cl.State.outboundQty, -1)
+	}
 }
 
 // ParseConnect parses the connect parameters and properties for a client.
@@ -223,12 +236,12 @@ func (cl *Client) ParseConnect(lid string, pk packets.Packet) {
 
 // refreshDeadline refreshes the read/write deadline for the net.Conn connection.
 func (cl *Client) refreshDeadline(keepalive uint16) {
-	if cl.Net.Conn != nil {
-		var expiry time.Time // nil time can be used to disable deadline if keepalive = 0
-		if keepalive > 0 {
-			expiry = time.Now().Add(time.Duration(keepalive+(keepalive/2)) * time.Second) // [MQTT-3.1.2-22]
-		}
+	var expiry time.Time // nil time can be used to disable deadline if keepalive = 0
+	if keepalive > 0 {
+		expiry = time.Now().Add(time.Duration(keepalive+(keepalive/2)) * time.Second) // [MQTT-3.1.2-22]
+	}
 
+	if cl.Net.Conn != nil {
 		_ = cl.Net.Conn.SetDeadline(expiry) // [MQTT-3.1.2-22]
 	}
 }
@@ -237,28 +250,30 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 // If no unused packet ids are available, an error is returned and the client
 // should be disconnected.
 func (cl *Client) NextPacketID() (i uint32, err error) {
+	cl.Lock()
+	defer cl.Unlock()
+
 	i = atomic.LoadUint32(&cl.State.packetID)
-	started := i + 1
+	started := i
 	overflowed := false
 	for {
-		if i >= 65535 {
-			overflowed = true
-			i = 1
-		} else {
-			i++
-		}
-
 		if overflowed && i == started {
 			return 0, packets.ErrQuotaExceeded
 		}
 
+		if i >= cl.ops.capabilities.maximumPacketID {
+			overflowed = true
+			i = 0
+			continue
+		}
+
+		i++
+
 		if _, ok := cl.State.Inflight.Get(uint16(i)); !ok {
-			break
+			atomic.StoreUint32(&cl.State.packetID, i)
+			return i, nil
 		}
 	}
-
-	atomic.StoreUint32(&cl.State.packetID, i)
-	return i, nil
 }
 
 // ResendInflightMessages attempts to resend any pending inflight messages to connected clients.
@@ -543,7 +558,6 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		atomic.AddInt64(&cl.ops.info.MessagesSent, 1)
 	}
 
-	cl.refreshDeadline(cl.State.keepalive)
 	cl.ops.hooks.OnPacketSent(cl, pk, buf.Bytes())
 
 	return err

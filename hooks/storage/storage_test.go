@@ -104,6 +104,7 @@ var (
 			ClientsMaximum:   7,
 			MessagesReceived: 10,
 			MessagesSent:     11,
+			MessagesDropped:  20,
 			PacketsReceived:  12,
 			PacketsSent:      13,
 			Retained:         15,
@@ -111,7 +112,7 @@ var (
 			InflightDropped:  17,
 		},
 	}
-	sysInfoJSON = []byte(`{"version":"2.0.0","started":1,"time":0,"uptime":2,"bytes_received":3,"bytes_sent":4,"clients_connected":5,"clients_disconnected":0,"clients_maximum":7,"clients_total":0,"messages_received":10,"messages_sent":11,"retained":15,"inflight":16,"inflight_dropped":17,"subscriptions":0,"packets_received":12,"packets_sent":13,"memory_alloc":0,"threads":0,"t":"info","id":"id"}`)
+	sysInfoJSON = []byte(`{"version":"2.0.0","started":1,"time":0,"uptime":2,"bytes_received":3,"bytes_sent":4,"clients_connected":5,"clients_disconnected":0,"clients_maximum":7,"clients_total":0,"messages_received":10,"messages_sent":11,"messages_dropped":20,"retained":15,"inflight":16,"inflight_dropped":17,"subscriptions":0,"packets_received":12,"packets_sent":13,"memory_alloc":0,"threads":0,"t":"info","id":"id"}`)
 )
 
 func TestClientMarshalBinary(t *testing.T) {

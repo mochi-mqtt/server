@@ -26,10 +26,8 @@ import (
 )
 
 const (
-	Version                        = "2.1.7" // the current server version.
-	defaultSysTopicInterval int64  = 1       // the interval between $SYS topic publishes
-	defaultFanPoolSize      uint64 = 32      // the number of concurrent workers in the pool
-	defaultFanPoolQueueSize uint64 = 1024    // the capacity of each worker queue
+	Version                       = "2.2.1" // the current server version.
+	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 )
 
 var (
@@ -47,6 +45,7 @@ var (
 		SharedSubAvailable:           1,              // shared subscriptions are available
 		ServerKeepAlive:              10,             // default keepalive for clients
 		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
+		MaximumClientWritesPending:   1024 * 8,       // maximum number of pending message writes for a client
 	}
 
 	ErrListenerIDExists = errors.New("listener id already exists") // a listener with the same id already exists.
@@ -56,8 +55,10 @@ var (
 // Capabilities indicates the capabilities and features provided by the server.
 type Capabilities struct {
 	MaximumMessageExpiryInterval int64
+	MaximumClientWritesPending   int32
 	MaximumSessionExpiryInterval uint32
 	MaximumPacketSize            uint32
+	maximumPacketID              uint32 // unexported, used for testing only
 	ReceiveMaximum               uint16
 	TopicAliasMaximum            uint16
 	ServerKeepAlive              uint16
@@ -80,7 +81,9 @@ type Compatibilities struct {
 
 // Options contains configurable options for the server.
 type Options struct {
-	// Capabilities defines the server features and behaviour.
+	// Capabilities defines the server features and behaviour. If you only wish to modify
+	// several of these values, set them explicitly - e.g.
+	// 	server.Options.Capabilities.MaximumClientWritesPending = 16 * 1024
 	Capabilities *Capabilities
 
 	// Logger specifies a custom configured implementation of zerolog to override
@@ -90,16 +93,6 @@ type Options struct {
 	// 	l := server.Log.Level(zerolog.DebugLevel)
 	// 	server.Log = &l
 	Logger *zerolog.Logger
-
-	// FanPoolSize is the number of individual workers and queues to initialize.
-	// Bigger is not necessarily better, and you should rely on defaults unless
-	// you have know what you are doing.
-	FanPoolSize uint64
-
-	// FanPoolQueueSize is the size of the queue per worker. Increase this value
-	// accordingly if you anticipate having intermittent but massive numbers of
-	// messages. Cluster support is roadmapped.
-	FanPoolQueueSize uint64
 
 	// SysTopicResendInterval specifies the interval between $SYS topic updates in seconds.
 	SysTopicResendInterval int64
@@ -113,7 +106,6 @@ type Server struct {
 	Clients   *Clients             // clients known to the broker
 	Topics    *TopicsIndex         // an index of topic filter subscriptions and retained messages
 	Info      *system.Info         // values about the server commonly known as $SYS topics
-	fanpool   *FanPool             // a fixed size worker pool for processing inbound and outbound messages
 	loop      *loop                // loop contains tickers for the system event loop
 	done      chan bool            // indicate that the server is ending
 	Log       *zerolog.Logger      // minimal no-alloc logger
@@ -165,8 +157,7 @@ func New(opts *Options) *Server {
 			Version: Version,
 			Started: time.Now().Unix(),
 		},
-		fanpool: NewFanPool(opts.FanPoolSize, opts.FanPoolQueueSize),
-		Log:     opts.Logger,
+		Log: opts.Logger,
 		hooks: &Hooks{
 			Log: opts.Logger,
 		},
@@ -181,16 +172,10 @@ func (o *Options) ensureDefaults() {
 		o.Capabilities = DefaultServerCapabilities
 	}
 
+	o.Capabilities.maximumPacketID = math.MaxUint16 // spec maximum is 65535
+
 	if o.SysTopicResendInterval == 0 {
 		o.SysTopicResendInterval = defaultSysTopicInterval
-	}
-
-	if o.FanPoolSize == 0 {
-		o.FanPoolSize = defaultFanPoolSize
-	}
-
-	if o.FanPoolQueueSize < 1 {
-		o.FanPoolQueueSize = defaultFanPoolQueueSize
 	}
 
 	if o.Logger == nil {
@@ -219,6 +204,8 @@ func (s *Server) NewClient(c net.Conn, listener string, id string, inline bool) 
 		// By default we don't want to restrict developer publishes,
 		// but if you do, reset this after creating inline client.
 		cl.State.Inflight.ResetReceiveQuota(math.MaxInt32)
+	} else {
+		go cl.WriteLoop() // can only write to real clients
 	}
 
 	return cl
@@ -351,13 +338,6 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 		return fmt.Errorf("ack connection packet: %w", err)
 	}
 
-	// Publish any retained messages for subscriptions which already existed on client takeover.
-	if sessionPresent {
-		for _, sub := range cl.State.Subscriptions.GetAll() {
-			s.publishRetainedToClient(cl, sub, true)
-		}
-	}
-
 	s.loop.willDelayed.Delete(cl.ID) // [MQTT-3.1.3-9]
 
 	if sessionPresent {
@@ -382,6 +362,8 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	s.Log.Debug().Str("client", cl.ID).Err(err).Str("remote", cl.Net.Remote).Str("listener", listener).Msg("client disconnected")
 	expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryIntervalFlag && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
 	s.hooks.OnDisconnect(cl, err, expire)
+	close(cl.State.outbound)
+
 	if expire {
 		s.UnsubscribeClient(cl)
 		cl.ClearInflights(math.MaxInt64, 0)
@@ -458,8 +440,6 @@ func (s *Server) validateConnect(cl *Client, pk packets.Packet) packets.Code {
 // session is abandoned.
 func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 	if existing, ok := s.Clients.Get(pk.Connect.ClientIdentifier); ok {
-		existing.Lock()
-		defer existing.Unlock()
 		s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                 // [MQTT-3.1.4-3]
 		if pk.Connect.Clean || (existing.Properties.Clean && cl.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
@@ -468,13 +448,15 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 		}
 
 		if existing.State.Inflight.Len() > 0 {
+			existing.State.Inflight.Lock()
 			cl.State.Inflight = existing.State.Inflight // [MQTT-3.1.2-5]
+			existing.State.Inflight.Unlock()
 			if cl.State.Inflight.maximumReceiveQuota == 0 && cl.ops.capabilities.ReceiveMaximum != 0 {
 				cl.State.Inflight.ResetReceiveQuota(int32(cl.ops.capabilities.ReceiveMaximum)) // server receive max per client
 				cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))    // client receive max
 			}
 		}
-		
+
 		for _, sub := range existing.State.Subscriptions.GetAll() {
 			existed := !s.Topics.Subscribe(cl.ID, sub) // [MQTT-3.8.4-3]
 			if !existed {
@@ -714,10 +696,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	if pk.FixedHeader.Qos == 0 {
-		s.fanpool.Enqueue(cl.ID, func() {
-			s.publishToSubscribers(pk)
-		})
-
+		s.publishToSubscribers(pk)
 		s.hooks.OnPublished(cl, pk)
 		return nil
 	}
@@ -746,11 +725,9 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		s.hooks.OnQosComplete(cl, ack)
 	}
 
-	s.fanpool.Enqueue(cl.ID, func() {
-		s.publishToSubscribers(pk)
-	})
-
+	s.publishToSubscribers(pk)
 	s.hooks.OnPublished(cl, pk)
+
 	return nil
 }
 
@@ -845,15 +822,26 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 		if sentQuota == 0 && atomic.LoadInt32(&cl.State.Inflight.maximumSendQuota) > 0 {
 			out.Expiry = -1
 			cl.State.Inflight.Set(out)
-			return pk, nil
+			return out, nil
 		}
 	}
 
 	if cl.Net.Conn == nil || atomic.LoadUint32(&cl.State.done) == 1 {
-		return pk, packets.CodeDisconnect
+		return out, packets.CodeDisconnect
 	}
 
-	return out, cl.WritePacket(out)
+	select {
+	case cl.State.outbound <- out:
+		atomic.AddInt32(&cl.State.outboundQty, 1)
+	default:
+		atomic.AddInt64(&s.Info.MessagesDropped, 1)
+		cl.ops.hooks.OnPublishDropped(cl, pk)
+		cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
+		cl.State.Inflight.IncreaseSendQuota()
+		return out, packets.ErrPendingClientWritesExceeded
+	}
+
+	return out, nil
 }
 
 func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, existed bool) {
@@ -868,7 +856,7 @@ func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, e
 	for _, pkv := range s.Topics.Messages(sub.Filter) { // [MQTT-3.8.4-4]
 		_, err := s.publishToClient(cl, sub, pkv)
 		if err != nil {
-			s.Log.Warn().Err(err).Str("client", cl.ID).Str("listener", cl.Net.Listener).Interface("packet", pkv).Msg("failed to publish retained message")
+			s.Log.Debug().Err(err).Str("client", cl.ID).Str("listener", cl.Net.Listener).Interface("packet", pkv).Msg("failed to publish retained message")
 		}
 	}
 }
@@ -1113,7 +1101,6 @@ func (s *Server) UnsubscribeClient(cl *Client) {
 // processAuth processes an Auth packet.
 func (s *Server) processAuth(cl *Client, pk packets.Packet) error {
 	_, err := s.hooks.OnAuthPacket(cl, pk)
-	fmt.Println("err", err)
 	if err != nil {
 		return err
 	}
@@ -1201,6 +1188,7 @@ func (s *Server) publishSysTopics() {
 		SysPrefix + "/broker/packets/sent":         AtomicItoa(&s.Info.PacketsSent),
 		SysPrefix + "/broker/messages/received":    AtomicItoa(&s.Info.MessagesReceived),
 		SysPrefix + "/broker/messages/sent":        AtomicItoa(&s.Info.MessagesSent),
+		SysPrefix + "/broker/messages/dropped":     AtomicItoa(&s.Info.MessagesDropped),
 		SysPrefix + "/broker/messages/inflight":    AtomicItoa(&s.Info.Inflight),
 		SysPrefix + "/broker/retained":             AtomicItoa(&s.Info.Retained),
 		SysPrefix + "/broker/subscriptions":        AtomicItoa(&s.Info.Subscriptions),
@@ -1222,8 +1210,6 @@ func (s *Server) publishSysTopics() {
 func (s *Server) Close() error {
 	close(s.done)
 	s.Listeners.CloseAll(s.closeListenerClients)
-	s.fanpool.Close()
-	s.fanpool.Wait()
 	s.hooks.OnStopped()
 	s.hooks.Stop()
 
@@ -1343,6 +1329,7 @@ func (s *Server) loadServerInfo(v system.Info) {
 		atomic.StoreInt64(&s.Info.ClientsDisconnected, v.ClientsDisconnected)
 		atomic.StoreInt64(&s.Info.MessagesReceived, v.MessagesReceived)
 		atomic.StoreInt64(&s.Info.MessagesSent, v.MessagesSent)
+		atomic.StoreInt64(&s.Info.MessagesDropped, v.MessagesDropped)
 		atomic.StoreInt64(&s.Info.PacketsReceived, v.PacketsReceived)
 		atomic.StoreInt64(&s.Info.PacketsSent, v.PacketsSent)
 		atomic.StoreInt64(&s.Info.InflightDropped, v.InflightDropped)
