@@ -250,7 +250,7 @@ func TestDecodeProperties(t *testing.T) {
 	props := new(Properties)
 	n, err := props.Decode(Reserved, b)
 	require.NoError(t, err)
-	require.Equal(t, 172, n)
+	require.Equal(t, 172 + 2, n)
 	require.EqualValues(t, propertiesStruct, *props)
 }
 

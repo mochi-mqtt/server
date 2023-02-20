@@ -383,7 +383,7 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", err, ErrMalformedProperties)
 		}
-		offset += n + 1
+		offset += n
 	}
 
 	pk.Connect.ClientIdentifier, offset, err = decodeString(buf, offset) //[MQTT-3.1.3-1] [MQTT-3.1.3-2] [MQTT-3.1.3-3] [MQTT-3.1.3-4]
@@ -397,7 +397,7 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 			if err != nil {
 				return ErrMalformedWillProperties
 			}
-			offset += n + 1
+			offset += n
 		}
 
 		pk.Connect.WillTopic, offset, err = decodeString(buf, offset)
@@ -644,7 +644,7 @@ func (pk *Packet) PublishDecode(buf []byte) error {
 			return fmt.Errorf("%s: %w", err, ErrMalformedProperties)
 		}
 
-		offset += n + 1
+		offset += n
 	}
 
 	pk.Payload = buf[offset:]
@@ -861,7 +861,7 @@ func (pk *Packet) SubackDecode(buf []byte) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", err, ErrMalformedProperties)
 		}
-		offset += n + 1
+		offset += n
 	}
 
 	pk.ReasonCodes = buf[offset:]
@@ -918,7 +918,7 @@ func (pk *Packet) SubscribeDecode(buf []byte) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", err, ErrMalformedProperties)
 		}
-		offset += n + 1
+		offset += n
 	}
 
 	var filter string
@@ -1014,7 +1014,7 @@ func (pk *Packet) UnsubackDecode(buf []byte) error {
 			return fmt.Errorf("%s: %w", err, ErrMalformedProperties)
 		}
 
-		offset += n + 1
+		offset += n
 
 		pk.ReasonCodes = buf[offset:]
 	}
@@ -1066,7 +1066,7 @@ func (pk *Packet) UnsubscribeDecode(buf []byte) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", err, ErrMalformedProperties)
 		}
-		offset += n + 1
+		offset += n
 	}
 
 	var filter string
