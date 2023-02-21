@@ -366,13 +366,14 @@ func (p *Properties) Decode(pk byte, b *bytes.Buffer) (n int, err error) {
 		return 0, nil
 	}
 
-	n, _, err = DecodeLength(b)
+	var bu int
+	n, bu, err = DecodeLength(b)
 	if err != nil {
-		return n, err
+		return n + bu, err
 	}
 
 	if n == 0 {
-		return n, nil
+		return n + bu, nil
 	}
 
 	bt := b.Bytes()
@@ -380,11 +381,11 @@ func (p *Properties) Decode(pk byte, b *bytes.Buffer) (n int, err error) {
 	for offset := 0; offset < n; {
 		k, offset, err = decodeByte(bt, offset)
 		if err != nil {
-			return n, err
+			return n + bu, err
 		}
 
 		if _, ok := validPacketProperties[k][pk]; !ok {
-			return n, fmt.Errorf("property type %v not valid for packet type %v: %w", k, pk, ErrProtocolViolationUnsupportedProperty)
+			return n + bu, fmt.Errorf("property type %v not valid for packet type %v: %w", k, pk, ErrProtocolViolationUnsupportedProperty)
 		}
 
 		switch k {
@@ -406,7 +407,7 @@ func (p *Properties) Decode(pk byte, b *bytes.Buffer) (n int, err error) {
 
 			n, bu, err := DecodeLength(bytes.NewBuffer(bt[offset:]))
 			if err != nil {
-				return n, err
+				return n + bu, err
 			}
 			p.SubscriptionIdentifier = append(p.SubscriptionIdentifier, n)
 			offset += bu
@@ -452,7 +453,7 @@ func (p *Properties) Decode(pk byte, b *bytes.Buffer) (n int, err error) {
 			var k, v string
 			k, offset, err = decodeString(bt, offset)
 			if err != nil {
-				return n, err
+				return n + bu, err
 			}
 			v, offset, err = decodeString(bt, offset)
 			p.User = append(p.User, UserProperty{Key: k, Val: v})
@@ -470,9 +471,9 @@ func (p *Properties) Decode(pk byte, b *bytes.Buffer) (n int, err error) {
 		}
 
 		if err != nil {
-			return n, err
+			return n + bu, err
 		}
 	}
 
-	return n, nil
+	return n + bu, nil
 }
