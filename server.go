@@ -831,7 +831,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	}
 
 	select {
-	case cl.State.outbound <- out:
+	case cl.State.outbound <- &out:
 		atomic.AddInt32(&cl.State.outboundQty, 1)
 	default:
 		atomic.AddInt64(&s.Info.MessagesDropped, 1)
