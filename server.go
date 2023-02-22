@@ -361,15 +361,17 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 
 	s.Log.Debug().Str("client", cl.ID).Err(err).Str("remote", cl.Net.Remote).Str("listener", listener).Msg("client disconnected")
 	expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryIntervalFlag && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
-	s.hooks.OnDisconnect(cl, err, expire)
-	close(cl.State.outbound)
 
-	if expire {
-		s.UnsubscribeClient(cl)
-		cl.ClearInflights(math.MaxInt64, 0)
-		s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
+	// If there is already a connection use the same client id, do not delete it, otherwise the new connection's client will be deleted
+	if packets.ErrSessionTakenOver != cl.StopCause() {
+		s.hooks.OnDisconnect(cl, err, expire)
+		close(cl.State.outbound)
+		if expire {
+			s.UnsubscribeClient(cl)
+			cl.ClearInflights(math.MaxInt64, 0)
+			s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
+		}
 	}
-
 	return err
 }
 
@@ -440,7 +442,10 @@ func (s *Server) validateConnect(cl *Client, pk packets.Packet) packets.Code {
 // session is abandoned.
 func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 	if existing, ok := s.Clients.Get(pk.Connect.ClientIdentifier); ok {
-		s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                 // [MQTT-3.1.4-3]
+		
+		s.DisconnectClient(existing, packets.ErrSessionTakenOver)                              // [MQTT-3.1.4-3]
+		s.hooks.OnDisconnect(cl, packets.ErrSessionTakenOver, false)
+		
 		if pk.Connect.Clean || (existing.Properties.Clean && cl.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
 			existing.ClearInflights(math.MaxInt64, 0)
