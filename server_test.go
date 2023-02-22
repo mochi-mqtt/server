@@ -1408,7 +1408,7 @@ func TestPublishToClientExceedClientWritesPending(t *testing.T) {
 	s.Clients.Add(cl)
 
 	for i := int32(0); i < cl.ops.capabilities.MaximumClientWritesPending; i++ {
-		cl.State.outbound <- packets.Packet{}
+		cl.State.outbound <- &packets.Packet{}
 		atomic.AddInt32(&cl.State.outboundQty, 1)
 	}
 
