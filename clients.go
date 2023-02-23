@@ -135,17 +135,17 @@ type Will struct {
 
 // State tracks the state of the client.
 type ClientState struct {
-	TopicAliases  TopicAliases        // a map of topic aliases
-	stopCause     atomic.Value        // reason for stopping
-	Inflight      *Inflight           // a map of in-flight qos messages
-	Subscriptions *Subscriptions      // a map of the subscription filters a client maintains
-	disconnected  int64               // the time the client disconnected in unix time, for calculating expiry
-	outbound      chan packets.Packet // queue for pending outbound packets
-	endOnce       sync.Once           // only end once
-	packetID      uint32              // the current highest packetID
-	done          uint32              // atomic counter which indicates that the client has closed
-	outboundQty   int32               // number of messages currently in the outbound queue
-	keepalive     uint16              // the number of seconds the connection can wait
+	TopicAliases  TopicAliases         // a map of topic aliases
+	stopCause     atomic.Value         // reason for stopping
+	Inflight      *Inflight            // a map of in-flight qos messages
+	Subscriptions *Subscriptions       // a map of the subscription filters a client maintains
+	disconnected  int64                // the time the client disconnected in unix time, for calculating expiry
+	outbound      chan *packets.Packet // queue for pending outbound packets
+	endOnce       sync.Once            // only end once
+	packetID      uint32               // the current highest packetID
+	done          uint32               // atomic counter which indicates that the client has closed
+	outboundQty   int32                // number of messages currently in the outbound queue
+	keepalive     uint16               // the number of seconds the connection can wait
 }
 
 // newClient returns a new instance of Client. This is almost exclusively used by Server
@@ -157,7 +157,7 @@ func newClient(c net.Conn, o *ops) *Client {
 			Subscriptions: NewSubscriptions(),
 			TopicAliases:  NewTopicAliases(o.capabilities.TopicAliasMaximum),
 			keepalive:     defaultKeepalive,
-			outbound:      make(chan packets.Packet, o.capabilities.MaximumClientWritesPending),
+			outbound:      make(chan *packets.Packet, o.capabilities.MaximumClientWritesPending),
 		},
 		Properties: ClientProperties{
 			ProtocolVersion: defaultClientProtocolVersion, // default protocol version
@@ -181,7 +181,7 @@ func newClient(c net.Conn, o *ops) *Client {
 // WriteLoop ranges over pending outbound messages and writes them to the client connection.
 func (cl *Client) WriteLoop() {
 	for pk := range cl.State.outbound {
-		if err := cl.WritePacket(pk); err != nil {
+		if err := cl.WritePacket(*pk); err != nil {
 			cl.ops.log.Debug().Err(err).Str("client", cl.ID).Interface("packet", pk).Msg("failed publishing packet")
 		}
 		atomic.AddInt32(&cl.State.outboundQty, -1)
