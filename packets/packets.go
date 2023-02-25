@@ -412,7 +412,7 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 	}
 
 	if pk.Connect.UsernameFlag { // [MQTT-3.1.3-12]
-		if offset >= len(buf) {
+		if offset >= len(buf) { // we are at the end of the packet
 			return ErrProtocolViolationFlagNoUsername // [MQTT-3.1.2-17]
 		}
 

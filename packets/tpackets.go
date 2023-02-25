@@ -664,10 +664,9 @@ var TPacketData = map[byte]TPacketCases{
 
 		{
 			Case:      TConnectInvalidFlagNoUsername,
-			Desc:      "username flag no username bytes",
+			Desc:      "username flag with no username bytes",
 			Group:     "decode",
 			FailFirst: ErrProtocolViolationFlagNoUsername,
-			Expect:    ErrProtocolViolationFlagNoUsername,
 			RawBytes: []byte{
 				Connect << 4, 17, // Fixed header
 				0, 4, // Protocol Name - MSB+LSB
