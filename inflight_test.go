@@ -61,6 +61,16 @@ func TestInflightLen(t *testing.T) {
 	require.Equal(t, 1, cl.State.Inflight.Len())
 }
 
+func TestInflightClone(t *testing.T) {
+	cl, _, _ := newTestClient()
+	cl.State.Inflight.Set(packets.Packet{PacketID: 2})
+	require.Equal(t, 1, cl.State.Inflight.Len())
+
+	cloned := cl.State.Inflight.Clone()
+	require.NotNil(t, cloned)
+	require.NotSame(t, cloned, cl.State.Inflight)
+}
+
 func TestInflightDelete(t *testing.T) {
 	cl, _, _ := newTestClient()
 
