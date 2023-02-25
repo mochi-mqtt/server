@@ -48,6 +48,23 @@ func (h *AllowHook) Provides(b byte) bool {
 func (h *AllowHook) OnConnectAuthenticate(cl *Client, pk packets.Packet) bool { return true }
 func (h *AllowHook) OnACLCheck(cl *Client, topic string, write bool) bool     { return true }
 
+type DelayHook struct {
+	HookBase
+	DisconnectDelay time.Duration
+}
+
+func (h *DelayHook) ID() string {
+	return "delay-hook"
+}
+
+func (h *DelayHook) Provides(b byte) bool {
+	return bytes.Contains([]byte{OnDisconnect}, []byte{b})
+}
+
+func (h *DelayHook) OnDisconnect(cl *Client, err error, expire bool) {
+	time.Sleep(h.DisconnectDelay)
+}
+
 func newServer() *Server {
 	cc := *DefaultServerCapabilities
 	cc.MaximumMessageExpiryInterval = 0
@@ -401,6 +418,7 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 
 	cl, r0, _ := newTestClient()
 	cl.Properties.ProtocolVersion = 5
+	cl.Properties.Username = []byte("mochi")
 	cl.ID = packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier
 	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
 	cl.State.Inflight.Set(*packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
@@ -456,9 +474,99 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	require.True(t, ok)
 	require.NotEmpty(t, clw.State.Subscriptions)
 
-	sub, ok := cl.State.Subscriptions.Get("a/b/c")
+	// Prevent sequential takeover memory-bloom.
+	require.Empty(t, cl.State.Subscriptions.GetAll())
+}
+
+// See https://github.com/mochi-co/mqtt/issues/173
+func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
+	s := newServer()
+	d := new(DelayHook)
+	d.DisconnectDelay = time.Millisecond * 200
+	s.AddHook(d, nil)
+	defer s.Close()
+
+	// Clean session, 0 session expiry interval
+	cl1RawBytes := []byte{
+		packets.Connect << 4, 21, // Fixed header
+		0, 4, // Protocol Name - MSB+LSB
+		'M', 'Q', 'T', 'T', // Protocol Name
+		5,      // Protocol Version
+		1 << 1, // Packet Flags
+		0, 30,  // Keepalive
+		5,              // Properties length
+		17, 0, 0, 0, 0, // Session Expiry Interval (17)
+		0, 3, // Client ID - MSB+LSB
+		'z', 'e', 'n', // Client ID "zen"
+	}
+
+	// Make first connection
+	r1, w1 := net.Pipe()
+	o1 := make(chan error)
+	go func() {
+		err := s.EstablishConnection("tcp", r1)
+		o1 <- err
+	}()
+	go func() {
+		w1.Write(cl1RawBytes)
+	}()
+
+	// receive the first connack
+	recv := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(w1)
+		require.NoError(t, err)
+		recv <- buf
+	}()
+
+	// Get the first client pointer
+	time.Sleep(time.Millisecond * 50)
+	cl1, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectUserPass).Packet.Connect.ClientIdentifier)
 	require.True(t, ok)
-	require.Equal(t, packets.Subscription{Filter: "a/b/c", Qos: 1}, sub)
+	cl1.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
+	cl1.State.Subscriptions.Add("d/e/f", packets.Subscription{Filter: "d/e/f", Qos: 0})
+	time.Sleep(time.Millisecond * 50)
+
+	// Make the second connection
+	r2, w2 := net.Pipe()
+	o2 := make(chan error)
+	go func() {
+		err := s.EstablishConnection("tcp", r2)
+		o2 <- err
+	}()
+	go func() {
+		x := packets.TPacketData[packets.Connect].Get(packets.TConnectUserPass).RawBytes[:]
+		x[19] = '.' // differentiate username bytes in debugging
+		w2.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectUserPass).RawBytes)
+	}()
+
+	// receive the second connack
+	recv2 := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(w2)
+		require.NoError(t, err)
+		recv2 <- buf
+	}()
+
+	// Capture first Client pointer
+	clp1, ok := s.Clients.Get("zen")
+	require.True(t, ok)
+	require.Empty(t, clp1.Properties.Username)
+	require.NotEmpty(t, clp1.State.Subscriptions.GetAll())
+
+	err1 := <-o1
+	require.Error(t, err1)
+	require.ErrorIs(t, err1, io.ErrClosedPipe)
+
+	// Capture second Client pointer
+	clp2, ok := s.Clients.Get("zen")
+	require.True(t, ok)
+	require.Equal(t, []byte(".ochi"), clp2.Properties.Username)
+	require.NotEmpty(t, clp2.State.Subscriptions.GetAll())
+	require.Empty(t, clp1.State.Subscriptions.GetAll())
+
+	w2.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+	require.NoError(t, <-o2)
 }
 
 func TestEstablishConnectionResentPendingInflightsError(t *testing.T) {

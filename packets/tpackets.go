@@ -250,26 +250,26 @@ var TPacketData = map[byte]TPacketCases{
 			Desc:    "mqtt v3.1.1",
 			Primary: true,
 			RawBytes: []byte{
-				Connect << 4, 16, // Fixed header
+				Connect << 4, 15, // Fixed header
 				0, 4, // Protocol Name - MSB+LSB
 				'M', 'Q', 'T', 'T', // Protocol Name
 				4,     // Protocol Version
 				0,     // Packet Flags
 				0, 60, // Keepalive
-				0, 4, // Client ID - MSB+LSB
-				'z', 'e', 'n', '3', // Client ID "zen"
+				0, 3, // Client ID - MSB+LSB
+				'z', 'e', 'n', // Client ID "zen"
 			},
 			Packet: &Packet{
 				FixedHeader: FixedHeader{
 					Type:      Connect,
-					Remaining: 16,
+					Remaining: 15,
 				},
 				ProtocolVersion: 4,
 				Connect: ConnectParams{
 					ProtocolName:     []byte("MQTT"),
 					Clean:            false,
 					Keepalive:        60,
-					ClientIdentifier: "zen3",
+					ClientIdentifier: "zen",
 				},
 			},
 		},
@@ -426,9 +426,9 @@ var TPacketData = map[byte]TPacketCases{
 				Connect << 4, 28, // Fixed header
 				0, 4, // Protocol Name - MSB+LSB
 				'M', 'Q', 'T', 'T', // Protocol Name
-				4,     // Protocol Version
-				194,   // Packet Flags
-				0, 20, // Keepalive
+				4,               // Protocol Version
+				0 | 1<<6 | 1<<7, // Packet Flags
+				0, 20,           // Keepalive
 				0, 3, // Client ID - MSB+LSB
 				'z', 'e', 'n', // Client ID "zen"
 				0, 5, // Username MSB+LSB
@@ -444,7 +444,7 @@ var TPacketData = map[byte]TPacketCases{
 				ProtocolVersion: 4,
 				Connect: ConnectParams{
 					ProtocolName:     []byte("MQTT"),
-					Clean:            true,
+					Clean:            false,
 					Keepalive:        20,
 					ClientIdentifier: "zen",
 					UsernameFlag:     true,
