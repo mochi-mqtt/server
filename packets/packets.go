@@ -412,6 +412,10 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 	}
 
 	if pk.Connect.UsernameFlag { // [MQTT-3.1.3-12]
+		if offset >= len(buf) {
+			return ErrProtocolViolationFlagNoUsername // [MQTT-3.1.2-17]
+		}
+
 		pk.Connect.Username, offset, err = decodeBytes(buf, offset)
 		if err != nil {
 			return ErrMalformedUsername
@@ -449,10 +453,6 @@ func (pk *Packet) ConnectValidate() Code {
 
 	if len(pk.Connect.Username) > math.MaxUint16 {
 		return ErrProtocolViolationUsernameTooLong
-	}
-
-	if pk.Connect.UsernameFlag && len(pk.Connect.Username) == 0 {
-		return ErrProtocolViolationFlagNoUsername // [MQTT-3.1.2-17]
 	}
 
 	if !pk.Connect.UsernameFlag && len(pk.Connect.Username) > 0 {

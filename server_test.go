@@ -640,6 +640,33 @@ func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
 	r.Close()
 }
 
+// See https://github.com/mochi-co/mqtt/issues/178
+func TestServerEstablishConnectionZeroByteUsernameIsValid(t *testing.T) {
+	s := newServer()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r)
+	}()
+
+	go func() {
+		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectZeroByteUsername).RawBytes)
+		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+	}()
+
+	// receive the connack error
+	go func() {
+		_, err := io.ReadAll(w)
+		require.NoError(t, err)
+	}()
+
+	err := <-o
+	require.NoError(t, err)
+
+	r.Close()
+}
+
 func TestServerEstablishConnectionInvalidConnectAckFailure(t *testing.T) {
 	s := newServer()
 

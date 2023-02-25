@@ -71,7 +71,7 @@ const (
 	TConnectInvalidWillFlagNoPayload
 	TConnectInvalidWillFlagQosOutOfRange
 	TConnectInvalidWillSurplusRetain
-	TConnectNotCleanNoClientID
+	TConnectZeroByteUsername
 	TConnectSpecInvalidUTF8D800
 	TConnectSpecInvalidUTF8DFFF
 	TConnectSpecInvalidUTF80000
@@ -498,6 +498,43 @@ var TPacketData = map[byte]TPacketCases{
 				},
 			},
 		},
+		{
+			Case:  TConnectZeroByteUsername,
+			Desc:  "username flag but 0 byte username",
+			Group: "decode",
+			RawBytes: []byte{
+				Connect << 4, 23, // Fixed header
+				0, 4, // Protocol Name - MSB+LSB
+				'M', 'Q', 'T', 'T', // Protocol Name
+				5,     // Protocol Version
+				130,   // Packet Flags
+				0, 30, // Keepalive
+				5,                // length
+				17, 0, 0, 0, 120, // Session Expiry Interval (17)
+				0, 3, // Client ID - MSB+LSB
+				'z', 'e', 'n', // Client ID "zen"
+				0, 0, // Username MSB+LSB
+			},
+			Packet: &Packet{
+				FixedHeader: FixedHeader{
+					Type:      Connect,
+					Remaining: 23,
+				},
+				ProtocolVersion: 5,
+				Connect: ConnectParams{
+					ProtocolName:     []byte("MQTT"),
+					Clean:            true,
+					Keepalive:        30,
+					ClientIdentifier: "zen",
+					Username:         []byte{},
+					UsernameFlag:     true,
+				},
+				Properties: Properties{
+					SessionExpiryInterval:     uint32(120),
+					SessionExpiryIntervalFlag: true,
+				},
+			},
+		},
 
 		// Fail States
 		{
@@ -622,6 +659,25 @@ var TPacketData = map[byte]TPacketCases{
 				'n', 'o', 't', ' ', 'a', 'g', 'a', 'i', 'n',
 				0, 5, // Username MSB+LSB
 				'm', 'o', 'c',
+			},
+		},
+
+		{
+			Case:      TConnectInvalidFlagNoUsername,
+			Desc:      "username flag no username bytes",
+			Group:     "decode",
+			FailFirst: ErrProtocolViolationFlagNoUsername,
+			Expect:    ErrProtocolViolationFlagNoUsername,
+			RawBytes: []byte{
+				Connect << 4, 17, // Fixed header
+				0, 4, // Protocol Name - MSB+LSB
+				'M', 'Q', 'T', 'T', // Protocol Name
+				5,     // Protocol Version
+				130,   // Flags
+				0, 20, // Keepalive
+				0,
+				0, 3, // Client ID - MSB+LSB
+				'z', 'e', 'n', // Client ID "zen"
 			},
 		},
 		{
@@ -781,20 +837,6 @@ var TPacketData = map[byte]TPacketCases{
 					ClientIdentifier: func() string {
 						return string(make([]byte, 65536))
 					}(),
-				},
-			},
-		},
-		{
-			Case:   TConnectInvalidFlagNoUsername,
-			Desc:   "has username flag but no username",
-			Group:  "validate",
-			Expect: ErrProtocolViolationFlagNoUsername,
-			Packet: &Packet{
-				FixedHeader:     FixedHeader{Type: Connect},
-				ProtocolVersion: 4,
-				Connect: ConnectParams{
-					ProtocolName: []byte("MQTT"),
-					UsernameFlag: true,
 				},
 			},
 		},
