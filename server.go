@@ -362,12 +362,10 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	s.hooks.OnDisconnect(cl, err, expire)
 	close(cl.State.outbound)
 
-	if expire {
+	if expire && atomic.LoadUint32(&cl.State.isTakenOver) == 0 {
 		cl.ClearInflights(math.MaxInt64, 0)
 		s.UnsubscribeClient(cl)
-		if atomic.LoadUint32(&cl.State.isTakenOver) == 0 {
-			s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
-		}
+		s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]		}
 	}
 
 	return err
