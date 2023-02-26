@@ -58,6 +58,18 @@ func (i *Inflight) Len() int {
 	return len(i.internal)
 }
 
+// Clone returns a new instance of Inflight with the same message data.
+// This is used when transferring inflights from a taken-over session.
+func (i *Inflight) Clone() *Inflight {
+	c := NewInflights()
+	i.RLock()
+	defer i.RUnlock()
+	for k, v := range i.internal {
+		c.internal[k] = v
+	}
+	return c
+}
+
 // GetAll returns all the inflight messages.
 func (i *Inflight) GetAll(immediate bool) []packets.Packet {
 	i.RLock()

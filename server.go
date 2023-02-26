@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	Version                       = "2.2.3" // the current server version.
+	Version                       = "2.2.4" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 )
 
@@ -353,9 +353,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	if err != nil {
 		s.sendLWT(cl)
 		cl.Stop(err)
-	}
-
-	if err == nil {
+	} else {
 		cl.Properties.Will = Will{} // [MQTT-3.14.4-3] [MQTT-3.1.2-10]
 	}
 
@@ -365,9 +363,11 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	close(cl.State.outbound)
 
 	if expire {
-		s.UnsubscribeClient(cl)
 		cl.ClearInflights(math.MaxInt64, 0)
-		s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
+		s.UnsubscribeClient(cl)
+		if atomic.LoadUint32(&cl.State.isTakenOver) == 0 {
+			s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
+		}
 	}
 
 	return err
@@ -440,17 +440,17 @@ func (s *Server) validateConnect(cl *Client, pk packets.Packet) packets.Code {
 // session is abandoned.
 func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 	if existing, ok := s.Clients.Get(pk.Connect.ClientIdentifier); ok {
-		s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                 // [MQTT-3.1.4-3]
-		if pk.Connect.Clean || (existing.Properties.Clean && cl.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
+		s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                       // [MQTT-3.1.4-3]
+		if pk.Connect.Clean || (existing.Properties.Clean && existing.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
 			existing.ClearInflights(math.MaxInt64, 0)
 			return false // [MQTT-3.2.2-3]
 		}
 
+		atomic.StoreUint32(&existing.State.isTakenOver, 1)
+
 		if existing.State.Inflight.Len() > 0 {
-			existing.State.Inflight.Lock()
-			cl.State.Inflight = existing.State.Inflight // [MQTT-3.1.2-5]
-			existing.State.Inflight.Unlock()
+			cl.State.Inflight = existing.State.Inflight.Clone() // [MQTT-3.1.2-5]
 			if cl.State.Inflight.maximumReceiveQuota == 0 && cl.ops.capabilities.ReceiveMaximum != 0 {
 				cl.State.Inflight.ResetReceiveQuota(int32(cl.ops.capabilities.ReceiveMaximum)) // server receive max per client
 				cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))    // client receive max
@@ -464,6 +464,15 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 			}
 			cl.State.Subscriptions.Add(sub.Filter, sub)
 		}
+
+		// Clean the state of the existing client to prevent sequential take-overs
+		// from increasing memory usage by inflights + subs * client-id.
+		s.UnsubscribeClient(existing)
+		existing.ClearInflights(math.MaxInt64, 0)
+		s.Log.Debug().Str("client", cl.ID).
+			Str("old_remote", existing.Net.Remote).
+			Str("new_remote", cl.Net.Remote).
+			Msg("session taken over")
 
 		return true // [MQTT-3.2.2-3]
 	}
@@ -1087,8 +1096,15 @@ func (s *Server) UnsubscribeClient(cl *Client) {
 	i := 0
 	filterMap := cl.State.Subscriptions.GetAll()
 	filters := make([]packets.Subscription, len(filterMap))
-	for k, v := range filterMap {
+	for k := range filterMap {
 		cl.State.Subscriptions.Delete(k)
+	}
+
+	if atomic.LoadUint32(&cl.State.isTakenOver) == 1 {
+		return
+	}
+
+	for k, v := range filterMap {
 		if s.Topics.Unsubscribe(k, cl.ID) {
 			atomic.AddInt64(&s.Info.Subscriptions, -1)
 		}
