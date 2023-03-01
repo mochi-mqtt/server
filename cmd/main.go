@@ -51,6 +51,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	server.Info.RegisterPrometheusMetrics(nil)
+
 	go func() {
 		err := server.Serve()
 		if err != nil {
