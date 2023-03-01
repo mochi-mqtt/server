@@ -30,12 +30,12 @@ type Info struct {
 	MessagesDropped     int64  `json:"messages_dropped"`     // total number of publish messages dropped to slow subscriber
 	Retained            int64  `json:"retained"`             // total number of retained messages active on the broker
 	Inflight            int64  `json:"inflight"`             // the number of messages currently in-flight
-	//	InflightDropped     int64  `json:"inflight_dropped"`     // the number of inflight messages which were dropped
-	Subscriptions   int64 `json:"subscriptions"`    // total number of subscriptions active on the broker
-	PacketsReceived int64 `json:"packets_received"` // the total number of publish messages received
-	PacketsSent     int64 `json:"packets_sent"`     // total number of messages of any type sent since the broker started
-	MemoryAlloc     int64 `json:"memory_alloc"`     // memory currently allocated
-	Threads         int64 `json:"threads"`          // number of active goroutines, named as threads for platform ambiguity
+	InflightDropped     int64  `json:"inflight_dropped"`     // the number of inflight messages which were dropped
+	Subscriptions       int64  `json:"subscriptions"`        // total number of subscriptions active on the broker
+	PacketsReceived     int64  `json:"packets_received"`     // the total number of publish messages received
+	PacketsSent         int64  `json:"packets_sent"`         // total number of messages of any type sent since the broker started
+	MemoryAlloc         int64  `json:"memory_alloc"`         // memory currently allocated
+	Threads             int64  `json:"threads"`              // number of active goroutines, named as threads for platform ambiguity
 }
 
 // Clone makes a copy of Info using atomic operation
@@ -65,11 +65,7 @@ func (i *Info) Clone() *Info {
 	}
 }
 
-func CreateMetrics(i *Info, registry prometheus.Registerer) {
-	if i == nil {
-		return
-	}
-
+func (i *Info) RegisterPrometheusMetrics(registry prometheus.Registerer) {
 	if registry == nil {
 		registry = prometheus.DefaultRegisterer
 	}
@@ -97,8 +93,6 @@ func CreateMetrics(i *Info, registry prometheus.Registerer) {
 		{"g", "subscriptions", "A gauge of total number of subscriptions active on the broker", &i.Subscriptions},
 		{"c", "packets_received", "A counter of the total number of packets received", &i.PacketsReceived},
 		{"c", "packets_sent", "A counter of the total number of packets sent", &i.PacketsSent},
-		{"g", "memory_alloc", "A gauge of memory currently allocated", &i.MemoryAlloc},
-		{"g", "threads", "A guage of number of active goroutines", &i.Threads},
 	}
 
 	for _, m := range metricsList {
