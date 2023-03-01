@@ -4,7 +4,12 @@
 
 package system
 
-import "sync/atomic"
+import (
+	"runtime"
+	"sync/atomic"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 // Info contains atomic counters and values for various server statistics
 // commonly found in $SYS topics (and others).
@@ -25,12 +30,12 @@ type Info struct {
 	MessagesDropped     int64  `json:"messages_dropped"`     // total number of publish messages dropped to slow subscriber
 	Retained            int64  `json:"retained"`             // total number of retained messages active on the broker
 	Inflight            int64  `json:"inflight"`             // the number of messages currently in-flight
-	InflightDropped     int64  `json:"inflight_dropped"`     // the number of inflight messages which were dropped
-	Subscriptions       int64  `json:"subscriptions"`        // total number of subscriptions active on the broker
-	PacketsReceived     int64  `json:"packets_received"`     // the total number of publish messages received
-	PacketsSent         int64  `json:"packets_sent"`         // total number of messages of any type sent since the broker started
-	MemoryAlloc         int64  `json:"memory_alloc"`         // memory currently allocated
-	Threads             int64  `json:"threads"`              // number of active goroutines, named as threads for platform ambiguity
+	//	InflightDropped     int64  `json:"inflight_dropped"`     // the number of inflight messages which were dropped
+	Subscriptions   int64 `json:"subscriptions"`    // total number of subscriptions active on the broker
+	PacketsReceived int64 `json:"packets_received"` // the total number of publish messages received
+	PacketsSent     int64 `json:"packets_sent"`     // total number of messages of any type sent since the broker started
+	MemoryAlloc     int64 `json:"memory_alloc"`     // memory currently allocated
+	Threads         int64 `json:"threads"`          // number of active goroutines, named as threads for platform ambiguity
 }
 
 // Clone makes a copy of Info using atomic operation
@@ -51,11 +56,89 @@ func (i *Info) Clone() *Info {
 		MessagesDropped:     atomic.LoadInt64(&i.MessagesDropped),
 		Retained:            atomic.LoadInt64(&i.Retained),
 		Inflight:            atomic.LoadInt64(&i.Inflight),
-		InflightDropped:     atomic.LoadInt64(&i.InflightDropped),
-		Subscriptions:       atomic.LoadInt64(&i.Subscriptions),
-		PacketsReceived:     atomic.LoadInt64(&i.PacketsReceived),
-		PacketsSent:         atomic.LoadInt64(&i.PacketsSent),
-		MemoryAlloc:         atomic.LoadInt64(&i.MemoryAlloc),
-		Threads:             atomic.LoadInt64(&i.Threads),
+		//		InflightDropped:     atomic.LoadInt64(&i.InflightDropped),
+		Subscriptions:   atomic.LoadInt64(&i.Subscriptions),
+		PacketsReceived: atomic.LoadInt64(&i.PacketsReceived),
+		PacketsSent:     atomic.LoadInt64(&i.PacketsSent),
+		MemoryAlloc:     atomic.LoadInt64(&i.MemoryAlloc),
+		Threads:         atomic.LoadInt64(&i.Threads),
 	}
+}
+
+func CreateMetrics(i *Info, registry prometheus.Registerer) {
+	if i == nil {
+		return
+	}
+
+	if registry == nil {
+		registry = prometheus.DefaultRegisterer
+	}
+
+	type metrics struct {
+		metricType string
+		name       string
+		help       string
+		value      *int64
+	}
+
+	metricsList := []metrics{
+		{"c", "bytes_received", "A count of total number of bytes received", &i.BytesReceived},
+		{"c", "bytes_sent", "A counter total number of bytes sent", &i.BytesSent},
+		{"g", "clients_connected", "A gauge of number of currently connected clients", &i.ClientsConnected},
+		{"g", "clients_disconnected", "A gauge of total number of persistent clients", &i.ClientsDisconnected},
+		{"c", "clients_maximum", "A count of maximum number of active clients that have been connected", &i.ClientsMaximum},
+		{"g", "clients_total", "A gauge of total number of connected and disconnected clients with a persistent session currently connected and registered", &i.ClientsTotal},
+		{"c", "messages_received", "A counter of total number of publish messages received", &i.MessagesReceived},
+		{"c", "messages_sent", "A counter of total number of publish messages sent", &i.MessagesSent},
+		{"c", "messages_dropped", "A counter of total number of publish messages dropped to slow subscriber", &i.MessagesDropped},
+		{"g", "retained", "A gauge of total number of retained messages active on the broker", &i.Retained},
+		{"g", "inflight", "A gauge of the number of messages currently in-flight", &i.Inflight},
+		//		{"c", "inflight_dropped", "A", &i.InflightDropped},
+		{"g", "subscriptions", "A gauge of total number of subscriptions active on the broker", &i.Subscriptions},
+		{"c", "packets_received", "A counter of the total number of packets received", &i.PacketsReceived},
+		{"c", "packets_sent", "A counter of the total number of packets sent", &i.PacketsSent},
+		{"g", "memory_alloc", "A gauge of memory currently allocated", &i.MemoryAlloc},
+		{"g", "threads", "A guage of number of active goroutines", &i.Threads},
+	}
+
+	for _, m := range metricsList {
+		m := m
+		fn := func() float64 {
+			return float64(atomic.LoadInt64(m.value))
+		}
+
+		switch m.metricType {
+		case "c":
+			registry.MustRegister(
+				prometheus.NewCounterFunc(
+					prometheus.CounterOpts{
+						Name: m.name,
+						Help: m.help,
+					},
+					fn,
+				),
+			)
+		case "g":
+			registry.MustRegister(
+				prometheus.NewGaugeFunc(
+					prometheus.GaugeOpts{
+						Name: m.name,
+						Help: m.help,
+					},
+					fn,
+				),
+			)
+		}
+	}
+
+	buildInfo := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			// Namespace: AppName,
+			Name: "build_info",
+			Help: "Build Information",
+		},
+		[]string{"goversion", "version"},
+	)
+	prometheus.MustRegister(buildInfo)
+	buildInfo.With(prometheus.Labels{"goversion": runtime.Version(), "version": i.Version}).Set(1)
 }
