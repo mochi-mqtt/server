@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mochi-co/mqtt/v2/system"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/rs/zerolog"
 )
@@ -68,6 +69,9 @@ func (l *HTTPStats) Init(log *zerolog.Logger) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", l.jsonHandler)
+	mux.Handle("/metrics", promhttp.Handler())
+
+	// mux.Handle("/metrics", promhttp.)
 	l.listen = &http.Server{
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
