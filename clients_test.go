@@ -29,11 +29,13 @@ func newTestClient() (cl *Client, r net.Conn, w net.Conn) {
 		info:  new(system.Info),
 		hooks: new(Hooks),
 		log:   &logger,
-		capabilities: &Capabilities{
-			ReceiveMaximum:             10,
-			TopicAliasMaximum:          10000,
-			MaximumClientWritesPending: 3,
-			maximumPacketID:            10,
+		options: &Options{
+			Capabilities: &Capabilities{
+				ReceiveMaximum:             10,
+				TopicAliasMaximum:          10000,
+				MaximumClientWritesPending: 3,
+				maximumPacketID:            10,
+			},
 		},
 	})
 
@@ -134,6 +136,8 @@ func TestNewClient(t *testing.T) {
 	require.Equal(t, defaultClientProtocolVersion, cl.Properties.ProtocolVersion)
 	require.NotNil(t, cl.Net.Conn)
 	require.NotNil(t, cl.Net.bconn)
+	require.NotNil(t, cl.ops)
+	require.NotNil(t, cl.ops.options.Capabilities)
 	require.False(t, cl.Net.Inline)
 }
 
@@ -168,8 +172,8 @@ func TestClientParseConnect(t *testing.T) {
 	require.Equal(t, pk.Connect.WillQos, cl.Properties.Will.Qos)
 	require.Equal(t, pk.Connect.WillRetain, cl.Properties.Will.Retain)
 	require.Equal(t, uint32(1), cl.Properties.Will.Flag)
-	require.Equal(t, int32(cl.ops.capabilities.ReceiveMaximum), cl.State.Inflight.receiveQuota)
-	require.Equal(t, int32(cl.ops.capabilities.ReceiveMaximum), cl.State.Inflight.maximumReceiveQuota)
+	require.Equal(t, int32(cl.ops.options.Capabilities.ReceiveMaximum), cl.State.Inflight.receiveQuota)
+	require.Equal(t, int32(cl.ops.options.Capabilities.ReceiveMaximum), cl.State.Inflight.maximumReceiveQuota)
 	require.Equal(t, int32(pk.Properties.ReceiveMaximum), cl.State.Inflight.sendQuota)
 	require.Equal(t, int32(pk.Properties.ReceiveMaximum), cl.State.Inflight.maximumSendQuota)
 }
@@ -242,7 +246,7 @@ func TestClientNextPacketIDInUse(t *testing.T) {
 
 func TestClientNextPacketIDExhausted(t *testing.T) {
 	cl, _, _ := newTestClient()
-	for i := uint32(1); i <= cl.ops.capabilities.maximumPacketID; i++ {
+	for i := uint32(1); i <= cl.ops.options.Capabilities.maximumPacketID; i++ {
 		cl.State.Inflight.internal[uint16(i)] = packets.Packet{PacketID: uint16(i)}
 	}
 
@@ -254,17 +258,17 @@ func TestClientNextPacketIDExhausted(t *testing.T) {
 
 func TestClientNextPacketIDOverflow(t *testing.T) {
 	cl, _, _ := newTestClient()
-	for i := uint32(0); i < cl.ops.capabilities.maximumPacketID; i++ {
+	for i := uint32(0); i < cl.ops.options.Capabilities.maximumPacketID; i++ {
 		cl.State.Inflight.internal[uint16(i)] = packets.Packet{}
 	}
 
-	cl.State.packetID = uint32(cl.ops.capabilities.maximumPacketID - 1)
+	cl.State.packetID = uint32(cl.ops.options.Capabilities.maximumPacketID - 1)
 	i, err := cl.NextPacketID()
 	require.NoError(t, err)
-	require.Equal(t, cl.ops.capabilities.maximumPacketID, i)
-	cl.State.Inflight.internal[uint16(cl.ops.capabilities.maximumPacketID)] = packets.Packet{}
+	require.Equal(t, cl.ops.options.Capabilities.maximumPacketID, i)
+	cl.State.Inflight.internal[uint16(cl.ops.options.Capabilities.maximumPacketID)] = packets.Packet{}
 
-	cl.State.packetID = cl.ops.capabilities.maximumPacketID
+	cl.State.packetID = cl.ops.options.Capabilities.maximumPacketID
 	_, err = cl.NextPacketID()
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
@@ -363,7 +367,7 @@ func TestClientReadFixedHeaderDecodeError(t *testing.T) {
 
 func TestClientReadFixedHeaderPacketOversized(t *testing.T) {
 	cl, r, _ := newTestClient()
-	cl.ops.capabilities.MaximumPacketSize = 2
+	cl.ops.options.Capabilities.MaximumPacketSize = 2
 	defer cl.Stop(errClientStop)
 
 	go func() {

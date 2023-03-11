@@ -156,9 +156,9 @@ func newClient(c net.Conn, o *ops) *Client {
 		State: ClientState{
 			Inflight:      NewInflights(),
 			Subscriptions: NewSubscriptions(),
-			TopicAliases:  NewTopicAliases(o.capabilities.TopicAliasMaximum),
+			TopicAliases:  NewTopicAliases(o.options.Capabilities.TopicAliasMaximum),
 			keepalive:     defaultKeepalive,
-			outbound:      make(chan *packets.Packet, o.capabilities.MaximumClientWritesPending),
+			outbound:      make(chan *packets.Packet, o.options.Capabilities.MaximumClientWritesPending),
 		},
 		Properties: ClientProperties{
 			ProtocolVersion: defaultClientProtocolVersion, // default protocol version
@@ -168,8 +168,11 @@ func newClient(c net.Conn, o *ops) *Client {
 
 	if c != nil {
 		cl.Net = ClientConnection{
-			Conn:   c,
-			bconn:  bufio.NewReadWriter(bufio.NewReader(c), bufio.NewWriter(c)),
+			Conn: c,
+			bconn: bufio.NewReadWriter(
+				bufio.NewReaderSize(c, o.options.ClientNetReadBufferSize),
+				bufio.NewWriterSize(c, o.options.ClientNetReadBufferSize),
+			),
 			Remote: c.RemoteAddr().String(),
 		}
 	}
@@ -198,8 +201,8 @@ func (cl *Client) ParseConnect(lid string, pk packets.Packet) {
 	cl.Properties.Clean = pk.Connect.Clean
 	cl.Properties.Props = pk.Properties.Copy(false)
 
-	cl.State.Inflight.ResetReceiveQuota(int32(cl.ops.capabilities.ReceiveMaximum)) // server receive max per client
-	cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))    // client receive max
+	cl.State.Inflight.ResetReceiveQuota(int32(cl.ops.options.Capabilities.ReceiveMaximum)) // server receive max per client
+	cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))            // client receive max
 
 	cl.State.TopicAliases.Outbound = NewOutboundTopicAliases(cl.Properties.Props.TopicAliasMaximum)
 
@@ -209,7 +212,7 @@ func (cl *Client) ParseConnect(lid string, pk packets.Packet) {
 		cl.Properties.Props.AssignedClientID = cl.ID
 	}
 
-	cl.State.keepalive = cl.ops.capabilities.ServerKeepAlive
+	cl.State.keepalive = cl.ops.options.Capabilities.ServerKeepAlive
 	if pk.Connect.Keepalive > 0 {
 		cl.State.keepalive = pk.Connect.Keepalive // [MQTT-3.2.2-22]
 	}
@@ -262,7 +265,7 @@ func (cl *Client) NextPacketID() (i uint32, err error) {
 			return 0, packets.ErrQuotaExceeded
 		}
 
-		if i >= cl.ops.capabilities.maximumPacketID {
+		if i >= cl.ops.options.Capabilities.maximumPacketID {
 			overflowed = true
 			i = 0
 			continue
@@ -405,7 +408,7 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 		return err
 	}
 
-	if cl.ops.capabilities.MaximumPacketSize > 0 && uint32(fh.Remaining+1) > cl.ops.capabilities.MaximumPacketSize {
+	if cl.ops.options.Capabilities.MaximumPacketSize > 0 && uint32(fh.Remaining+1) > cl.ops.options.Capabilities.MaximumPacketSize {
 		return packets.ErrPacketTooLarge // [MQTT-3.2.2-15]
 	}
 
@@ -497,7 +500,7 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		pk.Mods.DisallowProblemInfo = true // [MQTT-3.1.2-29] strict, no problem info on any packet if set
 	}
 
-	if pk.FixedHeader.Type != packets.Connack || cl.Properties.Props.RequestResponseInfo == 0x1 || cl.ops.capabilities.Compatibilities.AlwaysReturnResponseInfo {
+	if pk.FixedHeader.Type != packets.Connack || cl.Properties.Props.RequestResponseInfo == 0x1 || cl.ops.options.Capabilities.Compatibilities.AlwaysReturnResponseInfo {
 		pk.Mods.AllowResponseInfo = true // [MQTT-3.1.2-28] we need to know which properties we can encode
 	}
 
