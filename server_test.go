@@ -1535,14 +1535,16 @@ func TestPublishToClientExceedClientWritesPending(t *testing.T) {
 		info:  new(system.Info),
 		hooks: new(Hooks),
 		log:   &logger,
-		capabilities: &Capabilities{
-			MaximumClientWritesPending: 3,
+		options: &Options{
+			Capabilities: &Capabilities{
+				MaximumClientWritesPending: 3,
+			},
 		},
 	})
 
 	s.Clients.Add(cl)
 
-	for i := int32(0); i < cl.ops.capabilities.MaximumClientWritesPending; i++ {
+	for i := int32(0); i < cl.ops.options.Capabilities.MaximumClientWritesPending; i++ {
 		cl.State.outbound <- new(packets.Packet)
 		atomic.AddInt32(&cl.State.outboundQty, 1)
 	}
@@ -1585,7 +1587,7 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
-	for i := uint32(0); i <= cl.ops.capabilities.maximumPacketID; i++ {
+	for i := uint32(0); i <= cl.ops.options.Capabilities.maximumPacketID; i++ {
 		cl.State.Inflight.Set(packets.Packet{PacketID: uint16(i)})
 	}
 
@@ -1654,7 +1656,7 @@ func TestPublishToSubscribersExhaustedPacketIDs(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
 	s.Clients.Add(cl)
-	for i := uint32(0); i <= cl.ops.capabilities.maximumPacketID; i++ {
+	for i := uint32(0); i <= cl.ops.options.Capabilities.maximumPacketID; i++ {
 		cl.State.Inflight.Set(packets.Packet{PacketID: 1})
 	}
 
