@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	Version                       = "2.2.5" // the current server version.
+	Version                       = "2.2.6" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 )
 
