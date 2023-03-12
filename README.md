@@ -136,6 +136,8 @@ A number of configurable options are available which can be used to alter the be
 ```go
 server := mqtt.New(&mqtt.Options{
   Capabilities: mqtt.Capabilities{
+    ClientNetWriteBufferSize: 4096,
+    ClientNetReadBufferSize: 4096,
     MaximumSessionExpiryInterval: 3600,
     Compatibilities: mqtt.Compatibilities{
       ObscureNotAuthorized: true,
@@ -145,7 +147,7 @@ server := mqtt.New(&mqtt.Options{
 })
 ```
 
-Review the mqtt.Options, mqtt.Capabilities, and mqtt.Compatibilities structs for a comprehensive list of options.
+Review the mqtt.Options, mqtt.Capabilities, and mqtt.Compatibilities structs for a comprehensive list of options. `ClientNetWriteBufferSize` and `ClientNetReadBufferSize` can be configured to adjust memory usage per client, based on your needs.
 
 
 ## Event Hooks 
@@ -342,6 +344,8 @@ server.InjectPacket(cl, packets.Packet{
 > MQTT packets still need to be correctly formed, so refer our [the test packets catalogue](packets/tpackets.go) and [MQTTv5 Specification](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) for inspiration.
 
 See the [hooks example](examples/hooks/main.go) to see this feature in action.
+
+
 
 ### Testing
 #### Unit Tests

@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	Version                       = "2.2.5" // the current server version.
+	Version                       = "2.2.6" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 )
 
@@ -86,6 +86,12 @@ type Options struct {
 	// 	server.Options.Capabilities.MaximumClientWritesPending = 16 * 1024
 	Capabilities *Capabilities
 
+	// ClientNetWriteBufferSize specifies the size of the client *bufio.Writer write buffer.
+	ClientNetWriteBufferSize int
+
+	// ClientNetReadBufferSize specifies the size of the client *bufio.Reader read buffer.
+	ClientNetReadBufferSize int
+
 	// Logger specifies a custom configured implementation of zerolog to override
 	// the servers default logger configuration. If you wish to change the log level,
 	// of the default logger, you can do so by setting
@@ -124,10 +130,10 @@ type loop struct {
 
 // ops contains server values which can be propagated to other structs.
 type ops struct {
-	capabilities *Capabilities   // a pointer to the server capabilities, for referencing in clients
-	info         *system.Info    // pointers to server system info
-	hooks        *Hooks          // pointer to the server hooks
-	log          *zerolog.Logger // a structured logger for the client
+	options *Options        // a pointer to the server options and capabilities, for referencing in clients
+	info    *system.Info    // pointers to server system info
+	hooks   *Hooks          // pointer to the server hooks
+	log     *zerolog.Logger // a structured logger for the client
 }
 
 // New returns a new instance of mochi mqtt broker. Optional parameters
@@ -178,6 +184,14 @@ func (o *Options) ensureDefaults() {
 		o.SysTopicResendInterval = defaultSysTopicInterval
 	}
 
+	if o.ClientNetWriteBufferSize == 0 {
+		o.ClientNetWriteBufferSize = 1024 * 2
+	}
+
+	if o.ClientNetReadBufferSize == 0 {
+		o.ClientNetReadBufferSize = 1024 * 2
+	}
+
 	if o.Logger == nil {
 		log := zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.InfoLevel).Output(zerolog.ConsoleWriter{Out: os.Stderr})
 		o.Logger = &log
@@ -190,10 +204,10 @@ func (o *Options) ensureDefaults() {
 // topic validation checks.
 func (s *Server) NewClient(c net.Conn, listener string, id string, inline bool) *Client {
 	cl := newClient(c, &ops{ // [MQTT-3.1.2-6] implicit
-		capabilities: s.Options.Capabilities,
-		info:         s.Info,
-		hooks:        s.hooks,
-		log:          s.Log,
+		options: s.Options,
+		info:    s.Info,
+		hooks:   s.hooks,
+		log:     s.Log,
 	})
 
 	cl.ID = id
@@ -449,9 +463,9 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 		atomic.StoreUint32(&existing.State.isTakenOver, 1)
 		if existing.State.Inflight.Len() > 0 {
 			cl.State.Inflight = existing.State.Inflight.Clone() // [MQTT-3.1.2-5]
-			if cl.State.Inflight.maximumReceiveQuota == 0 && cl.ops.capabilities.ReceiveMaximum != 0 {
-				cl.State.Inflight.ResetReceiveQuota(int32(cl.ops.capabilities.ReceiveMaximum)) // server receive max per client
-				cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))    // client receive max
+			if cl.State.Inflight.maximumReceiveQuota == 0 && cl.ops.options.Capabilities.ReceiveMaximum != 0 {
+				cl.State.Inflight.ResetReceiveQuota(int32(cl.ops.options.Capabilities.ReceiveMaximum)) // server receive max per client
+				cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))            // client receive max
 			}
 		}
 
