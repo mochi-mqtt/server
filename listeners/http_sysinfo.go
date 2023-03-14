@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"reflect"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,6 +30,12 @@ type HTTPStats struct {
 	log     *zerolog.Logger // server logger
 	sysInfo *system.Info    // pointers to the server data
 	end     uint32          // ensure the close methods are only called once
+
+	metricsInt64 []metric // metric exposed on /metrics
+}
+
+type metric struct {
+	Tag, Name string
 }
 
 // NewHTTPStats initialises and returns a new HTTP listener, listening on an address.
@@ -35,11 +43,26 @@ func NewHTTPStats(id, address string, config *Config, sysInfo *system.Info) *HTT
 	if config == nil {
 		config = new(Config)
 	}
+
+	v := reflect.TypeOf(*sysInfo)
+	metricsInt64 := make([]metric, 0, v.NumField())
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		if f.Type.Kind() != reflect.Int64 {
+			continue
+		}
+		metricsInt64 = append(metricsInt64, metric{
+			Tag:  f.Tag.Get("json"),
+			Name: f.Name,
+		})
+	}
+
 	return &HTTPStats{
-		id:      id,
-		address: address,
-		sysInfo: sysInfo,
-		config:  config,
+		id:           id,
+		address:      address,
+		sysInfo:      sysInfo,
+		config:       config,
+		metricsInt64: metricsInt64,
 	}
 }
 
@@ -68,6 +91,7 @@ func (l *HTTPStats) Init(log *zerolog.Logger) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", l.jsonHandler)
+	mux.HandleFunc("/metrics", l.metricsHandler)
 	l.listen = &http.Server{
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
@@ -115,4 +139,23 @@ func (l *HTTPStats) jsonHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Write(out)
+}
+
+func (l *HTTPStats) metricsHandler(w http.ResponseWriter, req *http.Request) {
+	l.WriteMetrics(w)
+}
+
+// WriteMetrics writes the metrics in a prometheus format to the writer.
+func (l *HTTPStats) WriteMetrics(w io.Writer) error {
+	info := *l.sysInfo.Clone()
+
+	v := reflect.ValueOf(info)
+	for _, m := range l.metricsInt64 {
+		f := v.FieldByName(m.Name)
+		_, err := w.Write([]byte(m.Tag + " " + strconv.FormatInt(f.Int(), 10) + "\n"))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
