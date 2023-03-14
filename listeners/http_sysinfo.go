@@ -7,9 +7,11 @@ package listeners
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -148,6 +150,11 @@ func (l *HTTPStats) metricsHandler(w http.ResponseWriter, req *http.Request) {
 // WriteMetrics writes the metrics in a prometheus format to the writer.
 func (l *HTTPStats) WriteMetrics(w io.Writer) error {
 	info := *l.sysInfo.Clone()
+
+	_, err := fmt.Fprintf(w, "mochi_co_mqtt_info{version=%q,goversion=%q} 1\n", info.Version, runtime.Version())
+	if err != nil {
+		return err
+	}
 
 	v := reflect.ValueOf(info)
 	for _, m := range l.metricsInt64 {
