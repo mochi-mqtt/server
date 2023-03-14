@@ -46,7 +46,7 @@ func NewHTTPStats(id, address string, config *Config, sysInfo *system.Info) *HTT
 		config = new(Config)
 	}
 
-	v := reflect.TypeOf(*sysInfo)
+	v := reflect.TypeOf(sysInfo).Elem()
 	metricsInt64 := make([]metric, 0, v.NumField())
 	for i := 0; i < v.NumField(); i++ {
 		f := v.Field(i)

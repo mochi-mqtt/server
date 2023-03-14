@@ -5,9 +5,11 @@
 package listeners
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,4 +126,22 @@ func TestHTTPStatsServeTLSAndClose(t *testing.T) {
 
 	time.Sleep(time.Millisecond)
 	l.Close(MockCloser)
+}
+
+func TestHTTPStatsMetrics(t *testing.T) {
+	sysInfo := &system.Info{
+		Version: "test",
+	}
+
+	// setup http stats listener
+	l := NewHTTPStats("t1", testAddr, nil, sysInfo)
+	err := l.Init(nil)
+	require.NoError(t, err)
+
+	buf := &bytes.Buffer{}
+	err = l.WriteMetrics(buf)
+	require.NoError(t, err)
+
+	s := buf.String()
+	require.True(t, strings.HasPrefix(s, `mochi_co_mqtt_info{version="test",goversion="go`), s)
 }
