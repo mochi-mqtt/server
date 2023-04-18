@@ -232,6 +232,29 @@ func TestOnDisconnectClosedDB(t *testing.T) {
 	h.OnDisconnect(client, nil, false)
 }
 
+func TestOnDisconnectSessionTakenOver(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(&logger, nil)
+	err := h.Init(nil)
+	require.NoError(t, err)
+
+	testClient := &mqtt.Client{
+		ID: "test",
+		Net: mqtt.ClientConnection{
+			Remote:   "test.addr",
+			Listener: "listener",
+		},
+		Properties: mqtt.ClientProperties{
+			Username: []byte("username"),
+			Clean:    false,
+		},
+	}
+
+	testClient.Stop(packets.ErrSessionTakenOver)
+	teardown(t, h.config.Path, h)
+	h.OnDisconnect(testClient, nil, true)
+}
+
 func TestOnSubscribedThenOnUnsubscribed(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(&logger, nil)
