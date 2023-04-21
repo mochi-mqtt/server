@@ -117,6 +117,36 @@ func (d *Message) UnmarshalBinary(data []byte) error {
 	return json.Unmarshal(data, d)
 }
 
+// ToPacket converts a storage.Message to a standard packet.
+func (d *Message) ToPacket() packets.Packet {
+	pk := packets.Packet{
+		FixedHeader: d.FixedHeader,
+		PacketID:    d.PacketID,
+		TopicName:   d.TopicName,
+		Payload:     d.Payload,
+		Origin:      d.Origin,
+		Created:     d.Created,
+		Properties: packets.Properties{
+			PayloadFormat:          d.Properties.PayloadFormat,
+			PayloadFormatFlag:      d.Properties.PayloadFormatFlag,
+			MessageExpiryInterval:  d.Properties.MessageExpiryInterval,
+			ContentType:            d.Properties.ContentType,
+			ResponseTopic:          d.Properties.ResponseTopic,
+			CorrelationData:        d.Properties.CorrelationData,
+			SubscriptionIdentifier: d.Properties.SubscriptionIdentifier,
+			TopicAlias:             d.Properties.TopicAlias,
+			User:                   d.Properties.User,
+		},
+	}
+
+	// Return a deep copy of the packet data otherwise the slices will
+	// continue pointing at the values from the storage packet.
+	pk = pk.Copy(true)
+	pk.FixedHeader.Dup = d.FixedHeader.Dup
+
+	return pk
+}
+
 // Subscription is a storable representation of an mqtt subscription.
 type Subscription struct {
 	T                 string `json:"t"`

@@ -1414,7 +1414,7 @@ func (s *Server) loadClients(v []storage.Client) {
 func (s *Server) loadInflight(v []storage.Message) {
 	for _, msg := range v {
 		if client, ok := s.Clients.Get(msg.Origin); ok {
-			client.State.Inflight.Set(msgToPacket(&msg))
+			client.State.Inflight.Set(msg.ToPacket())
 		}
 	}
 }
@@ -1422,30 +1422,7 @@ func (s *Server) loadInflight(v []storage.Message) {
 // loadRetained restores retained messages from the datastore.
 func (s *Server) loadRetained(v []storage.Message) {
 	for _, msg := range v {
-		s.Topics.RetainMessage(msgToPacket(&msg))
-	}
-}
-
-// msgToPacket converts storage.Message to packets.Packet
-func msgToPacket(msg *storage.Message) packets.Packet {
-	return packets.Packet{
-		FixedHeader: msg.FixedHeader,
-		PacketID:    msg.PacketID,
-		TopicName:   msg.TopicName,
-		Payload:     msg.Payload,
-		Origin:      msg.Origin,
-		Created:     msg.Created,
-		Properties: packets.Properties{
-			PayloadFormat:          msg.Properties.PayloadFormat,
-			PayloadFormatFlag:      msg.Properties.PayloadFormatFlag,
-			MessageExpiryInterval:  msg.Properties.MessageExpiryInterval,
-			ContentType:            msg.Properties.ContentType,
-			ResponseTopic:          msg.Properties.ResponseTopic,
-			CorrelationData:        msg.Properties.CorrelationData,
-			SubscriptionIdentifier: msg.Properties.SubscriptionIdentifier,
-			TopicAlias:             msg.Properties.TopicAlias,
-			User:                   msg.Properties.User,
-		},
+		s.Topics.RetainMessage(msg.ToPacket())
 	}
 }
 
