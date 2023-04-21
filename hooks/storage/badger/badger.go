@@ -182,6 +182,10 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 		return
 	}
 
+	if cl.StopCause() == packets.ErrSessionTakenOver {
+		return
+	}
+
 	err := h.db.Delete(clientKey(cl), new(storage.Client))
 	if err != nil {
 		h.Log.Error().Err(err).Interface("data", clientKey(cl)).Msg("failed to delete client data")
