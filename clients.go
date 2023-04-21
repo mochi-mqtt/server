@@ -355,10 +355,6 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
 func (cl *Client) Stop(err error) {
-	if atomic.LoadUint32(&cl.State.done) == 1 {
-		return
-	}
-
 	cl.State.endOnce.Do(func() {
 		if cl.Net.Conn != nil {
 			_ = cl.Net.Conn.Close() // omit close error
@@ -367,6 +363,8 @@ func (cl *Client) Stop(err error) {
 		if err != nil {
 			cl.State.stopCause.Store(err)
 		}
+
+		close(cl.State.outbound)
 
 		atomic.StoreUint32(&cl.State.done, 1)
 		atomic.StoreInt64(&cl.State.disconnected, time.Now().Unix())
