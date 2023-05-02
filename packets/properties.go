@@ -42,7 +42,7 @@ const (
 
 // validPacketProperties indicates which properties are valid for which packet types.
 var validPacketProperties = map[byte]map[byte]byte{
-	PropPayloadFormat:          {Publish: 1},
+	PropPayloadFormat:          {Connect: 1, Publish: 1},
 	PropMessageExpiryInterval:  {Publish: 1},
 	PropContentType:            {Publish: 1},
 	PropResponseTopic:          {Publish: 1},
