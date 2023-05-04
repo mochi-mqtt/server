@@ -16,22 +16,23 @@ import (
 
 // All of the valid packet types and their packet identifier.
 const (
-	Reserved    byte = iota // 0 - we use this in packet tests to indicate special-test or all packets.
-	Connect                 // 1
-	Connack                 // 2
-	Publish                 // 3
-	Puback                  // 4
-	Pubrec                  // 5
-	Pubrel                  // 6
-	Pubcomp                 // 7
-	Subscribe               // 8
-	Suback                  // 9
-	Unsubscribe             // 10
-	Unsuback                // 11
-	Pingreq                 // 12
-	Pingresp                // 13
-	Disconnect              // 14
-	Auth                    // 15
+	Reserved       byte = iota // 0 - we use this in packet tests to indicate special-test or all packets.
+	Connect                    // 1
+	Connack                    // 2
+	Publish                    // 3
+	Puback                     // 4
+	Pubrec                     // 5
+	Pubrel                     // 6
+	Pubcomp                    // 7
+	Subscribe                  // 8
+	Suback                     // 9
+	Unsubscribe                // 10
+	Unsuback                   // 11
+	Pingreq                    // 12
+	Pingresp                   // 13
+	Disconnect                 // 14
+	Auth                       // 15
+	WillProperties byte = 99   // Special byte for validating Will Properties.
 )
 
 var (
@@ -313,7 +314,7 @@ func (pk *Packet) ConnectEncode(buf *bytes.Buffer) error {
 
 	if pk.ProtocolVersion == 5 {
 		pb := bytes.NewBuffer([]byte{})
-		(&pk.Properties).Encode(pk, pb, 0)
+		(&pk.Properties).Encode(pk.FixedHeader.Type, pk.Mods, pb, 0)
 		nb.Write(pb.Bytes())
 	}
 
@@ -322,7 +323,7 @@ func (pk *Packet) ConnectEncode(buf *bytes.Buffer) error {
 	if pk.Connect.WillFlag {
 		if pk.ProtocolVersion == 5 {
 			pb := bytes.NewBuffer([]byte{})
-			(&pk.Connect).WillProperties.Encode(pk, pb, 0)
+			(&pk.Connect).WillProperties.Encode(WillProperties, pk.Mods, pb, 0)
 			nb.Write(pb.Bytes())
 		}
 
@@ -393,7 +394,7 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 
 	if pk.Connect.WillFlag { // [MQTT-3.1.2-7]
 		if pk.ProtocolVersion == 5 {
-			n, err := pk.Connect.WillProperties.Decode(pk.FixedHeader.Type, bytes.NewBuffer(buf[offset:]))
+			n, err := pk.Connect.WillProperties.Decode(WillProperties, bytes.NewBuffer(buf[offset:]))
 			if err != nil {
 				return ErrMalformedWillProperties
 			}
@@ -496,7 +497,7 @@ func (pk *Packet) ConnackEncode(buf *bytes.Buffer) error {
 
 	if pk.ProtocolVersion == 5 {
 		pb := bytes.NewBuffer([]byte{})
-		pk.Properties.Encode(pk, pb, nb.Len()+2) // +SessionPresent +ReasonCode
+		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len()+2) // +SessionPresent +ReasonCode
 		nb.Write(pb.Bytes())
 	}
 
@@ -539,7 +540,7 @@ func (pk *Packet) DisconnectEncode(buf *bytes.Buffer) error {
 		nb.WriteByte(pk.ReasonCode)
 
 		pb := bytes.NewBuffer([]byte{})
-		pk.Properties.Encode(pk, pb, nb.Len())
+		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len())
 		nb.Write(pb.Bytes())
 	}
 
@@ -608,7 +609,7 @@ func (pk *Packet) PublishEncode(buf *bytes.Buffer) error {
 
 	if pk.ProtocolVersion == 5 {
 		pb := bytes.NewBuffer([]byte{})
-		pk.Properties.Encode(pk, pb, nb.Len()+len(pk.Payload))
+		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len()+len(pk.Payload))
 		nb.Write(pb.Bytes())
 	}
 
@@ -692,7 +693,7 @@ func (pk *Packet) encodePubAckRelRecComp(buf *bytes.Buffer) error {
 
 	if pk.ProtocolVersion == 5 {
 		pb := bytes.NewBuffer([]byte{})
-		pk.Properties.Encode(pk, pb, nb.Len())
+		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len())
 		if pk.ReasonCode >= ErrUnspecifiedError.Code || pb.Len() > 1 {
 			nb.WriteByte(pk.ReasonCode)
 		}
@@ -833,7 +834,7 @@ func (pk *Packet) SubackEncode(buf *bytes.Buffer) error {
 
 	if pk.ProtocolVersion == 5 {
 		pb := bytes.NewBuffer([]byte{})
-		pk.Properties.Encode(pk, pb, nb.Len()+len(pk.ReasonCodes))
+		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len()+len(pk.ReasonCodes))
 		nb.Write(pb.Bytes())
 	}
 
@@ -890,7 +891,7 @@ func (pk *Packet) SubscribeEncode(buf *bytes.Buffer) error {
 
 	if pk.ProtocolVersion == 5 {
 		pb := bytes.NewBuffer([]byte{})
-		pk.Properties.Encode(pk, pb, nb.Len()+xb.Len())
+		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len()+xb.Len())
 		nb.Write(pb.Bytes())
 	}
 
@@ -985,7 +986,7 @@ func (pk *Packet) UnsubackEncode(buf *bytes.Buffer) error {
 
 	if pk.ProtocolVersion == 5 {
 		pb := bytes.NewBuffer([]byte{})
-		pk.Properties.Encode(pk, pb, nb.Len())
+		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len())
 		nb.Write(pb.Bytes())
 	}
 
@@ -1038,7 +1039,7 @@ func (pk *Packet) UnsubscribeEncode(buf *bytes.Buffer) error {
 
 	if pk.ProtocolVersion == 5 {
 		pb := bytes.NewBuffer([]byte{})
-		pk.Properties.Encode(pk, pb, nb.Len()+xb.Len())
+		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len()+xb.Len())
 		nb.Write(pb.Bytes())
 	}
 
@@ -1101,7 +1102,7 @@ func (pk *Packet) AuthEncode(buf *bytes.Buffer) error {
 	nb.WriteByte(pk.ReasonCode)
 
 	pb := bytes.NewBuffer([]byte{})
-	pk.Properties.Encode(pk, pb, nb.Len())
+	pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len())
 	nb.Write(pb.Bytes())
 
 	pk.FixedHeader.Remaining = nb.Len()

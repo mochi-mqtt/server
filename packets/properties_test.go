@@ -202,14 +202,14 @@ func init() {
 func TestEncodeProperties(t *testing.T) {
 	props := propertiesStruct
 	b := bytes.NewBuffer([]byte{})
-	props.Encode(&Packet{FixedHeader: FixedHeader{Type: Reserved}, Mods: Mods{AllowResponseInfo: true}}, b, 0)
+	props.Encode(Reserved, Mods{AllowResponseInfo: true}, b, 0)
 	require.Equal(t, propertiesBytes, b.Bytes())
 }
 
 func TestEncodePropertiesDisallowProblemInfo(t *testing.T) {
 	props := propertiesStruct
 	b := bytes.NewBuffer([]byte{})
-	props.Encode(&Packet{FixedHeader: FixedHeader{Type: Reserved}, Mods: Mods{DisallowProblemInfo: true}}, b, 0)
+	props.Encode(Reserved, Mods{DisallowProblemInfo: true}, b, 0)
 	require.NotEqual(t, propertiesBytes, b.Bytes())
 	require.False(t, bytes.Contains(b.Bytes(), []byte{31, 0, 6}))
 	require.False(t, bytes.Contains(b.Bytes(), []byte{38, 0, 5}))
@@ -219,7 +219,7 @@ func TestEncodePropertiesDisallowProblemInfo(t *testing.T) {
 func TestEncodePropertiesDisallowResponseInfo(t *testing.T) {
 	props := propertiesStruct
 	b := bytes.NewBuffer([]byte{})
-	props.Encode(&Packet{FixedHeader: FixedHeader{Type: Reserved}, Mods: Mods{AllowResponseInfo: false}}, b, 0)
+	props.Encode(Reserved, Mods{AllowResponseInfo: false}, b, 0)
 	require.NotEqual(t, propertiesBytes, b.Bytes())
 	require.NotContains(t, b.Bytes(), []byte{8, 0, 5})
 	require.NotContains(t, b.Bytes(), []byte{9, 0, 4})
@@ -232,7 +232,7 @@ func TestEncodePropertiesNil(t *testing.T) {
 
 	pr := tmp{}
 	b := bytes.NewBuffer([]byte{})
-	pr.p.Encode(&Packet{FixedHeader: FixedHeader{Type: Reserved}}, b, 0)
+	pr.p.Encode(Reserved, Mods{}, b, 0)
 	require.Equal(t, []byte{}, b.Bytes())
 }
 
@@ -240,7 +240,7 @@ func TestEncodeZeroProperties(t *testing.T) {
 	// [MQTT-2.2.2-1] If there are no properties, this MUST be indicated by including a Property Length of zero.
 	props := new(Properties)
 	b := bytes.NewBuffer([]byte{})
-	props.Encode(&Packet{FixedHeader: FixedHeader{Type: Reserved}, Mods: Mods{AllowResponseInfo: true}}, b, 0)
+	props.Encode(Reserved, Mods{AllowResponseInfo: true}, b, 0)
 	require.Equal(t, []byte{0x00}, b.Bytes())
 }
 
@@ -250,7 +250,7 @@ func TestDecodeProperties(t *testing.T) {
 	props := new(Properties)
 	n, err := props.Decode(Reserved, b)
 	require.NoError(t, err)
-	require.Equal(t, 172 + 2, n)
+	require.Equal(t, 172+2, n)
 	require.EqualValues(t, propertiesStruct, *props)
 }
 
