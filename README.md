@@ -304,6 +304,7 @@ The function signatures for all the hooks and `mqtt.Hook` interface can be found
 | OnQosPublish | Called when a publish packet with Qos >= 1 is issued to a subscriber. | 
 | OnQosComplete | Called when the Qos flow for a message has been completed. | 
 | OnQosDropped | Called when an inflight message expires before completion. | 
+| OnPacketIDExhausted | Called when a client runs out of unused packet ids to assign. | 
 | OnWill | Called when a client disconnects and intends to issue a will message. Allows packet modification. | 
 | OnWillSent | Called when an LWT message has been issued from a disconnecting client. | 
 | OnClientExpired | Called when a client session has expired and should be deleted. | 
