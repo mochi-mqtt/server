@@ -241,6 +241,7 @@ func TestHooksNonReturns(t *testing.T) {
 			h.OnQosPublish(cl, packets.Packet{}, time.Now().Unix(), 0)
 			h.OnQosComplete(cl, packets.Packet{})
 			h.OnQosDropped(cl, packets.Packet{})
+			h.OnPacketIDExhausted(cl, packets.Packet{})
 			h.OnWillSent(cl, packets.Packet{})
 			h.OnClientExpired(cl)
 			h.OnRetainedExpired("a/b/c")
