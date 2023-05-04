@@ -551,6 +551,8 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 	}
 
 	nb := net.Buffers{buf.Bytes()}
+	cl.Lock()
+	defer cl.Unlock()
 	n, err := nb.WriteTo(cl.Net.Conn)
 	if err != nil {
 		return err
