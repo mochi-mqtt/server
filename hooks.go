@@ -44,6 +44,7 @@ const (
 	OnQosPublish
 	OnQosComplete
 	OnQosDropped
+	OnPacketIDExhausted
 	OnWill
 	OnWillSent
 	OnClientExpired
@@ -93,6 +94,7 @@ type Hook interface {
 	OnQosPublish(cl *Client, pk packets.Packet, sent int64, resends int)
 	OnQosComplete(cl *Client, pk packets.Packet)
 	OnQosDropped(cl *Client, pk packets.Packet)
+	OnPacketIDExhausted(cl *Client, pk packets.Packet)
 	OnWill(cl *Client, will Will) (Will, error)
 	OnWillSent(cl *Client, pk packets.Packet)
 	OnClientExpired(cl *Client)
@@ -447,6 +449,16 @@ func (h *Hooks) OnQosDropped(cl *Client, pk packets.Packet) {
 	}
 }
 
+// OnPacketIDExhausted is called when the client runs out of unused packet ids to
+// assign to a packet.
+func (h *Hooks) OnPacketIDExhausted(cl *Client, pk packets.Packet) {
+	for _, hook := range h.GetAll() {
+		if hook.Provides(OnPacketIDExhausted) {
+			hook.OnPacketIDExhausted(cl, pk)
+		}
+	}
+}
+
 // OnWill is called when a client disconnects and publishes an LWT message. This method
 // differs from OnWillSent in that it allows you to modify the LWT message before it is
 // published. The return values of the hook methods are passed-through in the order
@@ -753,6 +765,9 @@ func (h *HookBase) OnQosComplete(cl *Client, pk packets.Packet) {}
 
 // OnQosDropped is called the Qos flow for a message expires.
 func (h *HookBase) OnQosDropped(cl *Client, pk packets.Packet) {}
+
+// OnPacketIDExhausted is called when the client runs out of unused packet ids to assign to a packet.
+func (h *HookBase) OnPacketIDExhausted(cl *Client, pk packets.Packet) {}
 
 // OnWill is called when a client disconnects and publishes an LWT message.
 func (h *HookBase) OnWill(cl *Client, will Will) (Will, error) {
