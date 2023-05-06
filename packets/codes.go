@@ -21,7 +21,7 @@ func (c Code) Error() string {
 }
 
 var (
-	// QosCodes indicicates the reason codes for each Qos byte.
+	// QosCodes indicates the reason codes for each Qos byte.
 	QosCodes = map[byte]Code{
 		0: CodeGrantedQos0,
 		1: CodeGrantedQos1,
