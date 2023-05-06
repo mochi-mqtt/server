@@ -30,14 +30,14 @@ func main() {
 	l := server.Log.Level(zerolog.DebugLevel)
 	server.Log = &l
 
-	err := server.AddHook(new(auth.AllowHook), nil)
+	err := server.AddHook(new(debug.Hook), &debug.Options{
+		// ShowPacketData: true,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = server.AddHook(new(debug.Hook), &debug.Options{
-		// ShowPacketData: true,
-	})
+	err = server.AddHook(new(auth.AllowHook), nil)
 	if err != nil {
 		log.Fatal(err)
 	}

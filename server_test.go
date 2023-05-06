@@ -127,7 +127,7 @@ func TestServerNewClient(t *testing.T) {
 	require.NotNil(t, cl.State.Inflight.internal)
 	require.NotNil(t, cl.State.Subscriptions)
 	require.NotNil(t, cl.State.TopicAliases)
-	require.Equal(t, defaultKeepalive, cl.State.keepalive)
+	require.Equal(t, defaultKeepalive, cl.State.Keepalive)
 	require.Equal(t, defaultClientProtocolVersion, cl.Properties.ProtocolVersion)
 	require.NotNil(t, cl.Net.Conn)
 	require.NotNil(t, cl.Net.bconn)
@@ -821,7 +821,6 @@ func TestServerSendConnack(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
-	s.Options.Capabilities.ServerKeepAlive = 20
 	s.Options.Capabilities.MaximumQos = 1
 	cl.Properties.Props = packets.Properties{
 		AssignedClientID: "mochi",
@@ -841,7 +840,6 @@ func TestServerSendConnackFailureReason(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
-	s.Options.Capabilities.ServerKeepAlive = 20
 	go func() {
 		err := s.sendConnack(cl, packets.ErrUnspecifiedError, true)
 		require.NoError(t, err)
@@ -851,6 +849,23 @@ func TestServerSendConnackFailureReason(t *testing.T) {
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackInvalidMinMqtt5).RawBytes, buf)
+}
+
+func TestServerSendConnackWithServerKeepalive(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	cl.State.Keepalive = 10
+	cl.State.ServerKeepalive = true
+	go func() {
+		err := s.sendConnack(cl, packets.CodeSuccess, true)
+		require.NoError(t, err)
+		w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackServerKeepalive).RawBytes, buf)
 }
 
 func TestServerValidateConnect(t *testing.T) {
