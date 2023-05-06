@@ -43,7 +43,6 @@ var (
 		WildcardSubAvailable:         1,              // wildcard subscriptions are available
 		SubIDAvailable:               1,              // subscription identifiers are available
 		SharedSubAvailable:           1,              // shared subscriptions are available
-		ServerKeepAlive:              10,             // default keepalive for clients
 		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
 		MaximumClientWritesPending:   1024 * 8,       // maximum number of pending message writes for a client
 	}
@@ -61,7 +60,6 @@ type Capabilities struct {
 	maximumPacketID              uint32 // unexported, used for testing only
 	ReceiveMaximum               uint16
 	TopicAliasMaximum            uint16
-	ServerKeepAlive              uint16
 	SharedSubAvailable           byte
 	MinimumProtocolVersion       byte
 	Compatibilities              Compatibilities
@@ -331,6 +329,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	}
 
 	s.hooks.OnConnect(cl, pk)
+	cl.refreshDeadline(cl.State.Keepalive)
 
 	if !s.hooks.OnConnectAuthenticate(cl, pk) { // [MQTT-3.1.4-2]
 		err := s.sendConnack(cl, packets.ErrBadUsernameOrPassword, false)
@@ -498,9 +497,12 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 // sendConnack returns a Connack packet to a client.
 func (s *Server) sendConnack(cl *Client, reason packets.Code, present bool) error {
 	properties := packets.Properties{
-		ServerKeepAlive:     s.Options.Capabilities.ServerKeepAlive, // [MQTT-3.1.2-21]
-		ServerKeepAliveFlag: true,
-		ReceiveMaximum:      s.Options.Capabilities.ReceiveMaximum, // 3.2.2.3.3 Receive Maximum
+		ReceiveMaximum: s.Options.Capabilities.ReceiveMaximum, // 3.2.2.3.3 Receive Maximum
+	}
+
+	if cl.State.ServerKeepalive { // You can set this dynamically using the OnConnect hook.
+		properties.ServerKeepAlive = cl.State.Keepalive // [MQTT-3.1.2-21]
+		properties.ServerKeepAliveFlag = true
 	}
 
 	if reason.Code >= packets.ErrUnspecifiedError.Code {
