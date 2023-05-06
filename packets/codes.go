@@ -120,7 +120,7 @@ var (
 	ErrQosNotSupported                        = Code{Code: 0x9B, Reason: "qos not supported"}
 	ErrUseAnotherServer                       = Code{Code: 0x9C, Reason: "use another server"}
 	ErrServerMoved                            = Code{Code: 0x9D, Reason: "server moved"}
-	ErrSharedSubscriptionsNotSupported        = Code{Code: 0x9E, Reason: "shared subscriptiptions not supported"}
+	ErrSharedSubscriptionsNotSupported        = Code{Code: 0x9E, Reason: "shared subscriptions not supported"}
 	ErrConnectionRateExceeded                 = Code{Code: 0x9F, Reason: "connection rate exceeded"}
 	ErrMaxConnectTime                         = Code{Code: 0xA0, Reason: "maximum connect time"}
 	ErrSubscriptionIdentifiersNotSupported    = Code{Code: 0xA1, Reason: "subscription identifiers not supported"}
