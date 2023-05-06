@@ -82,6 +82,7 @@ const (
 	TConnackAcceptedAdjustedExpiryInterval
 	TConnackMinMqtt5
 	TConnackMinCleanMqtt5
+	TConnackServerKeepalive
 	TConnackInvalidMinMqtt5
 	TConnackBadProtocolVersion
 	TConnackProtocolViolationNoSession
@@ -1085,25 +1086,22 @@ var TPacketData = map[byte]TPacketCases{
 			Desc:    "accepted, no session, adjusted expiry interval mqtt5",
 			Primary: true,
 			RawBytes: []byte{
-				Connack << 4, 11, // fixed header
+				Connack << 4, 8, // fixed header
 				0, // Session present
 				CodeSuccess.Code,
-				8,                // length
+				5,                // length
 				17, 0, 0, 0, 120, // Session Expiry Interval (17)
-				19, 0, 10, // Server Keep Alive (19)
 			},
 			Packet: &Packet{
 				ProtocolVersion: 5,
 				FixedHeader: FixedHeader{
 					Type:      Connack,
-					Remaining: 11,
+					Remaining: 8,
 				},
 				ReasonCode: CodeSuccess.Code,
 				Properties: Properties{
 					SessionExpiryInterval:     uint32(120),
 					SessionExpiryIntervalFlag: true,
-					ServerKeepAlive:           uint16(10),
-					ServerKeepAliveFlag:       true,
 				},
 			},
 		},
@@ -1190,28 +1188,25 @@ var TPacketData = map[byte]TPacketCases{
 			Desc:    "accepted min properties mqtt5",
 			Primary: true,
 			RawBytes: []byte{
-				Connack << 4, 16, // fixed header
+				Connack << 4, 13, // fixed header
 				1, // existing session
 				CodeSuccess.Code,
-				13,                                // Properties length
+				10,                                // Properties length
 				18, 0, 5, 'm', 'o', 'c', 'h', 'i', // Assigned Client ID (18)
-				19, 0, 20, // Server Keep Alive (19)
 				36, 1, // Maximum Qos (36)
 			},
 			Packet: &Packet{
 				ProtocolVersion: 5,
 				FixedHeader: FixedHeader{
 					Type:      Connack,
-					Remaining: 16,
+					Remaining: 13,
 				},
 				SessionPresent: true,
 				ReasonCode:     CodeSuccess.Code,
 				Properties: Properties{
-					ServerKeepAlive:     uint16(20),
-					ServerKeepAliveFlag: true,
-					AssignedClientID:    "mochi",
-					MaximumQos:          byte(1),
-					MaximumQosFlag:      true,
+					AssignedClientID: "mochi",
+					MaximumQos:       byte(1),
+					MaximumQosFlag:   true,
 				},
 			},
 		},
@@ -1220,11 +1215,10 @@ var TPacketData = map[byte]TPacketCases{
 			Desc:    "accepted min properties mqtt5b",
 			Primary: true,
 			RawBytes: []byte{
-				Connack << 4, 6, // fixed header
+				Connack << 4, 3, // fixed header
 				0, // existing session
 				CodeSuccess.Code,
-				3,         // Properties length
-				19, 0, 10, // server keepalive
+				0, // Properties length
 			},
 			Packet: &Packet{
 				ProtocolVersion: 5,
@@ -1233,6 +1227,27 @@ var TPacketData = map[byte]TPacketCases{
 					Remaining: 16,
 				},
 				SessionPresent: false,
+				ReasonCode:     CodeSuccess.Code,
+			},
+		},
+		{
+			Case:    TConnackServerKeepalive,
+			Desc:    "server set keepalive",
+			Primary: true,
+			RawBytes: []byte{
+				Connack << 4, 6, // fixed header
+				1, // existing session
+				CodeSuccess.Code,
+				3,         // Properties length
+				19, 0, 10, // server keepalive
+			},
+			Packet: &Packet{
+				ProtocolVersion: 5,
+				FixedHeader: FixedHeader{
+					Type:      Connack,
+					Remaining: 6,
+				},
+				SessionPresent: true,
 				ReasonCode:     CodeSuccess.Code,
 				Properties: Properties{
 					ServerKeepAlive:     uint16(10),
@@ -1245,26 +1260,23 @@ var TPacketData = map[byte]TPacketCases{
 			Desc:    "failure min properties mqtt5",
 			Primary: true,
 			RawBytes: append([]byte{
-				Connack << 4, 26, // fixed header
+				Connack << 4, 23, // fixed header
 				0, // No existing session
 				ErrUnspecifiedError.Code,
 				// Properties
-				23,        // length
-				19, 0, 20, // Server Keep Alive (19)
+				20,        // length
 				31, 0, 17, // Reason String (31)
 			}, []byte(ErrUnspecifiedError.Reason)...),
 			Packet: &Packet{
 				ProtocolVersion: 5,
 				FixedHeader: FixedHeader{
 					Type:      Connack,
-					Remaining: 25,
+					Remaining: 23,
 				},
 				SessionPresent: false,
 				ReasonCode:     ErrUnspecifiedError.Code,
 				Properties: Properties{
-					ServerKeepAlive:     uint16(20),
-					ServerKeepAliveFlag: true,
-					ReasonString:        ErrUnspecifiedError.Reason,
+					ReasonString: ErrUnspecifiedError.Reason,
 				},
 			},
 		},

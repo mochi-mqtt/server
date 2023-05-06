@@ -136,18 +136,19 @@ type Will struct {
 
 // State tracks the state of the client.
 type ClientState struct {
-	TopicAliases  TopicAliases         // a map of topic aliases
-	stopCause     atomic.Value         // reason for stopping
-	Inflight      *Inflight            // a map of in-flight qos messages
-	Subscriptions *Subscriptions       // a map of the subscription filters a client maintains
-	disconnected  int64                // the time the client disconnected in unix time, for calculating expiry
-	outbound      chan *packets.Packet // queue for pending outbound packets
-	endOnce       sync.Once            // only end once
-	isTakenOver   uint32               // used to identify orphaned clients
-	packetID      uint32               // the current highest packetID
-	open          context.Context      // indicate that the client is open for packet exchange
-	outboundQty   int32                // number of messages currently in the outbound queue
-	keepalive     uint16               // the number of seconds the connection can wait
+	TopicAliases    TopicAliases         // a map of topic aliases
+	stopCause       atomic.Value         // reason for stopping
+	Inflight        *Inflight            // a map of in-flight qos messages
+	Subscriptions   *Subscriptions       // a map of the subscription filters a client maintains
+	disconnected    int64                // the time the client disconnected in unix time, for calculating expiry
+	outbound        chan *packets.Packet // queue for pending outbound packets
+	endOnce         sync.Once            // only end once
+	isTakenOver     uint32               // used to identify orphaned clients
+	packetID        uint32               // the current highest packetID
+	open            context.Context      // indicate that the client is open for packet exchange
+	outboundQty     int32                // number of messages currently in the outbound queue
+	Keepalive       uint16               // the number of seconds the connection can wait
+	ServerKeepalive bool                 // keepalive was set by the server
 }
 
 // newClient returns a new instance of Client. This is almost exclusively used by Server
@@ -158,8 +159,8 @@ func newClient(c net.Conn, o *ops) *Client {
 			Inflight:      NewInflights(),
 			Subscriptions: NewSubscriptions(),
 			TopicAliases:  NewTopicAliases(o.options.Capabilities.TopicAliasMaximum),
-			keepalive:     defaultKeepalive,
 			open:          context.Background(),
+			Keepalive:     defaultKeepalive,
 			outbound:      make(chan *packets.Packet, o.options.Capabilities.MaximumClientWritesPending),
 		},
 		Properties: ClientProperties{
@@ -178,8 +179,6 @@ func newClient(c net.Conn, o *ops) *Client {
 			Remote: c.RemoteAddr().String(),
 		}
 	}
-
-	cl.refreshDeadline(cl.State.keepalive)
 
 	return cl
 }
@@ -203,20 +202,15 @@ func (cl *Client) ParseConnect(lid string, pk packets.Packet) {
 	cl.Properties.Clean = pk.Connect.Clean
 	cl.Properties.Props = pk.Properties.Copy(false)
 
+	cl.State.Keepalive = pk.Connect.Keepalive                                              // [MQTT-3.2.2-22]
 	cl.State.Inflight.ResetReceiveQuota(int32(cl.ops.options.Capabilities.ReceiveMaximum)) // server receive max per client
 	cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))            // client receive max
-
 	cl.State.TopicAliases.Outbound = NewOutboundTopicAliases(cl.Properties.Props.TopicAliasMaximum)
 
 	cl.ID = pk.Connect.ClientIdentifier
 	if cl.ID == "" {
 		cl.ID = xid.New().String() // [MQTT-3.1.3-6] [MQTT-3.1.3-7]
 		cl.Properties.Props.AssignedClientID = cl.ID
-	}
-
-	cl.State.keepalive = cl.ops.options.Capabilities.ServerKeepAlive
-	if pk.Connect.Keepalive > 0 {
-		cl.State.keepalive = pk.Connect.Keepalive // [MQTT-3.2.2-22]
 	}
 
 	if pk.Connect.WillFlag {
@@ -236,8 +230,6 @@ func (cl *Client) ParseConnect(lid string, pk packets.Packet) {
 			cl.Properties.Will.Flag = 1 // atomic for checking
 		}
 	}
-
-	cl.refreshDeadline(cl.State.keepalive)
 }
 
 // refreshDeadline refreshes the read/write deadline for the net.Conn connection.
@@ -336,7 +328,7 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 			return nil
 		}
 
-		cl.refreshDeadline(cl.State.keepalive)
+		cl.refreshDeadline(cl.State.Keepalive)
 		fh := new(packets.FixedHeader)
 		err = cl.ReadFixedHeader(fh)
 		if err != nil {

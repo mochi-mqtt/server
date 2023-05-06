@@ -133,7 +133,7 @@ func TestNewClient(t *testing.T) {
 	require.NotNil(t, cl.State.Inflight.internal)
 	require.NotNil(t, cl.State.Subscriptions)
 	require.NotNil(t, cl.State.TopicAliases)
-	require.Equal(t, defaultKeepalive, cl.State.keepalive)
+	require.Equal(t, defaultKeepalive, cl.State.Keepalive)
 	require.Equal(t, defaultClientProtocolVersion, cl.Properties.ProtocolVersion)
 	require.NotNil(t, cl.Net.Conn)
 	require.NotNil(t, cl.Net.bconn)
@@ -165,7 +165,7 @@ func TestClientParseConnect(t *testing.T) {
 
 	cl.ParseConnect("tcp1", pk)
 	require.Equal(t, pk.Connect.ClientIdentifier, cl.ID)
-	require.Equal(t, pk.Connect.Keepalive, cl.State.keepalive)
+	require.Equal(t, pk.Connect.Keepalive, cl.State.Keepalive)
 	require.Equal(t, pk.Connect.Clean, cl.Properties.Clean)
 	require.Equal(t, pk.Connect.ClientIdentifier, cl.ID)
 	require.Equal(t, pk.Connect.WillTopic, cl.Properties.Will.TopicName)
