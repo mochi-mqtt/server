@@ -826,6 +826,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	if out.FixedHeader.Qos > 0 {
 		i, err := cl.NextPacketID() // [MQTT-4.3.2-1] [MQTT-4.3.3-1]
 		if err != nil {
+			s.hooks.OnPacketIDExhausted(cl, pk)
 			s.Log.Warn().Err(err).Str("client", cl.ID).Str("listener", cl.Net.Listener).Msg("packet ids exhausted")
 			return out, packets.ErrQuotaExceeded
 		}
