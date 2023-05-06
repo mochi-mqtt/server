@@ -847,7 +847,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 		}
 	}
 
-	if cl.Net.Conn == nil || atomic.LoadUint32(&cl.State.done) == 1 {
+	if cl.Net.Conn == nil || cl.Closed() {
 		return out, packets.CodeDisconnect
 	}
 

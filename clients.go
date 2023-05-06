@@ -7,6 +7,7 @@ package mqtt
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -87,7 +88,7 @@ func (cl *Clients) GetByListener(id string) []*Client {
 	defer cl.RUnlock()
 	clients := make([]*Client, 0, cl.Len())
 	for _, client := range cl.internal {
-		if client.Net.Listener == id && atomic.LoadUint32(&client.State.done) == 0 {
+		if client.Net.Listener == id && !client.Closed() {
 			clients = append(clients, client)
 		}
 	}
@@ -144,7 +145,7 @@ type ClientState struct {
 	endOnce       sync.Once            // only end once
 	isTakenOver   uint32               // used to identify orphaned clients
 	packetID      uint32               // the current highest packetID
-	done          uint32               // atomic counter which indicates that the client has closed
+	open          context.Context      // indicate that the client is open for packet exchange
 	outboundQty   int32                // number of messages currently in the outbound queue
 	keepalive     uint16               // the number of seconds the connection can wait
 }
@@ -158,6 +159,7 @@ func newClient(c net.Conn, o *ops) *Client {
 			Subscriptions: NewSubscriptions(),
 			TopicAliases:  NewTopicAliases(o.options.Capabilities.TopicAliasMaximum),
 			keepalive:     defaultKeepalive,
+			open:          context.Background(),
 			outbound:      make(chan *packets.Packet, o.options.Capabilities.MaximumClientWritesPending),
 		},
 		Properties: ClientProperties{
@@ -330,7 +332,7 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 	var err error
 
 	for {
-		if atomic.LoadUint32(&cl.State.done) == 1 {
+		if cl.Closed() {
 			return nil
 		}
 
@@ -371,7 +373,12 @@ func (cl *Client) Stop(err error) {
 			close(cl.State.outbound)
 		}
 
-		atomic.StoreUint32(&cl.State.done, 1)
+		if cl.State.open != nil {
+			var cancel context.CancelFunc
+			cl.State.open, cancel = context.WithCancel(cl.State.open)
+			cancel()
+		}
+
 		atomic.StoreInt64(&cl.State.disconnected, time.Now().Unix())
 	})
 }
@@ -386,7 +393,7 @@ func (cl *Client) StopCause() error {
 
 // Closed returns true if client connection is closed.
 func (cl *Client) Closed() bool {
-	return atomic.LoadUint32(&cl.State.done) == 1
+	return cl.State.open == nil || cl.State.open.Err() != nil
 }
 
 // ReadFixedHeader reads in the values of the next packet's fixed header.
@@ -548,7 +555,7 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 	cl.Lock()
 	defer cl.Unlock()
 
-	if atomic.LoadUint32(&cl.State.done) == 1 {
+	if cl.Closed() {
 		return ErrConnectionClosed
 	}
 
