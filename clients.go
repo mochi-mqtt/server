@@ -145,8 +145,8 @@ type ClientState struct {
 	endOnce         sync.Once            // only end once
 	isTakenOver     uint32               // used to identify orphaned clients
 	packetID        uint32               // the current highest packetID
-	ctx             context.Context      // indicate that the client is open for packet exchange
-	cancel          context.CancelFunc   // cancel function for ctx
+	open            context.Context      // indicate that the client is open for packet exchange
+	canelOpen       context.CancelFunc   // cancel function for open context
 	outboundQty     int32                // number of messages currently in the outbound queue
 	Keepalive       uint16               // the number of seconds the connection can wait
 	ServerKeepalive bool                 // keepalive was set by the server
@@ -161,8 +161,8 @@ func newClient(c net.Conn, o *ops) *Client {
 			Inflight:      NewInflights(),
 			Subscriptions: NewSubscriptions(),
 			TopicAliases:  NewTopicAliases(o.options.Capabilities.TopicAliasMaximum),
-			ctx:           ctx,
-			cancel:        cancel,
+			open:          ctx,
+			canelOpen:     cancel,
 			Keepalive:     defaultKeepalive,
 			outbound:      make(chan *packets.Packet, o.options.Capabilities.MaximumClientWritesPending),
 		},
@@ -195,7 +195,7 @@ func (cl *Client) WriteLoop() {
 				cl.ops.log.Debug().Err(err).Str("client", cl.ID).Interface("packet", pk).Msg("failed publishing packet")
 			}
 			atomic.AddInt32(&cl.State.outboundQty, -1)
-		case <-cl.State.ctx.Done():
+		case <-cl.State.open.Done():
 			return
 		}
 	}
@@ -367,7 +367,9 @@ func (cl *Client) Stop(err error) {
 			cl.State.stopCause.Store(err)
 		}
 
-		cl.State.cancel()
+		if cl.State.canelOpen != nil {
+			cl.State.canelOpen()
+		}
 
 		atomic.StoreInt64(&cl.State.disconnected, time.Now().Unix())
 	})
@@ -383,7 +385,7 @@ func (cl *Client) StopCause() error {
 
 // Closed returns true if client connection is closed.
 func (cl *Client) Closed() bool {
-	return cl.State.ctx.Err() != nil
+	return cl.State.open == nil || cl.State.open.Err() != nil
 }
 
 // ReadFixedHeader reads in the values of the next packet's fixed header.
