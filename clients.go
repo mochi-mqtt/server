@@ -146,7 +146,7 @@ type ClientState struct {
 	isTakenOver     uint32               // used to identify orphaned clients
 	packetID        uint32               // the current highest packetID
 	open            context.Context      // indicate that the client is open for packet exchange
-	canelOpen       context.CancelFunc   // cancel function for open context
+	cancelOpen      context.CancelFunc   // cancel function for open context
 	outboundQty     int32                // number of messages currently in the outbound queue
 	Keepalive       uint16               // the number of seconds the connection can wait
 	ServerKeepalive bool                 // keepalive was set by the server
@@ -162,7 +162,7 @@ func newClient(c net.Conn, o *ops) *Client {
 			Subscriptions: NewSubscriptions(),
 			TopicAliases:  NewTopicAliases(o.options.Capabilities.TopicAliasMaximum),
 			open:          ctx,
-			canelOpen:     cancel,
+			cancelOpen:    cancel,
 			Keepalive:     defaultKeepalive,
 			outbound:      make(chan *packets.Packet, o.options.Capabilities.MaximumClientWritesPending),
 		},
@@ -367,8 +367,8 @@ func (cl *Client) Stop(err error) {
 			cl.State.stopCause.Store(err)
 		}
 
-		if cl.State.canelOpen != nil {
-			cl.State.canelOpen()
+		if cl.State.cancelOpen != nil {
+			cl.State.cancelOpen()
 		}
 
 		atomic.StoreInt64(&cl.State.disconnected, time.Now().Unix())
