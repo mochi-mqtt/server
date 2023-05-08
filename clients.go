@@ -146,6 +146,7 @@ type ClientState struct {
 	isTakenOver     uint32               // used to identify orphaned clients
 	packetID        uint32               // the current highest packetID
 	open            context.Context      // indicate that the client is open for packet exchange
+	cancelOpen      context.CancelFunc   // cancel function for open context
 	outboundQty     int32                // number of messages currently in the outbound queue
 	Keepalive       uint16               // the number of seconds the connection can wait
 	ServerKeepalive bool                 // keepalive was set by the server
@@ -154,12 +155,14 @@ type ClientState struct {
 // newClient returns a new instance of Client. This is almost exclusively used by Server
 // for creating new clients, but it lives here because it's not dependent.
 func newClient(c net.Conn, o *ops) *Client {
+	ctx, cancel := context.WithCancel(context.Background())
 	cl := &Client{
 		State: ClientState{
 			Inflight:      NewInflights(),
 			Subscriptions: NewSubscriptions(),
 			TopicAliases:  NewTopicAliases(o.options.Capabilities.TopicAliasMaximum),
-			open:          context.Background(),
+			open:          ctx,
+			cancelOpen:    cancel,
 			Keepalive:     defaultKeepalive,
 			outbound:      make(chan *packets.Packet, o.options.Capabilities.MaximumClientWritesPending),
 		},
@@ -185,11 +188,16 @@ func newClient(c net.Conn, o *ops) *Client {
 
 // WriteLoop ranges over pending outbound messages and writes them to the client connection.
 func (cl *Client) WriteLoop() {
-	for pk := range cl.State.outbound {
-		if err := cl.WritePacket(*pk); err != nil {
-			cl.ops.log.Debug().Err(err).Str("client", cl.ID).Interface("packet", pk).Msg("failed publishing packet")
+	for {
+		select {
+		case pk := <-cl.State.outbound:
+			if err := cl.WritePacket(*pk); err != nil {
+				cl.ops.log.Debug().Err(err).Str("client", cl.ID).Interface("packet", pk).Msg("failed publishing packet")
+			}
+			atomic.AddInt32(&cl.State.outboundQty, -1)
+		case <-cl.State.open.Done():
+			return
 		}
-		atomic.AddInt32(&cl.State.outboundQty, -1)
 	}
 }
 
@@ -350,8 +358,6 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 // Stop instructs the client to shut down all processing goroutines and disconnect.
 func (cl *Client) Stop(err error) {
 	cl.State.endOnce.Do(func() {
-		cl.Lock()
-		defer cl.Unlock()
 
 		if cl.Net.Conn != nil {
 			_ = cl.Net.Conn.Close() // omit close error
@@ -361,14 +367,8 @@ func (cl *Client) Stop(err error) {
 			cl.State.stopCause.Store(err)
 		}
 
-		if cl.State.outbound != nil {
-			close(cl.State.outbound)
-		}
-
-		if cl.State.open != nil {
-			var cancel context.CancelFunc
-			cl.State.open, cancel = context.WithCancel(cl.State.open)
-			cancel()
+		if cl.State.cancelOpen != nil {
+			cl.State.cancelOpen()
 		}
 
 		atomic.StoreInt64(&cl.State.disconnected, time.Now().Unix())

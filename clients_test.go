@@ -467,7 +467,7 @@ func TestClientReadOK(t *testing.T) {
 func TestClientReadDone(t *testing.T) {
 	cl, _, _ := newTestClient()
 	defer cl.Stop(errClientStop)
-	cl.State.open = nil
+	cl.State.cancelOpen()
 
 	o := make(chan error)
 	go func() {

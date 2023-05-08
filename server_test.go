@@ -2821,7 +2821,7 @@ func TestServerClearExpiredClients(t *testing.T) {
 	cl0, _, _ := newTestClient()
 	cl0.ID = "c0"
 	cl0.State.disconnected = n - 10
-	cl0.State.open = nil
+	cl0.State.cancelOpen()
 	cl0.Properties.ProtocolVersion = 5
 	cl0.Properties.Props.SessionExpiryInterval = 12
 	cl0.Properties.Props.SessionExpiryIntervalFlag = true
@@ -2831,7 +2831,7 @@ func TestServerClearExpiredClients(t *testing.T) {
 	cl1, _, _ := newTestClient()
 	cl1.ID = "c1"
 	cl1.State.disconnected = n - 10
-	cl1.State.open = nil
+	cl1.State.cancelOpen()
 	cl1.Properties.ProtocolVersion = 5
 	cl1.Properties.Props.SessionExpiryInterval = 8
 	cl1.Properties.Props.SessionExpiryIntervalFlag = true
@@ -2841,7 +2841,7 @@ func TestServerClearExpiredClients(t *testing.T) {
 	cl2, _, _ := newTestClient()
 	cl2.ID = "c2"
 	cl2.State.disconnected = n - 10
-	cl2.State.open = nil
+	cl2.State.cancelOpen()
 	cl2.Properties.ProtocolVersion = 5
 	cl2.Properties.Props.SessionExpiryInterval = 0
 	cl2.Properties.Props.SessionExpiryIntervalFlag = true
