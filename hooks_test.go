@@ -338,7 +338,7 @@ func TestHooksOnPublish(t *testing.T) {
 	// coverage: failure
 	hook.fail = true
 	pk, err = h.OnPublish(new(Client), packets.Packet{PacketID: 10})
-	require.NoError(t, err)
+	require.Error(t, err)
 	require.Equal(t, uint16(10), pk.PacketID)
 
 	// coverage: reject packet
