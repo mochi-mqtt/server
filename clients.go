@@ -481,6 +481,14 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 
 // WritePacket encodes and writes a packet to the client.
 func (cl *Client) WritePacket(pk packets.Packet) error {
+	if cl.Closed() {
+		return ErrConnectionClosed
+	}
+
+	if cl.Net.Conn == nil {
+		return nil
+	}
+
 	if pk.Expiry > 0 {
 		pk.Properties.MessageExpiryInterval = uint32(pk.Expiry - time.Now().Unix()) // [MQTT-3.3.2-6]
 	}
@@ -544,19 +552,12 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		return packets.ErrPacketTooLarge // [MQTT-3.1.2-24] [MQTT-3.1.2-25]
 	}
 
-	cl.Lock()
-	defer cl.Unlock()
-
-	if cl.Closed() {
-		return ErrConnectionClosed
-	}
-
-	if cl.Net.Conn == nil {
-		return nil
-	}
-
 	nb := net.Buffers{buf.Bytes()}
-	n, err := nb.WriteTo(cl.Net.Conn)
+	n, err := func() (int64, error) {
+		cl.Lock()
+		defer cl.Unlock()
+		return nb.WriteTo(cl.Net.Conn)
+	}()
 	if err != nil {
 		return err
 	}
