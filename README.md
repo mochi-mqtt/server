@@ -136,13 +136,13 @@ A number of configurable options are available which can be used to alter the be
 ```go
 server := mqtt.New(&mqtt.Options{
   Capabilities: mqtt.Capabilities{
-    ClientNetWriteBufferSize: 4096,
-    ClientNetReadBufferSize: 4096,
     MaximumSessionExpiryInterval: 3600,
     Compatibilities: mqtt.Compatibilities{
       ObscureNotAuthorized: true,
     },
   },
+  ClientNetWriteBufferSize: 4096,
+  ClientNetReadBufferSize: 4096,
   SysTopicResendInterval: 10,
 })
 ```
