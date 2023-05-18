@@ -97,7 +97,7 @@ func main() {
 
 	stats := listeners.NewHTTPStats("stats", ":8080", &listeners.Config{
 		TLSConfig: tlsConfig,
-	}, nil)
+	}, server.Info)
 	err = server.AddListener(stats)
 	if err != nil {
 		log.Fatal(err)
