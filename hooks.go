@@ -374,13 +374,14 @@ func (h *Hooks) OnPublish(cl *Client, pk packets.Packet) (pkx packets.Packet, er
 	for _, hook := range h.GetAll() {
 		if hook.Provides(OnPublish) {
 			npk, err := hook.OnPublish(cl, pkx)
-			if err != nil && errors.Is(err, packets.ErrRejectPacket) {
-				h.Log.Debug().Err(err).Str("hook", hook.ID()).Interface("packet", pkx).Msg("publish packet rejected")
+			if err != nil {
+				if errors.Is(err, packets.ErrRejectPacket) {
+					h.Log.Debug().Err(err).Str("hook", hook.ID()).Interface("packet", pkx).Msg("publish packet rejected")
+					return pk, err
+				}
+				h.Log.Error().Err(err).Str("hook", hook.ID()).Interface("packet", pkx).Msg("publish packet error")
 				return pk, err
-			} else if err != nil {
-				continue
 			}
-
 			pkx = npk
 		}
 	}
