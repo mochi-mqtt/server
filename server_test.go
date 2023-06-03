@@ -2597,6 +2597,7 @@ func TestServerSendLWTRetain(t *testing.T) {
 		Flag:      1,
 		TopicName: "a/b/c",
 		Payload:   []byte("hello mochi"),
+		Retain:    true,
 	}
 	s.Clients.Add(sender)
 
