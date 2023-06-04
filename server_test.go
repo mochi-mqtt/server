@@ -2586,6 +2586,46 @@ func TestServerSendLWT(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
 }
 
+func TestServerSendLWTRetain(t *testing.T) {
+	s := newServer()
+	s.Serve()
+	defer s.Close()
+
+	sender, _, w1 := newTestClient()
+	sender.ID = "sender"
+	sender.Properties.Will = Will{
+		Flag:      1,
+		TopicName: "a/b/c",
+		Payload:   []byte("hello mochi"),
+		Retain:    true,
+	}
+	s.Clients.Add(sender)
+
+	receiver, r2, w2 := newTestClient()
+	receiver.ID = "receiver"
+	s.Clients.Add(receiver)
+	s.Topics.Subscribe(receiver.ID, packets.Subscription{Filter: "a/b/c", Qos: 0})
+
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.PacketsReceived))
+	require.Equal(t, 0, len(s.Topics.Messages("a/b/c")))
+
+	receiverBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r2)
+		require.NoError(t, err)
+		receiverBuf <- buf
+	}()
+
+	go func() {
+		s.sendLWT(sender)
+		time.Sleep(time.Millisecond * 10)
+		w1.Close()
+		w2.Close()
+	}()
+
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes, <-receiverBuf)
+}
+
 func TestServerSendLWTDelayed(t *testing.T) {
 	s := newServer()
 	cl1, _, _ := newTestClient()

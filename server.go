@@ -1285,6 +1285,10 @@ func (s *Server) sendLWT(cl *Client) {
 		return
 	}
 
+	if pk.FixedHeader.Retain {
+		s.retainMessage(cl, pk)
+	}
+
 	s.publishToSubscribers(pk)                      // [MQTT-3.1.2-8]
 	atomic.StoreUint32(&cl.Properties.Will.Flag, 0) // [MQTT-3.1.2-10]
 	s.hooks.OnWillSent(cl, pk)
@@ -1477,6 +1481,9 @@ func (s *Server) sendDelayedLWT(dt int64) {
 		if dt > pk.Expiry {
 			s.publishToSubscribers(pk) // [MQTT-3.1.2-8]
 			if cl, ok := s.Clients.Get(id); ok {
+				if pk.FixedHeader.Retain {
+					s.retainMessage(cl, pk)
+				}
 				cl.Properties.Will = Will{} // [MQTT-3.1.2-10]
 				s.hooks.OnWillSent(cl, pk)
 			}
