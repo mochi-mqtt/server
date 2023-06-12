@@ -880,6 +880,7 @@ func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, e
 		_, err := s.publishToClient(cl, sub, pkv)
 		if err != nil {
 			s.Log.Debug().Err(err).Str("client", cl.ID).Str("listener", cl.Net.Listener).Interface("packet", pkv).Msg("failed to publish retained message")
+			continue
 		}
 		s.hooks.OnRetainPublished(cl, pkv)
 	}
