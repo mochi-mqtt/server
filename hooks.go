@@ -41,6 +41,7 @@ const (
 	OnPublished
 	OnPublishDropped
 	OnRetainMessage
+	OnRetainPublished
 	OnQosPublish
 	OnQosComplete
 	OnQosDropped
@@ -91,6 +92,7 @@ type Hook interface {
 	OnPublished(cl *Client, pk packets.Packet)
 	OnPublishDropped(cl *Client, pk packets.Packet)
 	OnRetainMessage(cl *Client, pk packets.Packet, r int64)
+	OnRetainPublished(cl *Client, pk packets.Packet)
 	OnQosPublish(cl *Client, pk packets.Packet, sent int64, resends int)
 	OnQosComplete(cl *Client, pk packets.Packet)
 	OnQosDropped(cl *Client, pk packets.Packet)
@@ -413,6 +415,15 @@ func (h *Hooks) OnRetainMessage(cl *Client, pk packets.Packet, r int64) {
 	for _, hook := range h.GetAll() {
 		if hook.Provides(OnRetainMessage) {
 			hook.OnRetainMessage(cl, pk, r)
+		}
+	}
+}
+
+// OnRetainPublished is called when a retained message is published.
+func (h *Hooks) OnRetainPublished(cl *Client, pk packets.Packet) {
+	for _, hook := range h.GetAll() {
+		if hook.Provides(OnRetainPublished) {
+			hook.OnRetainPublished(cl, pk)
 		}
 	}
 }
@@ -757,6 +768,9 @@ func (h *HookBase) OnPublishDropped(cl *Client, pk packets.Packet) {}
 
 // OnRetainMessage is called then a published message is retained.
 func (h *HookBase) OnRetainMessage(cl *Client, pk packets.Packet, r int64) {}
+
+// OnRetainPublished is called when a retained message is published.
+func (h *HookBase) OnRetainPublished(cl *Client, pk packets.Packet) {}
 
 // OnQosPublish is called when a publish packet with Qos > 1 is issued to a subscriber.
 func (h *HookBase) OnQosPublish(cl *Client, pk packets.Packet, sent int64, resends int) {}
