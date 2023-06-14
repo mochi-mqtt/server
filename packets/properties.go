@@ -42,11 +42,11 @@ const (
 
 // validPacketProperties indicates which properties are valid for which packet types.
 var validPacketProperties = map[byte]map[byte]byte{
-	PropPayloadFormat:          {Publish: 1},
-	PropMessageExpiryInterval:  {Publish: 1},
-	PropContentType:            {Publish: 1},
-	PropResponseTopic:          {Publish: 1},
-	PropCorrelationData:        {Publish: 1},
+	PropPayloadFormat:          {Publish: 1, WillProperties: 1},
+	PropMessageExpiryInterval:  {Publish: 1, WillProperties: 1},
+	PropContentType:            {Publish: 1, WillProperties: 1},
+	PropResponseTopic:          {Publish: 1, WillProperties: 1},
+	PropCorrelationData:        {Publish: 1, WillProperties: 1},
 	PropSubscriptionIdentifier: {Publish: 1, Subscribe: 1},
 	PropSessionExpiryInterval:  {Connect: 1, Connack: 1, Disconnect: 1},
 	PropAssignedClientID:       {Connack: 1},
@@ -54,7 +54,7 @@ var validPacketProperties = map[byte]map[byte]byte{
 	PropAuthenticationMethod:   {Connect: 1, Connack: 1, Auth: 1},
 	PropAuthenticationData:     {Connect: 1, Connack: 1, Auth: 1},
 	PropRequestProblemInfo:     {Connect: 1},
-	PropWillDelayInterval:      {Connect: 1},
+	PropWillDelayInterval:      {WillProperties: 1},
 	PropRequestResponseInfo:    {Connect: 1},
 	PropResponseInfo:           {Connack: 1},
 	PropServerReference:        {Connack: 1, Disconnect: 1},
@@ -64,7 +64,7 @@ var validPacketProperties = map[byte]map[byte]byte{
 	PropTopicAlias:             {Publish: 1},
 	PropMaximumQos:             {Connack: 1},
 	PropRetainAvailable:        {Connack: 1},
-	PropUser:                   {Connect: 1, Connack: 1, Publish: 1, Puback: 1, Pubrec: 1, Pubrel: 1, Pubcomp: 1, Subscribe: 1, Suback: 1, Unsubscribe: 1, Unsuback: 1, Disconnect: 1, Auth: 1},
+	PropUser:                   {Connect: 1, Connack: 1, Publish: 1, Puback: 1, Pubrec: 1, Pubrel: 1, Pubcomp: 1, Subscribe: 1, Suback: 1, Unsubscribe: 1, Unsuback: 1, Disconnect: 1, Auth: 1, WillProperties: 1},
 	PropMaximumPacketSize:      {Connect: 1, Connack: 1},
 	PropWildcardSubAvailable:   {Connack: 1},
 	PropSubIDAvailable:         {Connack: 1},
@@ -194,14 +194,12 @@ func (p *Properties) canEncode(pkt byte, k byte) bool {
 }
 
 // Encode encodes properties into a bytes buffer.
-func (p *Properties) Encode(pk *Packet, b *bytes.Buffer, n int) {
+func (p *Properties) Encode(pkt byte, mods Mods, b *bytes.Buffer, n int) {
 	if p == nil {
 		return
 	}
 
 	var buf bytes.Buffer
-	pkt := pk.FixedHeader.Type
-
 	if p.canEncode(pkt, PropPayloadFormat) && p.PayloadFormatFlag {
 		buf.WriteByte(PropPayloadFormat)
 		buf.WriteByte(p.PayloadFormat)
@@ -217,13 +215,13 @@ func (p *Properties) Encode(pk *Packet, b *bytes.Buffer, n int) {
 		buf.Write(encodeString(p.ContentType)) // [MQTT-3.3.2-19]
 	}
 
-	if pk.Mods.AllowResponseInfo && p.canEncode(pkt, PropResponseTopic) && //  [MQTT-3.3.2-14]
+	if mods.AllowResponseInfo && p.canEncode(pkt, PropResponseTopic) && //  [MQTT-3.3.2-14]
 		p.ResponseTopic != "" && !strings.ContainsAny(p.ResponseTopic, "+#") { // [MQTT-3.1.2-28]
 		buf.WriteByte(PropResponseTopic)
 		buf.Write(encodeString(p.ResponseTopic)) // [MQTT-3.3.2-13]
 	}
 
-	if pk.Mods.AllowResponseInfo && p.canEncode(pkt, PropCorrelationData) && len(p.CorrelationData) > 0 { // [MQTT-3.1.2-28]
+	if mods.AllowResponseInfo && p.canEncode(pkt, PropCorrelationData) && len(p.CorrelationData) > 0 { // [MQTT-3.1.2-28]
 		buf.WriteByte(PropCorrelationData)
 		buf.Write(encodeBytes(p.CorrelationData))
 	}
@@ -277,7 +275,7 @@ func (p *Properties) Encode(pk *Packet, b *bytes.Buffer, n int) {
 		buf.WriteByte(p.RequestResponseInfo)
 	}
 
-	if pk.Mods.AllowResponseInfo && p.canEncode(pkt, PropResponseInfo) && len(p.ResponseInfo) > 0 { // [MQTT-3.1.2-28]
+	if mods.AllowResponseInfo && p.canEncode(pkt, PropResponseInfo) && len(p.ResponseInfo) > 0 { // [MQTT-3.1.2-28]
 		buf.WriteByte(PropResponseInfo)
 		buf.Write(encodeString(p.ResponseInfo))
 	}
@@ -289,9 +287,9 @@ func (p *Properties) Encode(pk *Packet, b *bytes.Buffer, n int) {
 
 	// [MQTT-3.2.2-19] [MQTT-3.14.2-3] [MQTT-3.4.2-2] [MQTT-3.5.2-2]
 	// [MQTT-3.6.2-2] [MQTT-3.9.2-1] [MQTT-3.11.2-1] [MQTT-3.15.2-2]
-	if !pk.Mods.DisallowProblemInfo && p.canEncode(pkt, PropReasonString) && p.ReasonString != "" {
+	if !mods.DisallowProblemInfo && p.canEncode(pkt, PropReasonString) && p.ReasonString != "" {
 		b := encodeString(p.ReasonString)
-		if pk.Mods.MaxSize == 0 || uint32(n+len(b)+1) < pk.Mods.MaxSize {
+		if mods.MaxSize == 0 || uint32(n+len(b)+1) < mods.MaxSize {
 			buf.WriteByte(PropReasonString)
 			buf.Write(b)
 		}
@@ -322,7 +320,7 @@ func (p *Properties) Encode(pk *Packet, b *bytes.Buffer, n int) {
 		buf.WriteByte(p.RetainAvailable)
 	}
 
-	if !pk.Mods.DisallowProblemInfo && p.canEncode(pkt, PropUser) {
+	if !mods.DisallowProblemInfo && p.canEncode(pkt, PropUser) {
 		pb := bytes.NewBuffer([]byte{})
 		for _, v := range p.User {
 			pb.WriteByte(PropUser)
@@ -331,7 +329,7 @@ func (p *Properties) Encode(pk *Packet, b *bytes.Buffer, n int) {
 		}
 		// [MQTT-3.2.2-20] [MQTT-3.14.2-4] [MQTT-3.4.2-3] [MQTT-3.5.2-3]
 		// [MQTT-3.6.2-3] [MQTT-3.9.2-2] [MQTT-3.11.2-2] [MQTT-3.15.2-3]
-		if pk.Mods.MaxSize == 0 || uint32(n+pb.Len()+1) < pk.Mods.MaxSize {
+		if mods.MaxSize == 0 || uint32(n+pb.Len()+1) < mods.MaxSize {
 			buf.Write(pb.Bytes())
 		}
 	}
@@ -361,7 +359,7 @@ func (p *Properties) Encode(pk *Packet, b *bytes.Buffer, n int) {
 }
 
 // Decode decodes property bytes into a properties struct.
-func (p *Properties) Decode(pk byte, b *bytes.Buffer) (n int, err error) {
+func (p *Properties) Decode(pkt byte, b *bytes.Buffer) (n int, err error) {
 	if p == nil {
 		return 0, nil
 	}
@@ -384,8 +382,8 @@ func (p *Properties) Decode(pk byte, b *bytes.Buffer) (n int, err error) {
 			return n + bu, err
 		}
 
-		if _, ok := validPacketProperties[k][pk]; !ok {
-			return n + bu, fmt.Errorf("property type %v not valid for packet type %v: %w", k, pk, ErrProtocolViolationUnsupportedProperty)
+		if _, ok := validPacketProperties[k][pkt]; !ok {
+			return n + bu, fmt.Errorf("property type %v not valid for packet type %v: %w", k, pkt, ErrProtocolViolationUnsupportedProperty)
 		}
 
 		switch k {

@@ -285,6 +285,28 @@ func TestOnDisconnectClosedDB(t *testing.T) {
 	h.OnDisconnect(client, nil, false)
 }
 
+func TestOnDisconnectSessionTakenOver(t *testing.T) {
+	s := miniredis.RunT(t)
+	defer s.Close()
+	h := newHook(t, s.Addr())
+
+	testClient := &mqtt.Client{
+		ID: "test",
+		Net: mqtt.ClientConnection{
+			Remote:   "test.addr",
+			Listener: "listener",
+		},
+		Properties: mqtt.ClientProperties{
+			Username: []byte("username"),
+			Clean:    false,
+		},
+	}
+
+	testClient.Stop(packets.ErrSessionTakenOver)
+	teardown(t, h)
+	h.OnDisconnect(testClient, nil, true)
+}
+
 func TestOnSubscribedThenOnUnsubscribed(t *testing.T) {
 	s := miniredis.RunT(t)
 	defer s.Close()

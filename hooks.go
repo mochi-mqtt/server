@@ -41,9 +41,11 @@ const (
 	OnPublished
 	OnPublishDropped
 	OnRetainMessage
+	OnRetainPublished
 	OnQosPublish
 	OnQosComplete
 	OnQosDropped
+	OnPacketIDExhausted
 	OnWill
 	OnWillSent
 	OnClientExpired
@@ -90,9 +92,11 @@ type Hook interface {
 	OnPublished(cl *Client, pk packets.Packet)
 	OnPublishDropped(cl *Client, pk packets.Packet)
 	OnRetainMessage(cl *Client, pk packets.Packet, r int64)
+	OnRetainPublished(cl *Client, pk packets.Packet)
 	OnQosPublish(cl *Client, pk packets.Packet, sent int64, resends int)
 	OnQosComplete(cl *Client, pk packets.Packet)
 	OnQosDropped(cl *Client, pk packets.Packet)
+	OnPacketIDExhausted(cl *Client, pk packets.Packet)
 	OnWill(cl *Client, will Will) (Will, error)
 	OnWillSent(cl *Client, pk packets.Packet)
 	OnClientExpired(cl *Client)
@@ -372,13 +376,14 @@ func (h *Hooks) OnPublish(cl *Client, pk packets.Packet) (pkx packets.Packet, er
 	for _, hook := range h.GetAll() {
 		if hook.Provides(OnPublish) {
 			npk, err := hook.OnPublish(cl, pkx)
-			if err != nil && errors.Is(err, packets.ErrRejectPacket) {
-				h.Log.Debug().Err(err).Str("hook", hook.ID()).Interface("packet", pkx).Msg("publish packet rejected")
+			if err != nil {
+				if errors.Is(err, packets.ErrRejectPacket) {
+					h.Log.Debug().Err(err).Str("hook", hook.ID()).Interface("packet", pkx).Msg("publish packet rejected")
+					return pk, err
+				}
+				h.Log.Error().Err(err).Str("hook", hook.ID()).Interface("packet", pkx).Msg("publish packet error")
 				return pk, err
-			} else if err != nil {
-				continue
 			}
-
 			pkx = npk
 		}
 	}
@@ -414,6 +419,15 @@ func (h *Hooks) OnRetainMessage(cl *Client, pk packets.Packet, r int64) {
 	}
 }
 
+// OnRetainPublished is called when a retained message is published.
+func (h *Hooks) OnRetainPublished(cl *Client, pk packets.Packet) {
+	for _, hook := range h.GetAll() {
+		if hook.Provides(OnRetainPublished) {
+			hook.OnRetainPublished(cl, pk)
+		}
+	}
+}
+
 // OnQosPublish is called when a publish packet with Qos >= 1 is issued to a subscriber.
 // In other words, this method is called when a new inflight message is created or resent.
 // It is typically used to store a new inflight message.
@@ -443,6 +457,16 @@ func (h *Hooks) OnQosDropped(cl *Client, pk packets.Packet) {
 	for _, hook := range h.GetAll() {
 		if hook.Provides(OnQosDropped) {
 			hook.OnQosDropped(cl, pk)
+		}
+	}
+}
+
+// OnPacketIDExhausted is called when the client runs out of unused packet ids to
+// assign to a packet.
+func (h *Hooks) OnPacketIDExhausted(cl *Client, pk packets.Packet) {
+	for _, hook := range h.GetAll() {
+		if hook.Provides(OnPacketIDExhausted) {
+			hook.OnPacketIDExhausted(cl, pk)
 		}
 	}
 }
@@ -745,6 +769,9 @@ func (h *HookBase) OnPublishDropped(cl *Client, pk packets.Packet) {}
 // OnRetainMessage is called then a published message is retained.
 func (h *HookBase) OnRetainMessage(cl *Client, pk packets.Packet, r int64) {}
 
+// OnRetainPublished is called when a retained message is published.
+func (h *HookBase) OnRetainPublished(cl *Client, pk packets.Packet) {}
+
 // OnQosPublish is called when a publish packet with Qos > 1 is issued to a subscriber.
 func (h *HookBase) OnQosPublish(cl *Client, pk packets.Packet, sent int64, resends int) {}
 
@@ -753,6 +780,9 @@ func (h *HookBase) OnQosComplete(cl *Client, pk packets.Packet) {}
 
 // OnQosDropped is called the Qos flow for a message expires.
 func (h *HookBase) OnQosDropped(cl *Client, pk packets.Packet) {}
+
+// OnPacketIDExhausted is called when the client runs out of unused packet ids to assign to a packet.
+func (h *HookBase) OnPacketIDExhausted(cl *Client, pk packets.Packet) {}
 
 // OnWill is called when a client disconnects and publishes an LWT message.
 func (h *HookBase) OnWill(cl *Client, will Will) (Will, error) {

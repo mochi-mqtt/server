@@ -26,7 +26,6 @@ func main() {
 	}()
 
 	server := mqtt.New(nil)
-	server.Options.Capabilities.ServerKeepAlive = 60
 	server.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true
 	server.Options.Capabilities.Compatibilities.PassiveClientDisconnect = true
 
@@ -61,6 +60,7 @@ func (h *pahoAuthHook) ID() string {
 func (h *pahoAuthHook) Provides(b byte) bool {
 	return bytes.Contains([]byte{
 		mqtt.OnConnectAuthenticate,
+		mqtt.OnConnect,
 		mqtt.OnACLCheck,
 	}, []byte{b})
 }
@@ -71,4 +71,12 @@ func (h *pahoAuthHook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet)
 
 func (h *pahoAuthHook) OnACLCheck(cl *mqtt.Client, topic string, write bool) bool {
 	return topic != "test/nosubscribe"
+}
+
+func (h *pahoAuthHook) OnConnect(cl *mqtt.Client, pk packets.Packet) {
+	// Handle paho test_server_keep_alive
+	if pk.Connect.Keepalive == 120 && pk.Connect.Clean {
+		cl.State.Keepalive = 60
+		cl.State.ServerKeepalive = true
+	}
 }

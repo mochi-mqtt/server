@@ -238,9 +238,11 @@ func TestHooksNonReturns(t *testing.T) {
 			h.OnPublished(cl, packets.Packet{})
 			h.OnPublishDropped(cl, packets.Packet{})
 			h.OnRetainMessage(cl, packets.Packet{}, 0)
+			h.OnRetainPublished(cl, packets.Packet{})
 			h.OnQosPublish(cl, packets.Packet{}, time.Now().Unix(), 0)
 			h.OnQosComplete(cl, packets.Packet{})
 			h.OnQosDropped(cl, packets.Packet{})
+			h.OnPacketIDExhausted(cl, packets.Packet{})
 			h.OnWillSent(cl, packets.Packet{})
 			h.OnClientExpired(cl)
 			h.OnRetainedExpired("a/b/c")
@@ -337,7 +339,7 @@ func TestHooksOnPublish(t *testing.T) {
 	// coverage: failure
 	hook.fail = true
 	pk, err = h.OnPublish(new(Client), packets.Packet{PacketID: 10})
-	require.NoError(t, err)
+	require.Error(t, err)
 	require.Equal(t, uint16(10), pk.PacketID)
 
 	// coverage: reject packet

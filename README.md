@@ -136,13 +136,13 @@ A number of configurable options are available which can be used to alter the be
 ```go
 server := mqtt.New(&mqtt.Options{
   Capabilities: mqtt.Capabilities{
-    ClientNetWriteBufferSize: 4096,
-    ClientNetReadBufferSize: 4096,
     MaximumSessionExpiryInterval: 3600,
     Compatibilities: mqtt.Compatibilities{
       ObscureNotAuthorized: true,
     },
   },
+  ClientNetWriteBufferSize: 4096,
+  ClientNetReadBufferSize: 4096,
   SysTopicResendInterval: 10,
 })
 ```
@@ -304,6 +304,7 @@ The function signatures for all the hooks and `mqtt.Hook` interface can be found
 | OnQosPublish | Called when a publish packet with Qos >= 1 is issued to a subscriber. | 
 | OnQosComplete | Called when the Qos flow for a message has been completed. | 
 | OnQosDropped | Called when an inflight message expires before completion. | 
+| OnPacketIDExhausted | Called when a client runs out of unused packet ids to assign. | 
 | OnWill | Called when a client disconnects and intends to issue a will message. Allows packet modification. | 
 | OnWillSent | Called when an LWT message has been issued from a disconnecting client. | 
 | OnClientExpired | Called when a client session has expired and should be deleted. | 
@@ -366,30 +367,33 @@ Mochi MQTT performance is comparable with popular brokers such as Mosquitto, EMQ
 Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inovex/mqtt-stresser) on a Apple Macbook Air M2, using `cmd/main.go` default settings. Taking into account bursts of high and low throughput, the median scores are the most useful. Higher is better.
 
 > The values presented in the benchmark are not representative of true messages per second throughput. They rely on an unusual calculation by mqtt-stresser, but are usable as they are consistent across all brokers.
-> Benchmarks are provided as a general performance expectation guideline only.
+> Benchmarks are provided as a general performance expectation guideline only. Comparisons are performed using out-of-the-box default configurations.
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=2 -num-messages=10000`
 | Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
 | --                | --             | --   | --   | --             | --   | --   |
-| Mochi v2.2.0      | 127,216 | 125,748 | 124,279 | 319,250 | 309,327 | 299,405 |
-| Mosquitto v2.0.15 | 155,920 | 155,919 | 155,918 | 185,485 | 185,097 | 184,709 |
-| EMQX v5.0.11      | 156,945 | 156,257 | 155,568 | 17,918 | 17,783 | 17,649 |
+| Mochi v2.2.10      | 124,772 | 125,456 | 124,614 | 314,461 | 313,186 | 311,910 |
+| [Mosquitto v2.0.15](https://github.com/eclipse/mosquitto) | 155,920 | 155,919 | 155,918 | 185,485 | 185,097 | 184,709 |
+| [EMQX v5.0.11](https://github.com/emqx/emqx)      | 156,945 | 156,257 | 155,568 | 17,918 | 17,783 | 17,649 |
+| [Rumqtt v0.21.0](https://github.com/bytebeamio/rumqtt) | 112,208 | 108,480 | 104,753 | 135,784 | 126,446 | 117,108 |
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
 | Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
 | --                | --             | --   | --   | --             | --   | --   |
-| Mochi v2.2.0      | 45,615 | 30,129 | 21,138 | 232,717 | 86,323 | 50,402 |
+| Mochi v2.2.10      | 41,825 | 31,663| 23,008 | 144,058 | 65,903 | 37,618 |
 | Mosquitto v2.0.15 | 42,729 | 38,633 | 29,879 | 23,241 | 19,714 | 18,806 |
 | EMQX v5.0.11      | 21,553 | 17,418 | 14,356 | 4,257 | 3,980 | 3,756 |
+| Rumqtt v0.21.0    | 42,213 | 23,153 | 20,814 | 49,465 | 36,626 | 19,283 |
 
 Million Message Challenge (hit the server with 1 million messages immediately):
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=100 -num-messages=10000`
 | Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
 | --                | --             | --   | --   | --             | --   | --   |
-| Mochi v2.2.0      | 51,044 | 4,682 | 2,345 | 72,634 | 7,645 | 2,464 |
+| Mochi v2.2.10     | 13,532 | 4,425 | 2,344 | 52,120 | 7,274 | 2,701 |
 | Mosquitto v2.0.15 | 3,826 | 3,395 | 3,032 | 1,200 | 1,150 | 1,118 |
 | EMQX v5.0.11      | 4,086 | 2,432 | 2,274 | 434 | 333 | 311 |
+| Rumqtt v0.21.0    | 78,972 | 5,047 | 3,804 | 4,286 | 3,249 | 2,027 |
 
 > Not sure what's going on with EMQX here, perhaps the docker out-of-the-box settings are not optimal, so take it with a pinch of salt as we know for a fact it's a solid piece of software.
 

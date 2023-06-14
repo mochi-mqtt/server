@@ -5,6 +5,7 @@
 package mqtt
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -114,8 +115,8 @@ func TestClientsDelete(t *testing.T) {
 
 func TestClientsGetByListener(t *testing.T) {
 	cl := NewClients()
-	cl.Add(&Client{ID: "t1", Net: ClientConnection{Listener: "tcp1"}})
-	cl.Add(&Client{ID: "t2", Net: ClientConnection{Listener: "ws1"}})
+	cl.Add(&Client{ID: "t1", State: ClientState{open: context.Background()}, Net: ClientConnection{Listener: "tcp1"}})
+	cl.Add(&Client{ID: "t2", State: ClientState{open: context.Background()}, Net: ClientConnection{Listener: "ws1"}})
 	require.Contains(t, cl.internal, "t1")
 	require.Contains(t, cl.internal, "t2")
 
@@ -132,7 +133,7 @@ func TestNewClient(t *testing.T) {
 	require.NotNil(t, cl.State.Inflight.internal)
 	require.NotNil(t, cl.State.Subscriptions)
 	require.NotNil(t, cl.State.TopicAliases)
-	require.Equal(t, defaultKeepalive, cl.State.keepalive)
+	require.Equal(t, defaultKeepalive, cl.State.Keepalive)
 	require.Equal(t, defaultClientProtocolVersion, cl.Properties.ProtocolVersion)
 	require.NotNil(t, cl.Net.Conn)
 	require.NotNil(t, cl.Net.bconn)
@@ -164,7 +165,7 @@ func TestClientParseConnect(t *testing.T) {
 
 	cl.ParseConnect("tcp1", pk)
 	require.Equal(t, pk.Connect.ClientIdentifier, cl.ID)
-	require.Equal(t, pk.Connect.Keepalive, cl.State.keepalive)
+	require.Equal(t, pk.Connect.Keepalive, cl.State.Keepalive)
 	require.Equal(t, pk.Connect.Clean, cl.Properties.Clean)
 	require.Equal(t, pk.Connect.ClientIdentifier, cl.ID)
 	require.Equal(t, pk.Connect.WillTopic, cl.Properties.Will.TopicName)
@@ -466,7 +467,7 @@ func TestClientReadOK(t *testing.T) {
 func TestClientReadDone(t *testing.T) {
 	cl, _, _ := newTestClient()
 	defer cl.Stop(errClientStop)
-	cl.State.done = 1
+	cl.State.cancelOpen()
 
 	o := make(chan error)
 	go func() {
@@ -483,7 +484,7 @@ func TestClientStop(t *testing.T) {
 	cl.Stop(nil)
 	require.Equal(t, nil, cl.State.stopCause.Load())
 	require.Equal(t, time.Now().Unix(), cl.State.disconnected)
-	require.Equal(t, uint32(1), cl.State.done)
+	require.True(t, cl.Closed())
 	require.Equal(t, nil, cl.StopCause())
 }
 

@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	Version                       = "2.2.6" // the current server version.
-	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
+	Version                       = "2.2.12" // the current server version.
+	defaultSysTopicInterval int64 = 1        // the interval between $SYS topic publishes
 )
 
 var (
@@ -43,7 +43,6 @@ var (
 		WildcardSubAvailable:         1,              // wildcard subscriptions are available
 		SubIDAvailable:               1,              // subscription identifiers are available
 		SharedSubAvailable:           1,              // shared subscriptions are available
-		ServerKeepAlive:              10,             // default keepalive for clients
 		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
 		MaximumClientWritesPending:   1024 * 8,       // maximum number of pending message writes for a client
 	}
@@ -61,7 +60,6 @@ type Capabilities struct {
 	maximumPacketID              uint32 // unexported, used for testing only
 	ReceiveMaximum               uint16
 	TopicAliasMaximum            uint16
-	ServerKeepAlive              uint16
 	SharedSubAvailable           byte
 	MinimumProtocolVersion       byte
 	Compatibilities              Compatibilities
@@ -331,6 +329,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	}
 
 	s.hooks.OnConnect(cl, pk)
+	cl.refreshDeadline(cl.State.Keepalive)
 
 	if !s.hooks.OnConnectAuthenticate(cl, pk) { // [MQTT-3.1.4-2]
 		err := s.sendConnack(cl, packets.ErrBadUsernameOrPassword, false)
@@ -372,9 +371,8 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	}
 
 	s.Log.Debug().Str("client", cl.ID).Err(err).Str("remote", cl.Net.Remote).Str("listener", listener).Msg("client disconnected")
-	expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryIntervalFlag && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
+	expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
 	s.hooks.OnDisconnect(cl, err, expire)
-	close(cl.State.outbound)
 
 	if expire && atomic.LoadUint32(&cl.State.isTakenOver) == 0 {
 		cl.ClearInflights(math.MaxInt64, 0)
@@ -499,9 +497,12 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 // sendConnack returns a Connack packet to a client.
 func (s *Server) sendConnack(cl *Client, reason packets.Code, present bool) error {
 	properties := packets.Properties{
-		ServerKeepAlive:     s.Options.Capabilities.ServerKeepAlive, // [MQTT-3.1.2-21]
-		ServerKeepAliveFlag: true,
-		ReceiveMaximum:      s.Options.Capabilities.ReceiveMaximum, // 3.2.2.3.3 Receive Maximum
+		ReceiveMaximum: s.Options.Capabilities.ReceiveMaximum, // 3.2.2.3.3 Receive Maximum
+	}
+
+	if cl.State.ServerKeepalive { // You can set this dynamically using the OnConnect hook.
+		properties.ServerKeepAlive = cl.State.Keepalive // [MQTT-3.1.2-21]
+		properties.ServerKeepAliveFlag = true
 	}
 
 	if reason.Code >= packets.ErrUnspecifiedError.Code {
@@ -827,6 +828,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	if out.FixedHeader.Qos > 0 {
 		i, err := cl.NextPacketID() // [MQTT-4.3.2-1] [MQTT-4.3.3-1]
 		if err != nil {
+			s.hooks.OnPacketIDExhausted(cl, pk)
 			s.Log.Warn().Err(err).Str("client", cl.ID).Str("listener", cl.Net.Listener).Msg("packet ids exhausted")
 			return out, packets.ErrQuotaExceeded
 		}
@@ -847,7 +849,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 		}
 	}
 
-	if cl.Net.Conn == nil || atomic.LoadUint32(&cl.State.done) == 1 {
+	if cl.Net.Conn == nil || cl.Closed() {
 		return out, packets.CodeDisconnect
 	}
 
@@ -878,7 +880,9 @@ func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, e
 		_, err := s.publishToClient(cl, sub, pkv)
 		if err != nil {
 			s.Log.Debug().Err(err).Str("client", cl.ID).Str("listener", cl.Net.Listener).Interface("packet", pkv).Msg("failed to publish retained message")
+			continue
 		}
+		s.hooks.OnRetainPublished(cl, pkv)
 	}
 }
 
@@ -998,15 +1002,15 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 		if code != packets.CodeSuccess {
 			reasonCodes[i] = code.Code // NB 3.9.3 Non-normative 0x91
 			continue
+		} else if !IsValidFilter(sub.Filter, false) {
+			reasonCodes[i] = packets.ErrTopicFilterInvalid.Code
+		} else if sub.NoLocal && IsSharedFilter(sub.Filter) {
+			reasonCodes[i] = packets.ErrProtocolViolationInvalidSharedNoLocal.Code // [MQTT-3.8.3-4]
 		} else if !s.hooks.OnACLCheck(cl, sub.Filter, false) {
 			reasonCodes[i] = packets.ErrNotAuthorized.Code
 			if s.Options.Capabilities.Compatibilities.ObscureNotAuthorized {
 				reasonCodes[i] = packets.ErrUnspecifiedError.Code
 			}
-		} else if !IsValidFilter(sub.Filter, false) {
-			reasonCodes[i] = packets.ErrTopicFilterInvalid.Code
-		} else if sub.NoLocal && IsSharedFilter(sub.Filter) {
-			reasonCodes[i] = packets.ErrProtocolViolationInvalidSharedNoLocal.Code // [MQTT-3.8.3-4]
 		} else {
 			isNew := s.Topics.Subscribe(cl.ID, sub) // [MQTT-3.8.4-3]
 			if isNew {
@@ -1283,6 +1287,10 @@ func (s *Server) sendLWT(cl *Client) {
 		return
 	}
 
+	if pk.FixedHeader.Retain {
+		s.retainMessage(cl, pk)
+	}
+
 	s.publishToSubscribers(pk)                      // [MQTT-3.1.2-8]
 	atomic.StoreUint32(&cl.Properties.Will.Flag, 0) // [MQTT-3.1.2-10]
 	s.hooks.OnWillSent(cl, pk)
@@ -1415,25 +1423,7 @@ func (s *Server) loadClients(v []storage.Client) {
 func (s *Server) loadInflight(v []storage.Message) {
 	for _, msg := range v {
 		if client, ok := s.Clients.Get(msg.Origin); ok {
-			client.State.Inflight.Set(packets.Packet{
-				FixedHeader: msg.FixedHeader,
-				PacketID:    msg.PacketID,
-				TopicName:   msg.TopicName,
-				Payload:     msg.Payload,
-				Origin:      msg.Origin,
-				Created:     msg.Created,
-				Properties: packets.Properties{
-					PayloadFormat:          msg.Properties.PayloadFormat,
-					PayloadFormatFlag:      msg.Properties.PayloadFormatFlag,
-					MessageExpiryInterval:  msg.Properties.MessageExpiryInterval,
-					ContentType:            msg.Properties.ContentType,
-					ResponseTopic:          msg.Properties.ResponseTopic,
-					CorrelationData:        msg.Properties.CorrelationData,
-					SubscriptionIdentifier: msg.Properties.SubscriptionIdentifier,
-					TopicAlias:             msg.Properties.TopicAlias,
-					User:                   msg.Properties.User,
-				},
-			})
+			client.State.Inflight.Set(msg.ToPacket())
 		}
 	}
 }
@@ -1441,24 +1431,7 @@ func (s *Server) loadInflight(v []storage.Message) {
 // loadRetained restores retained messages from the datastore.
 func (s *Server) loadRetained(v []storage.Message) {
 	for _, msg := range v {
-		s.Topics.RetainMessage(packets.Packet{
-			FixedHeader: msg.FixedHeader,
-			TopicName:   msg.TopicName,
-			Payload:     msg.Payload,
-			Origin:      msg.Origin,
-			Created:     msg.Created,
-			Properties: packets.Properties{
-				PayloadFormat:          msg.Properties.PayloadFormat,
-				PayloadFormatFlag:      msg.Properties.PayloadFormatFlag,
-				MessageExpiryInterval:  msg.Properties.MessageExpiryInterval,
-				ContentType:            msg.Properties.ContentType,
-				ResponseTopic:          msg.Properties.ResponseTopic,
-				CorrelationData:        msg.Properties.CorrelationData,
-				SubscriptionIdentifier: msg.Properties.SubscriptionIdentifier,
-				TopicAlias:             msg.Properties.TopicAlias,
-				User:                   msg.Properties.User,
-			},
-		})
+		s.Topics.RetainMessage(msg.ToPacket())
 	}
 }
 
@@ -1510,6 +1483,9 @@ func (s *Server) sendDelayedLWT(dt int64) {
 		if dt > pk.Expiry {
 			s.publishToSubscribers(pk) // [MQTT-3.1.2-8]
 			if cl, ok := s.Clients.Get(id); ok {
+				if pk.FixedHeader.Retain {
+					s.retainMessage(cl, pk)
+				}
 				cl.Properties.Will = Will{} // [MQTT-3.1.2-10]
 				s.hooks.OnWillSent(cl, pk)
 			}
