@@ -37,7 +37,7 @@ import "github.com/mochi-co/mqtt/v2"
     - Plus all the original MQTT features of Mochi MQTT v1, such as Full QoS(0,1,2), $SYS topics, retained messages, etc. 
 - Developer-centric:
     - Most core broker code is now exported and accessible, for total developer control.
-    - Full featured and flexible Hook-based interfacing system to provide easy 'plugin' development.
+    - Full-featured and flexible Hook-based interfacing system to provide easy 'plugin' development.
     - Direct Packet Injection using special inline client, or masquerade as existing clients.
 - Performant and Stable:
     - Our classic trie-based Topic-Subscription model.
@@ -277,43 +277,44 @@ The function signatures for all the hooks and `mqtt.Hook` interface can be found
 
 > The most flexible event hooks are OnPacketRead, OnPacketEncode, and OnPacketSent - these hooks be used to control and modify all incoming and outgoing packets.
 
-| Function | Usage | 
-| -------------------------- | -- |
-| OnStarted | Called when the server has successfully started.|
-| OnStopped | Called when the server has successfully stopped. | 
-| OnConnectAuthenticate | Called when a user attempts to authenticate with the server. An implementation of this method MUST be used to allow or deny access to the server (see hooks/auth/allow_all or basic). It can be used in custom hooks to check connecting users against an existing user database. Returns true if allowed. |
-| OnACLCheck | Called when a user attempts to publish or subscribe to a topic filter. As above. |
-| OnSysInfoTick | Called when the $SYS topic values are published out. |
-| OnConnect | Called when a new client connects | 
-| OnSessionEstablished | Called when a new client successfully establishes a session (after OnConnect) | 
-| OnDisconnect | Called when a client is disconnected for any reason. | 
-| OnAuthPacket | Called when an auth packet is received. It is intended to allow developers to create their own mqtt v5 Auth Packet handling mechanisms. Allows packet modification. | 
-| OnPacketRead | Called when a packet is received from a client. Allows packet modification. | 
-| OnPacketEncode | Called immediately before a packet is encoded to be sent to a client. Allows packet modification. | 
-| OnPacketSent | Called when a packet has been sent to a client. | 
-| OnPacketProcessed | Called when a packet has been received and successfully handled by the broker. | 
-| OnSubscribe | Called when a client subscribes to one or more filters. Allows packet modification. | 
-| OnSubscribed | Called when a client successfully subscribes to one or more filters. | 
-| OnSelectSubscribers | Called when subscribers have been collected for a topic, but before shared subscription subscribers have been selected. Allows receipient modification.| 
-| OnUnsubscribe | Called when a client unsubscribes from one or more filters. Allows packet modification. | 
-| OnUnsubscribed | Called when a client successfully unsubscribes from one or more filters. | 
-| OnPublish | Called when a client publishes a message. Allows packet modification. | 
-| OnPublished | Called when a client has published a message to subscribers. | 
-| OnPublishDropped | Called when a message to a client is dropped before delivery, such as if the client is taking too long to respond. | 
-| OnRetainMessage | Called then a published message is retained. | 
-| OnQosPublish | Called when a publish packet with Qos >= 1 is issued to a subscriber. | 
-| OnQosComplete | Called when the Qos flow for a message has been completed. | 
-| OnQosDropped | Called when an inflight message expires before completion. | 
-| OnPacketIDExhausted | Called when a client runs out of unused packet ids to assign. | 
-| OnWill | Called when a client disconnects and intends to issue a will message. Allows packet modification. | 
-| OnWillSent | Called when an LWT message has been issued from a disconnecting client. | 
-| OnClientExpired | Called when a client session has expired and should be deleted. | 
-| OnRetainedExpired | Called when a retained message has expired and should be deleted. | 
-| StoredClients |  Returns clients, eg. from a persistent store. | 
-| StoredSubscriptions |  Returns client subscriptions, eg. from a persistent store. | 
-| StoredInflightMessages | Returns inflight messages, eg. from a persistent store.  | 
-| StoredRetainedMessages | Returns retained messages, eg. from a persistent store. | 
-| StoredSysInfo | Returns stored system info values, eg. from a persistent store. | 
+| Function               | Usage                                                                                                                                                                                                                                                                                                      | 
+|------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| OnStarted              | Called when the server has successfully started.                                                                                                                                                                                                                                                           |
+| OnStopped              | Called when the server has successfully stopped.                                                                                                                                                                                                                                                           | 
+| OnConnectAuthenticate  | Called when a user attempts to authenticate with the server. An implementation of this method MUST be used to allow or deny access to the server (see hooks/auth/allow_all or basic). It can be used in custom hooks to check connecting users against an existing user database. Returns true if allowed. |
+| OnACLCheck             | Called when a user attempts to publish or subscribe to a topic filter. As above.                                                                                                                                                                                                                           |
+| OnSysInfoTick          | Called when the $SYS topic values are published out.                                                                                                                                                                                                                                                       |
+| OnConnect              | Called when a new client connects, may return an error or packet code to halt the client connection process.                                                                                                                                                                                               | 
+| OnSessionEstablished   | Called when a new client successfully establishes a session (after OnConnect)                                                                                                                                                                                                                              | 
+| OnDisconnect           | Called when a client is disconnected for any reason.                                                                                                                                                                                                                                                       | 
+| OnAuthPacket           | Called when an auth packet is received. It is intended to allow developers to create their own mqtt v5 Auth Packet handling mechanisms. Allows packet modification.                                                                                                                                        | 
+| OnPacketRead           | Called when a packet is received from a client. Allows packet modification.                                                                                                                                                                                                                                | 
+| OnPacketEncode         | Called immediately before a packet is encoded to be sent to a client. Allows packet modification.                                                                                                                                                                                                          | 
+| OnPacketSent           | Called when a packet has been sent to a client.                                                                                                                                                                                                                                                            | 
+| OnPacketProcessed      | Called when a packet has been received and successfully handled by the broker.                                                                                                                                                                                                                             | 
+| OnSubscribe            | Called when a client subscribes to one or more filters. Allows packet modification.                                                                                                                                                                                                                        | 
+| OnSubscribed           | Called when a client successfully subscribes to one or more filters.                                                                                                                                                                                                                                       | 
+| OnSelectSubscribers    | Called when subscribers have been collected for a topic, but before shared subscription subscribers have been selected. Allows receipient modification.                                                                                                                                                    | 
+| OnUnsubscribe          | Called when a client unsubscribes from one or more filters. Allows packet modification.                                                                                                                                                                                                                    | 
+| OnUnsubscribed         | Called when a client successfully unsubscribes from one or more filters.                                                                                                                                                                                                                                   | 
+| OnPublish              | Called when a client publishes a message. Allows packet modification.                                                                                                                                                                                                                                      | 
+| OnPublished            | Called when a client has published a message to subscribers.                                                                                                                                                                                                                                               | 
+| OnPublishDropped       | Called when a message to a client is dropped before delivery, such as if the client is taking too long to respond.                                                                                                                                                                                         | 
+| OnRetainMessage        | Called then a published message is retained.                                                                                                                                                                                                                                                               | 
+| OnRetainPublished      | Called then a retained message is published to a client.                                                                                                                                                                                                                                                   | 
+| OnQosPublish           | Called when a publish packet with Qos >= 1 is issued to a subscriber.                                                                                                                                                                                                                                      | 
+| OnQosComplete          | Called when the Qos flow for a message has been completed.                                                                                                                                                                                                                                                 | 
+| OnQosDropped           | Called when an inflight message expires before completion.                                                                                                                                                                                                                                                 | 
+| OnPacketIDExhausted    | Called when a client runs out of unused packet ids to assign.                                                                                                                                                                                                                                              | 
+| OnWill                 | Called when a client disconnects and intends to issue a will message. Allows packet modification.                                                                                                                                                                                                          | 
+| OnWillSent             | Called when an LWT message has been issued from a disconnecting client.                                                                                                                                                                                                                                    | 
+| OnClientExpired        | Called when a client session has expired and should be deleted.                                                                                                                                                                                                                                            | 
+| OnRetainedExpired      | Called when a retained message has expired and should be deleted.                                                                                                                                                                                                                                          | 
+| StoredClients          | Returns clients, eg. from a persistent store.                                                                                                                                                                                                                                                              | 
+| StoredSubscriptions    | Returns client subscriptions, eg. from a persistent store.                                                                                                                                                                                                                                                 | 
+| StoredInflightMessages | Returns inflight messages, eg. from a persistent store.                                                                                                                                                                                                                                                    | 
+| StoredRetainedMessages | Returns retained messages, eg. from a persistent store.                                                                                                                                                                                                                                                    | 
+| StoredSysInfo          | Returns stored system info values, eg. from a persistent store.                                                                                                                                                                                                                                            | 
 
 If you are building a persistent storage hook, see the existing persistent hooks for inspiration and patterns. If you are building an auth hook, you will need `OnACLCheck` and `OnConnectAuthenticate`.
 
