@@ -817,6 +817,30 @@ func TestServerEstablishConnectionBadPacket(t *testing.T) {
 	r.Close()
 }
 
+func TestServerEstablishConnectionOnConnectError(t *testing.T) {
+	s := newServer()
+	hook := new(modifiedHookBase)
+	hook.fail = true
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r)
+	}()
+
+	go func() {
+		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+	}()
+
+	err = <-o
+	require.Error(t, err)
+	require.ErrorIs(t, err, errTestHook)
+
+	r.Close()
+}
+
 func TestServerSendConnack(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
@@ -826,7 +850,7 @@ func TestServerSendConnack(t *testing.T) {
 		AssignedClientID: "mochi",
 	}
 	go func() {
-		err := s.sendConnack(cl, packets.CodeSuccess, true)
+		err := s.SendConnack(cl, packets.CodeSuccess, true, nil)
 		require.NoError(t, err)
 		w.Close()
 	}()
@@ -841,7 +865,7 @@ func TestServerSendConnackFailureReason(t *testing.T) {
 	cl, r, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
 	go func() {
-		err := s.sendConnack(cl, packets.ErrUnspecifiedError, true)
+		err := s.SendConnack(cl, packets.ErrUnspecifiedError, true, nil)
 		require.NoError(t, err)
 		w.Close()
 	}()
@@ -858,7 +882,7 @@ func TestServerSendConnackWithServerKeepalive(t *testing.T) {
 	cl.State.Keepalive = 10
 	cl.State.ServerKeepalive = true
 	go func() {
-		err := s.sendConnack(cl, packets.CodeSuccess, true)
+		err := s.SendConnack(cl, packets.CodeSuccess, true, nil)
 		require.NoError(t, err)
 		w.Close()
 	}()
@@ -937,7 +961,7 @@ func TestServerSendConnackAdjustedExpiryInterval(t *testing.T) {
 	cl.Properties.Props.SessionExpiryInterval = uint32(300)
 	s.Options.Capabilities.MaximumSessionExpiryInterval = 120
 	go func() {
-		err := s.sendConnack(cl, packets.CodeSuccess, false)
+		err := s.SendConnack(cl, packets.CodeSuccess, false, nil)
 		require.NoError(t, err)
 		w.Close()
 	}()

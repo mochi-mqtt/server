@@ -73,10 +73,11 @@ func (h *pahoAuthHook) OnACLCheck(cl *mqtt.Client, topic string, write bool) boo
 	return topic != "test/nosubscribe"
 }
 
-func (h *pahoAuthHook) OnConnect(cl *mqtt.Client, pk packets.Packet) {
+func (h *pahoAuthHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
 	// Handle paho test_server_keep_alive
 	if pk.Connect.Keepalive == 120 && pk.Connect.Clean {
 		cl.State.Keepalive = 60
 		cl.State.ServerKeepalive = true
 	}
+	return nil
 }
