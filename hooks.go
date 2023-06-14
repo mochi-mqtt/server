@@ -74,7 +74,7 @@ type Hook interface {
 	OnConnectAuthenticate(cl *Client, pk packets.Packet) bool
 	OnACLCheck(cl *Client, topic string, write bool) bool
 	OnSysInfoTick(*system.Info)
-	OnConnect(cl *Client, pk packets.Packet)
+	OnConnect(cl *Client, pk packets.Packet) error
 	OnSessionEstablished(cl *Client, pk packets.Packet)
 	OnDisconnect(cl *Client, err error, expire bool)
 	OnAuthPacket(cl *Client, pk packets.Packet) (packets.Packet, error)
@@ -214,13 +214,17 @@ func (h *Hooks) OnStopped() {
 	}
 }
 
-// OnConnect is called when a new client connects.
-func (h *Hooks) OnConnect(cl *Client, pk packets.Packet) {
+// OnConnect is called when a new client connects, and may return a packets.Code as an error to halt the connection.
+func (h *Hooks) OnConnect(cl *Client, pk packets.Packet) error {
 	for _, hook := range h.GetAll() {
 		if hook.Provides(OnConnect) {
-			hook.OnConnect(cl, pk)
+			err := hook.OnConnect(cl, pk)
+			if err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // OnSessionEstablished is called when a new client establishes a session (after OnConnect).
@@ -669,7 +673,7 @@ func (h *HookBase) SetOpts(l *zerolog.Logger, opts *HookOptions) {
 	h.Opts = opts
 }
 
-// Stop is called to gracefully shutdown the hook.
+// Stop is called to gracefully shut down the hook.
 func (h *HookBase) Stop() error {
 	return nil
 }
@@ -694,7 +698,9 @@ func (h *HookBase) OnACLCheck(cl *Client, topic string, write bool) bool {
 }
 
 // OnConnect is called when a new client connects.
-func (h *HookBase) OnConnect(cl *Client, pk packets.Packet) {}
+func (h *HookBase) OnConnect(cl *Client, pk packets.Packet) error {
+	return nil
+}
 
 // OnSessionEstablished is called when a new client establishes a session (after OnConnect).
 func (h *HookBase) OnSessionEstablished(cl *Client, pk packets.Packet) {}
