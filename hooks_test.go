@@ -245,6 +245,7 @@ func TestHooksNonReturns(t *testing.T) {
 			h.OnPublished(cl, packets.Packet{})
 			h.OnPublishDropped(cl, packets.Packet{})
 			h.OnRetainMessage(cl, packets.Packet{}, 0)
+			h.OnRetainPublished(cl, packets.Packet{})
 			h.OnQosPublish(cl, packets.Packet{}, time.Now().Unix(), 0)
 			h.OnQosComplete(cl, packets.Packet{})
 			h.OnQosDropped(cl, packets.Packet{})
