@@ -543,8 +543,9 @@ func TestScanSubscribersShared(t *testing.T) {
 	index.Subscribe("cl2", packets.Subscription{Qos: 0, Filter: SharePrefix + "/tmp/a/b/+", Identifier: 10})
 	index.Subscribe("cl3", packets.Subscription{Qos: 1, Filter: SharePrefix + "/tmp/a/b/+", Identifier: 200})
 	index.Subscribe("cl4", packets.Subscription{Qos: 0, Filter: SharePrefix + "/tmp/a/b/+", Identifier: 201})
+	index.Subscribe("cl5", packets.Subscription{Qos: 0, Filter: SharePrefix + "/tmp/a/b/c/#"})
 	subs := index.scanSubscribers("a/b/c", 0, nil, new(Subscribers))
-	require.Equal(t, 3, len(subs.Shared))
+	require.Equal(t, 4, len(subs.Shared))
 }
 
 func TestSelectSharedSubscriber(t *testing.T) {
