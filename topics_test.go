@@ -526,6 +526,15 @@ func TestScanSubscribers(t *testing.T) {
 	require.Equal(t, 0, len(subs.Subscriptions))
 }
 
+func TestScanSubscribersTopicInheritanceBug(t *testing.T) {
+	index := NewTopicsIndex()
+	index.Subscribe("cl1", packets.Subscription{Qos: 0, Filter: "a/b/c"})
+	index.Subscribe("cl2", packets.Subscription{Qos: 0, Filter: "a/b"})
+
+	subs := index.scanSubscribers("a/b/c", 0, nil, new(Subscribers))
+	require.Equal(t, 1, len(subs.Subscriptions))
+}
+
 func TestScanSubscribersShared(t *testing.T) {
 	index := NewTopicsIndex()
 	index.Subscribe("cl1", packets.Subscription{Qos: 1, Filter: SharePrefix + "/tmp/a/b/c", Identifier: 111})
