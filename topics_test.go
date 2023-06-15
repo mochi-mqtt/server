@@ -319,7 +319,7 @@ func TestUnsubscribeShared(t *testing.T) {
 	require.True(t, exists)
 	require.Equal(t, byte(2), client.Qos)
 
-	require.True(t, index.Unsubscribe("$SHARE/tmp/a/b/c", "cl1"))
+	require.True(t, index.Unsubscribe("$share/tmp/a/b/c", "cl1"))
 	_, exists = final.shared.Get("tmp", "cl1")
 	require.False(t, exists)
 }
