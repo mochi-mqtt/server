@@ -504,6 +504,7 @@ func (x *TopicsIndex) scanSubscribers(topic string, d int, n *particle, subs *Su
 		if particle := n.particles.get(partKey); particle != nil { // [MQTT-3.3.2-3]
 			if wild := particle.particles.get("#"); wild != nil && partKey != "+" {
 				x.gatherSubscriptions(topic, wild, subs) // also match any subs where filter/# is filter as per 4.7.1.2
+				x.gatherSharedSubscriptions(particle, subs)
 			}
 
 			if hasNext {
