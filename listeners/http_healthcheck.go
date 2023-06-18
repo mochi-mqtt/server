@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// HTTPHealthCheck is a listener for presenting the server $SYS stats on a JSON http endpoint.
+// HTTPHealthCheck is a listener for providing an HTTP healthcheck endpoint.
 type HTTPHealthCheck struct {
 	sync.RWMutex
 	id      string          // the internal id of the listener
