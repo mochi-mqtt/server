@@ -116,13 +116,14 @@ Examples of running the broker with various configurations can be found in the [
 #### Network Listeners
 The server comes with a variety of pre-packaged network listeners which allow the broker to accept connections on different protocols. The current listeners are:
 
-| Listener | Usage |
-| --- | --- |
-| listeners.NewTCP | A TCP listener |
-| listeners.NewUnixSock | A Unix Socket listener |
-| listeners.NewNet | A net.Listener listener |
-| listeners.NewWebsocket | A Websocket listener |
-| listeners.NewHTTPStats | An HTTP $SYS info dashboard |
+| Listener                     | Usage                                                                                        |
+|------------------------------|----------------------------------------------------------------------------------------------|
+| listeners.NewTCP             | A TCP listener                                                                               |
+| listeners.NewUnixSock        | A Unix Socket listener                                                                       |
+| listeners.NewNet             | A net.Listener listener                                                                      |
+| listeners.NewWebsocket       | A Websocket listener                                                                         |
+| listeners.NewHTTPStats       | An HTTP $SYS info dashboard                                                                  |
+| listeners.NewHTTPHealthCheck | An HTTP healthcheck listener to provide health check responses for e.g. cloud infrastructure |
 
 > Use the `listeners.Listener` interface to develop new listeners. If you do, please let us know!
 
@@ -268,8 +269,6 @@ if err != nil {
 For more information on how the badger hook works, or how to use it, see the [examples/persistence/badger/main.go](examples/persistence/badger/main.go) or [hooks/storage/badger](hooks/storage/badger) code.
 
 There is also a BoltDB hook which has been deprecated in favour of Badger, but if you need it, check [examples/persistence/bolt/main.go](examples/persistence/bolt/main.go).
-
-
 
 ## Developing with Event Hooks
 Many hooks are available for interacting with the broker and client lifecycle. 
