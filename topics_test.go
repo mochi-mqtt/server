@@ -319,7 +319,7 @@ func TestUnsubscribeShared(t *testing.T) {
 	require.True(t, exists)
 	require.Equal(t, byte(2), client.Qos)
 
-	require.True(t, index.Unsubscribe("$SHARE/tmp/a/b/c", "cl1"))
+	require.True(t, index.Unsubscribe("$share/tmp/a/b/c", "cl1"))
 	_, exists = final.shared.Get("tmp", "cl1")
 	require.False(t, exists)
 }
@@ -501,26 +501,38 @@ func TestScanSubscribers(t *testing.T) {
 	index.Subscribe("cl2", packets.Subscription{Qos: 0, Filter: "$SYS/test", Identifier: 2})
 
 	subs := index.scanSubscribers("a/b/c", 0, nil, new(Subscribers))
-	require.Equal(t, 4, len(subs.Subscriptions))
+	require.Equal(t, 3, len(subs.Subscriptions))
 	require.Contains(t, subs.Subscriptions, "cl1")
 	require.Contains(t, subs.Subscriptions, "cl2")
-	require.Contains(t, subs.Subscriptions, "cl3")
 	require.Contains(t, subs.Subscriptions, "cl4")
 
 	require.Equal(t, byte(1), subs.Subscriptions["cl1"].Qos)
 	require.Equal(t, byte(2), subs.Subscriptions["cl2"].Qos)
-	require.Equal(t, byte(1), subs.Subscriptions["cl3"].Qos)
 	require.Equal(t, byte(0), subs.Subscriptions["cl4"].Qos)
 
 	require.Equal(t, 22, subs.Subscriptions["cl1"].Identifiers["a/b/c"])
 	require.Equal(t, 0, subs.Subscriptions["cl2"].Identifiers["a/#"])
 	require.Equal(t, 77, subs.Subscriptions["cl2"].Identifiers["a/b/+"])
 	require.Equal(t, 0, subs.Subscriptions["cl2"].Identifiers["a/b/c"])
-	require.Equal(t, 234, subs.Subscriptions["cl3"].Identifiers["+/b"])
+	require.Equal(t, 5, subs.Subscriptions["cl4"].Identifiers["#"])
+
+	subs = index.scanSubscribers("d/e/f/g", 0, nil, new(Subscribers))
+	require.Equal(t, 1, len(subs.Subscriptions))
+	require.Contains(t, subs.Subscriptions, "cl4")
+	require.Equal(t, byte(0), subs.Subscriptions["cl4"].Qos)
 	require.Equal(t, 5, subs.Subscriptions["cl4"].Identifiers["#"])
 
 	subs = index.scanSubscribers("", 0, nil, new(Subscribers))
 	require.Equal(t, 0, len(subs.Subscriptions))
+}
+
+func TestScanSubscribersTopicInheritanceBug(t *testing.T) {
+	index := NewTopicsIndex()
+	index.Subscribe("cl1", packets.Subscription{Qos: 0, Filter: "a/b/c"})
+	index.Subscribe("cl2", packets.Subscription{Qos: 0, Filter: "a/b"})
+
+	subs := index.scanSubscribers("a/b/c", 0, nil, new(Subscribers))
+	require.Equal(t, 1, len(subs.Subscriptions))
 }
 
 func TestScanSubscribersShared(t *testing.T) {
@@ -531,8 +543,9 @@ func TestScanSubscribersShared(t *testing.T) {
 	index.Subscribe("cl2", packets.Subscription{Qos: 0, Filter: SharePrefix + "/tmp/a/b/+", Identifier: 10})
 	index.Subscribe("cl3", packets.Subscription{Qos: 1, Filter: SharePrefix + "/tmp/a/b/+", Identifier: 200})
 	index.Subscribe("cl4", packets.Subscription{Qos: 0, Filter: SharePrefix + "/tmp/a/b/+", Identifier: 201})
+	index.Subscribe("cl5", packets.Subscription{Qos: 0, Filter: SharePrefix + "/tmp/a/b/c/#"})
 	subs := index.scanSubscribers("a/b/c", 0, nil, new(Subscribers))
-	require.Equal(t, 3, len(subs.Shared))
+	require.Equal(t, 4, len(subs.Shared))
 }
 
 func TestSelectSharedSubscriber(t *testing.T) {
