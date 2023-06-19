@@ -16,7 +16,7 @@ Mochi MQTT is an embeddable [fully compliant](https://docs.oasis-open.org/mqtt/m
 ### What is MQTT?
 MQTT stands for [MQ Telemetry Transport](https://en.wikipedia.org/wiki/MQTT). It is a publish/subscribe, extremely simple and lightweight messaging protocol, designed for constrained devices and low-bandwidth, high-latency or unreliable networks ([Learn more](https://mqtt.org/faq)). Mochi MQTT fully implements version 5.0.0 of the MQTT protocol.
 
-## What's new in Version 2.0.0?
+## What's new in Version 2?
 Version 2.0.0 takes all the great things we loved about Mochi MQTT v1.0.0, learns from the mistakes, and improves on the things we wished we'd had. It's a total from-scratch rewrite, designed to fully implement MQTT v5 as a first-class feature. 
 
 Don't forget to use the new v2 import paths:
@@ -398,12 +398,24 @@ Million Message Challenge (hit the server with 1 million messages immediately):
 
 > Not sure what's going on with EMQX here, perhaps the docker out-of-the-box settings are not optimal, so take it with a pinch of salt as we know for a fact it's a solid piece of software.
 
+## Contribution Guidelines
+Contributions and feedback are both welcomed and encouraged! [Open an issue](https://github.com/mochi-co/mqtt/issues) to report a bug, ask a question, or make a feature request. If you open a pull request, please try to follow the following guidelines:
+- Try to maintain test coverage where reasonably possible.
+- Clearly state what the PR does and why.
+- _Remember to add your SPDX FileContributor tag!_
+
+[SPDX Annotations](https://spdx.dev) are used to clearly indicate the license, copyright, and contributions of each file in a machine-readable format. If you are adding a new file to the repository, please ensure it has the following SPDX header:
+```go
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileContributor: [Your name or alias <optional@email.address>]
+
+package name
+```
+
+Please ensure to add a new `SPDX-FileContributor` line for each contributor to the file. Refer to other files for examples. Please remember to do this, your contributions to this project are valuable and appreciated - it's important to receive credit! 
+
 ## Stargazers over time 🥰
 [![Stargazers over time](https://starchart.cc/mochi-co/mqtt.svg)](https://starchart.cc/mochi-co/mqtt)
 Are you using Mochi MQTT in a project? [Let us know!](https://github.com/mochi-co/mqtt/issues)
-
-## Contributions
-Contributions and feedback are both welcomed and encouraged! [Open an issue](https://github.com/mochi-co/mqtt/issues) to report a bug, ask a question, or make a feature request.
-
-
 
