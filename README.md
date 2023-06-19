@@ -408,7 +408,7 @@ Contributions and feedback are both welcomed and encouraged! [Open an issue](htt
 ```go
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-co
-// SPDX-FileContributor: [Your name or alias <optional@email.address>]
+// SPDX-FileContributor: Your name or alias <optional@email.address>
 
 package name
 ```
