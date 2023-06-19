@@ -401,7 +401,7 @@ Million Message Challenge (hit the server with 1 million messages immediately):
 Contributions and feedback are both welcomed and encouraged! [Open an issue](https://github.com/mochi-co/mqtt/issues) to report a bug, ask a question, or make a feature request. If you open a pull request, please try to follow the following guidelines:
 - Try to maintain test coverage where reasonably possible.
 - Clearly state what the PR does and why.
-- _Remember to add your SPDX FileContributor tag!_
+- Remember to add your SPDX FileContributor tag to files where you have made a meaningful contribution.
 
 [SPDX Annotations](https://spdx.dev) are used to clearly indicate the license, copyright, and contributions of each file in a machine-readable format. If you are adding a new file to the repository, please ensure it has the following SPDX header:
 ```go
