@@ -14,6 +14,7 @@ require (
 	github.com/stretchr/testify v1.7.1
 	github.com/timshannon/badgerhold v1.0.0
 	go.etcd.io/bbolt v1.3.5
+	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -35,6 +36,5 @@ require (
 	github.com/yuin/gopher-lua v0.0.0-20210529063254-f4c35e4016d9 // indirect
 	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
-	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 )

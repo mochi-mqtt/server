@@ -102,6 +102,13 @@ github.com/yuin/gopher-lua/pm
 # go.etcd.io/bbolt v1.3.5
 ## explicit; go 1.12
 go.etcd.io/bbolt
+# golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
+## explicit; go 1.20
+golang.org/x/exp/constraints
+golang.org/x/exp/slices
+golang.org/x/exp/slog
+golang.org/x/exp/slog/internal
+golang.org/x/exp/slog/internal/buffer
 # golang.org/x/net v0.7.0
 ## explicit; go 1.17
 golang.org/x/net/internal/timeseries
@@ -109,8 +116,6 @@ golang.org/x/net/trace
 # golang.org/x/sys v0.5.0
 ## explicit; go 1.17
 golang.org/x/sys/unix
-# golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
-## explicit; go 1.11
 # google.golang.org/protobuf v1.28.1
 ## explicit; go 1.11
 google.golang.org/protobuf/encoding/prototext

@@ -13,6 +13,7 @@ import (
 	"github.com/mochi-co/mqtt/v2/hooks/storage"
 	"github.com/mochi-co/mqtt/v2/packets"
 	"github.com/mochi-co/mqtt/v2/system"
+	"golang.org/x/exp/slog"
 
 	"github.com/rs/zerolog"
 )
@@ -116,6 +117,7 @@ type HookOptions struct {
 // Hooks is a slice of Hook interfaces to be called in sequence.
 type Hooks struct {
 	Log        *zerolog.Logger // a logger for the hook (from the server)
+	Slog       *slog.Logger    // a logger for the hook (from the server)
 	internal   atomic.Value    // a slice of []Hook
 	wg         sync.WaitGroup  // a waitgroup for syncing hook shutdown
 	qty        int64           // the number of hooks in use
