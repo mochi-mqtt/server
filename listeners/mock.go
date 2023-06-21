@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog"
+	"golang.org/x/exp/slog"
 )
 
 // MockEstablisher is a function signature which can be used in testing.
@@ -53,7 +54,7 @@ func (l *MockListener) Serve(establisher EstablishFn) {
 }
 
 // Init initializes the listener.
-func (l *MockListener) Init(log *zerolog.Logger) error {
+func (l *MockListener) Init(log *zerolog.Logger, slog *slog.Logger) error {
 	if l.ErrListen {
 		return fmt.Errorf("listen failure")
 	}

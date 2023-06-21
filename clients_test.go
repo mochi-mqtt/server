@@ -30,6 +30,7 @@ func newTestClient() (cl *Client, r net.Conn, w net.Conn) {
 		info:  new(system.Info),
 		hooks: new(Hooks),
 		log:   &logger,
+		slog:  slogger,
 		options: &Options{
 			Capabilities: &Capabilities{
 				ReceiveMaximum:             10,

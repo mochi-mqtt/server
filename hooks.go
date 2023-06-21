@@ -5,6 +5,7 @@
 package mqtt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -70,7 +71,7 @@ type Hook interface {
 	Provides(b byte) bool
 	Init(config any) error
 	Stop() error
-	SetOpts(l *zerolog.Logger, o *HookOptions)
+	SetOpts(l *zerolog.Logger, sl *slog.Logger, o *HookOptions)
 	OnStarted()
 	OnStopped()
 	OnConnectAuthenticate(cl *Client, pk packets.Packet) bool
@@ -180,8 +181,10 @@ func (h *Hooks) Stop() {
 	go func() {
 		for _, hook := range h.GetAll() {
 			h.Log.Info().Str("hook", hook.ID()).Msg("stopping hook")
+			h.Slog.LogAttrs(context.TODO(), slog.LevelInfo, "stopping hook", slog.String("hook", hook.ID()))
 			if err := hook.Stop(); err != nil {
 				h.Log.Debug().Err(err).Str("hook", hook.ID()).Msg("problem stopping hook")
+				h.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "problem stopping hook", slog.String("error", err.Error()), slog.String("hook", hook.ID()))
 			}
 
 			h.wg.Done()
@@ -257,6 +260,7 @@ func (h *Hooks) OnPacketRead(cl *Client, pk packets.Packet) (pkx packets.Packet,
 			npk, err := hook.OnPacketRead(cl, pkx)
 			if err != nil && errors.Is(err, packets.ErrRejectPacket) {
 				h.Log.Debug().Err(err).Str("hook", hook.ID()).Interface("packet", pkx).Msg("packet rejected")
+				h.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "packet rejected", slog.String("hook", hook.ID()), slog.Any("packet", pkx))
 				return pk, err
 			} else if err != nil {
 				continue
@@ -385,9 +389,11 @@ func (h *Hooks) OnPublish(cl *Client, pk packets.Packet) (pkx packets.Packet, er
 			if err != nil {
 				if errors.Is(err, packets.ErrRejectPacket) {
 					h.Log.Debug().Err(err).Str("hook", hook.ID()).Interface("packet", pkx).Msg("publish packet rejected")
+					h.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "publish packet rejected", slog.String("error", err.Error()), slog.String("hook", hook.ID()), slog.Any("packet", pkx))
 					return pk, err
 				}
 				h.Log.Error().Err(err).Str("hook", hook.ID()).Interface("packet", pkx).Msg("publish packet error")
+				h.Slog.LogAttrs(context.TODO(), slog.LevelError, "publish packet error", slog.String("error", err.Error()), slog.String("hook", hook.ID()), slog.Any("packet", pkx))
 				return pk, err
 			}
 			pkx = npk
@@ -487,6 +493,7 @@ func (h *Hooks) OnWill(cl *Client, will Will) Will {
 			mlwt, err := hook.OnWill(cl, will)
 			if err != nil {
 				h.Log.Error().Err(err).Str("hook", hook.ID()).Interface("will", will).Msg("parse will error")
+				h.Slog.LogAttrs(context.TODO(), slog.LevelError, "parse will error", slog.String("error", err.Error()), slog.String("hook", hook.ID()), slog.Any("will", will))
 				continue
 			}
 			will = mlwt
@@ -531,6 +538,7 @@ func (h *Hooks) StoredClients() (v []storage.Client, err error) {
 			v, err := hook.StoredClients()
 			if err != nil {
 				h.Log.Error().Err(err).Str("hook", hook.ID()).Msg("failed to load clients")
+				h.Slog.LogAttrs(context.TODO(), slog.LevelError, "failed to load clients", slog.String("error", err.Error()), slog.String("hook", hook.ID()))
 				return v, err
 			}
 
@@ -551,6 +559,7 @@ func (h *Hooks) StoredSubscriptions() (v []storage.Subscription, err error) {
 			v, err := hook.StoredSubscriptions()
 			if err != nil {
 				h.Log.Error().Err(err).Str("hook", hook.ID()).Msg("failed to load subscriptions")
+				h.Slog.LogAttrs(context.TODO(), slog.LevelError, "failed to load subscriptions", slog.String("error", err.Error()), slog.String("hook", hook.ID()))
 				return v, err
 			}
 
@@ -571,6 +580,7 @@ func (h *Hooks) StoredInflightMessages() (v []storage.Message, err error) {
 			v, err := hook.StoredInflightMessages()
 			if err != nil {
 				h.Log.Error().Err(err).Str("hook", hook.ID()).Msg("failed to load inflight messages")
+				h.Slog.LogAttrs(context.TODO(), slog.LevelError, "failed to load inflight messages", slog.String("error", err.Error()), slog.String("hook", hook.ID()))
 				return v, err
 			}
 
@@ -591,6 +601,7 @@ func (h *Hooks) StoredRetainedMessages() (v []storage.Message, err error) {
 			v, err := hook.StoredRetainedMessages()
 			if err != nil {
 				h.Log.Error().Err(err).Str("hook", hook.ID()).Msg("failed to load retained messages")
+				h.Slog.LogAttrs(context.TODO(), slog.LevelError, "failed to load retained messages", slog.String("error", err.Error()), slog.String("hook", hook.ID()))
 				return v, err
 			}
 
@@ -610,6 +621,7 @@ func (h *Hooks) StoredSysInfo() (v storage.SystemInfo, err error) {
 			v, err := hook.StoredSysInfo()
 			if err != nil {
 				h.Log.Error().Err(err).Str("hook", hook.ID()).Msg("failed to load $SYS info")
+				h.Slog.LogAttrs(context.TODO(), slog.LevelError, "failed to load $SYS info", slog.String("error", err.Error()), slog.String("hook", hook.ID()))
 				return v, err
 			}
 
@@ -659,6 +671,7 @@ func (h *Hooks) OnACLCheck(cl *Client, topic string, write bool) bool {
 type HookBase struct {
 	Hook
 	Log  *zerolog.Logger
+	Slog *slog.Logger
 	Opts *HookOptions
 }
 
@@ -681,8 +694,9 @@ func (h *HookBase) Init(config any) error {
 
 // SetOpts is called by the server to propagate internal values and generally should
 // not be called manually.
-func (h *HookBase) SetOpts(l *zerolog.Logger, opts *HookOptions) {
+func (h *HookBase) SetOpts(l *zerolog.Logger, sl *slog.Logger, opts *HookOptions) {
 	h.Log = l
+	h.Slog = sl
 	h.Opts = opts
 }
 

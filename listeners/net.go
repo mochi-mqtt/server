@@ -5,11 +5,13 @@
 package listeners
 
 import (
+	"context"
 	"net"
 	"sync"
 	"sync/atomic"
 
 	"github.com/rs/zerolog"
+	"golang.org/x/exp/slog"
 )
 
 // Net is a listener for establishing client connections on basic TCP protocol.
@@ -18,6 +20,7 @@ type Net struct { // [MQTT-4.2.0-1]
 	listener net.Listener    // a net.Listener which will listen for new clients
 	id       string          // the internal id of the listener
 	log      *zerolog.Logger // server logger
+	slog     *slog.Logger    // placeholder
 	end      uint32          // ensure the close methods are only called once
 }
 
@@ -45,8 +48,9 @@ func (l *Net) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *Net) Init(log *zerolog.Logger) error {
+func (l *Net) Init(log *zerolog.Logger, slog *slog.Logger) error {
 	l.log = log
+	l.slog = slog
 	return nil
 }
 
@@ -68,6 +72,7 @@ func (l *Net) Serve(establish EstablishFn) {
 				err = establish(l.id, conn)
 				if err != nil {
 					l.log.Warn().Err(err).Send()
+					l.slog.LogAttrs(context.TODO(), slog.LevelWarn, "", slog.String("error", err.Error()))
 				}
 			}()
 		}

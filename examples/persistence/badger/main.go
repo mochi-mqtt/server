@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	"github.com/mochi-co/mqtt/v2/hooks/auth"
 	"github.com/mochi-co/mqtt/v2/hooks/storage/badger"
 	"github.com/mochi-co/mqtt/v2/listeners"
+	"golang.org/x/exp/slog"
 )
 
 func main() {
@@ -53,7 +55,8 @@ func main() {
 
 	<-done
 	server.Log.Warn().Msg("caught signal, stopping...")
+	server.Slog.LogAttrs(context.TODO(), slog.LevelWarn, "caught signal, stopping...")
 	server.Close()
 	server.Log.Info().Msg("main.go finished")
-
+	server.Slog.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
 }

@@ -14,7 +14,6 @@ import (
 	"github.com/mochi-co/mqtt/v2/hooks/storage"
 	"github.com/mochi-co/mqtt/v2/packets"
 	"github.com/mochi-co/mqtt/v2/system"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -574,7 +573,7 @@ func TestHookBaseInit(t *testing.T) {
 
 func TestHookBaseSetOpts(t *testing.T) {
 	h := new(HookBase)
-	h.SetOpts(&logger, new(HookOptions))
+	h.SetOpts(&logger, slogger, new(HookOptions))
 	require.NotNil(t, h.Log)
 	require.NotNil(t, h.Opts)
 }

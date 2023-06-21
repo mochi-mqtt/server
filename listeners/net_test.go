@@ -46,7 +46,7 @@ func TestNetInit(t *testing.T) {
 	require.NoError(t, err)
 
 	l := NewNet("t1", n)
-	err = l.Init(&logger)
+	err = l.Init(&logger, slogger)
 	l.Close(MockCloser)
 	require.NoError(t, err)
 }
@@ -56,7 +56,7 @@ func TestNetServeAndClose(t *testing.T) {
 	require.NoError(t, err)
 
 	l := NewNet("t1", n)
-	err = l.Init(&logger)
+	err = l.Init(&logger, slogger)
 	require.NoError(t, err)
 
 	o := make(chan bool)
@@ -84,7 +84,7 @@ func TestNetEstablishThenEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	l := NewNet("t1", n)
-	err = l.Init(&logger)
+	err = l.Init(&logger, slogger)
 	require.NoError(t, err)
 
 	o := make(chan bool)

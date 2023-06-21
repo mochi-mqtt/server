@@ -5,12 +5,14 @@
 package listeners
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"sync"
 	"sync/atomic"
 
 	"github.com/rs/zerolog"
+	"golang.org/x/exp/slog"
 )
 
 // TCP is a listener for establishing client connections on basic TCP protocol.
@@ -21,6 +23,7 @@ type TCP struct { // [MQTT-4.2.0-1]
 	listen  net.Listener    // a net.Listener which will listen for new clients
 	config  *Config         // configuration values for the listener
 	log     *zerolog.Logger // server logger
+	slog    *slog.Logger    // placeholder
 	end     uint32          // ensure the close methods are only called once
 }
 
@@ -53,8 +56,9 @@ func (l *TCP) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *TCP) Init(log *zerolog.Logger) error {
+func (l *TCP) Init(log *zerolog.Logger, slog *slog.Logger) error {
 	l.log = log
+	l.slog = slog
 
 	var err error
 	if l.config.TLSConfig != nil {
@@ -84,6 +88,7 @@ func (l *TCP) Serve(establish EstablishFn) {
 				err = establish(l.id, conn)
 				if err != nil {
 					l.log.Warn().Err(err).Send()
+					l.slog.LogAttrs(context.TODO(), slog.LevelWarn, "", slog.String("error", err.Error()))
 				}
 			}()
 		}

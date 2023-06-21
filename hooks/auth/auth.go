@@ -6,9 +6,11 @@ package auth
 
 import (
 	"bytes"
+	"context"
 
 	"github.com/mochi-co/mqtt/v2"
 	"github.com/mochi-co/mqtt/v2/packets"
+	"golang.org/x/exp/slog"
 )
 
 // Options contains the configuration/rules data for the auth ledger.
@@ -71,6 +73,10 @@ func (h *Hook) Init(config any) error {
 		Int("authentication", len(h.ledger.Auth)).
 		Int("acl", len(h.ledger.ACL)).
 		Msg("loaded auth rules")
+	h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+		"loaded auth rules",
+		slog.Int("authentication", len(h.ledger.Auth)),
+		slog.Int("acl", len(h.ledger.ACL)))
 
 	return nil
 }
@@ -86,7 +92,10 @@ func (h *Hook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet) bool {
 		Str("username", string(pk.Connect.Username)).
 		Str("remote", cl.Net.Remote).
 		Msg("client failed authentication check")
-
+	h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+		"client failed authentication check",
+		slog.String("username", string(pk.Connect.Username)),
+		slog.String("remote", cl.Net.Remote))
 	return false
 }
 
@@ -102,6 +111,11 @@ func (h *Hook) OnACLCheck(cl *mqtt.Client, topic string, write bool) bool {
 		Str("username", string(cl.Properties.Username)).
 		Str("topic", topic).
 		Msg("client failed allowed ACL check")
+	h.Slog.LogAttrs(context.TODO(), slog.LevelDebug,
+		"client failed allowed ACL check",
+		slog.String("client", cl.ID),
+		slog.String("username", string(cl.Properties.Username)),
+		slog.String("topic", topic))
 
 	return false
 }

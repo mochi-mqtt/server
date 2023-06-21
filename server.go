@@ -170,7 +170,8 @@ func New(opts *Options) *Server {
 		Log:  opts.Logger,
 		Slog: opts.Slogger,
 		hooks: &Hooks{
-			Log: opts.Logger,
+			Log:  opts.Logger,
+			Slog: opts.Slogger,
 		},
 	}
 
@@ -239,7 +240,8 @@ func (s *Server) NewClient(c net.Conn, listener string, id string, inline bool) 
 // before the server is started with s.Serve().
 func (s *Server) AddHook(hook Hook, config any) error {
 	nl := s.Log.With().Str("hook", hook.ID()).Logger()
-	hook.SetOpts(&nl, &HookOptions{
+	nsl := s.Slog.With("hook", hook.ID())
+	hook.SetOpts(&nl, nsl, &HookOptions{
 		Capabilities: s.Options.Capabilities,
 	})
 
@@ -255,7 +257,9 @@ func (s *Server) AddListener(l listeners.Listener) error {
 	}
 
 	nl := s.Log.With().Str("listener", l.ID()).Logger() // TODO : Replace with slog
-	err := l.Init(&nl)
+	nsl := s.Slog.With(slog.String("listener", l.ID()))
+
+	err := l.Init(&nl, nsl)
 	if err != nil {
 		return err
 	}
@@ -392,7 +396,9 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	}
 
 	s.Log.Debug().Str("client", cl.ID).Err(err).Str("remote", cl.Net.Remote).Str("listener", listener).Msg("client disconnected")
-	s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "client disconnected", slog.String("error", err.Error()), slog.String("client", cl.ID), slog.String("remote", cl.Net.Remote), slog.String("listener", listener))
+
+	// TODO : Figure out what to do with error
+	s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "client disconnected", slog.String("client", cl.ID), slog.String("remote", cl.Net.Remote), slog.String("listener", listener))
 
 	expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
 	s.hooks.OnDisconnect(cl, err, expire)
@@ -868,6 +874,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 		if err != nil {
 			s.hooks.OnPacketIDExhausted(cl, pk)
 			s.Log.Warn().Err(err).Str("client", cl.ID).Str("listener", cl.Net.Listener).Msg("packet ids exhausted")
+			s.Slog.LogAttrs(context.TODO(), slog.LevelWarn, "packet ids exhausted", slog.String("client", cl.ID), slog.String("listener", cl.Net.Listener))
 			return out, packets.ErrQuotaExceeded
 		}
 
@@ -918,6 +925,7 @@ func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, e
 		_, err := s.publishToClient(cl, sub, pkv)
 		if err != nil {
 			s.Log.Debug().Err(err).Str("client", cl.ID).Str("listener", cl.Net.Listener).Interface("packet", pkv).Msg("failed to publish retained message")
+			s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "failed to publish retained message", slog.String("client", cl.ID), slog.String("listener", cl.Net.Listener), slog.Any("packet", pkv))
 			continue
 		}
 		s.hooks.OnRetainPublished(cl, pkv)
@@ -1284,6 +1292,7 @@ func (s *Server) Close() error {
 	s.hooks.Stop()
 
 	s.Log.Info().Msg("mochi mqtt server stopped")
+	s.Slog.LogAttrs(context.TODO(), slog.LevelInfo, "mochi mqtt server stopped")
 	return nil
 }
 
@@ -1345,6 +1354,8 @@ func (s *Server) readStore() error {
 		s.Log.Debug().
 			Int("len", len(clients)).
 			Msg("loaded clients from store")
+		s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "loaded clients from store",
+			slog.Int("len", len(clients)))
 	}
 
 	if s.hooks.Provides(StoredSubscriptions) {
@@ -1356,6 +1367,8 @@ func (s *Server) readStore() error {
 		s.Log.Debug().
 			Int("len", len(subs)).
 			Msg("loaded subscriptions from store")
+		s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "loaded subscriptions from store",
+			slog.Int("len", len(subs)))
 	}
 
 	if s.hooks.Provides(StoredInflightMessages) {
@@ -1367,6 +1380,8 @@ func (s *Server) readStore() error {
 		s.Log.Debug().
 			Int("len", len(inflight)).
 			Msg("loaded inflights from store")
+		s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "loaded inflights from store",
+			slog.Int("len", len(inflight)))
 	}
 
 	if s.hooks.Provides(StoredRetainedMessages) {
@@ -1378,6 +1393,8 @@ func (s *Server) readStore() error {
 		s.Log.Debug().
 			Int("len", len(retained)).
 			Msg("loaded retained messages from store")
+		s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "loaded retained messages from store",
+			slog.Int("len", len(retained)))
 	}
 
 	if s.hooks.Provides(StoredSysInfo) {
@@ -1388,6 +1405,7 @@ func (s *Server) readStore() error {
 		s.loadServerInfo(sysInfo.Info)
 		s.Log.Debug().
 			Msg("loaded $SYS info from store")
+		s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "loaded $SYS info from store")
 	}
 
 	return nil

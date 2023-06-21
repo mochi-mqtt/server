@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -15,6 +16,7 @@ import (
 	"github.com/mochi-co/mqtt/v2/hooks/storage/redis"
 	"github.com/mochi-co/mqtt/v2/listeners"
 	"github.com/rs/zerolog"
+	"golang.org/x/exp/slog"
 
 	rv8 "github.com/go-redis/redis/v8"
 )
@@ -59,7 +61,9 @@ func main() {
 
 	<-done
 	server.Log.Warn().Msg("caught signal, stopping...")
+	server.Slog.LogAttrs(context.TODO(), slog.LevelWarn, "caught signal, stopping...")
 	server.Close()
 	server.Log.Info().Msg("main.go finished")
+	server.Slog.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
 
 }

@@ -13,12 +13,14 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slog"
 )
 
 const testAddr = ":22222"
 
 var (
-	logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.Disabled)
+	logger  = zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.Disabled)
+	slogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	testCertificate = []byte(`-----BEGIN CERTIFICATE-----
 MIIB/zCCAWgCCQDm3jV+lSF1AzANBgkqhkiG9w0BAQsFADBEMQswCQYDVQQGEwJB

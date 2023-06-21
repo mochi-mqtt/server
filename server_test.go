@@ -19,12 +19,13 @@ import (
 	"github.com/mochi-co/mqtt/v2/listeners"
 	"github.com/mochi-co/mqtt/v2/packets"
 	"github.com/mochi-co/mqtt/v2/system"
-
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slog"
 )
 
 var logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.Disabled)
+var slogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 type ProtocolTest []struct {
 	protocolVersion byte
@@ -35,6 +36,12 @@ type ProtocolTest []struct {
 
 type AllowHook struct {
 	HookBase
+}
+
+func (h *AllowHook) SetOpts(l *zerolog.Logger, sl *slog.Logger, opts *HookOptions) {
+	h.Log = l
+	h.Slog = sl
+	h.Opts = opts
 }
 
 func (h *AllowHook) ID() string {
@@ -51,6 +58,12 @@ func (h *AllowHook) OnACLCheck(cl *Client, topic string, write bool) bool     { 
 type DelayHook struct {
 	HookBase
 	DisconnectDelay time.Duration
+}
+
+func (h *DelayHook) SetOpts(l *zerolog.Logger, sl *slog.Logger, opts *HookOptions) {
+	h.Log = l
+	h.Slog = sl
+	h.Opts = opts
 }
 
 func (h *DelayHook) ID() string {
@@ -72,8 +85,10 @@ func newServer() *Server {
 
 	s := New(&Options{
 		Logger:       &logger,
+		Slogger:      slogger,
 		Capabilities: &cc,
 	})
+
 	s.AddHook(new(AllowHook), nil)
 	return s
 }
@@ -143,7 +158,9 @@ func TestServerNewClientInline(t *testing.T) {
 
 func TestServerAddHook(t *testing.T) {
 	s := New(nil)
+
 	s.Log = &logger
+	s.Slog = slogger
 	require.NotNil(t, s)
 
 	require.Equal(t, int64(0), s.hooks.Len())

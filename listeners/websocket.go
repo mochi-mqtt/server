@@ -16,6 +16,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
+	"golang.org/x/exp/slog"
 )
 
 var (
@@ -31,6 +32,7 @@ type Websocket struct { // [MQTT-4.2.0-1]
 	config    *Config             // configuration values for the listener
 	listen    *http.Server        // an http server for serving websocket connections
 	log       *zerolog.Logger     // server logger
+	slog      *slog.Logger        // placeholder
 	establish EstablishFn         // the server's establish connection handler
 	upgrader  *websocket.Upgrader //  upgrade the incoming http/tcp connection to a websocket compliant connection.
 	end       uint32              // ensure the close methods are only called once
@@ -75,8 +77,9 @@ func (l *Websocket) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *Websocket) Init(log *zerolog.Logger) error {
+func (l *Websocket) Init(log *zerolog.Logger, slog *slog.Logger) error {
 	l.log = log
+	l.slog = slog
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", l.handler)
@@ -102,6 +105,7 @@ func (l *Websocket) handler(w http.ResponseWriter, r *http.Request) {
 	err = l.establish(l.id, &wsConn{c.UnderlyingConn(), c})
 	if err != nil {
 		l.log.Warn().Err(err).Send()
+		l.slog.LogAttrs(context.Background(), slog.LevelWarn, "", slog.String("error", err.Error()))
 	}
 }
 

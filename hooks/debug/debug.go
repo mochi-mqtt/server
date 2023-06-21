@@ -5,11 +5,13 @@
 package debug
 
 import (
+	"context"
 	"strings"
 
 	"github.com/mochi-co/mqtt/v2"
 	"github.com/mochi-co/mqtt/v2/hooks/storage"
 	"github.com/mochi-co/mqtt/v2/packets"
+	"golang.org/x/exp/slog"
 
 	"github.com/rs/zerolog"
 )
@@ -26,6 +28,7 @@ type Hook struct {
 	mqtt.HookBase
 	config *Options
 	Log    *zerolog.Logger
+	Slog   *slog.Logger
 }
 
 // ID returns the ID of the hook.
@@ -54,9 +57,12 @@ func (h *Hook) Init(config any) error {
 }
 
 // SetOpts is called when the hook receives inheritable server parameters.
-func (h *Hook) SetOpts(l *zerolog.Logger, opts *mqtt.HookOptions) {
+func (h *Hook) SetOpts(l *zerolog.Logger, sl *slog.Logger, opts *mqtt.HookOptions) {
 	h.Log = l
 	h.Log.Debug().Interface("opts", opts).Str("method", "SetOpts").Send()
+
+	h.Slog = sl
+	h.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "", slog.String("method", "SetOpts"))
 }
 
 // Stop is called when the hook is stopped.

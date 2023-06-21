@@ -54,7 +54,7 @@ func TestNewMockListenerInit(t *testing.T) {
 	require.Equal(t, testAddr, mocked.address)
 
 	require.Equal(t, false, mocked.IsListening())
-	err := mocked.Init(nil)
+	err := mocked.Init(nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, true, mocked.IsListening())
 }
@@ -62,7 +62,7 @@ func TestNewMockListenerInit(t *testing.T) {
 func TestNewMockListenerInitFailure(t *testing.T) {
 	mocked := NewMockListener("t1", testAddr)
 	mocked.ErrListen = true
-	err := mocked.Init(nil)
+	err := mocked.Init(nil, nil)
 	require.Error(t, err)
 }
 
@@ -86,7 +86,7 @@ func TestMockListenerServe(t *testing.T) {
 	require.Equal(t, true, closed)
 	<-o
 
-	mocked.Init(nil)
+	mocked.Init(nil, nil)
 }
 
 func TestMockListenerClose(t *testing.T) {

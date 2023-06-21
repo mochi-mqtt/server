@@ -5,12 +5,14 @@
 package listeners
 
 import (
+	"context"
 	"net"
 	"os"
 	"sync"
 	"sync/atomic"
 
 	"github.com/rs/zerolog"
+	"golang.org/x/exp/slog"
 )
 
 // UnixSock is a listener for establishing client connections on basic UnixSock protocol.
@@ -20,6 +22,7 @@ type UnixSock struct {
 	address string          // the network address to bind to.
 	listen  net.Listener    // a net.Listener which will listen for new clients.
 	log     *zerolog.Logger // server logger
+	slog    *slog.Logger    // placeholder
 	end     uint32          // ensure the close methods are only called once.
 }
 
@@ -47,8 +50,9 @@ func (l *UnixSock) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *UnixSock) Init(log *zerolog.Logger) error {
+func (l *UnixSock) Init(log *zerolog.Logger, slog *slog.Logger) error {
 	l.log = log
+	l.slog = slog
 
 	var err error
 	_ = os.Remove(l.address)
@@ -74,6 +78,7 @@ func (l *UnixSock) Serve(establish EstablishFn) {
 				err = establish(l.id, conn)
 				if err != nil {
 					l.log.Warn().Err(err).Send()
+					l.slog.LogAttrs(context.TODO(), slog.LevelWarn, "", slog.String("error", err.Error()))
 				}
 			}()
 		}
