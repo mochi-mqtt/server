@@ -35,6 +35,12 @@ func main() {
 	l := server.Log.Level(zerolog.DebugLevel)
 	server.Log = &l
 
+	level := new(slog.LevelVar)
+	server.Slog = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+	}))
+	level.Set(slog.LevelDebug)
+
 	err := server.AddHook(new(redis.Hook), &redis.Options{
 		Options: &rv8.Options{
 			Addr:     "localhost:6379", // default redis address
