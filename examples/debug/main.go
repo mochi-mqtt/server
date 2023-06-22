@@ -32,6 +32,12 @@ func main() {
 	l := server.Log.Level(zerolog.DebugLevel)
 	server.Log = &l
 
+	level := new(slog.LevelVar)
+	server.Slog = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+	}))
+	level.Set(slog.LevelDebug)
+
 	err := server.AddHook(new(debug.Hook), &debug.Options{
 		// ShowPacketData: true,
 	})
