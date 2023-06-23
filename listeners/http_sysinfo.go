@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/mochi-co/mqtt/v2/system"
-	"github.com/rs/zerolog"
 	"golang.org/x/exp/slog"
 )
 
@@ -62,7 +61,7 @@ func (l *HTTPStats) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *HTTPStats) Init(_ *zerolog.Logger, _ *slog.Logger) error {
+func (l *HTTPStats) Init(_ *slog.Logger) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", l.jsonHandler)
 	l.listen = &http.Server{

@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rs/zerolog"
 	"golang.org/x/exp/slog"
 )
 
@@ -57,7 +56,7 @@ func (l *HTTPHealthCheck) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *HTTPHealthCheck) Init(_ *zerolog.Logger, _ *slog.Logger) error {
+func (l *HTTPHealthCheck) Init(_ *slog.Logger) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthcheck", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

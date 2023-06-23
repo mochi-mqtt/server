@@ -42,14 +42,14 @@ func TestHTTPStatsTLSProtocol(t *testing.T) {
 		TLSConfig: tlsConfigBasic,
 	}, nil)
 
-	l.Init(&logger, slogger)
+	l.Init(logger)
 	require.Equal(t, "https", l.Protocol())
 }
 
 func TestHTTPStatsInit(t *testing.T) {
 	sysInfo := new(system.Info)
 	l := NewHTTPStats("t1", testAddr, nil, sysInfo)
-	err := l.Init(&logger, slogger)
+	err := l.Init(logger)
 	require.NoError(t, err)
 
 	require.NotNil(t, l.sysInfo)
@@ -65,7 +65,7 @@ func TestHTTPStatsServeAndClose(t *testing.T) {
 
 	// setup http stats listener
 	l := NewHTTPStats("t1", testAddr, nil, sysInfo)
-	err := l.Init(&logger, slogger)
+	err := l.Init(logger)
 	require.NoError(t, err)
 
 	o := make(chan bool)
@@ -113,7 +113,7 @@ func TestHTTPStatsServeTLSAndClose(t *testing.T) {
 		TLSConfig: tlsConfigBasic,
 	}, sysInfo)
 
-	err := l.Init(&logger, slogger)
+	err := l.Init(logger)
 	require.NoError(t, err)
 
 	o := make(chan bool)

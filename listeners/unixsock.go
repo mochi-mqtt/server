@@ -11,19 +11,17 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/rs/zerolog"
 	"golang.org/x/exp/slog"
 )
 
 // UnixSock is a listener for establishing client connections on basic UnixSock protocol.
 type UnixSock struct {
 	sync.RWMutex
-	id      string          // the internal id of the listener.
-	address string          // the network address to bind to.
-	listen  net.Listener    // a net.Listener which will listen for new clients.
-	log     *zerolog.Logger // server logger
-	slog    *slog.Logger    // placeholder
-	end     uint32          // ensure the close methods are only called once.
+	id      string       // the internal id of the listener.
+	address string       // the network address to bind to.
+	listen  net.Listener // a net.Listener which will listen for new clients.
+	log     *slog.Logger // server logger
+	end     uint32       // ensure the close methods are only called once.
 }
 
 // NewUnixSock initialises and returns a new UnixSock listener, listening on an address.
@@ -50,9 +48,8 @@ func (l *UnixSock) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *UnixSock) Init(log *zerolog.Logger, slog *slog.Logger) error {
+func (l *UnixSock) Init(log *slog.Logger) error {
 	l.log = log
-	l.slog = slog
 
 	var err error
 	_ = os.Remove(l.address)
@@ -77,8 +74,9 @@ func (l *UnixSock) Serve(establish EstablishFn) {
 			go func() {
 				err = establish(l.id, conn)
 				if err != nil {
-					l.log.Warn().Err(err).Send()
-					l.slog.LogAttrs(context.TODO(), slog.LevelWarn, "", slog.String("error", err.Error()))
+					l.log.LogAttrs(context.TODO(), slog.LevelWarn,
+						"",
+						slog.String("error", err.Error()))
 				}
 			}()
 		}

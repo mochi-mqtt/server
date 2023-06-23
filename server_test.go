@@ -19,13 +19,11 @@ import (
 	"github.com/mochi-co/mqtt/v2/listeners"
 	"github.com/mochi-co/mqtt/v2/packets"
 	"github.com/mochi-co/mqtt/v2/system"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slog"
 )
 
-var logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.Disabled)
-var slogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 type ProtocolTest []struct {
 	protocolVersion byte
@@ -38,9 +36,8 @@ type AllowHook struct {
 	HookBase
 }
 
-func (h *AllowHook) SetOpts(l *zerolog.Logger, sl *slog.Logger, opts *HookOptions) {
+func (h *AllowHook) SetOpts(l *slog.Logger, opts *HookOptions) {
 	h.Log = l
-	h.Slog = sl
 	h.Opts = opts
 }
 
@@ -60,9 +57,8 @@ type DelayHook struct {
 	DisconnectDelay time.Duration
 }
 
-func (h *DelayHook) SetOpts(l *zerolog.Logger, sl *slog.Logger, opts *HookOptions) {
+func (h *DelayHook) SetOpts(l *slog.Logger, opts *HookOptions) {
 	h.Log = l
-	h.Slog = sl
 	h.Opts = opts
 }
 
@@ -84,8 +80,7 @@ func newServer() *Server {
 	cc.ReceiveMaximum = 0
 
 	s := New(&Options{
-		Logger:       &logger,
-		Slogger:      slogger,
+		Logger:       logger,
 		Capabilities: &cc,
 	})
 
@@ -131,7 +126,7 @@ func TestNewNilOpts(t *testing.T) {
 
 func TestServerNewClient(t *testing.T) {
 	s := New(nil)
-	s.Log = &logger
+	s.Log = logger
 	r, _ := net.Pipe()
 
 	cl := s.NewClient(r, "testing", "test", false)
@@ -159,8 +154,7 @@ func TestServerNewClientInline(t *testing.T) {
 func TestServerAddHook(t *testing.T) {
 	s := New(nil)
 
-	s.Log = &logger
-	s.Slog = slogger
+	s.Log = logger
 	require.NotNil(t, s)
 
 	require.Equal(t, int64(0), s.hooks.Len())
@@ -679,7 +673,7 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 
 func TestEstablishConnectionBadAuthentication(t *testing.T) {
 	s := New(&Options{
-		Logger: &logger,
+		Logger: logger,
 	})
 	defer s.Close()
 
@@ -713,7 +707,7 @@ func TestEstablishConnectionBadAuthentication(t *testing.T) {
 
 func TestEstablishConnectionBadAuthenticationAckFailure(t *testing.T) {
 	s := New(&Options{
-		Logger: &logger,
+		Logger: logger,
 	})
 	defer s.Close()
 
@@ -1286,7 +1280,7 @@ func TestServerProcessPublishInvalidTopic(t *testing.T) {
 
 func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 	s := New(&Options{
-		Logger: &logger,
+		Logger: logger,
 	})
 	s.Serve()
 	defer s.Close()
@@ -1590,7 +1584,7 @@ func TestPublishToClientExceedClientWritesPending(t *testing.T) {
 	cl := newClient(w, &ops{
 		info:  new(system.Info),
 		hooks: new(Hooks),
-		log:   &logger,
+		log:   logger,
 		options: &Options{
 			Capabilities: &Capabilities{
 				MaximumClientWritesPending: 3,
@@ -2381,7 +2375,7 @@ func TestServerProcessSubscribeNoConnection(t *testing.T) {
 
 func TestServerProcessSubscribeACLCheckDeny(t *testing.T) {
 	s := New(&Options{
-		Logger: &logger,
+		Logger: logger,
 	})
 	s.Serve()
 	cl, r, w := newTestClient()
@@ -2400,7 +2394,7 @@ func TestServerProcessSubscribeACLCheckDeny(t *testing.T) {
 
 func TestServerProcessSubscribeACLCheckDenyObscure(t *testing.T) {
 	s := New(&Options{
-		Logger: &logger,
+		Logger: logger,
 	})
 	s.Serve()
 	s.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true

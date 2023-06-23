@@ -9,7 +9,6 @@ import (
 	"net"
 	"sync"
 
-	"github.com/rs/zerolog"
 	"golang.org/x/exp/slog"
 )
 
@@ -54,7 +53,7 @@ func (l *MockListener) Serve(establisher EstablishFn) {
 }
 
 // Init initializes the listener.
-func (l *MockListener) Init(log *zerolog.Logger, slog *slog.Logger) error {
+func (l *MockListener) Init(log *slog.Logger) error {
 	if l.ErrListen {
 		return fmt.Errorf("listen failure")
 	}

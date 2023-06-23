@@ -15,7 +15,6 @@ import (
 	"github.com/mochi-co/mqtt/v2/hooks/auth"
 	"github.com/mochi-co/mqtt/v2/hooks/debug"
 	"github.com/mochi-co/mqtt/v2/listeners"
-	"github.com/rs/zerolog"
 	"golang.org/x/exp/slog"
 )
 
@@ -29,11 +28,9 @@ func main() {
 	}()
 
 	server := mqtt.New(nil)
-	l := server.Log.Level(zerolog.DebugLevel)
-	server.Log = &l
 
 	level := new(slog.LevelVar)
-	server.Slog = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	server.Log = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: level,
 	}))
 	level.Set(slog.LevelDebug)
@@ -64,9 +61,7 @@ func main() {
 	}()
 
 	<-done
-	server.Log.Warn().Msg("caught signal, stopping...")
-	server.Slog.LogAttrs(context.TODO(), slog.LevelWarn, "caught signal, stopping...")
-	server.Log.Info().Msg("main.go finished")
-	server.Slog.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
+	server.Log.LogAttrs(context.TODO(), slog.LevelWarn, "caught signal, stopping...")
+	server.Log.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
 	server.Close()
 }

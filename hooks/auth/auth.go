@@ -69,11 +69,7 @@ func (h *Hook) Init(config any) error {
 		}
 	}
 
-	h.Log.Info().
-		Int("authentication", len(h.ledger.Auth)).
-		Int("acl", len(h.ledger.ACL)).
-		Msg("loaded auth rules")
-	h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 		"loaded auth rules",
 		slog.Int("authentication", len(h.ledger.Auth)),
 		slog.Int("acl", len(h.ledger.ACL)))
@@ -88,11 +84,7 @@ func (h *Hook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet) bool {
 		return true
 	}
 
-	h.Log.Info().
-		Str("username", string(pk.Connect.Username)).
-		Str("remote", cl.Net.Remote).
-		Msg("client failed authentication check")
-	h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 		"client failed authentication check",
 		slog.String("username", string(pk.Connect.Username)),
 		slog.String("remote", cl.Net.Remote))
@@ -106,12 +98,7 @@ func (h *Hook) OnACLCheck(cl *mqtt.Client, topic string, write bool) bool {
 		return true
 	}
 
-	h.Log.Debug().
-		Str("client", cl.ID).
-		Str("username", string(cl.Properties.Username)).
-		Str("topic", topic).
-		Msg("client failed allowed ACL check")
-	h.Slog.LogAttrs(context.TODO(), slog.LevelDebug,
+	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
 		"client failed allowed ACL check",
 		slog.String("client", cl.ID),
 		slog.String("username", string(cl.Properties.Username)),

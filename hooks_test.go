@@ -214,7 +214,7 @@ func TestHooksAddInitFailure(t *testing.T) {
 
 func TestHooksStop(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	err := h.Add(new(HookBase), nil)
 	require.NoError(t, err)
@@ -332,7 +332,7 @@ func TestHooksOnUnsubscribe(t *testing.T) {
 
 func TestHooksOnPublish(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	hook := new(modifiedHookBase)
 	err := h.Add(hook, nil)
@@ -358,7 +358,7 @@ func TestHooksOnPublish(t *testing.T) {
 
 func TestHooksOnPacketRead(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	hook := new(modifiedHookBase)
 	err := h.Add(hook, nil)
@@ -384,7 +384,7 @@ func TestHooksOnPacketRead(t *testing.T) {
 
 func TestHooksOnAuthPacket(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	hook := new(modifiedHookBase)
 	err := h.Add(hook, nil)
@@ -402,7 +402,7 @@ func TestHooksOnAuthPacket(t *testing.T) {
 
 func TestHooksOnConnect(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	hook := new(modifiedHookBase)
 	err := h.Add(hook, nil)
@@ -418,7 +418,7 @@ func TestHooksOnConnect(t *testing.T) {
 
 func TestHooksOnPacketEncode(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	hook := new(modifiedHookBase)
 	err := h.Add(hook, nil)
@@ -430,7 +430,7 @@ func TestHooksOnPacketEncode(t *testing.T) {
 
 func TestHooksOnLWT(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	hook := new(modifiedHookBase)
 	err := h.Add(hook, nil)
@@ -447,7 +447,7 @@ func TestHooksOnLWT(t *testing.T) {
 
 func TestHooksStoredClients(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	v, err := h.StoredClients()
 	require.NoError(t, err)
@@ -469,7 +469,7 @@ func TestHooksStoredClients(t *testing.T) {
 
 func TestHooksStoredSubscriptions(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	v, err := h.StoredSubscriptions()
 	require.NoError(t, err)
@@ -491,7 +491,7 @@ func TestHooksStoredSubscriptions(t *testing.T) {
 
 func TestHooksStoredRetainedMessages(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	v, err := h.StoredRetainedMessages()
 	require.NoError(t, err)
@@ -513,7 +513,7 @@ func TestHooksStoredRetainedMessages(t *testing.T) {
 
 func TestHooksStoredInflightMessages(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	v, err := h.StoredInflightMessages()
 	require.NoError(t, err)
@@ -535,7 +535,7 @@ func TestHooksStoredInflightMessages(t *testing.T) {
 
 func TestHooksStoredSysInfo(t *testing.T) {
 	h := new(Hooks)
-	h.Log = &logger
+	h.Log = logger
 
 	v, err := h.StoredSysInfo()
 	require.NoError(t, err)
@@ -573,7 +573,7 @@ func TestHookBaseInit(t *testing.T) {
 
 func TestHookBaseSetOpts(t *testing.T) {
 	h := new(HookBase)
-	h.SetOpts(&logger, slogger, new(HookOptions))
+	h.SetOpts(logger, new(HookOptions))
 	require.NotNil(t, h.Log)
 	require.NotNil(t, h.Opts)
 }

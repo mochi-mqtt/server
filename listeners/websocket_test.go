@@ -47,14 +47,14 @@ func TestWebsocketProtocoTLS(t *testing.T) {
 func TestWebsockeInit(t *testing.T) {
 	l := NewWebsocket("t1", testAddr, nil)
 	require.Nil(t, l.listen)
-	err := l.Init(&logger, slogger)
+	err := l.Init(logger)
 	require.NoError(t, err)
 	require.NotNil(t, l.listen)
 }
 
 func TestWebsocketServeAndClose(t *testing.T) {
 	l := NewWebsocket("t1", testAddr, nil)
-	l.Init(&logger, slogger)
+	l.Init(logger)
 
 	o := make(chan bool)
 	go func(o chan bool) {
@@ -77,7 +77,7 @@ func TestWebsocketServeTLSAndClose(t *testing.T) {
 	l := NewWebsocket("t1", testAddr, &Config{
 		TLSConfig: tlsConfigBasic,
 	})
-	err := l.Init(&logger, slogger)
+	err := l.Init(logger)
 	require.NoError(t, err)
 
 	o := make(chan bool)
@@ -96,7 +96,7 @@ func TestWebsocketServeTLSAndClose(t *testing.T) {
 
 func TestWebsocketUpgrade(t *testing.T) {
 	l := NewWebsocket("t1", testAddr, nil)
-	l.Init(&logger, slogger)
+	l.Init(logger)
 
 	e := make(chan bool)
 	l.establish = func(id string, c net.Conn) error {

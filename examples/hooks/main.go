@@ -65,13 +65,11 @@ func main() {
 				Payload:   []byte("injected scheduled message"),
 			})
 			if err != nil {
-				server.Log.Error().Err(err).Msg("server.InjectPacket")
-				server.Slog.LogAttrs(context.TODO(), slog.LevelError,
+				server.Log.LogAttrs(context.TODO(), slog.LevelError,
 					"server.InjectPacket",
 					slog.String("error", err.Error()))
 			}
-			server.Log.Info().Msgf("main.go injected packet to direct/publish")
-			server.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+			server.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 				"main.go injected packet to direct/publish")
 		}
 	}()
@@ -82,22 +80,18 @@ func main() {
 		for range time.Tick(time.Second * 5) {
 			err := server.Publish("direct/publish", []byte("packet scheduled message"), false, 0)
 			if err != nil {
-				server.Log.Error().Err(err).Msg("server.Publish")
-				server.Slog.LogAttrs(context.TODO(), slog.LevelError,
+				server.Log.LogAttrs(context.TODO(), slog.LevelError,
 					"server.Publish",
 					slog.String("error", err.Error()))
 			}
-			server.Log.Info().Msgf("main.go issued direct message to direct/publish")
-			server.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+			server.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 				"main.go issued direct message to direct/publish")
 		}
 	}()
 
 	<-done
-	server.Log.Warn().Msg("caught signal, stopping...")
-	server.Slog.LogAttrs(context.TODO(), slog.LevelWarn, "caught signal, stopping...")
-	server.Log.Info().Msg("main.go finished")
-	server.Slog.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
+	server.Log.LogAttrs(context.TODO(), slog.LevelWarn, "caught signal, stopping...")
+	server.Log.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
 	server.Close()
 }
 
@@ -121,29 +115,26 @@ func (h *ExampleHook) Provides(b byte) bool {
 }
 
 func (h *ExampleHook) Init(config any) error {
-	h.Log.Info().Msg("initialised")
-	h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 		"initialised")
 	return nil
 }
 
 func (h *ExampleHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
-	h.Log.Info().Str("client", cl.ID).Msgf("client connected")
-	h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 		"initialised")
 	return nil
 }
 
 func (h *ExampleHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
-	h.Log.Info().Str("client", cl.ID).Bool("expire", expire).Err(err).Msg("client disconnected")
 	if err != nil {
-		h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+		h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 			"client disconnected",
 			slog.String("client", cl.ID),
 			slog.Bool("expire", expire),
 			slog.String("error", err.Error()))
 	} else {
-		h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+		h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 			"client disconnected",
 			slog.String("client", cl.ID),
 			slog.Bool("expire", expire))
@@ -152,24 +143,21 @@ func (h *ExampleHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
 }
 
 func (h *ExampleHook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []byte) {
-	h.Log.Info().Str("client", cl.ID).Interface("filters", pk.Filters).Msgf("subscribed qos=%v", reasonCodes)
-	h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 		fmt.Sprintf("subscribed qos=%v", reasonCodes),
 		slog.String("client", cl.ID),
 		slog.Any("filters", pk.Filters))
 }
 
 func (h *ExampleHook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
-	h.Log.Info().Str("client", cl.ID).Interface("filters", pk.Filters).Msg("unsubscribed")
-	h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 		"unsubscribed",
 		slog.String("client", cl.ID),
 		slog.Any("filters", pk.Filters))
 }
 
 func (h *ExampleHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
-	h.Log.Info().Str("client", cl.ID).Str("payload", string(pk.Payload)).Msg("received from client")
-	h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 		"received from client",
 		slog.String("client", cl.ID),
 		slog.String("payload", string(pk.Payload)))
@@ -177,8 +165,7 @@ func (h *ExampleHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pac
 	pkx := pk
 	if string(pk.Payload) == "hello" {
 		pkx.Payload = []byte("hello world")
-		h.Log.Info().Str("client", cl.ID).Str("payload", string(pkx.Payload)).Msg("received modified packet from client")
-		h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+		h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 			"received modified packet from client",
 			slog.String("client", cl.ID),
 			slog.String("payload", string(pkx.Payload)))
@@ -188,8 +175,7 @@ func (h *ExampleHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pac
 }
 
 func (h *ExampleHook) OnPublished(cl *mqtt.Client, pk packets.Packet) {
-	h.Log.Info().Str("client", cl.ID).Str("payload", string(pk.Payload)).Msg("published to client")
-	h.Slog.LogAttrs(context.TODO(), slog.LevelInfo,
+	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
 		"published to client",
 		slog.String("client", cl.ID),
 		slog.String("payload", string(pk.Payload)))
