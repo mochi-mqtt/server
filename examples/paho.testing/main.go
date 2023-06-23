@@ -48,9 +48,9 @@ func main() {
 	<-done
 	server.Log.Warn().Msg("caught signal, stopping...")
 	server.Slog.LogAttrs(context.TODO(), slog.LevelWarn, "caught signal, stopping...")
-	server.Close()
 	server.Log.Info().Msg("main.go finished")
 	server.Slog.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
+	server.Close()
 }
 
 type pahoAuthHook struct {

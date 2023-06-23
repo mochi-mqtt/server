@@ -395,10 +395,22 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 		cl.Properties.Will = Will{} // [MQTT-3.14.4-3] [MQTT-3.1.2-10]
 	}
 
-	s.Log.Debug().Str("client", cl.ID).Err(err).Str("remote", cl.Net.Remote).Str("listener", listener).Msg("client disconnected")
-
 	// TODO : Figure out what to do with error
-	s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "client disconnected", slog.String("client", cl.ID), slog.String("remote", cl.Net.Remote), slog.String("listener", listener))
+	// nil checking convenience methods are pretty cool it seems
+	if err != nil {
+		s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "client disconnected",
+			slog.String("error", err.Error()),
+			slog.String("client", cl.ID),
+			slog.String("remote", cl.Net.Remote),
+			slog.String("listener", listener))
+	} else {
+		s.Slog.LogAttrs(context.TODO(), slog.LevelDebug, "client disconnected",
+			slog.String("client", cl.ID),
+			slog.String("remote", cl.Net.Remote),
+			slog.String("listener", listener))
+	}
+
+	s.Log.Debug().Str("client", cl.ID).Err(err).Str("remote", cl.Net.Remote).Str("listener", listener).Msg("client disconnected")
 
 	expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
 	s.hooks.OnDisconnect(cl, err, expire)

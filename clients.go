@@ -196,6 +196,7 @@ func (cl *Client) WriteLoop() {
 				cl.ops.log.Debug().Err(err).Str("client", cl.ID).Interface("packet", pk).Msg("failed publishing packet")
 				// TODO : Figure out what to do with error
 				cl.ops.slog.LogAttrs(context.TODO(), slog.LevelDebug, "failed publishing packet",
+					slog.String("error", err.Error()),
 					slog.String("client", cl.ID),
 					slog.Any("packet", pk))
 			}
