@@ -16,13 +16,11 @@ import (
 	"golang.org/x/exp/slog"
 
 	"github.com/asdine/storm/v3"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	logger  = zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.Disabled)
-	slogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	client = &mqtt.Client{
 		ID: "test",
@@ -96,7 +94,7 @@ func TestProvides(t *testing.T) {
 
 func TestInitBadConfig(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 
 	err := h.Init(map[string]any{})
 	require.Error(t, err)
@@ -104,7 +102,7 @@ func TestInitBadConfig(t *testing.T) {
 
 func TestInitUseDefaults(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -115,7 +113,7 @@ func TestInitUseDefaults(t *testing.T) {
 
 func TestInitBadPath(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(&Options{
 		Path: "..",
 	})
@@ -124,7 +122,7 @@ func TestInitBadPath(t *testing.T) {
 
 func TestOnSessionEstablishedThenOnDisconnect(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -157,13 +155,13 @@ func TestOnSessionEstablishedThenOnDisconnect(t *testing.T) {
 
 func TestOnSessionEstablishedNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnSessionEstablished(client, packets.Packet{})
 }
 
 func TestOnSessionEstablishedClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -172,7 +170,7 @@ func TestOnSessionEstablishedClosedDB(t *testing.T) {
 
 func TestOnWillSent(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -191,7 +189,7 @@ func TestOnWillSent(t *testing.T) {
 
 func TestOnClientExpired(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -215,7 +213,7 @@ func TestOnClientExpired(t *testing.T) {
 
 func TestOnClientExpiredClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -224,19 +222,19 @@ func TestOnClientExpiredClosedDB(t *testing.T) {
 
 func TestOnClientExpiredNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnClientExpired(client)
 }
 
 func TestOnDisconnectNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnDisconnect(client, nil, false)
 }
 
 func TestOnDisconnectClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -245,7 +243,7 @@ func TestOnDisconnectClosedDB(t *testing.T) {
 
 func TestOnDisconnectSessionTakenOver(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 
@@ -268,7 +266,7 @@ func TestOnDisconnectSessionTakenOver(t *testing.T) {
 
 func TestOnSubscribedThenOnUnsubscribed(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -290,13 +288,13 @@ func TestOnSubscribedThenOnUnsubscribed(t *testing.T) {
 
 func TestOnSubscribedNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnSubscribed(client, pkf, []byte{0})
 }
 
 func TestOnSubscribedClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -305,13 +303,13 @@ func TestOnSubscribedClosedDB(t *testing.T) {
 
 func TestOnUnsubscribedNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnUnsubscribed(client, pkf)
 }
 
 func TestOnUnsubscribedClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -320,7 +318,7 @@ func TestOnUnsubscribedClosedDB(t *testing.T) {
 
 func TestOnRetainMessageThenUnset(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -355,7 +353,7 @@ func TestOnRetainMessageThenUnset(t *testing.T) {
 
 func TestOnRetainedExpired(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -382,7 +380,7 @@ func TestOnRetainedExpired(t *testing.T) {
 
 func TestOnRetainedExpiredClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -391,19 +389,19 @@ func TestOnRetainedExpiredClosedDB(t *testing.T) {
 
 func TestOnRetainedExpiredNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnRetainedExpired("a/b/c")
 }
 
 func TestOnRetainMessageNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnRetainMessage(client, packets.Packet{}, 0)
 }
 
 func TestOnRetainMessageClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -412,7 +410,7 @@ func TestOnRetainMessageClosedDB(t *testing.T) {
 
 func TestOnQosPublishThenQOSComplete(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -447,13 +445,13 @@ func TestOnQosPublishThenQOSComplete(t *testing.T) {
 
 func TestOnQosPublishNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnQosPublish(client, packets.Packet{}, time.Now().Unix(), 0)
 }
 
 func TestOnQosPublishClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -462,13 +460,13 @@ func TestOnQosPublishClosedDB(t *testing.T) {
 
 func TestOnQosCompleteNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnQosComplete(client, packets.Packet{})
 }
 
 func TestOnQosCompleteClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -477,13 +475,13 @@ func TestOnQosCompleteClosedDB(t *testing.T) {
 
 func TestOnQosDroppedNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnQosDropped(client, packets.Packet{})
 }
 
 func TestOnSysInfoTick(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -505,13 +503,13 @@ func TestOnSysInfoTick(t *testing.T) {
 
 func TestOnSysInfoTickNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	h.OnSysInfoTick(new(system.Info))
 }
 
 func TestOnSysInfoTickClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -520,7 +518,7 @@ func TestOnSysInfoTickClosedDB(t *testing.T) {
 
 func TestStoredClients(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -545,7 +543,7 @@ func TestStoredClients(t *testing.T) {
 
 func TestStoredClientsNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	v, err := h.StoredClients()
 	require.Empty(t, v)
 	require.NoError(t, err)
@@ -553,7 +551,7 @@ func TestStoredClientsNoDB(t *testing.T) {
 
 func TestStoredClientsClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -564,7 +562,7 @@ func TestStoredClientsClosedDB(t *testing.T) {
 
 func TestStoredSubscriptions(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -589,7 +587,7 @@ func TestStoredSubscriptions(t *testing.T) {
 
 func TestStoredSubscriptionsNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	v, err := h.StoredSubscriptions()
 	require.Empty(t, v)
 	require.NoError(t, err)
@@ -597,7 +595,7 @@ func TestStoredSubscriptionsNoDB(t *testing.T) {
 
 func TestStoredSubscriptionsClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -608,7 +606,7 @@ func TestStoredSubscriptionsClosedDB(t *testing.T) {
 
 func TestStoredRetainedMessages(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -636,7 +634,7 @@ func TestStoredRetainedMessages(t *testing.T) {
 
 func TestStoredRetainedMessagesNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	v, err := h.StoredRetainedMessages()
 	require.Empty(t, v)
 	require.NoError(t, err)
@@ -644,7 +642,7 @@ func TestStoredRetainedMessagesNoDB(t *testing.T) {
 
 func TestStoredRetainedMessagesClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -655,7 +653,7 @@ func TestStoredRetainedMessagesClosedDB(t *testing.T) {
 
 func TestStoredInflightMessages(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -683,7 +681,7 @@ func TestStoredInflightMessages(t *testing.T) {
 
 func TestStoredInflightMessagesNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	v, err := h.StoredInflightMessages()
 	require.Empty(t, v)
 	require.NoError(t, err)
@@ -691,7 +689,7 @@ func TestStoredInflightMessagesNoDB(t *testing.T) {
 
 func TestStoredInflightMessagesClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)
@@ -702,7 +700,7 @@ func TestStoredInflightMessagesClosedDB(t *testing.T) {
 
 func TestStoredSysInfo(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h.config.Path, h)
@@ -724,7 +722,7 @@ func TestStoredSysInfo(t *testing.T) {
 
 func TestStoredSysInfoNoDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	v, err := h.StoredSysInfo()
 	require.Empty(t, v)
 	require.NoError(t, err)
@@ -732,7 +730,7 @@ func TestStoredSysInfoNoDB(t *testing.T) {
 
 func TestStoredSysInfoClosedDB(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, slogger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	teardown(t, h.config.Path, h)

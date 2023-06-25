@@ -10,7 +10,6 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/jinzhu/copier v0.3.5
 	github.com/rs/xid v1.4.0
-	github.com/rs/zerolog v1.28.0
 	github.com/stretchr/testify v1.7.1
 	github.com/timshannon/badgerhold v1.0.0
 	go.etcd.io/bbolt v1.3.5
@@ -29,8 +28,6 @@ require (
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/golang/protobuf v1.5.0 // indirect
 	github.com/golang/snappy v0.0.3 // indirect
-	github.com/mattn/go-colorable v0.1.12 // indirect
-	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/yuin/gopher-lua v0.0.0-20210529063254-f4c35e4016d9 // indirect

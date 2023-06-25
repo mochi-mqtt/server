@@ -6,6 +6,7 @@ package bolt
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/mochi-co/mqtt/v2/hooks/storage"
 	"github.com/mochi-co/mqtt/v2/packets"
 	"github.com/mochi-co/mqtt/v2/system"
+	"golang.org/x/exp/slog"
 
 	sgob "github.com/asdine/storm/codec/gob"
 	"github.com/asdine/storm/v3"
@@ -141,7 +143,9 @@ func (h *Hook) OnWillSent(cl *mqtt.Client, pk packets.Packet) {
 // updateClient writes the client data to the store.
 func (h *Hook) updateClient(cl *mqtt.Client) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -169,14 +173,19 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 	}
 	err := h.db.Save(in)
 	if err != nil {
-		h.Log.Error().Err(err).Interface("data", in).Msg("failed to save client data")
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"failed to save client data",
+			slog.String("error", err.Error()),
+			slog.Any("data", in))
 	}
 }
 
 // OnDisconnect removes a client from the store if they were using a clean session.
 func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -190,14 +199,19 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 
 	err := h.db.DeleteStruct(&storage.Client{ID: clientKey(cl)})
 	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		h.Log.Error().Err(err).Str("id", clientKey(cl)).Msg("failed to delete client")
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"failed to delete client",
+			slog.String("error", err.Error()),
+			slog.String("id", clientKey(cl)))
 	}
 }
 
 // OnSubscribed adds one or more client subscriptions to the store.
 func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []byte) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -217,10 +231,11 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 
 		err := h.db.Save(in)
 		if err != nil {
-			h.Log.Error().Err(err).
-				Str("client", cl.ID).
-				Interface("data", in).
-				Msg("failed to save subscription data")
+			h.Log.LogAttrs(context.TODO(), slog.LevelError,
+				"failed to save subscription data",
+				slog.String("error", err.Error()),
+				slog.String("client", cl.ID),
+				slog.Any("data", in))
 		}
 	}
 }
@@ -228,7 +243,9 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 // OnUnsubscribed removes one or more client subscriptions from the store.
 func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -237,9 +254,10 @@ func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 			ID: subscriptionKey(cl, pk.Filters[i].Filter),
 		})
 		if err != nil {
-			h.Log.Error().Err(err).
-				Str("id", subscriptionKey(cl, pk.Filters[i].Filter)).
-				Msg("failed to delete client")
+			h.Log.LogAttrs(context.TODO(), slog.LevelError,
+				"failed to delete client",
+				slog.String("error", err.Error()),
+				slog.String("id", subscriptionKey(cl, pk.Filters[i].Filter)))
 		}
 	}
 }
@@ -247,7 +265,9 @@ func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 // OnRetainMessage adds a retained message for a topic to the store.
 func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -256,9 +276,10 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 			ID: retainedKey(pk.TopicName),
 		})
 		if err != nil {
-			h.Log.Error().Err(err).
-				Str("id", retainedKey(pk.TopicName)).
-				Msg("failed to delete retained publish")
+			h.Log.LogAttrs(context.TODO(), slog.LevelError,
+				"failed to delete retained publish",
+				slog.String("error", err.Error()),
+				slog.String("id", retainedKey(pk.TopicName)))
 		}
 		return
 	}
@@ -285,17 +306,20 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 	}
 	err := h.db.Save(in)
 	if err != nil {
-		h.Log.Error().Err(err).
-			Str("client", cl.ID).
-			Interface("data", in).
-			Msg("failed to save retained publish data")
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"failed to save retained publish data",
+			slog.String("error", err.Error()),
+			slog.String("client", cl.ID),
+			slog.Any("data", in))
 	}
 }
 
 // OnQosPublish adds or updates an inflight message in the store.
 func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, resends int) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -323,17 +347,20 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 
 	err := h.db.Save(in)
 	if err != nil {
-		h.Log.Error().Err(err).
-			Str("client", cl.ID).
-			Interface("data", in).
-			Msg("failed to save qos inflight data")
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"failed to save qos inflight data",
+			slog.String("error", err.Error()),
+			slog.String("client", cl.ID),
+			slog.Any("data", in))
 	}
 }
 
 // OnQosComplete removes a resolved inflight message from the store.
 func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -341,16 +368,19 @@ func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
 		ID: inflightKey(cl, pk),
 	})
 	if err != nil {
-		h.Log.Error().Err(err).
-			Str("id", inflightKey(cl, pk)).
-			Msg("failed to delete inflight data")
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"failed to delete inflight data",
+			slog.String("error", err.Error()),
+			slog.String("id", inflightKey(cl, pk)))
 	}
 }
 
 // OnQosDropped removes a dropped inflight message from the store.
 func (h *Hook) OnQosDropped(cl *mqtt.Client, pk packets.Packet) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 	}
 
 	h.OnQosComplete(cl, pk)
@@ -359,7 +389,9 @@ func (h *Hook) OnQosDropped(cl *mqtt.Client, pk packets.Packet) {
 // OnSysInfoTick stores the latest system info in the store.
 func (h *Hook) OnSysInfoTick(sys *system.Info) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -371,41 +403,53 @@ func (h *Hook) OnSysInfoTick(sys *system.Info) {
 
 	err := h.db.Save(in)
 	if err != nil {
-		h.Log.Error().Err(err).
-			Interface("data", in).
-			Msg("failed to save $SYS data")
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"failed to save $SYS data",
+			slog.Any("data", in))
 	}
 }
 
 // OnRetainedExpired deletes expired retained messages from the store.
 func (h *Hook) OnRetainedExpired(filter string) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
 	if err := h.db.DeleteStruct(&storage.Message{ID: retainedKey(filter)}); err != nil {
-		h.Log.Error().Err(err).Str("id", retainedKey(filter)).Msg("failed to delete retained publish")
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"failed to delete retained publish",
+			slog.String("error", err.Error()),
+			slog.String("id", retainedKey(filter)))
 	}
 }
 
 // OnClientExpired deleted expired clients from the store.
 func (h *Hook) OnClientExpired(cl *mqtt.Client) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
 	err := h.db.DeleteStruct(&storage.Client{ID: clientKey(cl)})
 	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		h.Log.Error().Err(err).Str("id", clientKey(cl)).Msg("failed to delete expired client")
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"failed to delete expired client",
+			slog.String("error", err.Error()),
+			slog.String("id", clientKey(cl)))
 	}
 }
 
 // StoredClients returns all stored clients from the store.
 func (h *Hook) StoredClients() (v []storage.Client, err error) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -420,7 +464,9 @@ func (h *Hook) StoredClients() (v []storage.Client, err error) {
 // StoredSubscriptions returns all stored subscriptions from the store.
 func (h *Hook) StoredSubscriptions() (v []storage.Subscription, err error) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -435,7 +481,9 @@ func (h *Hook) StoredSubscriptions() (v []storage.Subscription, err error) {
 // StoredRetainedMessages returns all stored retained messages from the store.
 func (h *Hook) StoredRetainedMessages() (v []storage.Message, err error) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -450,7 +498,9 @@ func (h *Hook) StoredRetainedMessages() (v []storage.Message, err error) {
 // StoredInflightMessages returns all stored inflight messages from the store.
 func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
@@ -465,7 +515,9 @@ func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 // StoredSysInfo returns the system info from the store.
 func (h *Hook) StoredSysInfo() (v storage.SystemInfo, err error) {
 	if h.db == nil {
-		h.Log.Error().Err(storage.ErrDBFileNotOpen)
+		h.Log.LogAttrs(context.TODO(), slog.LevelError,
+			"",
+			slog.String("error", storage.ErrDBFileNotOpen.Error()))
 		return
 	}
 
