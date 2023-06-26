@@ -62,6 +62,6 @@ func main() {
 
 	<-done
 	server.Log.LogAttrs(context.TODO(), slog.LevelWarn, "caught signal, stopping...")
-	server.Log.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
 	server.Close()
+	server.Log.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
 }
