@@ -236,6 +236,7 @@ func TestHooksNonReturns(t *testing.T) {
 			h.OnStarted()
 			h.OnStopped()
 			h.OnSysInfoTick(new(system.Info))
+			h.OnSessionEstablish(cl, packets.Packet{})
 			h.OnSessionEstablished(cl, packets.Packet{})
 			h.OnDisconnect(cl, nil, false)
 			h.OnPacketSent(cl, packets.Packet{}, []byte{})

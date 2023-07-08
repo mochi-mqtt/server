@@ -346,6 +346,8 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	atomic.AddInt64(&s.Info.ClientsConnected, 1)
 	defer atomic.AddInt64(&s.Info.ClientsConnected, -1)
 
+	s.hooks.OnSessionEstablish(cl, pk)
+
 	sessionPresent := s.inheritClientSession(pk, cl)
 	s.Clients.Add(cl) // [MQTT-4.1.0-1]
 
