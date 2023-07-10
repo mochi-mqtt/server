@@ -1566,6 +1566,35 @@ func TestPublishToClientServerDowngradeQos(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes, <-receiverBuf)
 }
 
+func TestPublishToClientSubscriptionDowngradeQos(t *testing.T) {
+	s := newServer()
+	s.Options.Capabilities.MaximumQos = 2
+
+	cl, r, w := newTestClient()
+	s.Clients.Add(cl)
+
+	_, ok := cl.State.Inflight.Get(1)
+	require.False(t, ok)
+	cl.State.packetID = 6 // just to match the same packet id (7) in the fixtures
+
+	go func() {
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
+		pkx.FixedHeader.Qos = 2
+		s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, pkx)
+		time.Sleep(time.Microsecond * 100)
+		w.Close()
+	}()
+
+	receiverBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r)
+		require.NoError(t, err)
+		receiverBuf <- buf
+	}()
+
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes, <-receiverBuf)
+}
+
 func TestPublishToClientExceedClientWritesPending(t *testing.T) {
 	s := newServer()
 
@@ -1630,7 +1659,7 @@ func TestPublishToClientExhaustedPacketID(t *testing.T) {
 		cl.State.Inflight.Set(packets.Packet{PacketID: uint16(i)})
 	}
 
-	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c"}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
 }

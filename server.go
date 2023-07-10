@@ -818,6 +818,10 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 		sort.Ints(out.Properties.SubscriptionIdentifier)
 	}
 
+	if out.FixedHeader.Qos > sub.Qos {
+		out.FixedHeader.Qos = sub.Qos
+	}
+
 	if out.FixedHeader.Qos > s.Options.Capabilities.MaximumQos {
 		out.FixedHeader.Qos = s.Options.Capabilities.MaximumQos // [MQTT-3.2.2-9]
 	}
