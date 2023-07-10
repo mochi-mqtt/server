@@ -177,7 +177,7 @@ func newClient(c net.Conn, o *ops) *Client {
 			Conn: c,
 			bconn: bufio.NewReadWriter(
 				bufio.NewReaderSize(c, o.options.ClientNetReadBufferSize),
-				bufio.NewWriterSize(c, o.options.ClientNetReadBufferSize),
+				bufio.NewWriterSize(c, o.options.ClientNetWriteBufferSize),
 			),
 			Remote: c.RemoteAddr().String(),
 		}
