@@ -132,6 +132,7 @@ const (
 	TPubackMqtt5
 	TPubackMalPacketID
 	TPubackMalProperties
+	TPubackUnexpectedError
 	TPubrec
 	TPubrecMqtt5
 	TPubrecMqtt5IDInUse
@@ -2235,6 +2236,32 @@ var TPacketData = map[byte]TPacketCases{
 				},
 			},
 		},
+		{
+			Case:  TPubackUnexpectedError,
+			Desc:  "unexpected error",
+			Group: "decode",
+			RawBytes: []byte{
+				Puback << 4, 29, // Fixed header
+				0, 7, // Packet ID - LSB+MSB
+				ErrPayloadFormatInvalid.Code, // Reason Code
+				25,                           // Properties Length
+				31, 0, 22, 'p', 'a', 'y', 'l', 'o', 'a', 'd',
+				' ', 'f', 'o', 'r', 'm', 'a', 't',
+				' ', 'i', 'n', 'v', 'a', 'l', 'i', 'd', // Reason String (31)
+			},
+			Packet: &Packet{
+				ProtocolVersion: 5,
+				FixedHeader: FixedHeader{
+					Type:      Puback,
+					Remaining: 28,
+				},
+				PacketID:   7,
+				ReasonCode: ErrPayloadFormatInvalid.Code,
+				Properties: Properties{
+					ReasonString: ErrPayloadFormatInvalid.Reason,
+				},
+			},
+		},
 
 		// Fail states
 		{
@@ -2316,14 +2343,17 @@ var TPacketData = map[byte]TPacketCases{
 			Desc:    "packet id in use mqtt5",
 			Primary: true,
 			RawBytes: []byte{
-				Pubrec << 4, 31, // Fixed header
+				Pubrec << 4, 47, // Fixed header
 				0, 7, // Packet ID - LSB+MSB
 				ErrPacketIdentifierInUse.Code, // Reason Code
-				27,                            // Properties Length
+				43,                            // Properties Length
 				31, 0, 24, 'p', 'a', 'c', 'k', 'e', 't',
 				' ', 'i', 'd', 'e', 'n', 't', 'i', 'f', 'i', 'e', 'r',
 				' ', 'i', 'n',
 				' ', 'u', 's', 'e', // Reason String (31)
+				38, // User Properties (38)
+				0, 5, 'h', 'e', 'l', 'l', 'o',
+				0, 6, 228, 184, 150, 231, 149, 140,
 			},
 			Packet: &Packet{
 				ProtocolVersion: 5,
@@ -2335,6 +2365,12 @@ var TPacketData = map[byte]TPacketCases{
 				ReasonCode: ErrPacketIdentifierInUse.Code,
 				Properties: Properties{
 					ReasonString: ErrPacketIdentifierInUse.Reason,
+					User: []UserProperty{
+						{
+							Key: "hello",
+							Val: "世界",
+						},
+					},
 				},
 			},
 		},

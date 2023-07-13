@@ -1198,6 +1198,50 @@ func TestServerProcessPacketPublishAndReceive(t *testing.T) {
 	require.Equal(t, 1, len(s.Topics.Messages("a/b/c")))
 }
 
+func TestServerBuildAck(t *testing.T) {
+	s := newServer()
+	properties := packets.Properties{
+		User: []packets.UserProperty{
+			{Key: "hello", Val: "世界"},
+		},
+	}
+	ack := s.buildAck(7, packets.Puback, 1, properties, packets.CodeGrantedQos1)
+	require.Equal(t, packets.Puback, ack.FixedHeader.Type)
+	require.Equal(t, uint8(1), ack.FixedHeader.Qos)
+	require.Equal(t, packets.CodeGrantedQos1.Code, ack.ReasonCode)
+	require.Equal(t, properties, ack.Properties)
+}
+
+func TestServerBuildAckError(t *testing.T) {
+	s := newServer()
+	properties := packets.Properties{
+		User: []packets.UserProperty{
+			{Key: "hello", Val: "世界"},
+		},
+	}
+	ack := s.buildAck(7, packets.Puback, 1, properties, packets.ErrMalformedPacket)
+	require.Equal(t, packets.Puback, ack.FixedHeader.Type)
+	require.Equal(t, uint8(1), ack.FixedHeader.Qos)
+	require.Equal(t, packets.ErrMalformedPacket.Code, ack.ReasonCode)
+	properties.ReasonString = packets.ErrMalformedPacket.Reason
+	require.Equal(t, properties, ack.Properties)
+}
+
+func TestServerBuildAckPahoCompatibility(t *testing.T) {
+	s := newServer()
+	s.Options.Capabilities.Compatibilities.NoInheritedPropertiesOnAck = true
+	properties := packets.Properties{
+		User: []packets.UserProperty{
+			{Key: "hello", Val: "世界"},
+		},
+	}
+	ack := s.buildAck(7, packets.Puback, 1, properties, packets.CodeGrantedQos1)
+	require.Equal(t, packets.Puback, ack.FixedHeader.Type)
+	require.Equal(t, uint8(1), ack.FixedHeader.Qos)
+	require.Equal(t, packets.CodeGrantedQos1.Code, ack.ReasonCode)
+	require.Equal(t, packets.Properties{}, ack.Properties)
+}
+
 func TestServerProcessPacketAndNextImmediate(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
@@ -1293,6 +1337,27 @@ func TestServerProcessPublishOnMessageRecvRejected(t *testing.T) {
 	cl, _, _ := newTestClient()
 	err = s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 	require.NoError(t, err) // packets rejected silently
+}
+
+func TestServerProcessPublishOnPublishErrorToAck(t *testing.T) {
+	s := newServer()
+	hook := new(modifiedHookBase)
+	hook.fail = true
+	hook.err = packets.ErrPayloadFormatInvalid
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+		require.Error(t, err)
+		w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPubackUnexpectedError).RawBytes, buf)
 }
 
 func TestServerProcessPacketPublishQos0(t *testing.T) {

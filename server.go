@@ -71,10 +71,11 @@ type Capabilities struct {
 
 // Compatibilities provides flags for using compatibility modes.
 type Compatibilities struct {
-	ObscureNotAuthorized     bool // return unspecified errors instead of not authorized
-	PassiveClientDisconnect  bool // don't disconnect the client forcefully after sending disconnect packet (paho)
-	AlwaysReturnResponseInfo bool // always return response info (useful for testing)
-	RestoreSysInfoOnRestart  bool // restore system info from store as if server never stopped
+	ObscureNotAuthorized       bool // return unspecified errors instead of not authorized
+	PassiveClientDisconnect    bool // don't disconnect the client forcefully after sending disconnect packet (paho - spec violation)
+	AlwaysReturnResponseInfo   bool // always return response info (useful for testing)
+	RestoreSysInfoOnRestart    bool // restore system info from store as if server never stopped
+	NoInheritedPropertiesOnAck bool // don't allow inherited user properties on ack (paho - spec violation)
 }
 
 // Options contains configurable options for the server.
@@ -715,10 +716,14 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		pk.FixedHeader.Qos = s.Options.Capabilities.MaximumQos // [MQTT-3.2.2-9] Reduce Qos based on server max qos capability
 	}
 
-	if pkx, err := s.hooks.OnPublish(cl, pk); err == nil {
+	pkx, err := s.hooks.OnPublish(cl, pk)
+	if err == nil {
 		pk = pkx
 	} else if errors.Is(err, packets.ErrRejectPacket) {
 		return nil
+	} else if err != nil && errors.As(err, new(packets.Code)) && cl.Properties.ProtocolVersion == 5 && pk.FixedHeader.Qos > 0 {
+		_ = cl.WritePacket(s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, err.(packets.Code))) // omit connection error in favour of existing packet err
+		return err
 	}
 
 	if pk.FixedHeader.Retain { // [MQTT-3.3.1-5] ![MQTT-3.3.1-8]
@@ -742,7 +747,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		s.hooks.OnQosPublish(cl, ack, ack.Created, 0)
 	}
 
-	err := cl.WritePacket(ack)
+	err = cl.WritePacket(ack)
 	if err != nil {
 		return err
 	}
@@ -900,7 +905,9 @@ func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, e
 
 // buildAck builds a standardised ack message for Puback, Pubrec, Pubrel, Pubcomp packets.
 func (s *Server) buildAck(packetID uint16, pkt, qos byte, properties packets.Properties, reason packets.Code) packets.Packet {
-	properties = packets.Properties{} // PRL
+	if s.Options.Capabilities.Compatibilities.NoInheritedPropertiesOnAck {
+		properties = packets.Properties{}
+	}
 	if reason.Code >= packets.ErrUnspecifiedError.Code {
 		properties.ReasonString = reason.Reason
 	}

@@ -28,6 +28,7 @@ func main() {
 	server := mqtt.New(nil)
 	server.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true
 	server.Options.Capabilities.Compatibilities.PassiveClientDisconnect = true
+	server.Options.Capabilities.Compatibilities.NoInheritedPropertiesOnAck = true
 
 	_ = server.AddHook(new(pahoAuthHook), nil)
 	tcp := listeners.NewTCP("t1", ":1883", nil)
