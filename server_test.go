@@ -1798,7 +1798,7 @@ func TestPublishRetainedToClient(t *testing.T) {
 
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, buf)
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes, buf)
 }
 
 func TestPublishRetainedToClientIsShared(t *testing.T) {
@@ -2316,7 +2316,7 @@ func TestServerProcessSubscribeWithRetain(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, append(
 		packets.TPacketData[packets.Suback].Get(packets.TSuback).RawBytes,
-		packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes...,
+		packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes...,
 	), buf)
 }
 
@@ -2401,7 +2401,7 @@ func TestServerProcessSubscribeWithNotRetainAsPublished(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, append(
 		packets.TPacketData[packets.Suback].Get(packets.TSuback).RawBytes,
-		packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes...,
+		packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes...,
 	), buf)
 }
 
