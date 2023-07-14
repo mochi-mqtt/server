@@ -1813,6 +1813,16 @@ func TestPublishRetainedToClientError(t *testing.T) {
 	s.publishRetainedToClient(cl, sub, false)
 }
 
+func TestNoRetainMessageIfUnavailable(t *testing.T) {
+	s := newServer()
+	s.Options.Capabilities.RetainAvailable = 0
+	cl, _, _ := newTestClient()
+	s.Clients.Add(cl)
+
+	s.retainMessage(new(Client), *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Retained))
+}
+
 func TestServerProcessPacketPuback(t *testing.T) {
 	tt := ProtocolTest{
 		{
