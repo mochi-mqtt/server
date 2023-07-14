@@ -9,9 +9,10 @@ import (
 	"strings"
 	"sync"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mochi-co/mqtt/v2"
 	"github.com/mochi-co/mqtt/v2/packets"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -188,15 +189,29 @@ func (l *Ledger) ACLOk(cl *mqtt.Client, topic string, write bool) (n int, ok boo
 				return n, true
 			}
 
-			for filter, access := range rule.Filters {
-				if filter.FilterMatches(topic) {
-					if !write && (access == ReadOnly || access == ReadWrite) {
-						return n, true
-					} else if write && (access == WriteOnly || access == ReadWrite) {
-						return n, true
-					} else {
-						return n, false
+			if write {
+				for filter, access := range rule.Filters {
+					if access == WriteOnly || access == ReadWrite {
+						if filter.FilterMatches(topic) {
+							return n, true
+						}
 					}
+				}
+			}
+
+			if !write {
+				for filter, access := range rule.Filters {
+					if access == ReadOnly || access == ReadWrite {
+						if filter.FilterMatches(topic) {
+							return n, true
+						}
+					}
+				}
+			}
+
+			for filter, _ := range rule.Filters {
+				if filter.FilterMatches(topic) {
+					return n, false
 				}
 			}
 		}
