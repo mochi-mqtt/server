@@ -1194,7 +1194,7 @@ func TestServerProcessPacketPublishAndReceive(t *testing.T) {
 		w2.Close()
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes, <-receiverBuf)
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
 	require.Equal(t, 1, len(s.Topics.Messages("a/b/c")))
 }
 
@@ -1717,6 +1717,29 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 	require.Equal(t, append(pk1, pk2...), ret)
 }
 
+func TestPublishToClientMqtt3RetainFalseLeverageNoConn(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	cl.Net.Conn = nil
+
+	out, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", RetainAsPublished: true}, *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.False(t, out.FixedHeader.Retain)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.CodeDisconnect)
+}
+
+func TestPublishToClientMqtt5RetainAsPublishedTrueLeverageNoConn(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	cl.Net.Conn = nil
+
+	out, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", RetainAsPublished: true}, *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.True(t, out.FixedHeader.Retain)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.CodeDisconnect)
+}
+
 func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -1876,6 +1899,16 @@ func TestPublishRetainedToClientError(t *testing.T) {
 
 	w.Close()
 	s.publishRetainedToClient(cl, sub, false)
+}
+
+func TestNoRetainMessageIfUnavailable(t *testing.T) {
+	s := newServer()
+	s.Options.Capabilities.RetainAvailable = 0
+	cl, _, _ := newTestClient()
+	s.Clients.Add(cl)
+
+	s.retainMessage(new(Client), *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Retained))
 }
 
 func TestServerProcessPacketPuback(t *testing.T) {
@@ -2741,7 +2774,7 @@ func TestServerSendLWTRetain(t *testing.T) {
 		w2.Close()
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes, <-receiverBuf)
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
 }
 
 func TestServerSendLWTDelayed(t *testing.T) {
@@ -2782,7 +2815,7 @@ func TestServerSendLWTDelayed(t *testing.T) {
 		recv <- buf
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes, <-recv)
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-recv)
 }
 
 func TestServerReadStore(t *testing.T) {
