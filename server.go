@@ -721,9 +721,14 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		pk = pkx
 	} else if errors.Is(err, packets.ErrRejectPacket) {
 		return nil
-	} else if err != nil && errors.As(err, new(packets.Code)) && cl.Properties.ProtocolVersion == 5 && pk.FixedHeader.Qos > 0 {
-		_ = cl.WritePacket(s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, err.(packets.Code))) // omit connection error in favour of existing packet err
-		return err
+	} else if errors.Is(err, packets.CodeSuccessIgnore) {
+		pk.Ignore = true
+	} else if cl.Properties.ProtocolVersion == 5 && pk.FixedHeader.Qos > 0 && errors.As(err, new(packets.Code)) {
+		err = cl.WritePacket(s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, err.(packets.Code)))
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if pk.FixedHeader.Retain { // [MQTT-3.3.1-5] ![MQTT-3.3.1-8]
@@ -769,7 +774,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 // retainMessage adds a message to a topic, and if a persistent store is provided,
 // adds the message to the store to be reloaded if necessary.
 func (s *Server) retainMessage(cl *Client, pk packets.Packet) {
-	if s.Options.Capabilities.RetainAvailable == 0 {
+	if s.Options.Capabilities.RetainAvailable == 0 || pk.Ignore {
 		return
 	}
 
@@ -781,6 +786,10 @@ func (s *Server) retainMessage(cl *Client, pk packets.Packet) {
 
 // publishToSubscribers publishes a publish packet to all subscribers with matching topic filters.
 func (s *Server) publishToSubscribers(pk packets.Packet) {
+	if pk.Ignore {
+		return
+	}
+
 	if pk.Created == 0 {
 		pk.Created = time.Now().Unix()
 	}

@@ -135,6 +135,7 @@ type Packet struct {
 	SessionPresent  bool          // session existed for connack
 	ReasonCode      byte          // reason code for a packet response (acks, etc)
 	ReservedBit     byte          // reserved, do not use (except in testing)
+	Ignore          bool          // if true, do not perform any message forwarding operations
 }
 
 // Mods specifies certain values required for certain mqtt v5 compliance within packet encoding/decoding.

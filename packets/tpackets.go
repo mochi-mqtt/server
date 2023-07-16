@@ -103,6 +103,7 @@ const (
 	TPublishBasicMqtt5
 	TPublishMqtt5
 	TPublishQos1
+	TPublishQos1Mqtt5
 	TPublishQos1NoPayload
 	TPublishQos1Dup
 	TPublishQos2
@@ -1705,6 +1706,43 @@ var TPacketData = map[byte]TPacketCases{
 				PacketID:  7,
 			},
 		},
+		{
+            Case:    TPublishQos1Mqtt5,
+            Desc:    "mqtt v5",
+            Primary: true,
+            RawBytes: []byte{
+                Publish<<4 | 1<<1, 37, // Fixed header
+                0, 5, // Topic Name - LSB+MSB
+                'a', '/', 'b', '/', 'c', // Topic Name
+                0, 7, // Packet ID - LSB+MSB
+                // Properties
+                16, // length
+                38, // User Properties (38)
+                0, 5, 'h', 'e', 'l', 'l', 'o',
+                0, 6, 228, 184, 150, 231, 149, 140,
+                'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload
+            },
+            Packet: &Packet{
+                ProtocolVersion: 5,
+                FixedHeader: FixedHeader{
+                    Type:      Publish,
+                    Remaining: 37,
+                    Qos:       1,
+                },
+                PacketID:  7,
+                TopicName: "a/b/c",
+                Properties: Properties{
+                    User: []UserProperty{
+                        {
+                            Key: "hello",
+                            Val: "世界",
+                        },
+                    },
+                },
+                Payload: []byte("hello mochi"),
+            },
+        },
+
 		{
 			Case:    TPublishQos1Dup,
 			Desc:    "qos:1, dup:true, packet id",

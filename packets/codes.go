@@ -28,6 +28,7 @@ var (
 		2: CodeGrantedQos2,
 	}
 
+	CodeSuccessIgnore                         = Code{Code: 0x00, Reason: "ignore packet"}
 	CodeSuccess                               = Code{Code: 0x00, Reason: "success"}
 	CodeDisconnect                            = Code{Code: 0x00, Reason: "disconnected"}
 	CodeGrantedQos0                           = Code{Code: 0x00, Reason: "granted qos 0"}
