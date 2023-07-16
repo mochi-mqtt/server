@@ -175,6 +175,7 @@ type Subscription struct {
 	Qos               byte
 	RetainAsPublished bool
 	NoLocal           bool
+	FwdRetainedFlag   bool // true if the subscription forms part of a publish response to a client subscription and packet is retained.
 }
 
 // Copy creates a new instance of a packet, but with an empty header for inheriting new QoS flags, etc.
@@ -387,7 +388,7 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 		offset += n
 	}
 
-	pk.Connect.ClientIdentifier, offset, err = decodeString(buf, offset) //[MQTT-3.1.3-1] [MQTT-3.1.3-2] [MQTT-3.1.3-3] [MQTT-3.1.3-4]
+	pk.Connect.ClientIdentifier, offset, err = decodeString(buf, offset) // [MQTT-3.1.3-1] [MQTT-3.1.3-2] [MQTT-3.1.3-3] [MQTT-3.1.3-4]
 	if err != nil {
 		return ErrClientIdentifierNotValid // [MQTT-3.1.3-8]
 	}
