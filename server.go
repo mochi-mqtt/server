@@ -764,6 +764,10 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 // retainMessage adds a message to a topic, and if a persistent store is provided,
 // adds the message to the store to be reloaded if necessary.
 func (s *Server) retainMessage(cl *Client, pk packets.Packet) {
+	if s.Options.Capabilities.RetainAvailable == 0 {
+		return
+	}
+
 	out := pk.Copy(false)
 	r := s.Topics.RetainMessage(out)
 	s.hooks.OnRetainMessage(cl, pk, r)
