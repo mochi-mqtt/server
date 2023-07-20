@@ -1160,7 +1160,7 @@ func (s *Server) UnsubscribeClient(cl *Client) {
 		filters[i] = v
 		i++
 	}
-	s.hooks.OnUnsubscribed(cl, packets.Packet{Filters: filters})
+	s.hooks.OnUnsubscribed(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Unsubscribe}, Filters: filters})
 }
 
 // processAuth processes an Auth packet.
