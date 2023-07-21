@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-co
-// SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: mochi-co, gsagula
 
 package badger
 
@@ -346,7 +346,7 @@ func (h *Hook) OnSysInfoTick(sys *system.Info) {
 	in := &storage.SystemInfo{
 		ID:   sysInfoKey(),
 		T:    storage.SysInfoKey,
-		Info: *sys,
+		Info: *sys.Clone(),
 	}
 
 	err := h.db.Upsert(in.ID, in)
