@@ -118,7 +118,7 @@ var (
 func TestClientMarshalBinary(t *testing.T) {
 	data, err := clientStruct.MarshalBinary()
 	require.NoError(t, err)
-	require.Equal(t, clientJSON, data)
+	require.JSONEq(t, string(clientJSON), string(data))
 }
 
 func TestClientUnmarshalBinary(t *testing.T) {
@@ -138,7 +138,7 @@ func TestClientUnmarshalBinaryEmpty(t *testing.T) {
 func TestMessageMarshalBinary(t *testing.T) {
 	data, err := messageStruct.MarshalBinary()
 	require.NoError(t, err)
-	require.Equal(t, messageJSON, data)
+	require.JSONEq(t, string(messageJSON), string(data))
 }
 
 func TestMessageUnmarshalBinary(t *testing.T) {
@@ -158,7 +158,7 @@ func TestMessageUnmarshalBinaryEmpty(t *testing.T) {
 func TestSubscriptionMarshalBinary(t *testing.T) {
 	data, err := subscriptionStruct.MarshalBinary()
 	require.NoError(t, err)
-	require.Equal(t, subscriptionJSON, data)
+	require.JSONEq(t, string(subscriptionJSON), string(data))
 }
 
 func TestSubscriptionUnmarshalBinary(t *testing.T) {
@@ -178,7 +178,7 @@ func TestSubscriptionUnmarshalBinaryEmpty(t *testing.T) {
 func TestSysInfoMarshalBinary(t *testing.T) {
 	data, err := sysInfoStruct.MarshalBinary()
 	require.NoError(t, err)
-	require.Equal(t, sysInfoJSON, data)
+	require.JSONEq(t, string(sysInfoJSON), string(data))
 }
 
 func TestSysInfoUnmarshalBinary(t *testing.T) {
