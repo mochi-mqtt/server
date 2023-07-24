@@ -251,10 +251,16 @@ type Subscribers struct {
 	Subscriptions  map[string]packets.Subscription
 }
 
-// SelectShared returns one subscriber for each shared subscription group.
 func (s *Subscribers) SelectShared() {
 	s.SharedSelected = map[string]packets.Subscription{}
+p1:
 	for _, subs := range s.Shared {
+		for client, _ := range subs {
+			if _, ok := s.Subscriptions[client]; ok {
+				continue p1
+			}
+		}
+
 		for client, sub := range subs {
 			cls, ok := s.SharedSelected[client]
 			if !ok {

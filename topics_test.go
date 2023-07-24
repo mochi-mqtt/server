@@ -554,6 +554,7 @@ func TestSelectSharedSubscriber(t *testing.T) {
 	index.Subscribe("cl1b", packets.Subscription{Qos: 0, Filter: SharePrefix + "/tmp/a/b/c", Identifier: 111})
 	index.Subscribe("cl2", packets.Subscription{Qos: 0, Filter: SharePrefix + "/tmp/a/b/c", Identifier: 112})
 	index.Subscribe("cl3", packets.Subscription{Qos: 0, Filter: SharePrefix + "/tmp2/a/b/c", Identifier: 113})
+	index.Subscribe("cl1", packets.Subscription{Qos: 0, Filter: "a/b/c", Identifier: 114})
 	subs := index.scanSubscribers("a/b/c", 0, nil, new(Subscribers))
 	require.Equal(t, 2, len(subs.Shared))
 	require.Contains(t, subs.Shared, SharePrefix+"/tmp/a/b/c")
@@ -561,7 +562,7 @@ func TestSelectSharedSubscriber(t *testing.T) {
 	require.Len(t, subs.Shared[SharePrefix+"/tmp/a/b/c"], 3)
 	require.Len(t, subs.Shared[SharePrefix+"/tmp2/a/b/c"], 1)
 	subs.SelectShared()
-	require.Len(t, subs.SharedSelected, 2)
+	require.Len(t, subs.SharedSelected, 1)
 }
 
 func TestMergeSharedSelected(t *testing.T) {
