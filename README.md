@@ -17,7 +17,7 @@ Mochi MQTT is an embeddable [fully compliant](https://docs.oasis-open.org/mqtt/m
 MQTT stands for [MQ Telemetry Transport](https://en.wikipedia.org/wiki/MQTT). It is a publish/subscribe, extremely simple and lightweight messaging protocol, designed for constrained devices and low-bandwidth, high-latency or unreliable networks ([Learn more](https://mqtt.org/faq)). Mochi MQTT fully implements version 5.0.0 of the MQTT protocol.
 
 ### When is this repo updated?
-Unless it's a critical issue, new releases typically go out over the weekend. At some point in the future this repo may be converted to an organisation, or collaborators added if the project continues to grow.
+Unless it's a critical issue, new releases typically go out over the weekend. 
 
 ## What's new in Version 2?
 Version 2.0.0 takes all the great things we loved about Mochi MQTT v1.0.0, learns from the mistakes, and improves on the things we wished we'd had. It's a total from-scratch rewrite, designed to fully implement MQTT v5 as a first-class feature. 
@@ -410,7 +410,7 @@ Contributions and feedback are both welcomed and encouraged! [Open an issue](htt
 [SPDX Annotations](https://spdx.dev) are used to clearly indicate the license, copyright, and contributions of each file in a machine-readable format. If you are adding a new file to the repository, please ensure it has the following SPDX header:
 ```go
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-mqtt
+// SPDX-FileCopyrightText: 2023 mochi-mqtt
 // SPDX-FileContributor: Your name or alias <optional@email.address>
 
 package name
