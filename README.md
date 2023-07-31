@@ -1,11 +1,11 @@
 
 <p align="center">
 
-![build status](https://github.com/mochi-co/mqtt/actions/workflows/build.yml/badge.svg) 
-[![Coverage Status](https://coveralls.io/repos/github/mochi-co/mqtt/badge.svg?branch=master&v2)](https://coveralls.io/github/mochi-co/mqtt?branch=master)
-[![Go Report Card](https://goreportcard.com/badge/github.com/mochi-co/mqtt)](https://goreportcard.com/report/github.com/mochi-co/mqtt/v2)
-[![Go Reference](https://pkg.go.dev/badge/github.com/mochi-co/mqtt.svg)](https://pkg.go.dev/github.com/mochi-co/mqtt/v2)
-[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/mochi-co/mqtt/issues)
+![build status](https://github.com/mochi-mqtt/server/actions/workflows/build.yml/badge.svg) 
+[![Coverage Status](https://coveralls.io/repos/github/mochi-mqtt/server/badge.svg?branch=master&v2)](https://coveralls.io/github/mochi-mqtt/server?branch=master)
+[![Go Report Card](https://goreportcard.com/badge/github.com/mochi-mqtt/server)](https://goreportcard.com/report/github.com/mochi-mqtt/server/v2)
+[![Go Reference](https://pkg.go.dev/badge/github.com/mochi-mqtt/server.svg)](https://pkg.go.dev/github.com/mochi-mqtt/server/v2)
+[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/mochi-mqtt/server/issues)
 
 </p>
 
@@ -24,7 +24,7 @@ Version 2.0.0 takes all the great things we loved about Mochi MQTT v1.0.0, learn
 
 Don't forget to use the new v2 import paths:
 ```go
-import "github.com/mochi-co/mqtt/v2"
+import "github.com/mochi-mqtt/server/v2"
 ```
 
 - Full MQTTv5 Feature Compliance, compatibility for MQTT v3.1.1 and v3.0.0:
@@ -59,7 +59,7 @@ Because of the overlap between the v5 specification and previous versions of mqt
 Support for MQTT v3.0.0 and v3.1.1 is considered hybrid-compatibility. Where not specifically restricted in the v3 specification, more modern and safety-first v5 behaviours are used instead - such as expiry for inflight and retained messages, and clients - and quality-of-service flow control limits.
 
 ## Roadmap
-- Please [open an issue](https://github.com/mochi-co/mqtt/issues) to request new features or event hooks!
+- Please [open an issue](https://github.com/mochi-mqtt/server/issues) to request new features or event hooks!
 - Cluster support.
 - Enhanced Metrics support.
 - File-based server configuration (supporting docker).
@@ -88,9 +88,9 @@ Importing Mochi MQTT as a package requires just a few lines of code to get start
 import (
   "log"
 
-  "github.com/mochi-co/mqtt/v2"
-  "github.com/mochi-co/mqtt/v2/hooks/auth"
-  "github.com/mochi-co/mqtt/v2/listeners"
+  "github.com/mochi-mqtt/server/v2"
+  "github.com/mochi-mqtt/server/v2/hooks/auth"
+  "github.com/mochi-mqtt/server/v2/listeners"
 )
 
 func main() {
@@ -161,14 +161,14 @@ Hooks are stackable - you can add multiple hooks to a server, and they will be r
 
 | Type | Import | Info |
 | -- | -- |  -- |
-| Access Control | [mochi-co/mqtt/hooks/auth . AllowHook](hooks/auth/allow_all.go) | Allow access to all connecting clients and read/write to  all topics. | 
-| Access Control | [mochi-co/mqtt/hooks/auth . Auth](hooks/auth/auth.go) | Rule-based access control ledger.  | 
-| Persistence | [mochi-co/mqtt/hooks/storage/bolt](hooks/storage/bolt/bolt.go)  | Persistent storage using [BoltDB](https://dbdb.io/db/boltdb) (deprecated). | 
-| Persistence | [mochi-co/mqtt/hooks/storage/badger](hooks/storage/badger/badger.go) | Persistent storage using [BadgerDB](https://github.com/dgraph-io/badger). | 
-| Persistence | [mochi-co/mqtt/hooks/storage/redis](hooks/storage/redis/redis.go)  | Persistent storage using [Redis](https://redis.io). | 
-| Debugging | [mochi-co/mqtt/hooks/debug](hooks/debug/debug.go) | Additional debugging output to visualise packet flow. | 
+| Access Control | [mochi-mqtt/server/hooks/auth . AllowHook](hooks/auth/allow_all.go) | Allow access to all connecting clients and read/write to  all topics. | 
+| Access Control | [mochi-mqtt/server/hooks/auth . Auth](hooks/auth/auth.go) | Rule-based access control ledger.  | 
+| Persistence | [mochi-mqtt/server/hooks/storage/bolt](hooks/storage/bolt/bolt.go)  | Persistent storage using [BoltDB](https://dbdb.io/db/boltdb) (deprecated). | 
+| Persistence | [mochi-mqtt/server/hooks/storage/badger](hooks/storage/badger/badger.go) | Persistent storage using [BadgerDB](https://github.com/dgraph-io/badger). | 
+| Persistence | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)  | Persistent storage using [Redis](https://redis.io). | 
+| Debugging | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go) | Additional debugging output to visualise packet flow. | 
 
-Many of the internal server functions are now exposed to developers, so you can make your own Hooks by using the above as examples. If you do, please [Open an issue](https://github.com/mochi-co/mqtt/issues) and let everyone know!
+Many of the internal server functions are now exposed to developers, so you can make your own Hooks by using the above as examples. If you do, please [Open an issue](https://github.com/mochi-mqtt/server/issues) and let everyone know!
 
 ### Access Control 
 #### Allow Hook
@@ -402,7 +402,7 @@ Million Message Challenge (hit the server with 1 million messages immediately):
 > Not sure what's going on with EMQX here, perhaps the docker out-of-the-box settings are not optimal, so take it with a pinch of salt as we know for a fact it's a solid piece of software.
 
 ## Contribution Guidelines
-Contributions and feedback are both welcomed and encouraged! [Open an issue](https://github.com/mochi-co/mqtt/issues) to report a bug, ask a question, or make a feature request. If you open a pull request, please try to follow the following guidelines:
+Contributions and feedback are both welcomed and encouraged! [Open an issue](https://github.com/mochi-mqtt/server/issues) to report a bug, ask a question, or make a feature request. If you open a pull request, please try to follow the following guidelines:
 - Try to maintain test coverage where reasonably possible.
 - Clearly state what the PR does and why.
 - Remember to add your SPDX FileContributor tag to files where you have made a meaningful contribution.
@@ -410,7 +410,7 @@ Contributions and feedback are both welcomed and encouraged! [Open an issue](htt
 [SPDX Annotations](https://spdx.dev) are used to clearly indicate the license, copyright, and contributions of each file in a machine-readable format. If you are adding a new file to the repository, please ensure it has the following SPDX header:
 ```go
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt
 // SPDX-FileContributor: Your name or alias <optional@email.address>
 
 package name
@@ -419,6 +419,6 @@ package name
 Please ensure to add a new `SPDX-FileContributor` line for each contributor to the file. Refer to other files for examples. Please remember to do this, your contributions to this project are valuable and appreciated - it's important to receive credit! 
 
 ## Stargazers over time 🥰
-[![Stargazers over time](https://starchart.cc/mochi-co/mqtt.svg)](https://starchart.cc/mochi-co/mqtt)
-Are you using Mochi MQTT in a project? [Let us know!](https://github.com/mochi-co/mqtt/issues)
+[![Stargazers over time](https://starchart.cc/mochi-mqtt/server.svg)](https://starchart.cc/mochi-mqtt/server)
+Are you using Mochi MQTT in a project? [Let us know!](https://github.com/mochi-mqtt/server/issues)
 
