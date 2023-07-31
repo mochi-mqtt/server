@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 J. Blake / mochi-co
+// SPDX-FileCopyrightText: 2023 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package mqtt
@@ -7,7 +7,7 @@ package mqtt
 import (
 	"testing"
 
-	"github.com/mochi-co/mqtt/v2/packets"
+	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/stretchr/testify/require"
 )
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package redis
@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mochi-co/mqtt/v2"
-	"github.com/mochi-co/mqtt/v2/hooks/storage"
-	"github.com/mochi-co/mqtt/v2/packets"
-	"github.com/mochi-co/mqtt/v2/system"
+	"github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/hooks/storage"
+	"github.com/mochi-mqtt/server/v2/packets"
+	"github.com/mochi-mqtt/server/v2/system"
 
 	miniredis "github.com/alicebob/miniredis/v2"
 	redis "github.com/go-redis/redis/v8"
