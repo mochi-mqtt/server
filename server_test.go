@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package mqtt
@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mochi-co/mqtt/v2/hooks/storage"
-	"github.com/mochi-co/mqtt/v2/listeners"
-	"github.com/mochi-co/mqtt/v2/packets"
-	"github.com/mochi-co/mqtt/v2/system"
+	"github.com/mochi-mqtt/server/v2/hooks/storage"
+	"github.com/mochi-mqtt/server/v2/listeners"
+	"github.com/mochi-mqtt/server/v2/packets"
+	"github.com/mochi-mqtt/server/v2/system"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
@@ -478,7 +478,7 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	require.Empty(t, cl.State.Subscriptions.GetAll())
 }
 
-// See https://github.com/mochi-co/mqtt/issues/173
+// See https://github.com/mochi-mqtt/server/issues/173
 func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 	s := newServer()
 	d := new(DelayHook)
@@ -748,7 +748,7 @@ func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
 	r.Close()
 }
 
-// See https://github.com/mochi-co/mqtt/issues/178
+// See https://github.com/mochi-mqtt/server/issues/178
 func TestServerEstablishConnectionZeroByteUsernameIsValid(t *testing.T) {
 	s := newServer()
 
