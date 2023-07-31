@@ -1,23 +1,25 @@
-
 <p align="center">
-
 ![build status](https://github.com/mochi-mqtt/server/actions/workflows/build.yml/badge.svg) 
 [![Coverage Status](https://coveralls.io/repos/github/mochi-mqtt/server/badge.svg?branch=master&v2)](https://coveralls.io/github/mochi-mqtt/server?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mochi-mqtt/server)](https://goreportcard.com/report/github.com/mochi-mqtt/server/v2)
 [![Go Reference](https://pkg.go.dev/badge/github.com/mochi-mqtt/server.svg)](https://pkg.go.dev/github.com/mochi-mqtt/server/v2)
 [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/mochi-mqtt/server/issues)
-
 </p>
 
 # Mochi MQTT Broker
-## The fully compliant, embeddable high-performance Go MQTT v5 (and v3.1.1) broker server 
+### The fully compliant, embeddable high-performance Go MQTT v5 (and v3.1.1) broker server 
+
+🎆 **mochi-co/mqtt is now part of the new mochi-mqtt organisation. [Read about this announcement here.](https://github.com/orgs/mochi-mqtt/discussions/271)**
+
 Mochi MQTT is an embeddable [fully compliant](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) MQTT v5 broker server written in Go, designed for the development of telemetry and internet-of-things projects. The server can be used either as a standalone binary or embedded as a library in your own applications, and has been designed to be as lightweight and fast as possible, with great care taken to ensure the quality and maintainability of the project. 
+
 
 ### What is MQTT?
 MQTT stands for [MQ Telemetry Transport](https://en.wikipedia.org/wiki/MQTT). It is a publish/subscribe, extremely simple and lightweight messaging protocol, designed for constrained devices and low-bandwidth, high-latency or unreliable networks ([Learn more](https://mqtt.org/faq)). Mochi MQTT fully implements version 5.0.0 of the MQTT protocol.
 
 ### When is this repo updated?
 Unless it's a critical issue, new releases typically go out over the weekend. 
+
 
 ## What's new in Version 2?
 Version 2.0.0 takes all the great things we loved about Mochi MQTT v1.0.0, learns from the mistakes, and improves on the things we wished we'd had. It's a total from-scratch rewrite, designed to fully implement MQTT v5 as a first-class feature. 
