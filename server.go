@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 // package mqtt provides a high performance, fully compliant MQTT v5 broker server with v3.1.1 backward compatibility.
@@ -17,16 +17,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mochi-co/mqtt/v2/hooks/storage"
-	"github.com/mochi-co/mqtt/v2/listeners"
-	"github.com/mochi-co/mqtt/v2/packets"
-	"github.com/mochi-co/mqtt/v2/system"
+	"github.com/mochi-mqtt/server/v2/hooks/storage"
+	"github.com/mochi-mqtt/server/v2/listeners"
+	"github.com/mochi-mqtt/server/v2/packets"
+	"github.com/mochi-mqtt/server/v2/system"
 
 	"github.com/rs/zerolog"
 )
 
 const (
-	Version                       = "2.2.15" // the current server version.
+	Version                       = "2.3.0"  // the current server version.
 	defaultSysTopicInterval int64 = 1        // the interval between $SYS topic publishes
 )
 
@@ -71,10 +71,11 @@ type Capabilities struct {
 
 // Compatibilities provides flags for using compatibility modes.
 type Compatibilities struct {
-	ObscureNotAuthorized     bool // return unspecified errors instead of not authorized
-	PassiveClientDisconnect  bool // don't disconnect the client forcefully after sending disconnect packet (paho)
-	AlwaysReturnResponseInfo bool // always return response info (useful for testing)
-	RestoreSysInfoOnRestart  bool // restore system info from store as if server never stopped
+	ObscureNotAuthorized       bool // return unspecified errors instead of not authorized
+	PassiveClientDisconnect    bool // don't disconnect the client forcefully after sending disconnect packet (paho - spec violation)
+	AlwaysReturnResponseInfo   bool // always return response info (useful for testing)
+	RestoreSysInfoOnRestart    bool // restore system info from store as if server never stopped
+	NoInheritedPropertiesOnAck bool // don't allow inherited user properties on ack (paho - spec violation)
 }
 
 // Options contains configurable options for the server.
@@ -715,9 +716,18 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		pk.FixedHeader.Qos = s.Options.Capabilities.MaximumQos // [MQTT-3.2.2-9] Reduce Qos based on server max qos capability
 	}
 
-	if pkx, err := s.hooks.OnPublish(cl, pk); err == nil {
+	pkx, err := s.hooks.OnPublish(cl, pk)
+	if err == nil {
 		pk = pkx
 	} else if errors.Is(err, packets.ErrRejectPacket) {
+		return nil
+	} else if errors.Is(err, packets.CodeSuccessIgnore) {
+		pk.Ignore = true
+	} else if cl.Properties.ProtocolVersion == 5 && pk.FixedHeader.Qos > 0 && errors.As(err, new(packets.Code)) {
+		err = cl.WritePacket(s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, err.(packets.Code)))
+		if err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -742,7 +752,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		s.hooks.OnQosPublish(cl, ack, ack.Created, 0)
 	}
 
-	err := cl.WritePacket(ack)
+	err = cl.WritePacket(ack)
 	if err != nil {
 		return err
 	}
@@ -764,7 +774,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 // retainMessage adds a message to a topic, and if a persistent store is provided,
 // adds the message to the store to be reloaded if necessary.
 func (s *Server) retainMessage(cl *Client, pk packets.Packet) {
-	if s.Options.Capabilities.RetainAvailable == 0 {
+	if s.Options.Capabilities.RetainAvailable == 0 || pk.Ignore {
 		return
 	}
 
@@ -776,6 +786,10 @@ func (s *Server) retainMessage(cl *Client, pk packets.Packet) {
 
 // publishToSubscribers publishes a publish packet to all subscribers with matching topic filters.
 func (s *Server) publishToSubscribers(pk packets.Packet) {
+	if pk.Ignore {
+		return
+	}
+
 	if pk.Created == 0 {
 		pk.Created = time.Now().Unix()
 	}
@@ -905,7 +919,9 @@ func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, e
 
 // buildAck builds a standardised ack message for Puback, Pubrec, Pubrel, Pubcomp packets.
 func (s *Server) buildAck(packetID uint16, pkt, qos byte, properties packets.Properties, reason packets.Code) packets.Packet {
-	properties = packets.Properties{} // PRL
+	if s.Options.Capabilities.Compatibilities.NoInheritedPropertiesOnAck {
+		properties = packets.Properties{}
+	}
 	if reason.Code >= packets.ErrUnspecifiedError.Code {
 		properties.ReasonString = reason.Reason
 	}
@@ -1144,7 +1160,7 @@ func (s *Server) UnsubscribeClient(cl *Client) {
 		filters[i] = v
 		i++
 	}
-	s.hooks.OnUnsubscribed(cl, packets.Packet{Filters: filters})
+	s.hooks.OnUnsubscribed(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Unsubscribe}, Filters: filters})
 }
 
 // processAuth processes an Auth packet.
