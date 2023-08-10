@@ -11,10 +11,11 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"log/slog"
+
 	"github.com/mochi-co/mqtt/v2/hooks/storage"
 	"github.com/mochi-co/mqtt/v2/packets"
 	"github.com/mochi-co/mqtt/v2/system"
-	"golang.org/x/exp/slog"
 )
 
 const (

@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"log/slog"
+
 	"github.com/mochi-co/mqtt/v2"
 	"github.com/mochi-co/mqtt/v2/hooks/storage"
 	"github.com/mochi-co/mqtt/v2/packets"
 	"github.com/mochi-co/mqtt/v2/system"
-	"golang.org/x/exp/slog"
 
 	miniredis "github.com/alicebob/miniredis/v2"
 	redis "github.com/go-redis/redis/v8"

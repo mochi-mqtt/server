@@ -15,8 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"log/slog"
+
 	"github.com/rs/xid"
-	"golang.org/x/exp/slog"
 
 	"github.com/mochi-co/mqtt/v2/packets"
 )

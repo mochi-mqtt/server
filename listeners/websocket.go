@@ -14,8 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"log/slog"
+
 	"github.com/gorilla/websocket"
-	"golang.org/x/exp/slog"
 )
 
 var (

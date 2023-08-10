@@ -10,11 +10,12 @@ import (
 	"errors"
 	"time"
 
+	"log/slog"
+
 	"github.com/mochi-co/mqtt/v2"
 	"github.com/mochi-co/mqtt/v2/hooks/storage"
 	"github.com/mochi-co/mqtt/v2/packets"
 	"github.com/mochi-co/mqtt/v2/system"
-	"golang.org/x/exp/slog"
 
 	sgob "github.com/asdine/storm/codec/gob"
 	"github.com/asdine/storm/v3"

@@ -8,10 +8,11 @@ import (
 	"os"
 	"testing"
 
+	"log/slog"
+
 	"github.com/mochi-co/mqtt/v2"
 	"github.com/mochi-co/mqtt/v2/packets"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slog"
 )
 
 var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))

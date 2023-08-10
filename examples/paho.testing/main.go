@@ -12,10 +12,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"log/slog"
+
 	"github.com/mochi-co/mqtt/v2"
 	"github.com/mochi-co/mqtt/v2/listeners"
 	"github.com/mochi-co/mqtt/v2/packets"
-	"golang.org/x/exp/slog"
 )
 
 func main() {

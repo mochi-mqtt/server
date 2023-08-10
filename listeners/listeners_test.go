@@ -11,8 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"log/slog"
+
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slog"
 )
 
 const testAddr = ":22222"

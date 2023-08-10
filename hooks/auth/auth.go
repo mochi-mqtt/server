@@ -8,9 +8,10 @@ import (
 	"bytes"
 	"context"
 
+	"log/slog"
+
 	"github.com/mochi-co/mqtt/v2"
 	"github.com/mochi-co/mqtt/v2/packets"
-	"golang.org/x/exp/slog"
 )
 
 // Options contains the configuration/rules data for the auth ledger.

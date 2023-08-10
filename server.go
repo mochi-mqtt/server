@@ -23,7 +23,7 @@ import (
 	"github.com/mochi-co/mqtt/v2/packets"
 	"github.com/mochi-co/mqtt/v2/system"
 
-	"golang.org/x/exp/slog"
+	"log/slog"
 )
 
 const (

@@ -13,8 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"log/slog"
+
 	"github.com/mochi-co/mqtt/v2/system"
-	"golang.org/x/exp/slog"
 )
 
 // HTTPStats is a listener for presenting the server $SYS stats on a JSON http endpoint.

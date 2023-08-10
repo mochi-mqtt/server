@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/exp/slog"
+	"log/slog"
 )
 
 // HTTPHealthCheck is a listener for providing an HTTP healthcheck endpoint.

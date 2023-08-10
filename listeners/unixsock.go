@@ -11,7 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"golang.org/x/exp/slog"
+	"log/slog"
 )
 
 // UnixSock is a listener for establishing client connections on basic UnixSock protocol.
