@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
