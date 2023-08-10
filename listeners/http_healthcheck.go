@@ -6,12 +6,11 @@ package listeners
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"log/slog"
 )
 
 // HTTPHealthCheck is a listener for providing an HTTP healthcheck endpoint.
