@@ -1,7 +1,8 @@
 
 The MIT License (MIT)
 
-Copyright (c) 2019, 2022 Jonathan Blake (mochi-co)
+Copyright (c) 2023 Mochi-MQTT Organisation
+Copyright (c) 2019, 2022, 2023 Jonathan Blake (mochi-co)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

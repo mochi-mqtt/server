@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package listeners
@@ -100,7 +100,7 @@ func (l *Websocket) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 
-	err = l.establish(l.id, &wsConn{c.UnderlyingConn(), c})
+	err = l.establish(l.id, &wsConn{Conn: c.UnderlyingConn(), c: c})
 	if err != nil {
 		l.log.LogAttrs(context.Background(), slog.LevelWarn, "", slog.String("error", err.Error()))
 	}
@@ -136,25 +136,41 @@ func (l *Websocket) Close(closeClients CloseFn) {
 type wsConn struct {
 	net.Conn
 	c *websocket.Conn
+
+	// reader for the current message (may be nil)
+	r io.Reader
 }
 
 // Read reads the next span of bytes from the websocket connection and returns the number of bytes read.
 func (ws *wsConn) Read(p []byte) (int, error) {
-	op, r, err := ws.c.NextReader()
-	if err != nil {
-		return 0, err
+	if ws.r == nil {
+		op, r, err := ws.c.NextReader()
+		if err != nil {
+			return 0, err
+		}
+
+		if op != websocket.BinaryMessage {
+			err = ErrInvalidMessage
+			return 0, err
+		}
+
+		ws.r = r
 	}
 
-	if op != websocket.BinaryMessage {
-		err = ErrInvalidMessage
-		return 0, err
-	}
-
-	var n, br int
+	var n int
 	for {
-		br, err = r.Read(p[n:])
+		// buffer is full, return what we've read so far
+		if n == len(p) {
+			return n, nil
+		}
+
+		br, err := ws.r.Read(p[n:])
 		n += br
 		if err != nil {
+			// when ANY error occurs, we consider this the end of the current message (either because it really is, via
+			// io.EOF, or because something bad happened, in which case we want to drop the remainder)
+			ws.r = nil
+
 			if errors.Is(err, io.EOF) {
 				err = nil
 			}

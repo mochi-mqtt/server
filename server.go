@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 // package mqtt provides a high performance, fully compliant MQTT v5 broker server with v3.1.1 backward compatibility.
@@ -18,16 +18,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mochi-co/mqtt/v2/hooks/storage"
-	"github.com/mochi-co/mqtt/v2/listeners"
-	"github.com/mochi-co/mqtt/v2/packets"
-	"github.com/mochi-co/mqtt/v2/system"
+	"github.com/mochi-mqtt/server/v2/hooks/storage"
+	"github.com/mochi-mqtt/server/v2/listeners"
+	"github.com/mochi-mqtt/server/v2/packets"
+	"github.com/mochi-mqtt/server/v2/system"
 
 	"log/slog"
 )
 
 const (
-	Version                       = "2.2.14" // the current server version.
+	Version                       = "2.3.0"  // the current server version.
 	defaultSysTopicInterval int64 = 1        // the interval between $SYS topic publishes
 )
 
@@ -72,10 +72,11 @@ type Capabilities struct {
 
 // Compatibilities provides flags for using compatibility modes.
 type Compatibilities struct {
-	ObscureNotAuthorized     bool // return unspecified errors instead of not authorized
-	PassiveClientDisconnect  bool // don't disconnect the client forcefully after sending disconnect packet (paho)
-	AlwaysReturnResponseInfo bool // always return response info (useful for testing)
-	RestoreSysInfoOnRestart  bool // restore system info from store as if server never stopped
+	ObscureNotAuthorized       bool // return unspecified errors instead of not authorized
+	PassiveClientDisconnect    bool // don't disconnect the client forcefully after sending disconnect packet (paho - spec violation)
+	AlwaysReturnResponseInfo   bool // always return response info (useful for testing)
+	RestoreSysInfoOnRestart    bool // restore system info from store as if server never stopped
+	NoInheritedPropertiesOnAck bool // don't allow inherited user properties on ack (paho - spec violation)
 }
 
 // Options contains configurable options for the server.
@@ -360,6 +361,8 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 
 	atomic.AddInt64(&s.Info.ClientsConnected, 1)
 	defer atomic.AddInt64(&s.Info.ClientsConnected, -1)
+
+	s.hooks.OnSessionEstablish(cl, pk)
 
 	sessionPresent := s.inheritClientSession(pk, cl)
 	s.Clients.Add(cl) // [MQTT-4.1.0-1]
@@ -747,9 +750,18 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		pk.FixedHeader.Qos = s.Options.Capabilities.MaximumQos // [MQTT-3.2.2-9] Reduce Qos based on server max qos capability
 	}
 
-	if pkx, err := s.hooks.OnPublish(cl, pk); err == nil {
+	pkx, err := s.hooks.OnPublish(cl, pk)
+	if err == nil {
 		pk = pkx
 	} else if errors.Is(err, packets.ErrRejectPacket) {
+		return nil
+	} else if errors.Is(err, packets.CodeSuccessIgnore) {
+		pk.Ignore = true
+	} else if cl.Properties.ProtocolVersion == 5 && pk.FixedHeader.Qos > 0 && errors.As(err, new(packets.Code)) {
+		err = cl.WritePacket(s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, err.(packets.Code)))
+		if err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -774,7 +786,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		s.hooks.OnQosPublish(cl, ack, ack.Created, 0)
 	}
 
-	err := cl.WritePacket(ack)
+	err = cl.WritePacket(ack)
 	if err != nil {
 		return err
 	}
@@ -796,6 +808,10 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 // retainMessage adds a message to a topic, and if a persistent store is provided,
 // adds the message to the store to be reloaded if necessary.
 func (s *Server) retainMessage(cl *Client, pk packets.Packet) {
+	if s.Options.Capabilities.RetainAvailable == 0 || pk.Ignore {
+		return
+	}
+
 	out := pk.Copy(false)
 	r := s.Topics.RetainMessage(out)
 	s.hooks.OnRetainMessage(cl, pk, r)
@@ -804,6 +820,10 @@ func (s *Server) retainMessage(cl *Client, pk packets.Packet) {
 
 // publishToSubscribers publishes a publish packet to all subscribers with matching topic filters.
 func (s *Server) publishToSubscribers(pk packets.Packet) {
+	if pk.Ignore {
+		return
+	}
+
 	if pk.Created == 0 {
 		pk.Created = time.Now().Unix()
 	}
@@ -840,7 +860,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	}
 
 	out := pk.Copy(false)
-	if cl.Properties.ProtocolVersion == 5 && !sub.RetainAsPublished { // ![MQTT-3.3.1-13]
+	if !sub.FwdRetainedFlag && ((cl.Properties.ProtocolVersion == 5 && !sub.RetainAsPublished) || cl.Properties.ProtocolVersion < 5) { // ![MQTT-3.3.1-13] [v3 MQTT-3.3.1-9]
 		out.FixedHeader.Retain = false // [MQTT-3.3.1-12]
 	}
 
@@ -850,6 +870,10 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 			out.Properties.SubscriptionIdentifier = append(out.Properties.SubscriptionIdentifier, id) // [MQTT-3.3.4-4] ![MQTT-3.3.4-5]
 		}
 		sort.Ints(out.Properties.SubscriptionIdentifier)
+	}
+
+	if out.FixedHeader.Qos > sub.Qos {
+		out.FixedHeader.Qos = sub.Qos
 	}
 
 	if out.FixedHeader.Qos > s.Options.Capabilities.MaximumQos {
@@ -921,6 +945,7 @@ func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, e
 		return
 	}
 
+	sub.FwdRetainedFlag = true
 	for _, pkv := range s.Topics.Messages(sub.Filter) { // [MQTT-3.8.4-4]
 		_, err := s.publishToClient(cl, sub, pkv)
 		if err != nil {
@@ -937,7 +962,9 @@ func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, e
 
 // buildAck builds a standardised ack message for Puback, Pubrec, Pubrel, Pubcomp packets.
 func (s *Server) buildAck(packetID uint16, pkt, qos byte, properties packets.Properties, reason packets.Code) packets.Packet {
-	properties = packets.Properties{} // PRL
+	if s.Options.Capabilities.Compatibilities.NoInheritedPropertiesOnAck {
+		properties = packets.Properties{}
+	}
 	if reason.Code >= packets.ErrUnspecifiedError.Code {
 		properties.ReasonString = reason.Reason
 	}
@@ -1176,7 +1203,7 @@ func (s *Server) UnsubscribeClient(cl *Client) {
 		filters[i] = v
 		i++
 	}
-	s.hooks.OnUnsubscribed(cl, packets.Packet{Filters: filters})
+	s.hooks.OnUnsubscribed(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Unsubscribe}, Filters: filters})
 }
 
 // processAuth processes an Auth packet.

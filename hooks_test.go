@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package mqtt
@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mochi-co/mqtt/v2/hooks/storage"
-	"github.com/mochi-co/mqtt/v2/packets"
-	"github.com/mochi-co/mqtt/v2/system"
+	"github.com/mochi-mqtt/server/v2/hooks/storage"
+	"github.com/mochi-mqtt/server/v2/packets"
+	"github.com/mochi-mqtt/server/v2/system"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -235,6 +236,7 @@ func TestHooksNonReturns(t *testing.T) {
 			h.OnStarted()
 			h.OnStopped()
 			h.OnSysInfoTick(new(system.Info))
+			h.OnSessionEstablish(cl, packets.Packet{})
 			h.OnSessionEstablished(cl, packets.Packet{})
 			h.OnDisconnect(cl, nil, false)
 			h.OnPacketSent(cl, packets.Packet{}, []byte{})

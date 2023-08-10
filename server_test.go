@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package mqtt
@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -15,12 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"log/slog"
+	"github.com/mochi-mqtt/server/v2/hooks/storage"
+	"github.com/mochi-mqtt/server/v2/listeners"
+	"github.com/mochi-mqtt/server/v2/packets"
+	"github.com/mochi-mqtt/server/v2/system"
 
-	"github.com/mochi-co/mqtt/v2/hooks/storage"
-	"github.com/mochi-co/mqtt/v2/listeners"
-	"github.com/mochi-co/mqtt/v2/packets"
-	"github.com/mochi-co/mqtt/v2/system"
 	"github.com/stretchr/testify/require"
 )
 
@@ -490,7 +490,7 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	require.Empty(t, cl.State.Subscriptions.GetAll())
 }
 
-// See https://github.com/mochi-co/mqtt/issues/173
+// See https://github.com/mochi-mqtt/server/issues/173
 func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 	s := newServer()
 	d := new(DelayHook)
@@ -760,7 +760,7 @@ func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
 	r.Close()
 }
 
-// See https://github.com/mochi-co/mqtt/issues/178
+// See https://github.com/mochi-mqtt/server/issues/178
 func TestServerEstablishConnectionZeroByteUsernameIsValid(t *testing.T) {
 	s := newServer()
 
@@ -1206,8 +1206,52 @@ func TestServerProcessPacketPublishAndReceive(t *testing.T) {
 		w2.Close()
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes, <-receiverBuf)
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
 	require.Equal(t, 1, len(s.Topics.Messages("a/b/c")))
+}
+
+func TestServerBuildAck(t *testing.T) {
+	s := newServer()
+	properties := packets.Properties{
+		User: []packets.UserProperty{
+			{Key: "hello", Val: "世界"},
+		},
+	}
+	ack := s.buildAck(7, packets.Puback, 1, properties, packets.CodeGrantedQos1)
+	require.Equal(t, packets.Puback, ack.FixedHeader.Type)
+	require.Equal(t, uint8(1), ack.FixedHeader.Qos)
+	require.Equal(t, packets.CodeGrantedQos1.Code, ack.ReasonCode)
+	require.Equal(t, properties, ack.Properties)
+}
+
+func TestServerBuildAckError(t *testing.T) {
+	s := newServer()
+	properties := packets.Properties{
+		User: []packets.UserProperty{
+			{Key: "hello", Val: "世界"},
+		},
+	}
+	ack := s.buildAck(7, packets.Puback, 1, properties, packets.ErrMalformedPacket)
+	require.Equal(t, packets.Puback, ack.FixedHeader.Type)
+	require.Equal(t, uint8(1), ack.FixedHeader.Qos)
+	require.Equal(t, packets.ErrMalformedPacket.Code, ack.ReasonCode)
+	properties.ReasonString = packets.ErrMalformedPacket.Reason
+	require.Equal(t, properties, ack.Properties)
+}
+
+func TestServerBuildAckPahoCompatibility(t *testing.T) {
+	s := newServer()
+	s.Options.Capabilities.Compatibilities.NoInheritedPropertiesOnAck = true
+	properties := packets.Properties{
+		User: []packets.UserProperty{
+			{Key: "hello", Val: "世界"},
+		},
+	}
+	ack := s.buildAck(7, packets.Puback, 1, properties, packets.CodeGrantedQos1)
+	require.Equal(t, packets.Puback, ack.FixedHeader.Type)
+	require.Equal(t, uint8(1), ack.FixedHeader.Qos)
+	require.Equal(t, packets.CodeGrantedQos1.Code, ack.ReasonCode)
+	require.Equal(t, packets.Properties{}, ack.Properties)
 }
 
 func TestServerProcessPacketAndNextImmediate(t *testing.T) {
@@ -1234,7 +1278,7 @@ func TestServerProcessPacketAndNextImmediate(t *testing.T) {
 	require.Equal(t, int32(4), cl.State.Inflight.sendQuota)
 }
 
-func TestServerProcessPacketPublishAckFailure(t *testing.T) {
+func TestServerProcessPublishAckFailure(t *testing.T) {
 	s := newServer()
 	s.Serve()
 	defer s.Close()
@@ -1246,6 +1290,91 @@ func TestServerProcessPacketPublishAckFailure(t *testing.T) {
 	err := s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet)
 	require.Error(t, err)
 	require.ErrorIs(t, err, io.ErrClosedPipe)
+}
+
+func TestServerProcessPublishOnPublishAckErrorRWError(t *testing.T) {
+	s := newServer()
+	hook := new(modifiedHookBase)
+	hook.fail = true
+	hook.err = packets.ErrUnspecifiedError
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
+
+	cl, _, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+	w.Close()
+
+	err = s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+	require.Error(t, err)
+	require.ErrorIs(t, err, io.ErrClosedPipe)
+}
+
+func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
+	s := newServer()
+	hook := new(modifiedHookBase)
+	hook.fail = true
+	hook.err = packets.ErrPayloadFormatInvalid
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
+	s.Serve()
+	defer s.Close()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+		require.NoError(t, err)
+		w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPubackUnexpectedError).RawBytes, buf)
+}
+
+func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
+	s := newServer()
+	hook := new(modifiedHookBase)
+	hook.fail = true
+	hook.err = packets.CodeSuccessIgnore
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
+	s.Serve()
+	defer s.Close()
+
+	cl, r, w := newTestClient()
+	s.Clients.Add(cl)
+
+	receiver, r2, w2 := newTestClient()
+	receiver.ID = "receiver"
+	s.Clients.Add(receiver)
+	s.Topics.Subscribe(receiver.ID, packets.Subscription{Filter: "a/b/c"})
+
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.PacketsReceived))
+	require.Equal(t, 0, len(s.Topics.Messages("a/b/c")))
+
+	receiverBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r2)
+		require.NoError(t, err)
+		receiverBuf <- buf
+	}()
+
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+		require.NoError(t, err)
+		w.Close()
+		w2.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPuback).RawBytes, buf)
+	require.Equal(t, []byte{}, <-receiverBuf)
+	require.Equal(t, 0, len(s.Topics.Messages("a/b/c")))
 }
 
 func TestServerProcessPacketPublishMaximumReceive(t *testing.T) {
@@ -1549,6 +1678,31 @@ func TestPublishToSubscribersIdentifiers(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishSubscriberIdentifier).RawBytes, <-receiverBuf)
 }
 
+func TestPublishToSubscribersPkIgnore(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	s.Clients.Add(cl)
+	subbed := s.Topics.Subscribe(cl.ID, packets.Subscription{Filter: "#", Identifier: 1})
+	require.True(t, subbed)
+
+	go func() {
+		pk := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+		pk.Ignore = true
+		s.publishToSubscribers(pk)
+		time.Sleep(time.Millisecond)
+		w.Close()
+	}()
+
+	receiverBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r)
+		require.NoError(t, err)
+		receiverBuf <- buf
+	}()
+
+	require.Equal(t, []byte{}, <-receiverBuf)
+}
+
 func TestPublishToClientServerDowngradeQos(t *testing.T) {
 	s := newServer()
 	s.Options.Capabilities.MaximumQos = 1
@@ -1564,6 +1718,35 @@ func TestPublishToClientServerDowngradeQos(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 		pkx.FixedHeader.Qos = 2
 		s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, pkx)
+		time.Sleep(time.Microsecond * 100)
+		w.Close()
+	}()
+
+	receiverBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r)
+		require.NoError(t, err)
+		receiverBuf <- buf
+	}()
+
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes, <-receiverBuf)
+}
+
+func TestPublishToClientSubscriptionDowngradeQos(t *testing.T) {
+	s := newServer()
+	s.Options.Capabilities.MaximumQos = 2
+
+	cl, r, w := newTestClient()
+	s.Clients.Add(cl)
+
+	_, ok := cl.State.Inflight.Get(1)
+	require.False(t, ok)
+	cl.State.packetID = 6 // just to match the same packet id (7) in the fixtures
+
+	go func() {
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
+		pkx.FixedHeader.Qos = 2
+		s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, pkx)
 		time.Sleep(time.Microsecond * 100)
 		w.Close()
 	}()
@@ -1635,6 +1818,29 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 	require.Equal(t, append(pk1, pk2...), ret)
 }
 
+func TestPublishToClientMqtt3RetainFalseLeverageNoConn(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	cl.Net.Conn = nil
+
+	out, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", RetainAsPublished: true}, *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.False(t, out.FixedHeader.Retain)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.CodeDisconnect)
+}
+
+func TestPublishToClientMqtt5RetainAsPublishedTrueLeverageNoConn(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	cl.Net.Conn = nil
+
+	out, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", RetainAsPublished: true}, *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.True(t, out.FixedHeader.Retain)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.CodeDisconnect)
+}
+
 func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -1642,7 +1848,7 @@ func TestPublishToClientExhaustedPacketID(t *testing.T) {
 		cl.State.Inflight.Set(packets.Packet{PacketID: uint16(i)})
 	}
 
-	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c"}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
 }
@@ -1794,6 +2000,36 @@ func TestPublishRetainedToClientError(t *testing.T) {
 
 	w.Close()
 	s.publishRetainedToClient(cl, sub, false)
+}
+
+func TestNoRetainMessageIfUnavailable(t *testing.T) {
+	s := newServer()
+	s.Options.Capabilities.RetainAvailable = 0
+	cl, _, _ := newTestClient()
+	s.Clients.Add(cl)
+
+	s.retainMessage(new(Client), *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Retained))
+}
+
+func TestNoRetainMessageIfPkIgnore(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	s.Clients.Add(cl)
+
+	pk := *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet
+	pk.Ignore = true
+	s.retainMessage(new(Client), pk)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Retained))
+}
+
+func TestNoRetainMessage(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	s.Clients.Add(cl)
+
+	s.retainMessage(new(Client), *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Retained))
 }
 
 func TestServerProcessPacketPuback(t *testing.T) {
@@ -2659,7 +2895,7 @@ func TestServerSendLWTRetain(t *testing.T) {
 		w2.Close()
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes, <-receiverBuf)
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
 }
 
 func TestServerSendLWTDelayed(t *testing.T) {
@@ -2700,7 +2936,7 @@ func TestServerSendLWTDelayed(t *testing.T) {
 		recv <- buf
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).RawBytes, <-recv)
+	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-recv)
 }
 
 func TestServerReadStore(t *testing.T) {

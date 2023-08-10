@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co, thedevop
 
 package mqtt
@@ -8,14 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 
-	"log/slog"
-
-	"github.com/mochi-co/mqtt/v2/hooks/storage"
-	"github.com/mochi-co/mqtt/v2/packets"
-	"github.com/mochi-co/mqtt/v2/system"
+	"github.com/mochi-mqtt/server/v2/hooks/storage"
+	"github.com/mochi-mqtt/server/v2/packets"
+	"github.com/mochi-mqtt/server/v2/system"
 )
 
 const (
@@ -26,6 +25,7 @@ const (
 	OnConnectAuthenticate
 	OnACLCheck
 	OnConnect
+	OnSessionEstablish
 	OnSessionEstablished
 	OnDisconnect
 	OnAuthPacket
@@ -77,6 +77,7 @@ type Hook interface {
 	OnACLCheck(cl *Client, topic string, write bool) bool
 	OnSysInfoTick(*system.Info)
 	OnConnect(cl *Client, pk packets.Packet) error
+	OnSessionEstablish(cl *Client, pk packets.Packet)
 	OnSessionEstablished(cl *Client, pk packets.Packet)
 	OnDisconnect(cl *Client, err error, expire bool)
 	OnAuthPacket(cl *Client, pk packets.Packet) (packets.Packet, error)
@@ -228,6 +229,16 @@ func (h *Hooks) OnConnect(cl *Client, pk packets.Packet) error {
 		}
 	}
 	return nil
+}
+
+// OnSessionEstablish is called right after a new client connects and authenticates and right before
+// the session is established and CONNACK is sent.
+func (h *Hooks) OnSessionEstablish(cl *Client, pk packets.Packet) {
+	for _, hook := range h.GetAll() {
+		if hook.Provides(OnSessionEstablish) {
+			hook.OnSessionEstablish(cl, pk)
+		}
+	}
 }
 
 // OnSessionEstablished is called when a new client establishes a session (after OnConnect).
@@ -740,6 +751,10 @@ func (h *HookBase) OnACLCheck(cl *Client, topic string, write bool) bool {
 func (h *HookBase) OnConnect(cl *Client, pk packets.Packet) error {
 	return nil
 }
+
+// OnSessionEstablish is called right after a new client connects and authenticates and right before
+// the session is established and CONNACK is sent.
+func (h *HookBase) OnSessionEstablish(cl *Client, pk packets.Packet) {}
 
 // OnSessionEstablished is called when a new client establishes a session (after OnConnect).
 func (h *HookBase) OnSessionEstablished(cl *Client, pk packets.Packet) {}

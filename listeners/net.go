@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2023 mochi-co
+// SPDX-FileCopyrightText: 2023 mochi-mqtt, mochi-co
 // SPDX-FileContributor: Jeroen Rinzema
 
 package listeners

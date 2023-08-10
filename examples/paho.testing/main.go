@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package main
@@ -8,15 +8,14 @@ import (
 	"bytes"
 	"context"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"log/slog"
-
-	"github.com/mochi-co/mqtt/v2"
-	"github.com/mochi-co/mqtt/v2/listeners"
-	"github.com/mochi-co/mqtt/v2/packets"
+	mqtt "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/listeners"
+	"github.com/mochi-mqtt/server/v2/packets"
 )
 
 func main() {
@@ -31,6 +30,7 @@ func main() {
 	server := mqtt.New(nil)
 	server.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true
 	server.Options.Capabilities.Compatibilities.PassiveClientDisconnect = true
+	server.Options.Capabilities.Compatibilities.NoInheritedPropertiesOnAck = true
 
 	_ = server.AddHook(new(pahoAuthHook), nil)
 	tcp := listeners.NewTCP("t1", ":1883", nil)
