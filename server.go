@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	Version                       = "2.3.0"  // the current server version.
-	defaultSysTopicInterval int64 = 1        // the interval between $SYS topic publishes
+	Version                       = "2.3.0" // the current server version.
+	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 )
 
 var (
@@ -53,29 +53,29 @@ var (
 
 // Capabilities indicates the capabilities and features provided by the server.
 type Capabilities struct {
-	MaximumMessageExpiryInterval int64
-	MaximumClientWritesPending   int32
-	MaximumSessionExpiryInterval uint32
-	MaximumPacketSize            uint32
-	maximumPacketID              uint32 // unexported, used for testing only
-	ReceiveMaximum               uint16
-	TopicAliasMaximum            uint16
-	SharedSubAvailable           byte
-	MinimumProtocolVersion       byte
-	Compatibilities              Compatibilities
-	MaximumQos                   byte
-	RetainAvailable              byte
-	WildcardSubAvailable         byte
-	SubIDAvailable               byte
+	MaximumMessageExpiryInterval int64           `yaml:"maximum_message_expiry_interval"`
+	MaximumClientWritesPending   int32           `yaml:"maximum_client_writes_pending"`
+	MaximumSessionExpiryInterval uint32          `yaml:"maximum_session_expiry_interval"`
+	MaximumPacketSize            uint32          `yaml:"maximum_packet_size"`
+	maximumPacketID              uint32          // unexported, used for testing only
+	ReceiveMaximum               uint16          `yaml:"receive_maximum"`
+	TopicAliasMaximum            uint16          `yaml:"topic_alias_maximum"`
+	SharedSubAvailable           byte            `yaml:"shared_sub_available"`
+	MinimumProtocolVersion       byte            `yaml:"minimum_protocol_version"`
+	Compatibilities              Compatibilities `yaml:"compatibilities"`
+	MaximumQos                   byte            `yaml:"maximum_qos"`
+	RetainAvailable              byte            `yaml:"retain_available"`
+	WildcardSubAvailable         byte            `yaml:"wildcard_sub_available"`
+	SubIDAvailable               byte            `yaml:"sub_id_available"`
 }
 
 // Compatibilities provides flags for using compatibility modes.
 type Compatibilities struct {
-	ObscureNotAuthorized       bool // return unspecified errors instead of not authorized
-	PassiveClientDisconnect    bool // don't disconnect the client forcefully after sending disconnect packet (paho - spec violation)
-	AlwaysReturnResponseInfo   bool // always return response info (useful for testing)
-	RestoreSysInfoOnRestart    bool // restore system info from store as if server never stopped
-	NoInheritedPropertiesOnAck bool // don't allow inherited user properties on ack (paho - spec violation)
+	ObscureNotAuthorized       bool `yaml:"obscure_not_authorized"`         // return unspecified errors instead of not authorized
+	PassiveClientDisconnect    bool `yaml:"passive_client_disconnect"`      // don't disconnect the client forcefully after sending disconnect packet (paho - spec violation)
+	AlwaysReturnResponseInfo   bool `yaml:"always_return_response_info"`    // always return response info (useful for testing)
+	RestoreSysInfoOnRestart    bool `yaml:"restore_sys_info_on_restart"`    // restore system info from store as if server never stopped
+	NoInheritedPropertiesOnAck bool `yaml:"no_inherited_properties_on_ack"` // don't allow inherited user properties on ack (paho - spec violation)
 }
 
 // Options contains configurable options for the server.
@@ -83,13 +83,13 @@ type Options struct {
 	// Capabilities defines the server features and behaviour. If you only wish to modify
 	// several of these values, set them explicitly - e.g.
 	// 	server.Options.Capabilities.MaximumClientWritesPending = 16 * 1024
-	Capabilities *Capabilities
+	Capabilities *Capabilities `yaml:"capabilities"`
 
 	// ClientNetWriteBufferSize specifies the size of the client *bufio.Writer write buffer.
-	ClientNetWriteBufferSize int
+	ClientNetWriteBufferSize int `yaml:"client_net_write_buffer_size"`
 
 	// ClientNetReadBufferSize specifies the size of the client *bufio.Reader read buffer.
-	ClientNetReadBufferSize int
+	ClientNetReadBufferSize int `yaml:"client_net_read_buffer_size"`
 
 	// Logger specifies a custom configured implementation of zerolog to override
 	// the servers default logger configuration. If you wish to change the log level,
@@ -100,7 +100,7 @@ type Options struct {
 	Logger *zerolog.Logger
 
 	// SysTopicResendInterval specifies the interval between $SYS topic updates in seconds.
-	SysTopicResendInterval int64
+	SysTopicResendInterval int64 `yaml:"sys_topic_resend_interval"`
 }
 
 // Server is an MQTT broker server. It should be created with server.New()
