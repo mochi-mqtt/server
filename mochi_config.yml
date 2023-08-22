@@ -1,6 +1,0 @@
-server:
-  options:
-    client_net_write_buffer_size: 1108
-    capabilities:
-      compatibilities:
-        obscure_not_authorized: true

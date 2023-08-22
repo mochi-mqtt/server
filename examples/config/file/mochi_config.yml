@@ -1,0 +1,15 @@
+server:
+  hooks:
+    allow_all: true
+  listeners:
+    healthcheck:
+      port: 8080
+    tcp:
+      port: 1883
+  logging:
+    level: DEBUG
+  options:
+    # capabilities:
+    #   compatibilities:
+    #     obscure_not_authorized: true
+    

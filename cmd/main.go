@@ -7,7 +7,6 @@ package main
 import (
 	"flag"
 	"log"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,14 +20,7 @@ func main() {
 	tcpAddr := flag.String("tcp", ":1883", "network address for TCP listener")
 	wsAddr := flag.String("ws", ":1882", "network address for Websocket listener")
 	infoAddr := flag.String("info", ":8080", "network address for web info dashboard listener")
-	filePath := flag.String("file", "", "file used for server configuration")
 	flag.Parse()
-
-	options, err := mqtt.OpenConfigFile(*filePath)
-	if err != nil {
-		slog.Default().Error(err.Error())
-		return
-	}
 
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
@@ -38,11 +30,11 @@ func main() {
 		done <- true
 	}()
 
-	server := mqtt.New(options)
+	server := mqtt.New(nil)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
 	tcp := listeners.NewTCP("t1", *tcpAddr, nil)
-	err = server.AddListener(tcp)
+	err := server.AddListener(tcp)
 	if err != nil {
 		log.Fatal(err)
 	}
