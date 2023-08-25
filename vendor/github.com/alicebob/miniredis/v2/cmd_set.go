@@ -20,6 +20,7 @@ func commandsSet(m *Miniredis) {
 	m.srv.Register("SINTERSTORE", m.cmdSinterstore)
 	m.srv.Register("SISMEMBER", m.cmdSismember)
 	m.srv.Register("SMEMBERS", m.cmdSmembers)
+	m.srv.Register("SMISMEMBER", m.cmdSmismember)
 	m.srv.Register("SMOVE", m.cmdSmove)
 	m.srv.Register("SPOP", m.cmdSpop)
 	m.srv.Register("SRANDMEMBER", m.cmdSrandmember)
@@ -293,6 +294,50 @@ func (m *Miniredis) cmdSmembers(c *server.Peer, cmd string, args []string) {
 	})
 }
 
+// SMISMEMBER
+func (m *Miniredis) cmdSmismember(c *server.Peer, cmd string, args []string) {
+	if len(args) < 2 {
+		setDirty(c)
+		c.WriteError(errWrongNumber(cmd))
+		return
+	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
+		return
+	}
+
+	key, values := args[0], args[1:]
+
+	withTx(m, c, func(c *server.Peer, ctx *connCtx) {
+		db := m.db(ctx.selectedDB)
+
+		if !db.exists(key) {
+			c.WriteLen(len(values))
+			for range values {
+				c.WriteInt(0)
+			}
+			return
+		}
+
+		if db.t(key) != "set" {
+			c.WriteError(ErrWrongType.Error())
+			return
+		}
+
+		c.WriteLen(len(values))
+		for _, value := range values {
+			if db.setIsMember(key, value) {
+				c.WriteInt(1)
+			} else {
+				c.WriteInt(0)
+			}
+		}
+		return
+	})
+}
+
 // SMOVE
 func (m *Miniredis) cmdSmove(c *server.Peer, cmd string, args []string) {
 	if len(args) != 3 {
@@ -400,12 +445,14 @@ func (m *Miniredis) cmdSpop(c *server.Peer, cmd string, args []string) {
 		}
 
 		var deleted []string
+		members := db.setMembers(opts.key)
 		for i := 0; i < opts.count; i++ {
-			members := db.setMembers(opts.key)
 			if len(members) == 0 {
 				break
 			}
-			member := members[m.randIntn(len(members))]
+			i := m.randIntn(len(members))
+			member := members[i]
+			members = delElem(members, i)
 			db.setRem(opts.key, member)
 			deleted = append(deleted, member)
 		}
@@ -701,4 +748,13 @@ func (m *Miniredis) cmdSscan(c *server.Peer, cmd string, args []string) {
 		}
 
 	})
+}
+
+func delElem(ls []string, i int) []string {
+	// this swap+truncate is faster but changes behaviour:
+	// ls[i] = ls[len(ls)-1]
+	// ls = ls[:len(ls)-1]
+	// so we do the dumb thing:
+	ls = append(ls[:i], ls[i+1:]...)
+	return ls
 }

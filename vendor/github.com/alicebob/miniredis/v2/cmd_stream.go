@@ -48,8 +48,8 @@ func (m *Miniredis) cmdXadd(c *server.Peer, cmd string, args []string) {
 	key, args := args[0], args[1:]
 
 	withTx(m, c, func(c *server.Peer, ctx *connCtx) {
-
 		maxlen := -1
+		minID := ""
 		if strings.ToLower(args[0]) == "maxlen" {
 			args = args[1:]
 			// we don't treat "~" special
@@ -66,6 +66,14 @@ func (m *Miniredis) cmdXadd(c *server.Peer, cmd string, args []string) {
 				return
 			}
 			maxlen = n
+			args = args[1:]
+		} else if strings.ToLower(args[0]) == "minid" {
+			args = args[1:]
+			// we don't treat "~" special
+			if args[0] == "~" {
+				args = args[1:]
+			}
+			minID = args[0]
 			args = args[1:]
 		}
 		if len(args) < 1 {
@@ -109,6 +117,9 @@ func (m *Miniredis) cmdXadd(c *server.Peer, cmd string, args []string) {
 		}
 		if maxlen >= 0 {
 			s.trim(maxlen)
+		}
+		if minID != "" {
+			s.trimBefore(minID)
 		}
 		db.keyVersion[key]++
 
@@ -306,26 +317,32 @@ func (m *Miniredis) cmdXgroup(c *server.Peer, cmd string, args []string) {
 		c.WriteError(errWrongNumber(cmd))
 		return
 	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
+		return
+	}
 
-	subCmd, args := strings.ToUpper(args[0]), args[1:]
+	subCmd, args := strings.ToLower(args[0]), args[1:]
 	switch subCmd {
-	case "CREATE":
+	case "create":
 		m.cmdXgroupCreate(c, cmd, args)
-	case "DESTROY":
+	case "destroy":
 		m.cmdXgroupDestroy(c, cmd, args)
-	case "CREATECONSUMER":
+	case "createconsumer":
 		m.cmdXgroupCreateconsumer(c, cmd, args)
-	case "DELCONSUMER":
+	case "delconsumer":
 		m.cmdXgroupDelconsumer(c, cmd, args)
-	case "HELP",
-		"SETID":
+	case "help",
+		"setid":
 		err := fmt.Sprintf("ERR 'XGROUP %s' not supported", subCmd)
 		setDirty(c)
 		c.WriteError(err)
 	default:
 		setDirty(c)
 		c.WriteError(fmt.Sprintf(
-			"ERR Unknown subcommand or wrong number of arguments for '%s'. Try XGROUP HELP.",
+			"ERR unknown subcommand '%s'. Try XGROUP HELP.",
 			subCmd,
 		))
 	}
@@ -493,6 +510,13 @@ func (m *Miniredis) cmdXinfo(c *server.Peer, cmd string, args []string) {
 		c.WriteError(errWrongNumber(cmd))
 		return
 	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
+		return
+	}
+
 	subCmd, args := strings.ToUpper(args[0]), args[1:]
 	switch subCmd {
 	case "STREAM":
@@ -508,7 +532,7 @@ func (m *Miniredis) cmdXinfo(c *server.Peer, cmd string, args []string) {
 	default:
 		setDirty(c)
 		c.WriteError(fmt.Sprintf(
-			"ERR Unknown subcommand or wrong number of arguments for '%s'. Try XINFO HELP.",
+			"ERR unknown subcommand or wrong number of arguments for '%s'. Try XINFO HELP.",
 			subCmd,
 		))
 	}
@@ -567,19 +591,20 @@ func (m *Miniredis) cmdXinfoGroups(c *server.Peer, args []string) {
 
 		c.WriteLen(len(s.groups))
 		for name, g := range s.groups {
-			c.WriteMapLen(4)
+			c.WriteMapLen(6)
 
 			c.WriteBulk("name")
 			c.WriteBulk(name)
-
 			c.WriteBulk("consumers")
 			c.WriteInt(len(g.consumers))
-
 			c.WriteBulk("pending")
-			c.WriteInt(len(g.pending))
-
+			c.WriteInt(len(g.activePending()))
 			c.WriteBulk("last-delivered-id")
 			c.WriteBulk(g.lastID)
+			c.WriteBulk("entries-read")
+			c.WriteNull()
+			c.WriteBulk("lag")
+			c.WriteInt(len(g.stream.entries))
 		}
 	})
 }
@@ -643,6 +668,12 @@ func (m *Miniredis) cmdXreadgroup(c *server.Peer, cmd string, args []string) {
 	if len(args) < 6 {
 		setDirty(c)
 		c.WriteError(errWrongNumber(cmd))
+		return
+	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
 		return
 	}
 
@@ -751,6 +782,12 @@ parsing:
 		c,
 		opts.blockTimeout,
 		func(c *server.Peer, ctx *connCtx) bool {
+			if ctx.nested {
+				setDirty(c)
+				c.WriteError("ERR XREADGROUP command is not allowed with BLOCK option from scripts")
+				return false
+			}
+
 			db := m.db(ctx.selectedDB)
 			res, err := xreadgroup(
 				db,
@@ -820,6 +857,12 @@ func (m *Miniredis) cmdXack(c *server.Peer, cmd string, args []string) {
 		c.WriteError(errWrongNumber(cmd))
 		return
 	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
+		return
+	}
 
 	key, group, ids := args[0], args[1], args[2:]
 
@@ -849,6 +892,12 @@ func (m *Miniredis) cmdXdel(c *server.Peer, cmd string, args []string) {
 	if len(args) < 2 {
 		setDirty(c)
 		c.WriteError(errWrongNumber(cmd))
+		return
+	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
 		return
 	}
 
@@ -881,6 +930,12 @@ func (m *Miniredis) cmdXread(c *server.Peer, cmd string, args []string) {
 	if len(args) < 3 {
 		setDirty(c)
 		c.WriteError(errWrongNumber(cmd))
+		return
+	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
 		return
 	}
 
@@ -924,11 +979,21 @@ parsing:
 			}
 
 			opts.streams, opts.ids = args[0:len(args)/2], args[len(args)/2:]
-			for _, id := range opts.ids {
+			for i, id := range opts.ids {
 				if _, err := parseStreamID(id); id != `$` && err != nil {
 					setDirty(c)
 					c.WriteError(msgInvalidStreamID)
 					return
+				} else if id == "$" {
+					withTx(m, c, func(c *server.Peer, ctx *connCtx) {
+						db := m.db(getCtx(c).selectedDB)
+						stream, ok := db.streamKeys[opts.streams[i]]
+						if ok {
+							opts.ids[i] = stream.lastID()
+						} else {
+							opts.ids[i] = "0-0"
+						}
+					})
 				}
 			}
 			args = nil
@@ -938,7 +1003,6 @@ parsing:
 			break parsing
 		}
 	}
-
 	if err != nil {
 		setDirty(c)
 		c.WriteError(err.Error())
@@ -958,6 +1022,12 @@ parsing:
 		c,
 		opts.blockTimeout,
 		func(c *server.Peer, ctx *connCtx) bool {
+			if ctx.nested {
+				setDirty(c)
+				c.WriteError("ERR XREAD command is not allowed with BLOCK option from scripts")
+				return false
+			}
+
 			db := m.db(ctx.selectedDB)
 			res := xread(db, opts.streams, opts.ids, opts.count)
 			if len(res) == 0 {
@@ -1042,6 +1112,12 @@ func (m *Miniredis) cmdXpending(c *server.Peer, cmd string, args []string) {
 	if len(args) < 2 {
 		setDirty(c)
 		c.WriteError(errWrongNumber(cmd))
+		return
+	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
 		return
 	}
 
@@ -1129,7 +1205,8 @@ func (m *Miniredis) cmdXpending(c *server.Peer, cmd string, args []string) {
 }
 
 func writeXpendingSummary(c *server.Peer, g streamGroup) {
-	if len(g.pending) == 0 {
+	pend := g.activePending()
+	if len(pend) == 0 {
 		c.WriteLen(4)
 		c.WriteInt(0)
 		c.WriteNull()
@@ -1144,9 +1221,9 @@ func writeXpendingSummary(c *server.Peer, g streamGroup) {
 	//  - highest ID
 	//  - all consumers with > 0 pending items
 	c.WriteLen(4)
-	c.WriteInt(len(g.pending))
-	c.WriteBulk(g.pending[0].id)
-	c.WriteBulk(g.pending[len(g.pending)-1].id)
+	c.WriteInt(len(pend))
+	c.WriteBulk(pend[0].id)
+	c.WriteBulk(pend[len(pend)-1].id)
 	cons := map[string]int{}
 	for id := range g.consumers {
 		cnt := g.pendingCount(id)
@@ -1238,6 +1315,12 @@ func (m *Miniredis) cmdXtrim(c *server.Peer, cmd string, args []string) {
 		c.WriteError(errWrongNumber(cmd))
 		return
 	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
+		return
+	}
 
 	var opts struct {
 		stream     string
@@ -1324,16 +1407,8 @@ func (m *Miniredis) cmdXtrim(c *server.Peer, cmd string, args []string) {
 			s.trim(opts.maxLen)
 			c.WriteInt(entriesBefore - len(s.entries))
 		case "MINID":
-			var delete []string
-			for _, entry := range s.entries {
-				if entry.ID < opts.threshold {
-					delete = append(delete, entry.ID)
-				} else {
-					break
-				}
-			}
-			s.delete(delete)
-			c.WriteInt(len(delete))
+			n := s.trimBefore(opts.threshold)
+			c.WriteInt(n)
 		}
 	})
 }
@@ -1344,6 +1419,12 @@ func (m *Miniredis) cmdXautoclaim(c *server.Peer, cmd string, args []string) {
 	if len(args) < 5 {
 		setDirty(c)
 		c.WriteError(errWrongNumber(cmd))
+		return
+	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
 		return
 	}
 
@@ -1478,7 +1559,7 @@ func xautoclaim(
 }
 
 func writeXautoclaim(c *server.Peer, nextCallId string, res []StreamEntry, justId bool) {
-	c.WriteLen(2)
+	c.WriteLen(3)
 	c.WriteBulk(nextCallId)
 	c.WriteLen(len(res))
 	for _, entry := range res {
@@ -1494,6 +1575,8 @@ func writeXautoclaim(c *server.Peer, nextCallId string, res []StreamEntry, justI
 			c.WriteBulk(v)
 		}
 	}
+	// TODO: see "Redis 7" note
+	c.WriteLen(0)
 }
 
 // XCLAIM
@@ -1501,6 +1584,12 @@ func (m *Miniredis) cmdXclaim(c *server.Peer, cmd string, args []string) {
 	if len(args) < 5 {
 		setDirty(c)
 		c.WriteError(errWrongNumber(cmd))
+		return
+	}
+	if !m.handleAuth(c) {
+		return
+	}
+	if m.checkPubsub(c, cmd) {
 		return
 	}
 
@@ -1646,6 +1735,11 @@ func (m *Miniredis) xclaim(
 			pelEntry.deliveryCount++
 		}
 		pelEntry.lastDelivery = newLastDelivery
+
+		// redis7: don't report entries which are deleted by now
+		if _, e := group.stream.get(id); e == nil {
+			continue
+		}
 
 		claimedEntryIDs = append(claimedEntryIDs, id)
 	}

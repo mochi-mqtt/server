@@ -76,6 +76,7 @@ type dbKey struct {
 }
 
 // connCtx has all state for a single connection.
+// (this struct was named before context.Context existed)
 type connCtx struct {
 	selectedDB       int            // selected DB
 	authenticated    bool           // auth enabled and a valid AUTH seen
@@ -84,6 +85,7 @@ type connCtx struct {
 	watch            map[dbKey]uint // WATCHed keys
 	subscriber       *Subscriber    // client is in PUBSUB mode if not nil
 	nested           bool           // this is called via Lua
+	nestedSHA        string         // set to the SHA of the nesting function
 }
 
 // NewMiniRedis makes a new, non-started, Miniredis object.
@@ -675,7 +677,7 @@ func (m *Miniredis) copy(
 	case "hash":
 		destDB.hashKeys[dst] = copyHashKey(srcDB.hashKeys[src])
 	case "list":
-		destDB.listKeys[dst] = srcDB.listKeys[src]
+		destDB.listKeys[dst] = copyListKey(srcDB.listKeys[src])
 	case "set":
 		destDB.setKeys[dst] = copySetKey(srcDB.setKeys[src])
 	case "zset":
@@ -700,6 +702,12 @@ func copyHashKey(orig hashKey) hashKey {
 	for k, v := range orig {
 		cpy[k] = v
 	}
+	return cpy
+}
+
+func copyListKey(orig listKey) listKey {
+	cpy := make(listKey, len(orig))
+	copy(cpy, orig)
 	return cpy
 }
 

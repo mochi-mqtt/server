@@ -337,7 +337,7 @@ func consoleDefaultFormatTimestamp(timeFormat string, noColor bool) Formatter {
 		t := "<nil>"
 		switch tt := i.(type) {
 		case string:
-			ts, err := time.Parse(TimeFieldFormat, tt)
+			ts, err := time.ParseInLocation(TimeFieldFormat, tt, time.Local)
 			if err != nil {
 				t = tt
 			} else {
@@ -348,15 +348,19 @@ func consoleDefaultFormatTimestamp(timeFormat string, noColor bool) Formatter {
 			if err != nil {
 				t = tt.String()
 			} else {
-				var sec, nsec int64 = i, 0
+				var sec, nsec int64
+
 				switch TimeFieldFormat {
-				case TimeFormatUnixMs:
-					nsec = int64(time.Duration(i) * time.Millisecond)
-					sec = 0
+				case TimeFormatUnixNano:
+					sec, nsec = 0, i
 				case TimeFormatUnixMicro:
-					nsec = int64(time.Duration(i) * time.Microsecond)
-					sec = 0
+					sec, nsec = 0, int64(time.Duration(i)*time.Microsecond)
+				case TimeFormatUnixMs:
+					sec, nsec = 0, int64(time.Duration(i)*time.Millisecond)
+				default:
+					sec, nsec = i, 0
 				}
+
 				ts := time.Unix(sec, nsec)
 				t = ts.Format(timeFormat)
 			}
@@ -385,7 +389,7 @@ func consoleDefaultFormatLevel(noColor bool) Formatter {
 			case LevelPanicValue:
 				l = colorize(colorize("PNC", colorRed, noColor), colorBold, noColor)
 			default:
-				l = colorize("???", colorBold, noColor)
+				l = colorize(ll, colorBold, noColor)
 			}
 		} else {
 			if i == nil {

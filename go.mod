@@ -3,17 +3,17 @@ module github.com/mochi-mqtt/server/v2
 go 1.21
 
 require (
-	github.com/alicebob/miniredis/v2 v2.23.0
+	github.com/alicebob/miniredis/v2 v2.30.5
 	github.com/asdine/storm v2.1.2+incompatible
 	github.com/asdine/storm/v3 v3.2.1
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gorilla/websocket v1.5.0
-	github.com/jinzhu/copier v0.3.5
-	github.com/rs/xid v1.4.0
-	github.com/rs/zerolog v1.28.0
-	github.com/stretchr/testify v1.7.1
+	github.com/jinzhu/copier v0.4.0
+	github.com/rs/xid v1.5.0
+	github.com/rs/zerolog v1.30.0
+	github.com/stretchr/testify v1.8.4
 	github.com/timshannon/badgerhold v1.0.0
-	go.etcd.io/bbolt v1.3.5
+	go.etcd.io/bbolt v1.3.7
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -32,7 +32,7 @@ require (
 	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/yuin/gopher-lua v0.0.0-20210529063254-f4c35e4016d9 // indirect
+	github.com/yuin/gopher-lua v1.1.0 // indirect
 	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
