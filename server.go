@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
-// package mqtt provides a high performance, fully compliant MQTT v5 broker server with v3.1.1 backward compatibility.
+// Package mqtt provides a high performance, fully compliant MQTT v5 broker server with v3.1.1 backward compatibility.
 package mqtt
 
 import (
@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	Version                       = "2.3.0"  // the current server version.
-	defaultSysTopicInterval int64 = 1        // the interval between $SYS topic publishes
+	Version                       = "2.3.0" // the current server version.
+	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 )
 
 var (
@@ -418,7 +418,7 @@ func (s *Server) receivePacket(cl *Client, pk packets.Packet) error {
 		if code, ok := err.(packets.Code); ok &&
 			cl.Properties.ProtocolVersion == 5 &&
 			code.Code >= packets.ErrUnspecifiedError.Code {
-			s.DisconnectClient(cl, code)
+			_ = s.DisconnectClient(cl, code)
 		}
 
 		s.Log.Warn().Err(err).Str("client", cl.ID).Str("listener", cl.Net.Listener).Interface("pk", pk).Msg("error processing packet")
@@ -456,7 +456,7 @@ func (s *Server) validateConnect(cl *Client, pk packets.Packet) packets.Code {
 // session is abandoned.
 func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 	if existing, ok := s.Clients.Get(pk.Connect.ClientIdentifier); ok {
-		s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                       // [MQTT-3.1.4-3]
+		_ = s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                   // [MQTT-3.1.4-3]
 		if pk.Connect.Clean || (existing.Properties.Clean && existing.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
 			existing.ClearInflights(math.MaxInt64, 0)
@@ -643,7 +643,7 @@ func (s *Server) processPingreq(cl *Client, _ packets.Packet) error {
 	})
 }
 
-// Publish publishes a publish packet into the broker as if it were sent from the speicfied client.
+// Publish publishes a publish packet into the broker as if it were sent from the specified client.
 // This is a convenience function which wraps InjectPacket. As such, this method can publish packets
 // to any topic (including $SYS) and bypass ACL checks. The qos byte is used for limiting the
 // outbound qos (mqtt v5) rather than issuing to the broker (we assume qos 2 complete).
@@ -1286,7 +1286,7 @@ func (s *Server) Close() error {
 func (s *Server) closeListenerClients(listener string) {
 	clients := s.Clients.GetByListener(listener)
 	for _, cl := range clients {
-		s.DisconnectClient(cl, packets.ErrServerShuttingDown)
+		_ = s.DisconnectClient(cl, packets.ErrServerShuttingDown)
 	}
 }
 

@@ -99,7 +99,7 @@ func (cl *Clients) GetByListener(id string) []*Client {
 type Client struct {
 	Properties   ClientProperties // client properties
 	State        ClientState      // the operational state of the client.
-	Net          ClientConnection // network connection state of the clinet
+	Net          ClientConnection // network connection state of the client
 	ID           string           // the client id.
 	ops          *ops             // ops provides a reference to server ops.
 	sync.RWMutex                  // mutex
@@ -134,7 +134,7 @@ type Will struct {
 	Retain            bool                   // -
 }
 
-// State tracks the state of the client.
+// ClientState tracks the state of the client.
 type ClientState struct {
 	TopicAliases    TopicAliases         // a map of topic aliases
 	stopCause       atomic.Value         // reason for stopping
