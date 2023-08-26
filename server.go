@@ -213,7 +213,9 @@ func (s *Server) NewClient(c net.Conn, listener string, id string, inline bool) 
 	cl.Net.Listener = listener
 
 	if inline { // inline clients bypass acl and some validity checks.
+		cl.Properties.ProtocolVersion = 5
 		cl.Net.Inline = true
+		cl.Net.InlineSubs = map[string]InlineSubFn{}
 		// By default, we don't want to restrict developer publishes,
 		// but if you do, reset this after creating inline client.
 		cl.State.Inflight.ResetReceiveQuota(math.MaxInt32)
@@ -855,6 +857,13 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 		}
 	}
 
+	if cl.Net.Inline {
+		for filter, _ := range sub.Identifiers {
+			go cl.Net.InlineSubs[filter](cl, sub, out)
+		}
+		return out, nil
+	}
+
 	if out.FixedHeader.Qos > 0 {
 		i, err := cl.NextPacketID() // [MQTT-4.3.2-1] [MQTT-4.3.3-1]
 		if err != nil {
@@ -1021,6 +1030,25 @@ func (s *Server) processPubcomp(cl *Client, pk packets.Packet) error {
 	return nil
 }
 
+// Subscribe directly subscribes to one or more filters. You should probably not use this with non-inline clients.
+func (s *Server) Subscribe(cl *Client, filter string, id int, callback InlineSubFn) error {
+	if _, ok := s.Clients.Get(cl.ID); !ok {
+		// add the inline client to the server if it doesn't exist otherwise it won't be eligible for topic matching.
+		s.Clients.Add(cl)
+	}
+	cl.Net.InlineSubs[filter] = callback
+
+	err := s.processSubscribe(cl, packets.Packet{ // subscribe like a normal client.
+		Origin:      cl.ID,
+		FixedHeader: packets.FixedHeader{Type: packets.Subscribe},
+		Filters: packets.Subscriptions{
+			{Filter: filter, Identifier: id},
+		},
+	})
+
+	return err
+}
+
 // processSubscribe processes a Subscribe packet.
 func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 	pk = s.hooks.OnSubscribe(cl, pk)
@@ -1089,11 +1117,23 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 		if reasonCodes[i] >= packets.ErrUnspecifiedError.Code {
 			continue
 		}
-
-		s.publishRetainedToClient(cl, sub, filterExisted[i])
+		s.publishRetainedToClient(cl, sub.Merge(packets.Subscription{}), filterExisted[i])
 	}
 
 	return nil
+}
+
+func (s *Server) Unsubscribe(cl *Client, filter string) error {
+
+	err := s.processUnsubscribe(cl, packets.Packet{ // unsubscribe like a normal client.
+		Origin:      cl.ID,
+		FixedHeader: packets.FixedHeader{Type: packets.Unsubscribe},
+		Filters: packets.Subscriptions{
+			{Filter: filter},
+		},
+	})
+
+	return err
 }
 
 // processUnsubscribe processes an unsubscribe packet.

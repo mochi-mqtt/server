@@ -107,12 +107,18 @@ type Client struct {
 
 // ClientConnection contains the connection transport and metadata for the client.
 type ClientConnection struct {
-	Conn     net.Conn          // the net.Conn used to establish the connection
-	bconn    *bufio.ReadWriter // a buffered net.Conn for reading packets
-	Remote   string            // the remote address of the client
-	Listener string            // listener id of the client
-	Inline   bool              // client is an inline programmetic client
+	Conn       net.Conn               // the net.Conn used to establish the connection
+	bconn      *bufio.ReadWriter      // a buffered net.Conn for reading packets
+	Remote     string                 // the remote address of the client
+	Listener   string                 // listener id of the client
+	Inline     bool                   // client is an inline programmatic client
+	InlineSubs map[string]InlineSubFn // a map of inline subs callback functions keyed on subscription id
 }
+
+// InlineSubFn is the signature for a callback function which will be called
+// when an inline client receives a message on a topic it is subscribed to.
+// The sub argument contains information about the subscription that was matched for any filters.
+type InlineSubFn func(cl *Client, sub packets.Subscription, pk packets.Packet)
 
 // ClientProperties contains the properties which define the client behaviour.
 type ClientProperties struct {

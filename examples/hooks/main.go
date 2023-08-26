@@ -48,28 +48,7 @@ func main() {
 		}
 	}()
 
-	// Demonstration of directly publishing messages to a topic via the
-	// `server.Publish` method. Subscribe to `direct/publish` using your
-	// MQTT client to see the messages.
-	go func() {
-		cl := server.NewClient(nil, "local", "inline", true)
-		for range time.Tick(time.Second * 1) {
-			err := server.InjectPacket(cl, packets.Packet{
-				FixedHeader: packets.FixedHeader{
-					Type: packets.Publish,
-				},
-				TopicName: "direct/publish",
-				Payload:   []byte("injected scheduled message"),
-			})
-			if err != nil {
-				server.Log.Error().Err(err).Msg("server.InjectPacket")
-			}
-			server.Log.Info().Msgf("main.go injected packet to direct/publish")
-		}
-	}()
-
-	// There is also a shorthand convenience function, Publish, for easily sending
-	// publish packets if you are not concerned with creating your own packets.
+	// Using the direct publish method to issue packets into the broker to trigger our example hook.
 	go func() {
 		for range time.Tick(time.Second * 5) {
 			err := server.Publish("direct/publish", []byte("packet scheduled message"), false, 0)
