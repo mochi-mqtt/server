@@ -48,7 +48,6 @@ func Configure() (*mqtt.Server, error) {
 
 	data, err := os.ReadFile(CONFIG_FILE_NAME)
 	if err != nil {
-		slog.Default().Error(CONFIG_FILE_NAME + " not found!")
 		return nil, err
 	}
 

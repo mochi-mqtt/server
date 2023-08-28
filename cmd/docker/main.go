@@ -10,7 +10,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/configs/file"
+	"github.com/mochi-mqtt/server/v2/hooks/auth"
+	"github.com/mochi-mqtt/server/v2/listeners"
 )
 
 func main() {
@@ -24,7 +27,12 @@ func main() {
 
 	server, err := file.Configure()
 	if err != nil {
-		slog.Default().Error(err.Error())
+		if os.IsNotExist(err) {
+			slog.Default().Info("mochi_config.yml not found")
+			slog.Default().Info("defaulting to standard broker configuration")
+			server, _ = configureServerWithDefault()
+		}
+
 		return
 	}
 
@@ -42,68 +50,27 @@ func main() {
 	server.Log.Info().Msg("main.go finished")
 }
 
-// func configureServerFromFile(path *string) (*mqtt.Server, error) {
-// 	config, err := file.Configure(*path)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+func configureServerWithDefault() (*mqtt.Server, error) {
+	server := mqtt.New(nil)
+	_ = server.AddHook(new(auth.AllowHook), nil)
 
-// 	server := mqtt.New(&config.Server.Options)
+	tcp := listeners.NewTCP("t1", ":1883", nil)
+	err := server.AddListener(tcp)
+	if err != nil {
+		return nil, err
+	}
 
-// 	if config.Server.Hooks != nil {
-// 		if config.Server.Hooks.AllowAll {
-// 			_ = server.AddHook(new(auth.AllowHook), nil)
-// 		}
-// 	}
+	ws := listeners.NewWebsocket("ws1", ":1882", nil)
+	err = server.AddListener(ws)
+	if err != nil {
+		return nil, err
+	}
 
-// 	if config.Server.Listeners.Healthcheck != nil {
-// 		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.Healthcheck.Port))
+	stats := listeners.NewHTTPStats("stats", ":8080", nil, server.Info)
+	err = server.AddListener(stats)
+	if err != nil {
+		return nil, err
+	}
 
-// 		// TODO : Add TLS
-// 		hc := listeners.NewHTTPHealthCheck("hc", port, nil)
-// 		err := server.AddListener(hc)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-
-// 	}
-
-// 	if config.Server.Listeners.TCP != nil {
-// 		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.TCP.Port))
-
-// 		// TODO : Add TLS
-// 		hc := listeners.NewTCP("tcp", port, nil)
-// 		err := server.AddListener(hc)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 	}
-
-// 	return server, nil
-
-// }
-
-// func configureServerWithDefault(tcpAddr, wsAddr, infoAddr *string) (*mqtt.Server, error) {
-// 	server := mqtt.New(nil)
-// 	_ = server.AddHook(new(auth.AllowHook), nil)
-
-// 	tcp := listeners.NewTCP("t1", *tcpAddr, nil)
-// 	err := server.AddListener(tcp)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	ws := listeners.NewWebsocket("ws1", *wsAddr, nil)
-// 	err = server.AddListener(ws)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	stats := listeners.NewHTTPStats("stats", *infoAddr, nil, server.Info)
-// 	err = server.AddListener(stats)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	return server, nil
-// }
+	return server, nil
+}
