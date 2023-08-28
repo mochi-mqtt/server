@@ -661,6 +661,25 @@ func (s *Server) Publish(topic string, payload []byte, retain bool, qos byte) er
 	})
 }
 
+// Subscribe adds an inline subscription for the specified topic and handler function.
+// This function allows you to create an internal subscription within the server to handle messages
+// matching the given topic filter. When a message is received on the specified topic,
+// the provided handler function will be called to process the message.
+func (s *Server) Subscribe(topic string, handler func(topic string, pk packets.Packet)) error {
+	s.Topics.InlineSubscribe(packets.InlineSubscription{
+		Filter:  topic,
+		Handler: handler,
+	})
+	return nil
+}
+
+// Unsubscribe removes the inline subscription for the specified topic.
+// This function allows you to unsubscribe from the internal subscription associated with the given topic.
+func (s *Server) Unsubscribe(topic string) error {
+	s.Topics.InlineUnsubscribe(topic)
+	return nil
+}
+
 // InjectPacket injects a packet into the broker as if it were sent from the specified client.
 // InlineClients using this method can publish packets to any topic (including $SYS) and bypass ACL checks.
 func (s *Server) InjectPacket(cl *Client, pk packets.Packet) error {
@@ -806,6 +825,10 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 			subscribers.SelectShared()
 		}
 		subscribers.MergeSharedSelected()
+	}
+
+	for filter, inline := range subscribers.InlineSubscriptions {
+		inline.Handler(filter, pk)
 	}
 
 	for id, subs := range subscribers.Subscriptions {
