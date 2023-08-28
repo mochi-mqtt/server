@@ -28,13 +28,20 @@ type Config struct {
 				Port int `yaml:"port"`
 			} `yaml:"healthcheck"`
 			Stats *struct {
-				Port int `yaml:"port"`
+				Port int       `yaml:"port"`
+				TLS  *struct { // TODO : Add TLS configuration
+				} `yaml:"tls"`
 			} `yaml:"stats"`
 			TCP *struct {
 				Port int       `yaml:"port"`
 				TLS  *struct { // TODO : Add TLS configuration
 				} `yaml:"tls"`
 			} `yaml:"tcp"`
+			Websocket *struct {
+				Port int       `yaml:"port"`
+				TLS  *struct { // TODO : Add TLS configuration
+				} `yaml:"tls"`
+			} `yaml:"websocket"`
 		} `yaml:"listeners"`
 		Logging struct {
 			Level string `yaml:"level"`
@@ -81,6 +88,18 @@ func Configure() (*mqtt.Server, error) {
 			slog.Default().Error(err.Error())
 			return nil, err
 		}
+	}
+
+	if config.Server.Listeners.Stats != nil {
+		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.Stats.Port))
+
+		// TODO : Add TLS
+		statl := listeners.NewHTTPStats("stat", port, nil, server.Info)
+		err = server.AddListener(statl)
+		if err != nil {
+			slog.Default().Error(err.Error())
+			return nil, err
+		}
 
 	}
 
@@ -88,13 +107,24 @@ func Configure() (*mqtt.Server, error) {
 		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.TCP.Port))
 
 		// TODO : Add TLS
-		hc := listeners.NewTCP("tcp", port, nil)
-		err = server.AddListener(hc)
+		tcpl := listeners.NewTCP("tcp", port, nil)
+		err = server.AddListener(tcpl)
 		if err != nil {
 			slog.Default().Error(err.Error())
 			return nil, err
 		}
+	}
 
+	if config.Server.Listeners.Websocket != nil {
+		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.Websocket.Port))
+
+		// TODO : Add TLS
+		wsl := listeners.NewWebsocket("ws", port, nil)
+		err = server.AddListener(wsl)
+		if err != nil {
+			slog.Default().Error(err.Error())
+			return nil, err
+		}
 	}
 
 	return server, nil
