@@ -26,7 +26,6 @@ func main() {
 		done <- true
 	}()
 
-	var err error
 	server := mqtt.New(nil)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
@@ -51,10 +50,7 @@ func main() {
 			server.Log.Info().Str("filter", filter).Str("payload", string(pk.Payload)).Msgf("inline client received message from subscription")
 		}
 		server.Log.Info().Msgf("inline client subscribing")
-		err = server.Subscribe("direct/#", callbackFn)
-		if err != nil {
-			log.Fatal(err)
-		}
+		server.Subscribe("direct/#", callbackFn)
 	}()
 
 	// There is a shorthand convenience function, Publish, for easily sending
@@ -73,10 +69,7 @@ func main() {
 		time.Sleep(time.Second * 10)
 		// Unsubscribe from the same filter to stop receiving messages.
 		server.Log.Info().Msgf("inline client unsubscribing")
-		err := server.Unsubscribe("direct/#")
-		if err != nil {
-			server.Log.Error().Err(err).Msg("server.Unsubscribe")
-		}
+		server.Unsubscribe("direct/#")
 	}()
 	// If you want to have more control over your packets, you can directly inject a packet of any kind into the broker.
 	//go func() {
