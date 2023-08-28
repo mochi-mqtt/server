@@ -1549,6 +1549,25 @@ func TestPublishToSubscribersSelfNoLocal(t *testing.T) {
 	require.Equal(t, []byte{}, <-receiverBuf)
 }
 
+func TestPublishToInlineSubscribers(t *testing.T) {
+	receiverBuf := make(chan []byte)
+	handler := func(topic string, pk packets.Packet) {
+		receiverBuf <- pk.Payload
+	}
+
+	s := newServer()
+	subbed := s.Subscribe("a/b/c", handler)
+	require.True(t, subbed)
+
+	go func() {
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+		s.publishToSubscribers(pkx)
+		time.Sleep(time.Millisecond)
+	}()
+
+	require.Equal(t, []byte("hello mochi"), <-receiverBuf)
+}
+
 func TestPublishToSubscribers(t *testing.T) {
 	s := newServer()
 	cl, r1, w1 := newTestClient()
@@ -3156,6 +3175,91 @@ func TestServerClearExpiredClients(t *testing.T) {
 	s.clearExpiredClients(n)
 
 	require.Equal(t, 2, s.Clients.Len())
+}
+
+func TestServerSubscribe(t *testing.T) {
+
+	handler := func(topic string, pk packets.Packet) {
+		// handler logic
+	}
+
+	s := New(nil)
+	require.NotNil(t, s)
+
+	tt := []struct {
+		desc    string
+		filter  string
+		handler func(topic string, pk packets.Packet)
+		wasNew  bool
+	}{
+		{
+			desc:    "subscribe",
+			filter:  "a/b/c",
+			handler: handler,
+			wasNew:  true,
+		},
+		{
+			desc:    "subscribe existed",
+			filter:  "a/b/c",
+			handler: handler,
+			wasNew:  false,
+		},
+		{
+			desc:    "subscribe case sensitive didnt exist",
+			filter:  "A/B/c",
+			handler: handler,
+			wasNew:  true,
+		},
+		{
+			desc:    "wildcard+ sub",
+			filter:  "d/+",
+			handler: handler,
+			wasNew:  true,
+		},
+		{
+			desc:    "wildcard# sub",
+			filter:  "d/e/#",
+			handler: handler,
+			wasNew:  true,
+		},
+	}
+
+	for _, tx := range tt {
+		t.Run(tx.desc, func(t *testing.T) {
+			require.Equal(t, tx.wasNew, s.Subscribe(tx.filter, tx.handler))
+		})
+	}
+}
+
+func TestServerUnsubscribe(t *testing.T) {
+	handler := func(topic string, pk packets.Packet) {
+		// handler logic
+	}
+
+	s := New(nil)
+	exists := s.Subscribe("a/b/c/d", handler)
+	require.True(t, exists)
+
+	exists = s.Subscribe("a/b/+/d", handler)
+	require.True(t, exists)
+
+	exists = s.Subscribe("d/e/f", handler)
+	require.True(t, exists)
+
+	s.Subscribe("d/e/f", handler)
+	require.True(t, exists)
+
+	s.Subscribe("#", handler)
+	require.True(t, exists)
+
+	ok := s.Unsubscribe("a/b/c/d")
+	require.True(t, ok)
+
+	ok = s.Unsubscribe("d/e/f")
+	require.True(t, ok)
+
+	ok = s.Unsubscribe("fdasfdas/dfsfads/sa")
+	require.False(t, ok)
 }
 
 func TestLoadServerInfoRestoreOnRestart(t *testing.T) {
