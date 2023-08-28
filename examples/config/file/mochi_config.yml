@@ -3,11 +3,13 @@ server:
     allow_all: true
   listeners:
     healthcheck:
+      port: 8081
+    stats:
       port: 8080
     tcp:
       port: 1883
-  logging:
-    level: DEBUG
+  # logging:
+  #   level: DEBUG
   options:
     capabilities:
       maximum_message_expiry_interval: 100
