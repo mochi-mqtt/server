@@ -5,7 +5,6 @@
 package debug
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -57,29 +56,23 @@ func (h *Hook) Init(config any) error {
 // SetOpts is called when the hook receives inheritable server parameters.
 func (h *Hook) SetOpts(l *slog.Logger, opts *mqtt.HookOptions) {
 	h.Log = l
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug, "", slog.String("method", "SetOpts"))
+	h.Log.Debug("", "method", "SetOpts")
 }
 
 // Stop is called when the hook is stopped.
 func (h *Hook) Stop() error {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"",
-		slog.String("method", "Stop"))
+	h.Log.Debug("", "method", "Stop")
 	return nil
 }
 
 // OnStarted is called when the server starts.
 func (h *Hook) OnStarted() {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"",
-		slog.String("method", "OnStarted"))
+	h.Log.Debug("", "method", "OnStarted")
 }
 
 // OnStopped is called when the server stops.
 func (h *Hook) OnStopped() {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"",
-		slog.String("method", "OnStopped"))
+	h.Log.Debug("", "method", "OnStopped")
 }
 
 // OnPacketRead is called when a new packet is received from a client.
@@ -88,10 +81,7 @@ func (h *Hook) OnPacketRead(cl *mqtt.Client, pk packets.Packet) (packets.Packet,
 		return pk, nil
 	}
 
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		fmt.Sprintf("%s << %s", strings.ToUpper(packets.PacketNames[pk.FixedHeader.Type]), cl.ID),
-		slog.Any("m", h.packetMeta(pk)))
-
+	h.Log.Debug(fmt.Sprintf("%s << %s", strings.ToUpper(packets.PacketNames[pk.FixedHeader.Type]), cl.ID), "m", h.packetMeta(pk))
 	return pk, nil
 }
 
@@ -101,104 +91,72 @@ func (h *Hook) OnPacketSent(cl *mqtt.Client, pk packets.Packet, b []byte) {
 		return
 	}
 
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		fmt.Sprintf("%s >> %s", strings.ToUpper(packets.PacketNames[pk.FixedHeader.Type]), cl.ID),
-		slog.Any("m", h.packetMeta(pk)))
+	h.Log.Debug(fmt.Sprintf("%s >> %s", strings.ToUpper(packets.PacketNames[pk.FixedHeader.Type]), cl.ID), "m", h.packetMeta(pk))
 }
 
 // OnRetainMessage is called when a published message is retained (or retain deleted/modified).
 func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"retained message on topic",
-		slog.Any("m", h.packetMeta(pk)))
+	h.Log.Debug("retained message on topic", "m", h.packetMeta(pk))
 }
 
 // OnQosPublish is called when a publish packet with Qos is issued to a subscriber.
 func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, resends int) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"inflight out",
-		slog.Any("m", h.packetMeta(pk)))
+	h.Log.Debug("inflight out", "m", h.packetMeta(pk))
 }
 
 // OnQosComplete is called when the Qos flow for a message has been completed.
 func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"inflight complete",
-		slog.Any("m", h.packetMeta(pk)))
+	h.Log.Debug("inflight complete", "m", h.packetMeta(pk))
 }
 
 // OnQosDropped is called the Qos flow for a message expires.
 func (h *Hook) OnQosDropped(cl *mqtt.Client, pk packets.Packet) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"inflight dropped",
-		slog.Any("m", h.packetMeta(pk)))
+	h.Log.Debug("inflight dropped", "m", h.packetMeta(pk))
 }
 
 // OnLWTSent is called when a will message has been issued from a disconnecting client.
 func (h *Hook) OnLWTSent(cl *mqtt.Client, pk packets.Packet) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"sent lwt for client",
-		slog.String("method", "OnLWTSent"),
-		slog.String("client", cl.ID))
+	h.Log.Debug("sent lwt for client", "method", "OnLWTSent", "client", cl.ID)
 }
 
 // OnRetainedExpired is called when the server clears expired retained messages.
 func (h *Hook) OnRetainedExpired(filter string) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"retained message expired",
-		slog.String("method", "OnRetainedExpired"),
-		slog.String("topic", filter))
+	h.Log.Debug("retained message expired", "method", "OnRetainedExpired", "topic", filter)
 }
 
 // OnClientExpired is called when the server clears an expired client.
 func (h *Hook) OnClientExpired(cl *mqtt.Client) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"client session expired",
-		slog.String("method", "OnClientExpired"),
-		slog.String("client", cl.ID))
+	h.Log.Debug("client session expired", "method", "OnClientExpired", "client", cl.ID)
 }
 
 // StoredClients is called when the server restores clients from a store.
 func (h *Hook) StoredClients() (v []storage.Client, err error) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"",
-		slog.String("method", "StoredClients"))
+	h.Log.Debug("", "method", "StoredClients")
 
 	return v, nil
 }
 
 // StoredClients is called when the server restores subscriptions from a store.
 func (h *Hook) StoredSubscriptions() (v []storage.Subscription, err error) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"",
-		slog.String("method", "StoredSubscriptions"))
-
+	h.Log.Debug("", "method", "StoredSubscriptions")
 	return v, nil
 }
 
 // StoredClients is called when the server restores retained messages from a store.
 func (h *Hook) StoredRetainedMessages() (v []storage.Message, err error) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"",
-		slog.String("method", "StoredRetainedMessages"))
-
+	h.Log.Debug("", "method", "StoredRetainedMessages")
 	return v, nil
 }
 
 // StoredClients is called when the server restores inflight messages from a store.
 func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"",
-		slog.String("method", "StoredInflightMessages"))
-
+	h.Log.Debug("", "method", "StoredInflightMessages")
 	return v, nil
 }
 
 // StoredClients is called when the server restores system info from a store.
 func (h *Hook) StoredSysInfo() (v storage.SystemInfo, err error) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelDebug,
-		"",
-		slog.String("method", "StoredClients"))
+	h.Log.Debug("", "method", "StoredSysInfo")
 
 	return v, nil
 }
