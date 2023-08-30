@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2023 mochi-mqtt
+// SPDX-FileContributor: dduncan
+
 package file
 
 import (
@@ -13,6 +17,7 @@ import (
 )
 
 const (
+	// CONFIG_FILE_NAME the name of the configuration file used for file based configuration
 	CONFIG_FILE_NAME = "mochi_config.yml"
 )
 
@@ -51,6 +56,8 @@ type Config struct {
 	} `yaml:"server"`
 }
 
+// Configure attempts to open the configuration file defined by CONFIG_FILE_NAME.
+// If no file is found, a default mqtt.Server instance is created.
 func Configure() (*mqtt.Server, error) {
 
 	data, err := os.ReadFile(CONFIG_FILE_NAME)
@@ -62,11 +69,6 @@ func Configure() (*mqtt.Server, error) {
 	if err := yaml.Unmarshal(data, config); err != nil {
 		return nil, err
 	}
-
-	// TODO : add validate
-	// if !validate(config) {
-
-	// }
 
 	server := mqtt.New(&config.Server.Options)
 
@@ -81,7 +83,6 @@ func Configure() (*mqtt.Server, error) {
 	if config.Server.Listeners.Healthcheck != nil {
 		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.Healthcheck.Port))
 
-		// TODO : Add TLS
 		hc := listeners.NewHTTPHealthCheck("hc", port, nil)
 		err = server.AddListener(hc)
 		if err != nil {
@@ -93,7 +94,6 @@ func Configure() (*mqtt.Server, error) {
 	if config.Server.Listeners.Stats != nil {
 		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.Stats.Port))
 
-		// TODO : Add TLS
 		statl := listeners.NewHTTPStats("stat", port, nil, server.Info)
 		err = server.AddListener(statl)
 		if err != nil {
@@ -106,7 +106,6 @@ func Configure() (*mqtt.Server, error) {
 	if config.Server.Listeners.TCP != nil {
 		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.TCP.Port))
 
-		// TODO : Add TLS
 		tcpl := listeners.NewTCP("tcp", port, nil)
 		err = server.AddListener(tcpl)
 		if err != nil {
@@ -118,7 +117,6 @@ func Configure() (*mqtt.Server, error) {
 	if config.Server.Listeners.Websocket != nil {
 		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.Websocket.Port))
 
-		// TODO : Add TLS
 		wsl := listeners.NewWebsocket("ws", port, nil)
 		err = server.AddListener(wsl)
 		if err != nil {
@@ -129,7 +127,3 @@ func Configure() (*mqtt.Server, error) {
 
 	return server, nil
 }
-
-// func validate(config *Config) bool {
-// 	return true
-// }
