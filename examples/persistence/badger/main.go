@@ -5,9 +5,7 @@
 package main
 
 import (
-	"context"
 	"log"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -54,7 +52,7 @@ func main() {
 	}()
 
 	<-done
-	server.Log.LogAttrs(context.TODO(), slog.LevelWarn, "caught signal, stopping...")
+	server.Log.Warn("caught signal, stopping...")
 	server.Close()
-	server.Log.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
+	server.Log.Info("main.go finished")
 }

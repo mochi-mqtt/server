@@ -15,8 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"log/slog"
-
 	"github.com/rs/xid"
 
 	"github.com/mochi-mqtt/server/v2/packets"
@@ -195,10 +193,7 @@ func (cl *Client) WriteLoop() {
 		case pk := <-cl.State.outbound:
 			if err := cl.WritePacket(*pk); err != nil {
 				// TODO : Figure out what to do with error
-				cl.ops.log.LogAttrs(context.TODO(), slog.LevelDebug, "failed publishing packet",
-					slog.String("error", err.Error()),
-					slog.String("client", cl.ID),
-					slog.Any("packet", pk))
+				cl.ops.log.Debug("failed publishing packet", "error", err.Error(), "client", cl.ID, "packet", pk)
 			}
 			atomic.AddInt32(&cl.State.outboundQty, -1)
 		case <-cl.State.open.Done():

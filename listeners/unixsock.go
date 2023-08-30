@@ -5,7 +5,6 @@
 package listeners
 
 import (
-	"context"
 	"net"
 	"os"
 	"sync"
@@ -74,9 +73,7 @@ func (l *UnixSock) Serve(establish EstablishFn) {
 			go func() {
 				err = establish(l.id, conn)
 				if err != nil {
-					l.log.LogAttrs(context.TODO(), slog.LevelWarn,
-						"",
-						slog.String("error", err.Error()))
+					l.log.Warn("", "error", err.Error())
 				}
 			}()
 		}

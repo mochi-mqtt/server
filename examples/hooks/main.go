@@ -6,10 +6,8 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"log"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -65,12 +63,9 @@ func main() {
 				Payload:   []byte("injected scheduled message"),
 			})
 			if err != nil {
-				server.Log.LogAttrs(context.TODO(), slog.LevelError,
-					"server.InjectPacket",
-					slog.String("error", err.Error()))
+				server.Log.Error("server.InjectPacket", "error", err.Error())
 			}
-			server.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-				"main.go injected packet to direct/publish")
+			server.Log.Info("main.go injected packet to direct/publish")
 		}
 	}()
 
@@ -80,19 +75,16 @@ func main() {
 		for range time.Tick(time.Second * 5) {
 			err := server.Publish("direct/publish", []byte("packet scheduled message"), false, 0)
 			if err != nil {
-				server.Log.LogAttrs(context.TODO(), slog.LevelError,
-					"server.Publish",
-					slog.String("error", err.Error()))
+				server.Log.Error("server.Publish", "error", err.Error())
 			}
-			server.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-				"main.go issued direct message to direct/publish")
+			server.Log.Info("main.go issued direct message to direct/publish")
 		}
 	}()
 
 	<-done
-	server.Log.LogAttrs(context.TODO(), slog.LevelWarn, "caught signal, stopping...")
+	server.Log.Warn("caught signal, stopping...")
 	server.Close()
-	server.Log.LogAttrs(context.TODO(), slog.LevelInfo, "main.go finished")
+	server.Log.Info("main.go finished")
 }
 
 type ExampleHook struct {
@@ -115,68 +107,44 @@ func (h *ExampleHook) Provides(b byte) bool {
 }
 
 func (h *ExampleHook) Init(config any) error {
-	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-		"initialised")
+	h.Log.Info("initialised")
 	return nil
 }
 
 func (h *ExampleHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
-	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-		"initialised")
+	h.Log.Info("client connected", "client", cl.ID)
 	return nil
 }
 
 func (h *ExampleHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
 	if err != nil {
-		h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-			"client disconnected",
-			slog.String("client", cl.ID),
-			slog.Bool("expire", expire),
-			slog.String("error", err.Error()))
+		h.Log.Info("client disconnected", "client", cl.ID, "expire", expire, "error", err.Error())
 	} else {
-		h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-			"client disconnected",
-			slog.String("client", cl.ID),
-			slog.Bool("expire", expire))
+		h.Log.Info("client disconnected", "client", cl.ID, "expire", expire)
 	}
 
 }
 
 func (h *ExampleHook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []byte) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-		fmt.Sprintf("subscribed qos=%v", reasonCodes),
-		slog.String("client", cl.ID),
-		slog.Any("filters", pk.Filters))
+	h.Log.Info(fmt.Sprintf("subscribed qos=%v", reasonCodes), "client", cl.ID, "filters", pk.Filters)
 }
 
 func (h *ExampleHook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-		"unsubscribed",
-		slog.String("client", cl.ID),
-		slog.Any("filters", pk.Filters))
+	h.Log.Info("unsubscribed", "client", cl.ID, "filters", pk.Filters)
 }
 
 func (h *ExampleHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-		"received from client",
-		slog.String("client", cl.ID),
-		slog.String("payload", string(pk.Payload)))
+	h.Log.Info("received from client", "client", cl.ID, "payload", string(pk.Payload))
 
 	pkx := pk
 	if string(pk.Payload) == "hello" {
 		pkx.Payload = []byte("hello world")
-		h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-			"received modified packet from client",
-			slog.String("client", cl.ID),
-			slog.String("payload", string(pkx.Payload)))
+		h.Log.Info("received modified packet from client", "client", cl.ID, "payload", string(pkx.Payload))
 	}
 
 	return pkx, nil
 }
 
 func (h *ExampleHook) OnPublished(cl *mqtt.Client, pk packets.Packet) {
-	h.Log.LogAttrs(context.TODO(), slog.LevelInfo,
-		"published to client",
-		slog.String("client", cl.ID),
-		slog.String("payload", string(pk.Payload)))
+	h.Log.Info("published to client", "client", cl.ID, "payload", string(pk.Payload))
 }

@@ -102,7 +102,7 @@ func (l *Websocket) handler(w http.ResponseWriter, r *http.Request) {
 
 	err = l.establish(l.id, &wsConn{Conn: c.UnderlyingConn(), c: c})
 	if err != nil {
-		l.log.LogAttrs(context.Background(), slog.LevelWarn, "", slog.String("error", err.Error()))
+		l.log.Warn("", "error", err.Error())
 	}
 }
 
