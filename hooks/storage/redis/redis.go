@@ -355,7 +355,7 @@ func (h *Hook) OnQosDropped(cl *mqtt.Client, pk packets.Packet) {
 // OnSysInfoTick stores the latest system info in the store.
 func (h *Hook) OnSysInfoTick(sys *system.Info) {
 	if h.db == nil {
-		h.Log.Error("error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
 		return
 	}
 
