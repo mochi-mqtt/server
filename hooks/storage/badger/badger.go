@@ -378,7 +378,7 @@ func (h *Hook) OnClientExpired(cl *mqtt.Client) {
 
 	err := h.db.Delete(clientKey(cl), new(storage.Client))
 	if err != nil {
-		h.Log.Error("failed to delete expired client data", "error", err.Error(), "data", clientKey(cl))
+		h.Log.Error("failed to delete expired client data", "error", err.Error(), "id", clientKey(cl))
 	}
 }
 
