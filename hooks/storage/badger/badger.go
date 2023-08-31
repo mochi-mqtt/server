@@ -365,7 +365,7 @@ func (h *Hook) OnRetainedExpired(filter string) {
 
 	err := h.db.Delete(retainedKey(filter), new(storage.Message))
 	if err != nil {
-		h.Log.Error("failed to delete expired retained message data", "error", err.Error(), "data", retainedKey(filter))
+		h.Log.Error("failed to delete expired retained message data", "error", err.Error(), "id", retainedKey(filter))
 	}
 }
 
