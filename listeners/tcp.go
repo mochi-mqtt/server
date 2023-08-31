@@ -83,7 +83,7 @@ func (l *TCP) Serve(establish EstablishFn) {
 			go func() {
 				err = establish(l.id, conn)
 				if err != nil {
-					l.log.Warn("", "error", err.Error())
+					l.log.Warn("", "error", err)
 				}
 			}()
 		}

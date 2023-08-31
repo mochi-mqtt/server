@@ -169,7 +169,7 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 	}
 	err := h.db.Save(in)
 	if err != nil {
-		h.Log.Error("failed to save client data", "error", err.Error(), "data", in)
+		h.Log.Error("failed to save client data", "error", err, "data", in)
 	}
 }
 
@@ -190,7 +190,7 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 
 	err := h.db.DeleteStruct(&storage.Client{ID: clientKey(cl)})
 	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		h.Log.Error("failed to delete client", "error", err.Error(), "id", clientKey(cl))
+		h.Log.Error("failed to delete client", "error", err, "id", clientKey(cl))
 	}
 }
 
@@ -217,7 +217,7 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 
 		err := h.db.Save(in)
 		if err != nil {
-			h.Log.Error("failed to save subscription data", "error", err.Error(), "client", cl.ID, "data", in)
+			h.Log.Error("failed to save subscription data", "error", err, "client", cl.ID, "data", in)
 		}
 	}
 }
@@ -234,7 +234,7 @@ func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 			ID: subscriptionKey(cl, pk.Filters[i].Filter),
 		})
 		if err != nil {
-			h.Log.Error("failed to delete client", "error", err.Error(), "id", subscriptionKey(cl, pk.Filters[i].Filter))
+			h.Log.Error("failed to delete client", "error", err, "id", subscriptionKey(cl, pk.Filters[i].Filter))
 		}
 	}
 }
@@ -251,7 +251,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 			ID: retainedKey(pk.TopicName),
 		})
 		if err != nil {
-			h.Log.Error("failed to delete retained publish", "error", err.Error(), "id", retainedKey(pk.TopicName))
+			h.Log.Error("failed to delete retained publish", "error", err, "id", retainedKey(pk.TopicName))
 		}
 		return
 	}
@@ -278,7 +278,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 	}
 	err := h.db.Save(in)
 	if err != nil {
-		h.Log.Error("failed to save retained publish data", "error", err.Error(), "client", cl.ID, "data", in)
+		h.Log.Error("failed to save retained publish data", "error", err, "client", cl.ID, "data", in)
 	}
 }
 
@@ -313,7 +313,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 
 	err := h.db.Save(in)
 	if err != nil {
-		h.Log.Error("failed to save qos inflight data", "error", err.Error(), "client", cl.ID, "data", in)
+		h.Log.Error("failed to save qos inflight data", "error", err, "client", cl.ID, "data", in)
 	}
 }
 
@@ -328,7 +328,7 @@ func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
 		ID: inflightKey(cl, pk),
 	})
 	if err != nil {
-		h.Log.Error("failed to delete inflight data", "error", err.Error(), "id", inflightKey(cl, pk))
+		h.Log.Error("failed to delete inflight data", "error", err, "id", inflightKey(cl, pk))
 	}
 }
 
@@ -356,7 +356,7 @@ func (h *Hook) OnSysInfoTick(sys *system.Info) {
 
 	err := h.db.Save(in)
 	if err != nil {
-		h.Log.Error("failed to save $SYS data", "error", err.Error(), "data", in)
+		h.Log.Error("failed to save $SYS data", "error", err, "data", in)
 	}
 }
 
@@ -368,7 +368,7 @@ func (h *Hook) OnRetainedExpired(filter string) {
 	}
 
 	if err := h.db.DeleteStruct(&storage.Message{ID: retainedKey(filter)}); err != nil {
-		h.Log.Error("failed to delete retained publish", "error", err.Error(), "id", retainedKey(filter))
+		h.Log.Error("failed to delete retained publish", "error", err, "id", retainedKey(filter))
 	}
 }
 
@@ -381,7 +381,7 @@ func (h *Hook) OnClientExpired(cl *mqtt.Client) {
 
 	err := h.db.DeleteStruct(&storage.Client{ID: clientKey(cl)})
 	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		h.Log.Error("failed to delete expired client", "error", err.Error(), "id", clientKey(cl))
+		h.Log.Error("failed to delete expired client", "error", err, "id", clientKey(cl))
 	}
 }
 

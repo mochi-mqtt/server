@@ -180,7 +180,7 @@ func (h *Hooks) Stop() {
 		for _, hook := range h.GetAll() {
 			h.Log.Info("stopping hook", "hook", hook.ID())
 			if err := hook.Stop(); err != nil {
-				h.Log.Debug("problem stopping hook", "error", err.Error(), "hook", hook.ID())
+				h.Log.Debug("problem stopping hook", "error", err, "hook", hook.ID())
 			}
 
 			h.wg.Done()
@@ -394,13 +394,13 @@ func (h *Hooks) OnPublish(cl *Client, pk packets.Packet) (pkx packets.Packet, er
 			if err != nil {
 				if errors.Is(err, packets.ErrRejectPacket) {
 					h.Log.Debug("publish packet rejected",
-						"error", err.Error(),
+						"error", err,
 						"hook", hook.ID(),
 						"packet", pkx)
 					return pk, err
 				}
 				h.Log.Error("publish packet error",
-					"error", err.Error(),
+					"error", err,
 					"hook", hook.ID(),
 					"packet", pkx)
 				return pk, err
@@ -502,7 +502,7 @@ func (h *Hooks) OnWill(cl *Client, will Will) Will {
 			mlwt, err := hook.OnWill(cl, will)
 			if err != nil {
 				h.Log.Error("parse will error",
-					"error", err.Error(),
+					"error", err,
 					"hook", hook.ID(),
 					"will", will)
 				continue
@@ -548,7 +548,7 @@ func (h *Hooks) StoredClients() (v []storage.Client, err error) {
 		if hook.Provides(StoredClients) {
 			v, err := hook.StoredClients()
 			if err != nil {
-				h.Log.Error("failed to load clients", "error", err.Error(), "hook", hook.ID())
+				h.Log.Error("failed to load clients", "error", err, "hook", hook.ID())
 				return v, err
 			}
 
@@ -568,7 +568,7 @@ func (h *Hooks) StoredSubscriptions() (v []storage.Subscription, err error) {
 		if hook.Provides(StoredSubscriptions) {
 			v, err := hook.StoredSubscriptions()
 			if err != nil {
-				h.Log.Error("failed to load subscriptions", "error", err.Error(), "hook", hook.ID())
+				h.Log.Error("failed to load subscriptions", "error", err, "hook", hook.ID())
 				return v, err
 			}
 
@@ -588,7 +588,7 @@ func (h *Hooks) StoredInflightMessages() (v []storage.Message, err error) {
 		if hook.Provides(StoredInflightMessages) {
 			v, err := hook.StoredInflightMessages()
 			if err != nil {
-				h.Log.Error("failed to load inflight messages", "error", err.Error(), "hook", hook.ID())
+				h.Log.Error("failed to load inflight messages", "error", err, "hook", hook.ID())
 				return v, err
 			}
 
@@ -608,7 +608,7 @@ func (h *Hooks) StoredRetainedMessages() (v []storage.Message, err error) {
 		if hook.Provides(StoredRetainedMessages) {
 			v, err := hook.StoredRetainedMessages()
 			if err != nil {
-				h.Log.Error("failed to load retained messages", "error", err.Error(), "hook", hook.ID())
+				h.Log.Error("failed to load retained messages", "error", err, "hook", hook.ID())
 				return v, err
 			}
 
@@ -627,7 +627,7 @@ func (h *Hooks) StoredSysInfo() (v storage.SystemInfo, err error) {
 		if hook.Provides(StoredSysInfo) {
 			v, err := hook.StoredSysInfo()
 			if err != nil {
-				h.Log.Error("failed to load $SYS info", "error", err.Error(), "hook", hook.ID())
+				h.Log.Error("failed to load $SYS info", "error", err, "hook", hook.ID())
 				return v, err
 			}
 

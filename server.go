@@ -379,7 +379,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 		cl.Properties.Will = Will{} // [MQTT-3.14.4-3] [MQTT-3.1.2-10]
 	}
 	s.Log.Debug("client disconnected", "error", err, "client", cl.ID, "remote", cl.Net.Remote, "listener", listener)
-	
+
 	expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
 	s.hooks.OnDisconnect(cl, err, expire)
 
@@ -424,7 +424,7 @@ func (s *Server) receivePacket(cl *Client, pk packets.Packet) error {
 			s.DisconnectClient(cl, code)
 		}
 
-		s.Log.Warn("error processing packet", "error", err.Error(), "client", cl.ID, "listener", cl.Net.Listener, "pk", pk)
+		s.Log.Warn("error processing packet", "error", err, "client", cl.ID, "listener", cl.Net.Listener, "pk", pk)
 
 		return err
 	}

@@ -184,7 +184,7 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 
 	err := h.db.HSet(h.ctx, h.hKey(storage.ClientKey), clientKey(cl), in).Err()
 	if err != nil {
-		h.Log.Error("failed to hset client data", "error", err.Error(), "data", in)
+		h.Log.Error("failed to hset client data", "error", err, "data", in)
 	}
 }
 
@@ -205,7 +205,7 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 
 	err := h.db.HDel(h.ctx, h.hKey(storage.ClientKey), clientKey(cl)).Err()
 	if err != nil {
-		h.Log.Error("failed to delete client", "error", err.Error(), "id", clientKey(cl))
+		h.Log.Error("failed to delete client", "error", err, "id", clientKey(cl))
 	}
 }
 
@@ -232,7 +232,7 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 
 		err := h.db.HSet(h.ctx, h.hKey(storage.SubscriptionKey), subscriptionKey(cl, pk.Filters[i].Filter), in).Err()
 		if err != nil {
-			h.Log.Error("failed to hset subscription data", "error", err.Error(), "data", in)
+			h.Log.Error("failed to hset subscription data", "error", err, "data", in)
 		}
 	}
 }
@@ -247,7 +247,7 @@ func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 	for i := 0; i < len(pk.Filters); i++ {
 		err := h.db.HDel(h.ctx, h.hKey(storage.SubscriptionKey), subscriptionKey(cl, pk.Filters[i].Filter)).Err()
 		if err != nil {
-			h.Log.Error("failed to delete subscription data", "error", err.Error(), "id", clientKey(cl))
+			h.Log.Error("failed to delete subscription data", "error", err, "id", clientKey(cl))
 		}
 	}
 }
@@ -262,7 +262,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 	if r == -1 {
 		err := h.db.HDel(h.ctx, h.hKey(storage.RetainedKey), retainedKey(pk.TopicName)).Err()
 		if err != nil {
-			h.Log.Error("failed to delete retained message data", "error", err.Error(), "id", retainedKey(pk.TopicName))
+			h.Log.Error("failed to delete retained message data", "error", err, "id", retainedKey(pk.TopicName))
 		}
 
 		return
@@ -291,7 +291,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 
 	err := h.db.HSet(h.ctx, h.hKey(storage.RetainedKey), retainedKey(pk.TopicName), in).Err()
 	if err != nil {
-		h.Log.Error("failed to hset retained message data", "error", err.Error(), "data", in)
+		h.Log.Error("failed to hset retained message data", "error", err, "data", in)
 	}
 }
 
@@ -326,7 +326,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 
 	err := h.db.HSet(h.ctx, h.hKey(storage.InflightKey), inflightKey(cl, pk), in).Err()
 	if err != nil {
-		h.Log.Error("failed to hset qos inflight message data", "error", err.Error(), "data", in)
+		h.Log.Error("failed to hset qos inflight message data", "error", err, "data", in)
 	}
 }
 
@@ -339,7 +339,7 @@ func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
 
 	err := h.db.HDel(h.ctx, h.hKey(storage.InflightKey), inflightKey(cl, pk)).Err()
 	if err != nil {
-		h.Log.Error("failed to delete qos inflight message data", "error", err.Error(), "id", inflightKey(cl, pk))
+		h.Log.Error("failed to delete qos inflight message data", "error", err, "id", inflightKey(cl, pk))
 	}
 }
 
@@ -367,7 +367,7 @@ func (h *Hook) OnSysInfoTick(sys *system.Info) {
 
 	err := h.db.HSet(h.ctx, h.hKey(storage.SysInfoKey), sysInfoKey(), in).Err()
 	if err != nil {
-		h.Log.Error("failed to hset server info data", "error", err.Error(), "data", in)
+		h.Log.Error("failed to hset server info data", "error", err, "data", in)
 	}
 }
 
@@ -380,7 +380,7 @@ func (h *Hook) OnRetainedExpired(filter string) {
 
 	err := h.db.HDel(h.ctx, h.hKey(storage.RetainedKey), retainedKey(filter)).Err()
 	if err != nil {
-		h.Log.Error("failed to delete expired retained message", "error", err.Error(), "id", retainedKey(filter))
+		h.Log.Error("failed to delete expired retained message", "error", err, "id", retainedKey(filter))
 	}
 }
 
@@ -393,7 +393,7 @@ func (h *Hook) OnClientExpired(cl *mqtt.Client) {
 
 	err := h.db.HDel(h.ctx, h.hKey(storage.ClientKey), clientKey(cl)).Err()
 	if err != nil {
-		h.Log.Error("failed to delete expired client", "error", err.Error(), "id", clientKey(cl))
+		h.Log.Error("failed to delete expired client", "error", err, "id", clientKey(cl))
 	}
 }
 
@@ -406,14 +406,14 @@ func (h *Hook) StoredClients() (v []storage.Client, err error) {
 
 	rows, err := h.db.HGetAll(h.ctx, h.hKey(storage.ClientKey)).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		h.Log.Error("failed to HGetAll client data", "error", err.Error())
+		h.Log.Error("failed to HGetAll client data", "error", err)
 		return
 	}
 
 	for _, row := range rows {
 		var d storage.Client
 		if err = d.UnmarshalBinary([]byte(row)); err != nil {
-			h.Log.Error("failed to unmarshal client data", "error", err.Error(), "data", row)
+			h.Log.Error("failed to unmarshal client data", "error", err, "data", row)
 		}
 
 		v = append(v, d)
@@ -431,14 +431,14 @@ func (h *Hook) StoredSubscriptions() (v []storage.Subscription, err error) {
 
 	rows, err := h.db.HGetAll(h.ctx, h.hKey(storage.SubscriptionKey)).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		h.Log.Error("failed to HGetAll subscription data", "error", err.Error())
+		h.Log.Error("failed to HGetAll subscription data", "error", err)
 		return
 	}
 
 	for _, row := range rows {
 		var d storage.Subscription
 		if err = d.UnmarshalBinary([]byte(row)); err != nil {
-			h.Log.Error("failed to unmarshal subscription data", "error", err.Error(), "data", row)
+			h.Log.Error("failed to unmarshal subscription data", "error", err, "data", row)
 		}
 
 		v = append(v, d)
@@ -456,14 +456,14 @@ func (h *Hook) StoredRetainedMessages() (v []storage.Message, err error) {
 
 	rows, err := h.db.HGetAll(h.ctx, h.hKey(storage.RetainedKey)).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		h.Log.Error("failed to HGetAll retained message data", "error", err.Error())
+		h.Log.Error("failed to HGetAll retained message data", "error", err)
 		return
 	}
 
 	for _, row := range rows {
 		var d storage.Message
 		if err = d.UnmarshalBinary([]byte(row)); err != nil {
-			h.Log.Error("failed to unmarshal retained message data", "error", err.Error(), "data", row)
+			h.Log.Error("failed to unmarshal retained message data", "error", err, "data", row)
 		}
 
 		v = append(v, d)
@@ -481,14 +481,14 @@ func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 
 	rows, err := h.db.HGetAll(h.ctx, h.hKey(storage.InflightKey)).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		h.Log.Error("failed to HGetAll inflight message data", "error", err.Error())
+		h.Log.Error("failed to HGetAll inflight message data", "error", err)
 		return
 	}
 
 	for _, row := range rows {
 		var d storage.Message
 		if err = d.UnmarshalBinary([]byte(row)); err != nil {
-			h.Log.Error("failed to unmarshal inflight message data", "error", err.Error(), "data", row)
+			h.Log.Error("failed to unmarshal inflight message data", "error", err, "data", row)
 		}
 
 		v = append(v, d)
@@ -510,7 +510,7 @@ func (h *Hook) StoredSysInfo() (v storage.SystemInfo, err error) {
 	}
 
 	if err = v.UnmarshalBinary([]byte(row)); err != nil {
-		h.Log.Error("failed to unmarshal sys info data", "error", err.Error(), "data", row)
+		h.Log.Error("failed to unmarshal sys info data", "error", err, "data", row)
 	}
 
 	return v, nil

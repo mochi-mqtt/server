@@ -193,7 +193,7 @@ func (cl *Client) WriteLoop() {
 		case pk := <-cl.State.outbound:
 			if err := cl.WritePacket(*pk); err != nil {
 				// TODO : Figure out what to do with error
-				cl.ops.log.Debug("failed publishing packet", "error", err.Error(), "client", cl.ID, "packet", pk)
+				cl.ops.log.Debug("failed publishing packet", "error", err, "client", cl.ID, "packet", pk)
 			}
 			atomic.AddInt32(&cl.State.outboundQty, -1)
 		case <-cl.State.open.Done():

@@ -63,7 +63,7 @@ func main() {
 				Payload:   []byte("injected scheduled message"),
 			})
 			if err != nil {
-				server.Log.Error("server.InjectPacket", "error", err.Error())
+				server.Log.Error("server.InjectPacket", "error", err)
 			}
 			server.Log.Info("main.go injected packet to direct/publish")
 		}
@@ -75,7 +75,7 @@ func main() {
 		for range time.Tick(time.Second * 5) {
 			err := server.Publish("direct/publish", []byte("packet scheduled message"), false, 0)
 			if err != nil {
-				server.Log.Error("server.Publish", "error", err.Error())
+				server.Log.Error("server.Publish", "error", err)
 			}
 			server.Log.Info("main.go issued direct message to direct/publish")
 		}
@@ -118,7 +118,7 @@ func (h *ExampleHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
 
 func (h *ExampleHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
 	if err != nil {
-		h.Log.Info("client disconnected", "client", cl.ID, "expire", expire, "error", err.Error())
+		h.Log.Info("client disconnected", "client", cl.ID, "expire", expire, "error", err)
 	} else {
 		h.Log.Info("client disconnected", "client", cl.ID, "expire", expire)
 	}

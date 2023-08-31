@@ -166,7 +166,7 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 
 	err := h.db.Upsert(in.ID, in)
 	if err != nil {
-		h.Log.Error("failed to upsert client data", "error", err.Error(), "data", in)
+		h.Log.Error("failed to upsert client data", "error", err, "data", in)
 	}
 }
 
@@ -189,7 +189,7 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 
 	err := h.db.Delete(clientKey(cl), new(storage.Client))
 	if err != nil {
-		h.Log.Error("failed to delete client data", "error", err.Error(), "data", clientKey(cl))
+		h.Log.Error("failed to delete client data", "error", err, "data", clientKey(cl))
 	}
 }
 
@@ -216,7 +216,7 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 
 		err := h.db.Upsert(in.ID, in)
 		if err != nil {
-			h.Log.Error("failed to upsert subscription data", "error", err.Error(), "data", in)
+			h.Log.Error("failed to upsert subscription data", "error", err, "data", in)
 		}
 	}
 }
@@ -231,7 +231,7 @@ func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 	for i := 0; i < len(pk.Filters); i++ {
 		err := h.db.Delete(subscriptionKey(cl, pk.Filters[i].Filter), new(storage.Subscription))
 		if err != nil {
-			h.Log.Error("failed to delete subscription data", "error", err.Error(), "data", subscriptionKey(cl, pk.Filters[i].Filter))
+			h.Log.Error("failed to delete subscription data", "error", err, "data", subscriptionKey(cl, pk.Filters[i].Filter))
 		}
 	}
 }
@@ -246,7 +246,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 	if r == -1 {
 		err := h.db.Delete(retainedKey(pk.TopicName), new(storage.Message))
 		if err != nil {
-			h.Log.Error("failed to delete retained message data", "error", err.Error(), "data", retainedKey(pk.TopicName))
+			h.Log.Error("failed to delete retained message data", "error", err, "data", retainedKey(pk.TopicName))
 		}
 
 		return
@@ -275,7 +275,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 
 	err := h.db.Upsert(in.ID, in)
 	if err != nil {
-		h.Log.Error("failed to upsert retained message data", "error", err.Error(), "data", in)
+		h.Log.Error("failed to upsert retained message data", "error", err, "data", in)
 	}
 }
 
@@ -311,7 +311,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 
 	err := h.db.Upsert(in.ID, in)
 	if err != nil {
-		h.Log.Error("failed to upsert qos inflight data", "error", err.Error(), "data", in)
+		h.Log.Error("failed to upsert qos inflight data", "error", err, "data", in)
 	}
 }
 
@@ -324,7 +324,7 @@ func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
 
 	err := h.db.Delete(inflightKey(cl, pk), new(storage.Message))
 	if err != nil {
-		h.Log.Error("failed to delete inflight message data", "error", err.Error(), "data", inflightKey(cl, pk))
+		h.Log.Error("failed to delete inflight message data", "error", err, "data", inflightKey(cl, pk))
 	}
 }
 
@@ -352,7 +352,7 @@ func (h *Hook) OnSysInfoTick(sys *system.Info) {
 
 	err := h.db.Upsert(in.ID, in)
 	if err != nil {
-		h.Log.Error("failed to upsert $SYS data", "error", err.Error(), "data", in)
+		h.Log.Error("failed to upsert $SYS data", "error", err, "data", in)
 	}
 }
 
@@ -365,7 +365,7 @@ func (h *Hook) OnRetainedExpired(filter string) {
 
 	err := h.db.Delete(retainedKey(filter), new(storage.Message))
 	if err != nil {
-		h.Log.Error("failed to delete expired retained message data", "error", err.Error(), "id", retainedKey(filter))
+		h.Log.Error("failed to delete expired retained message data", "error", err, "id", retainedKey(filter))
 	}
 }
 
@@ -378,7 +378,7 @@ func (h *Hook) OnClientExpired(cl *mqtt.Client) {
 
 	err := h.db.Delete(clientKey(cl), new(storage.Client))
 	if err != nil {
-		h.Log.Error("failed to delete expired client data", "error", err.Error(), "id", clientKey(cl))
+		h.Log.Error("failed to delete expired client data", "error", err, "id", clientKey(cl))
 	}
 }
 
