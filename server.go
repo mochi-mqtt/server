@@ -813,7 +813,7 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 		if cl, ok := s.Clients.Get(id); ok {
 			_, err := s.publishToClient(cl, subs, pk)
 			if err != nil {
-				s.Log.Debug("failed publishing packet", "packet", pk)
+				s.Log.Debug("failed publishing packet", "error", err, "client", cl.ID, "packet", pk)
 			}
 		}
 	}
@@ -860,7 +860,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 		i, err := cl.NextPacketID() // [MQTT-4.3.2-1] [MQTT-4.3.3-1]
 		if err != nil {
 			s.hooks.OnPacketIDExhausted(cl, pk)
-			s.Log.Warn("packet ids exhausted", "client", cl.ID, "listener", cl.Net.Listener)
+			s.Log.Warn("packet ids exhausted", "error", err, "client", cl.ID, "listener", cl.Net.Listener)
 			return out, packets.ErrQuotaExceeded
 		}
 
@@ -911,7 +911,7 @@ func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, e
 	for _, pkv := range s.Topics.Messages(sub.Filter) { // [MQTT-3.8.4-4]
 		_, err := s.publishToClient(cl, sub, pkv)
 		if err != nil {
-			s.Log.Debug("failed to publish retained message", "client", cl.ID, "listener", cl.Net.Listener, "packet", pkv)
+			s.Log.Debug("failed to publish retained message", "error", err, "client", cl.ID, "listener", cl.Net.Listener, "packet", pkv)
 			continue
 		}
 		s.hooks.OnRetainPublished(cl, pkv)
