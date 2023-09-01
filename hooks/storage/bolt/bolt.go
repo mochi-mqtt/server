@@ -141,7 +141,7 @@ func (h *Hook) OnWillSent(cl *mqtt.Client, pk packets.Packet) {
 // updateClient writes the client data to the store.
 func (h *Hook) updateClient(cl *mqtt.Client) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -176,7 +176,7 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 // OnDisconnect removes a client from the store if they were using a clean session.
 func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -197,7 +197,7 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 // OnSubscribed adds one or more client subscriptions to the store.
 func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []byte) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -225,7 +225,7 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 // OnUnsubscribed removes one or more client subscriptions from the store.
 func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -242,7 +242,7 @@ func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 // OnRetainMessage adds a retained message for a topic to the store.
 func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -285,7 +285,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 // OnQosPublish adds or updates an inflight message in the store.
 func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, resends int) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -320,7 +320,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 // OnQosComplete removes a resolved inflight message from the store.
 func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -335,7 +335,7 @@ func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
 // OnQosDropped removes a dropped inflight message from the store.
 func (h *Hook) OnQosDropped(cl *mqtt.Client, pk packets.Packet) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 	}
 
 	h.OnQosComplete(cl, pk)
@@ -344,7 +344,7 @@ func (h *Hook) OnQosDropped(cl *mqtt.Client, pk packets.Packet) {
 // OnSysInfoTick stores the latest system info in the store.
 func (h *Hook) OnSysInfoTick(sys *system.Info) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -363,7 +363,7 @@ func (h *Hook) OnSysInfoTick(sys *system.Info) {
 // OnRetainedExpired deletes expired retained messages from the store.
 func (h *Hook) OnRetainedExpired(filter string) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -375,7 +375,7 @@ func (h *Hook) OnRetainedExpired(filter string) {
 // OnClientExpired deleted expired clients from the store.
 func (h *Hook) OnClientExpired(cl *mqtt.Client) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -388,7 +388,7 @@ func (h *Hook) OnClientExpired(cl *mqtt.Client) {
 // StoredClients returns all stored clients from the store.
 func (h *Hook) StoredClients() (v []storage.Client, err error) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -403,7 +403,7 @@ func (h *Hook) StoredClients() (v []storage.Client, err error) {
 // StoredSubscriptions returns all stored subscriptions from the store.
 func (h *Hook) StoredSubscriptions() (v []storage.Subscription, err error) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -418,7 +418,7 @@ func (h *Hook) StoredSubscriptions() (v []storage.Subscription, err error) {
 // StoredRetainedMessages returns all stored retained messages from the store.
 func (h *Hook) StoredRetainedMessages() (v []storage.Message, err error) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -433,7 +433,7 @@ func (h *Hook) StoredRetainedMessages() (v []storage.Message, err error) {
 // StoredInflightMessages returns all stored inflight messages from the store.
 func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
@@ -448,7 +448,7 @@ func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 // StoredSysInfo returns the system info from the store.
 func (h *Hook) StoredSysInfo() (v storage.SystemInfo, err error) {
 	if h.db == nil {
-		h.Log.Error("", "error", storage.ErrDBFileNotOpen.Error())
+		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
