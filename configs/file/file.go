@@ -134,7 +134,6 @@ func configureTLS(config *TLS) (*tls.Config, error) {
 	}
 
 	if config.CACert != "" {
-		// Load CA cert
 		caCert, err := ioutil.ReadFile(config.CACert)
 		if err != nil {
 			return nil, err
@@ -152,7 +151,7 @@ func configureHealthCheck(config *HealthCheck, server *mqtt.Server, tlsc *tls.Co
 		return nil
 	}
 
-	port := fmt.Sprintf(":%s", strconv.Itoa(config.Port))
+	port := formatPort(config.Port)
 	lc := new(listeners.Config)
 
 	if config.TLSEnabled {
@@ -174,7 +173,7 @@ func configureStats(config *Stats, server *mqtt.Server, tlsc *tls.Config) error 
 		return nil
 	}
 
-	port := fmt.Sprintf(":%s", strconv.Itoa(config.Port))
+	port := formatPort(config.Port)
 	lc := new(listeners.Config)
 
 	if config.TLSEnabled {
@@ -190,7 +189,7 @@ func configureTCP(config *TCP, server *mqtt.Server, tlsc *tls.Config) error {
 		return nil
 	}
 
-	port := fmt.Sprintf(":%s", strconv.Itoa(config.Port))
+	port := formatPort(config.Port)
 	lc := new(listeners.Config)
 
 	if config.TLSEnabled {
@@ -206,7 +205,7 @@ func configureWebsocket(config *Websocket, server *mqtt.Server, tlsc *tls.Config
 		return nil
 	}
 
-	port := fmt.Sprintf(":%s", strconv.Itoa(config.Port))
+	port := formatPort(config.Port)
 	lc := new(listeners.Config)
 
 	if config.TLSEnabled {
@@ -215,4 +214,8 @@ func configureWebsocket(config *Websocket, server *mqtt.Server, tlsc *tls.Config
 
 	wsl := listeners.NewWebsocket("ws", port, lc)
 	return server.AddListener(wsl)
+}
+
+func formatPort(port int) string {
+	return fmt.Sprintf(":%s", strconv.Itoa(port))
 }
