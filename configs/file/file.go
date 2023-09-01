@@ -5,7 +5,10 @@
 package file
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"log/slog"
 	"os"
 	"strconv"
@@ -29,24 +32,11 @@ type Config struct {
 			AllowAll bool `yaml:"allow_all"`
 		}
 		Listeners struct {
-			Healthcheck *struct {
-				Port int `yaml:"port"`
-			} `yaml:"healthcheck"`
-			Stats *struct {
-				Port int       `yaml:"port"`
-				TLS  *struct { // TODO : Add TLS configuration
-				} `yaml:"tls"`
-			} `yaml:"stats"`
-			TCP *struct {
-				Port int       `yaml:"port"`
-				TLS  *struct { // TODO : Add TLS configuration
-				} `yaml:"tls"`
-			} `yaml:"tcp"`
-			Websocket *struct {
-				Port int       `yaml:"port"`
-				TLS  *struct { // TODO : Add TLS configuration
-				} `yaml:"tls"`
-			} `yaml:"websocket"`
+			HealthCheck *HealthCheck `yaml:"healthcheck"`
+			Stats       *Stats       `yaml:"stats"`
+			TCP         *TCP         `yaml:"tcp"`
+			Websocket   *Websocket   `yaml:"websocket"`
+			TLS         *TLS         `yaml:"tls_options"`
 		} `yaml:"listeners"`
 		Logging struct {
 			Level string `yaml:"level"`
@@ -54,6 +44,31 @@ type Config struct {
 		// Options contains configurable options for the server.
 		mqtt.Options `yaml:"options"`
 	} `yaml:"server"`
+}
+
+type TLS struct {
+	Cert   string `yaml:"cert_file"`
+	Key    string `yaml:"priv_key"`
+	CACert string `yaml:"cacert_file"`
+}
+
+type HealthCheck struct {
+	Port       int  `yaml:"port"`
+	TLSEnabled bool `yaml:"tls_enabled"`
+}
+
+type Stats struct {
+	Port       int  `yaml:"port"`
+	TLSEnabled bool `yaml:"tls_enabled"`
+}
+
+type TCP struct {
+	Port       int  `yaml:"port"`
+	TLSEnabled bool `yaml:"tls_enabled"`
+}
+type Websocket struct {
+	Port       int  `yaml:"port"`
+	TLSEnabled bool `yaml:"tls_enabled"`
 }
 
 // Configure attempts to open the configuration file defined by CONFIG_FILE_NAME.
@@ -80,50 +95,124 @@ func Configure() (*mqtt.Server, error) {
 	}
 
 	// listeners configuration
-	if config.Server.Listeners.Healthcheck != nil {
-		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.Healthcheck.Port))
-
-		hc := listeners.NewHTTPHealthCheck("hc", port, nil)
-		err = server.AddListener(hc)
-		if err != nil {
-			slog.Default().Error(err.Error())
-			return nil, err
-		}
+	tlsc, err := configureTLS(config.Server.Listeners.TLS)
+	if err != nil {
+		return nil, err
 	}
 
-	if config.Server.Listeners.Stats != nil {
-		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.Stats.Port))
-
-		statl := listeners.NewHTTPStats("stat", port, nil, server.Info)
-		err = server.AddListener(statl)
-		if err != nil {
-			slog.Default().Error(err.Error())
-			return nil, err
-		}
-
+	if err := configureHealthCheck(config.Server.Listeners.HealthCheck, server, tlsc); err != nil {
+		return nil, err
 	}
 
-	if config.Server.Listeners.TCP != nil {
-		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.TCP.Port))
-
-		tcpl := listeners.NewTCP("tcp", port, nil)
-		err = server.AddListener(tcpl)
-		if err != nil {
-			slog.Default().Error(err.Error())
-			return nil, err
-		}
+	if err := configureStats(config.Server.Listeners.Stats, server, tlsc); err != nil {
+		return nil, err
 	}
 
-	if config.Server.Listeners.Websocket != nil {
-		port := fmt.Sprintf(":%s", strconv.Itoa(config.Server.Listeners.Websocket.Port))
+	if err := configureTCP(config.Server.Listeners.TCP, server, tlsc); err != nil {
+		return nil, err
+	}
 
-		wsl := listeners.NewWebsocket("ws", port, nil)
-		err = server.AddListener(wsl)
-		if err != nil {
-			slog.Default().Error(err.Error())
-			return nil, err
-		}
+	if err := configureWebsocket(config.Server.Listeners.Websocket, server, tlsc); err != nil {
+		return nil, err
 	}
 
 	return server, nil
+}
+
+func configureTLS(config *TLS) (*tls.Config, error) {
+	if config == nil {
+		return nil, nil
+	}
+
+	tlsc := new(tls.Config)
+	if config.Cert != "" {
+		cert, err := tls.LoadX509KeyPair(config.Cert, config.Key)
+		if err != nil {
+			return nil, err
+		}
+		tlsc.Certificates = []tls.Certificate{cert}
+	}
+
+	if config.CACert != "" {
+		// Load CA cert
+		caCert, err := ioutil.ReadFile(config.CACert)
+		if err != nil {
+			return nil, err
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+		tlsc.ClientCAs = caCertPool
+	}
+
+	return tlsc, nil
+}
+
+func configureHealthCheck(config *HealthCheck, server *mqtt.Server, tlsc *tls.Config) error {
+	if config == nil {
+		return nil
+	}
+
+	port := fmt.Sprintf(":%s", strconv.Itoa(config.Port))
+	lc := new(listeners.Config)
+
+	if config.TLSEnabled {
+		lc.TLSConfig = tlsc
+	}
+
+	hc := listeners.NewHTTPHealthCheck("hc", port, lc)
+	err := server.AddListener(hc)
+	if err != nil {
+		slog.Error(err.Error())
+		return err
+	}
+
+	return nil
+}
+
+func configureStats(config *Stats, server *mqtt.Server, tlsc *tls.Config) error {
+	if config == nil {
+		return nil
+	}
+
+	port := fmt.Sprintf(":%s", strconv.Itoa(config.Port))
+	lc := new(listeners.Config)
+
+	if config.TLSEnabled {
+		lc.TLSConfig = tlsc
+	}
+
+	statl := listeners.NewHTTPStats("stat", port, lc, server.Info)
+	return server.AddListener(statl)
+}
+
+func configureTCP(config *TCP, server *mqtt.Server, tlsc *tls.Config) error {
+	if config == nil {
+		return nil
+	}
+
+	port := fmt.Sprintf(":%s", strconv.Itoa(config.Port))
+	lc := new(listeners.Config)
+
+	if config.TLSEnabled {
+		lc.TLSConfig = tlsc
+	}
+
+	tcpl := listeners.NewTCP("tcp", port, lc)
+	return server.AddListener(tcpl)
+}
+
+func configureWebsocket(config *Websocket, server *mqtt.Server, tlsc *tls.Config) error {
+	if config == nil {
+		return nil
+	}
+
+	port := fmt.Sprintf(":%s", strconv.Itoa(config.Port))
+	lc := new(listeners.Config)
+
+	if config.TLSEnabled {
+		lc.TLSConfig = tlsc
+	}
+
+	wsl := listeners.NewWebsocket("ws", port, lc)
+	return server.AddListener(wsl)
 }
