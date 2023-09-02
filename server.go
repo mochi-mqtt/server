@@ -670,6 +670,8 @@ func (s *Server) Subscribe(client, filter string, handler func(client string, pk
 		return packets.ErrInlineSubscriptionHandlerInvalid
 	} else if !IsValidFilter(filter, false) {
 		return packets.ErrTopicFilterInvalid
+	} else if len(client) == 0 {
+		return packets.ErrClientIdentifierNotValid
 	}
 
 	s.Topics.InlineSubscribe(packets.InlineSubscription{
@@ -691,6 +693,8 @@ func (s *Server) Subscribe(client, filter string, handler func(client string, pk
 func (s *Server) Unsubscribe(client, filter string) error {
 	if !IsValidFilter(filter, false) {
 		return packets.ErrTopicFilterInvalid
+	} else if len(client) == 0 {
+		return packets.ErrClientIdentifierNotValid
 	}
 	s.Topics.InlineUnsubscribe(client, filter)
 	return nil

@@ -1522,7 +1522,6 @@ func TestServerProcessPacketPublishDowngradeQos(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPuback).RawBytes, buf)
 }
 
-
 func TestPublishToSubscribersSelfNoLocal(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
@@ -1691,7 +1690,6 @@ func TestPublishToSubscribersPkIgnore(t *testing.T) {
 
 	require.Equal(t, []byte{}, <-receiverBuf)
 }
-
 
 func TestPublishToClientServerDowngradeQos(t *testing.T) {
 	s := newServer()
@@ -3242,6 +3240,13 @@ func TestServerSubscribe(t *testing.T) {
 			handler: nil,
 			expert:  packets.ErrInlineSubscriptionHandlerInvalid,
 		},
+		{
+			desc:    "invalid client id",
+			filter:  "a/b/c",
+			client:  "",
+			handler: nil,
+			expert:  packets.ErrClientIdentifierNotValid,
+		},
 	}
 
 	for _, tx := range tt {
@@ -3275,6 +3280,9 @@ func TestServerUnsubscribe(t *testing.T) {
 
 	err = s.Unsubscribe(client, "#/#")
 	require.Equal(t, packets.ErrTopicFilterInvalid, err)
+
+	err = s.Unsubscribe("", "a/b/c")
+	require.Equal(t, packets.ErrClientIdentifierNotValid, err)
 }
 
 func TestPublishToInlineSubscribers(t *testing.T) {
