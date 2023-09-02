@@ -665,24 +665,24 @@ func (s *Server) Publish(topic string, payload []byte, retain bool, qos byte) er
 // This function allows you to create an internal subscription within the server to handle messages
 // matching the given topic filter for a specific client. When a message is received on the specified topic,
 // the provided handler function will be called to process the message. It returns true if the subscription was new.
-func (s *Server) Subscribe(client, filter string, handler func(client string, pk packets.Packet)) error {
+func (s *Server) Subscribe(inlineClient, filter string, handler func(client string, pk packets.Packet)) error {
 	if handler == nil {
 		return packets.ErrInlineSubscriptionHandlerInvalid
 	} else if !IsValidFilter(filter, false) {
 		return packets.ErrTopicFilterInvalid
-	} else if len(client) == 0 {
+	} else if len(inlineClient) == 0 {
 		return packets.ErrClientIdentifierNotValid
 	}
 
 	s.Topics.InlineSubscribe(packets.InlineSubscription{
-		Identifier: client,
+		Identifier: inlineClient,
 		Filter:     filter,
 		Handler:    handler,
 	})
 
 	// Handling retained messages.
 	for _, pkv := range s.Topics.Messages(filter) { // [MQTT-3.8.4-4]
-		handler(client, pkv)
+		handler(inlineClient, pkv)
 	}
 	return nil
 }
@@ -690,13 +690,13 @@ func (s *Server) Subscribe(client, filter string, handler func(client string, pk
 // Unsubscribe removes the inline subscription for the specified client and topic filter.
 // This function allows you to unsubscribe a specific client from the internal subscription
 // associated with the given topic filter. It returns true if the subscription existed.
-func (s *Server) Unsubscribe(client, filter string) error {
+func (s *Server) Unsubscribe(inlineClient, filter string) error {
 	if !IsValidFilter(filter, false) {
 		return packets.ErrTopicFilterInvalid
-	} else if len(client) == 0 {
+	} else if len(inlineClient) == 0 {
 		return packets.ErrClientIdentifierNotValid
 	}
-	s.Topics.InlineUnsubscribe(client, filter)
+	s.Topics.InlineUnsubscribe(inlineClient, filter)
 	return nil
 }
 
