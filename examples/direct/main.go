@@ -46,11 +46,11 @@ func main() {
 		_ = server.Publish("direct/alternate/retained", []byte("some other retained message"), true, 0)
 
 		// Subscribe to a filter and handle any received messages via a callback function.
-		callbackFn := func(filter string, pk packets.Packet) {
-			server.Log.Info().Str("filter", filter).Str("payload", string(pk.Payload)).Msgf("inline client received message from subscription")
+		callbackFn := func(client string, pk packets.Packet) {
+			server.Log.Info().Str("client", client).Str("topic", pk.TopicName).Str("payload", string(pk.Payload)).Msgf("inline client received message from subscription")
 		}
 		server.Log.Info().Msgf("inline client subscribing")
-		server.Subscribe("direct/#", callbackFn)
+		server.Subscribe("inline-client-1", "direct/#", callbackFn)
 	}()
 
 	// There is a shorthand convenience function, Publish, for easily sending
@@ -69,7 +69,7 @@ func main() {
 		time.Sleep(time.Second * 10)
 		// Unsubscribe from the same filter to stop receiving messages.
 		server.Log.Info().Msgf("inline client unsubscribing")
-		server.Unsubscribe("direct/#")
+		server.Unsubscribe("inline-client-1", "direct/#")
 	}()
 	// If you want to have more control over your packets, you can directly inject a packet of any kind into the broker.
 	//go func() {

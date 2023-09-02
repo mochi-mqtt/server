@@ -181,8 +181,9 @@ type Subscription struct {
 
 // InlineSubscription represents an internal subscription, and the Handler is a callback function used to process messages.
 type InlineSubscription struct {
-	Filter  string
-	Handler func(filter string, packet Packet)
+	Filter     string
+	Identifier string
+	Handler    func(filter string, packet Packet)
 }
 
 // Copy creates a new instance of a packet, but with an empty header for inheriting new QoS flags, etc.

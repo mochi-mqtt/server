@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	Version                       = "2.3.0"  // the current server version.
-	defaultSysTopicInterval int64 = 1        // the interval between $SYS topic publishes
+	Version                       = "2.3.0" // the current server version.
+	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 )
 
 var (
@@ -661,23 +661,39 @@ func (s *Server) Publish(topic string, payload []byte, retain bool, qos byte) er
 	})
 }
 
-// Subscribe adds an inline subscription for the specified topic and handler function.
+// Subscribe adds an inline subscription for the specified client and topic filter with a given handler function.
 // This function allows you to create an internal subscription within the server to handle messages
-// matching the given topic filter. When a message is received on the specified topic,
-// the provided handler function will be called to process the message. returning
-// true if the subscription was new.
-func (s *Server) Subscribe(topic string, handler func(topic string, pk packets.Packet)) bool {
-	return s.Topics.InlineSubscribe(packets.InlineSubscription{
-		Filter:  topic,
-		Handler: handler,
+// matching the given topic filter for a specific client. When a message is received on the specified topic,
+// the provided handler function will be called to process the message. It returns true if the subscription was new.
+func (s *Server) Subscribe(client, filter string, handler func(client string, pk packets.Packet)) error {
+	if handler == nil {
+		return packets.ErrInlineSubscriptionHandlerInvalid
+	} else if !IsValidFilter(filter, false) {
+		return packets.ErrTopicFilterInvalid
+	}
+
+	s.Topics.InlineSubscribe(packets.InlineSubscription{
+		Identifier: client,
+		Filter:     filter,
+		Handler:    handler,
 	})
+
+	// Handling retained messages.
+	for _, pkv := range s.Topics.Messages(filter) { // [MQTT-3.8.4-4]
+		handler(client, pkv)
+	}
+	return nil
 }
 
-// Unsubscribe removes the inline subscription for the specified topic.
-// This function allows you to unsubscribe from the internal subscription associated with the given topic.
-// returning true if the subscription existed.
-func (s *Server) Unsubscribe(topic string) bool {
-	return s.Topics.InlineUnsubscribe(topic)
+// Unsubscribe removes the inline subscription for the specified client and topic filter.
+// This function allows you to unsubscribe a specific client from the internal subscription
+// associated with the given topic filter. It returns true if the subscription existed.
+func (s *Server) Unsubscribe(client, filter string) error {
+	if !IsValidFilter(filter, false) {
+		return packets.ErrTopicFilterInvalid
+	}
+	s.Topics.InlineUnsubscribe(client, filter)
+	return nil
 }
 
 // InjectPacket injects a packet into the broker as if it were sent from the specified client.
@@ -827,8 +843,8 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 		subscribers.MergeSharedSelected()
 	}
 
-	for filter, inline := range subscribers.InlineSubscriptions {
-		inline.Handler(filter, pk)
+	for id, inline := range subscribers.InlineSubscriptions {
+		inline.Handler(id, pk)
 	}
 
 	for id, subs := range subscribers.Subscriptions {

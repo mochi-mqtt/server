@@ -186,24 +186,24 @@ func (s *SharedSubscriptions) GetAll() map[string]map[string]packets.Subscriptio
 	return m
 }
 
-// InlineSubscriptions represents a map of internal subscriptions keyed on the topic filter.
+// InlineSubscriptions represents a map of internal subscriptions keyed on client.
 type InlineSubscriptions struct {
-	subs map[string]packets.InlineSubscription
+	internal map[string]packets.InlineSubscription
 	sync.RWMutex
 }
 
 // NewInlineSubscriptions returns a new instance of InlineSubscriptions.
 func NewInlineSubscriptions() *InlineSubscriptions {
 	return &InlineSubscriptions{
-		subs: map[string]packets.InlineSubscription{},
+		internal: map[string]packets.InlineSubscription{},
 	}
 }
 
-// Add adds a new internal subscription for a topic filter. 
+// Add adds a new internal subscription for a client id.
 func (s *InlineSubscriptions) Add(val packets.InlineSubscription) {
 	s.Lock()
 	defer s.Unlock()
-	s.subs[val.Filter] = val
+	s.internal[val.Identifier] = val
 }
 
 // GetAll returns all internal subscriptions.
@@ -211,17 +211,17 @@ func (s *InlineSubscriptions) GetAll() map[string]packets.InlineSubscription {
 	s.RLock()
 	defer s.RUnlock()
 	m := map[string]packets.InlineSubscription{}
-	for k, v := range s.subs {
+	for k, v := range s.internal {
 		m[k] = v
 	}
 	return m
 }
 
-// Get returns an internal subscription for a topic filter.
-func (s *InlineSubscriptions) Get(filter string) (val packets.InlineSubscription, ok bool) {
+// Get returns an internal subscription for a client id.
+func (s *InlineSubscriptions) Get(id string) (val packets.InlineSubscription, ok bool) {
 	s.RLock()
 	defer s.RUnlock()
-	val, ok = s.subs[filter]
+	val, ok = s.internal[id]
 	return val, ok
 }
 
@@ -229,15 +229,15 @@ func (s *InlineSubscriptions) Get(filter string) (val packets.InlineSubscription
 func (s *InlineSubscriptions) Len() int {
 	s.RLock()
 	defer s.RUnlock()
-	val := len(s.subs)
+	val := len(s.internal)
 	return val
 }
 
-// Delete removes an internal subscription by the topic filter.
-func (s *InlineSubscriptions) Delete(filter string) {
+// Delete removes an internal subscription by the client id.
+func (s *InlineSubscriptions) Delete(id string) {
 	s.Lock()
 	defer s.Unlock()
-	delete(s.subs, filter)
+	delete(s.internal, id)
 }
 
 // Subscriptions is a map of subscriptions keyed on client.
@@ -361,15 +361,15 @@ func (x *TopicsIndex) InlineSubscribe(subscription packets.InlineSubscription) b
 
 	var existed bool
 	n := x.set(subscription.Filter, 0)
-	_, existed = n.inlineSubscriptions.Get(subscription.Filter)
+	_, existed = n.inlineSubscriptions.Get(subscription.Identifier)
 	n.inlineSubscriptions.Add(subscription)
 
 	return !existed
 }
 
-// InlineUnsubscribe removes a internal subscription for a topic filter, returning true if the
-// subscription existed.
-func (x *TopicsIndex) InlineUnsubscribe(filter string) bool {
+// InlineUnsubscribe removes an internal subscription for a topic filter associated with a specific client,
+// returning true if the subscription existed.
+func (x *TopicsIndex) InlineUnsubscribe(client, filter string) bool {
 	x.root.Lock()
 	defer x.root.Unlock()
 
@@ -378,7 +378,7 @@ func (x *TopicsIndex) InlineUnsubscribe(filter string) bool {
 		return false
 	}
 
-	particle.inlineSubscriptions.Delete(filter)
+	particle.inlineSubscriptions.Delete(client)
 	x.trim(particle)
 	return true
 }

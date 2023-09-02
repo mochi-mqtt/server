@@ -1283,10 +1283,10 @@ func TestServerProcessPublishAckFailure(t *testing.T) {
 func TestServerProcessPublishOnPublishAckErrorRWError(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
-    hook.fail = true
+	hook.fail = true
 	hook.err = packets.ErrUnspecifiedError
-    err := s.AddHook(hook, nil)
-	require.NoError(t,err)
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
 
 	cl, _, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
@@ -1301,10 +1301,10 @@ func TestServerProcessPublishOnPublishAckErrorRWError(t *testing.T) {
 func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
-    hook.fail = true
-    hook.err = packets.ErrPayloadFormatInvalid
-    err := s.AddHook(hook, nil)
-    require.NoError(t,err)
+	hook.fail = true
+	hook.err = packets.ErrPayloadFormatInvalid
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
 	s.Serve()
 	defer s.Close()
 
@@ -1326,10 +1326,10 @@ func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
 func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
-    hook.fail = true
-    hook.err = packets.CodeSuccessIgnore
-    err := s.AddHook(hook, nil)
-    require.NoError(t,err)
+	hook.fail = true
+	hook.err = packets.CodeSuccessIgnore
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
 	s.Serve()
 	defer s.Close()
 
@@ -1337,20 +1337,19 @@ func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 	s.Clients.Add(cl)
 
 	receiver, r2, w2 := newTestClient()
-    receiver.ID = "receiver"
-    s.Clients.Add(receiver)
-    s.Topics.Subscribe(receiver.ID, packets.Subscription{Filter: "a/b/c"})
+	receiver.ID = "receiver"
+	s.Clients.Add(receiver)
+	s.Topics.Subscribe(receiver.ID, packets.Subscription{Filter: "a/b/c"})
 
-    require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.PacketsReceived))
-    require.Equal(t, 0, len(s.Topics.Messages("a/b/c")))
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.PacketsReceived))
+	require.Equal(t, 0, len(s.Topics.Messages("a/b/c")))
 
-    receiverBuf := make(chan []byte)
-    go func() {
-        buf, err := io.ReadAll(r2)
-        require.NoError(t, err)
-        receiverBuf <- buf
-    }()
-
+	receiverBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r2)
+		require.NoError(t, err)
+		receiverBuf <- buf
+	}()
 
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
@@ -1547,25 +1546,6 @@ func TestPublishToSubscribersSelfNoLocal(t *testing.T) {
 	}()
 
 	require.Equal(t, []byte{}, <-receiverBuf)
-}
-
-func TestPublishToInlineSubscribers(t *testing.T) {
-	receiverBuf := make(chan []byte)
-	handler := func(topic string, pk packets.Packet) {
-		receiverBuf <- pk.Payload
-	}
-
-	s := newServer()
-	subbed := s.Subscribe("a/b/c", handler)
-	require.True(t, subbed)
-
-	go func() {
-		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
-		s.publishToSubscribers(pkx)
-		time.Sleep(time.Millisecond)
-	}()
-
-	require.Equal(t, []byte("hello mochi"), <-receiverBuf)
 }
 
 func TestPublishToSubscribers(t *testing.T) {
@@ -2022,7 +2002,6 @@ func TestNoRetainMessageIfUnavailable(t *testing.T) {
 	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Retained))
 }
 
-
 func TestNoRetainMessageIfPkIgnore(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -2039,7 +2018,7 @@ func TestNoRetainMessage(t *testing.T) {
 	cl, _, _ := newTestClient()
 	s.Clients.Add(cl)
 
-	s.retainMessage(new(Client),  *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	s.retainMessage(new(Client), *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
 	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Retained))
 }
 
@@ -3179,7 +3158,7 @@ func TestServerClearExpiredClients(t *testing.T) {
 
 func TestServerSubscribe(t *testing.T) {
 
-	handler := func(topic string, pk packets.Packet) {
+	handler := func(client string, pk packets.Packet) {
 		// handler logic
 	}
 
@@ -3189,77 +3168,172 @@ func TestServerSubscribe(t *testing.T) {
 	tt := []struct {
 		desc    string
 		filter  string
-		handler func(topic string, pk packets.Packet)
-		wasNew  bool
+		client  string
+		handler func(client string, pk packets.Packet)
+		expert  error
 	}{
 		{
 			desc:    "subscribe",
 			filter:  "a/b/c",
+			client:  "client-1",
 			handler: handler,
-			wasNew:  true,
+			expert:  nil,
 		},
 		{
 			desc:    "subscribe existed",
 			filter:  "a/b/c",
+			client:  "client-1",
 			handler: handler,
-			wasNew:  false,
+			expert:  nil,
+		},
+		{
+			desc:    "subscribe different client id",
+			filter:  "a/b/c",
+			client:  "client-2",
+			handler: handler,
+			expert:  nil,
 		},
 		{
 			desc:    "subscribe case sensitive didnt exist",
 			filter:  "A/B/c",
+			client:  "client-1",
 			handler: handler,
-			wasNew:  true,
+			expert:  nil,
 		},
 		{
 			desc:    "wildcard+ sub",
 			filter:  "d/+",
+			client:  "client-1",
 			handler: handler,
-			wasNew:  true,
+			expert:  nil,
 		},
 		{
 			desc:    "wildcard# sub",
 			filter:  "d/e/#",
+			client:  "client-1",
 			handler: handler,
-			wasNew:  true,
+			expert:  nil,
+		},
+		{
+			desc:    "subscribe $SYS/info",
+			filter:  "$SYS/info",
+			client:  "client-1",
+			handler: handler,
+			expert:  nil,
+		},
+		{
+			desc:    "subscribe invalied ###",
+			filter:  "###",
+			client:  "client-1",
+			handler: handler,
+			expert:  packets.ErrTopicFilterInvalid,
+		},
+		{
+			desc:    "subscribe invalied " + SharePrefix + "/#",
+			filter:  SharePrefix + "/#",
+			client:  "client-1",
+			handler: handler,
+			expert:  packets.ErrTopicFilterInvalid,
+		},
+		{
+			desc:    "invalid handler",
+			filter:  "a/b/c",
+			client:  "client-1",
+			handler: nil,
+			expert:  packets.ErrInlineSubscriptionHandlerInvalid,
 		},
 	}
 
 	for _, tx := range tt {
 		t.Run(tx.desc, func(t *testing.T) {
-			require.Equal(t, tx.wasNew, s.Subscribe(tx.filter, tx.handler))
+			require.Equal(t, tx.expert, s.Subscribe(tx.client, tx.filter, tx.handler))
 		})
 	}
 }
 
 func TestServerUnsubscribe(t *testing.T) {
-	handler := func(topic string, pk packets.Packet) {
+	handler := func(client string, pk packets.Packet) {
 		// handler logic
 	}
 
+	client := "client-1"
 	s := New(nil)
-	exists := s.Subscribe("a/b/c/d", handler)
-	require.True(t, exists)
+	err := s.Subscribe(client, "a/b/c/d", handler)
+	require.Nil(t, err)
 
-	exists = s.Subscribe("a/b/+/d", handler)
-	require.True(t, exists)
+	err = s.Subscribe(client, "a/b/+/d", handler)
+	require.Nil(t, err)
 
-	exists = s.Subscribe("d/e/f", handler)
-	require.True(t, exists)
+	s.Subscribe(client, "#", handler)
+	require.Nil(t, err)
 
-	s.Subscribe("d/e/f", handler)
-	require.True(t, exists)
+	err = s.Unsubscribe(client, "a/b/c/d")
+	require.Nil(t, err)
 
-	s.Subscribe("#", handler)
-	require.True(t, exists)
+	err = s.Unsubscribe(client, "fdasfdas/dfsfads/sa")
+	require.Nil(t, err)
 
-	ok := s.Unsubscribe("a/b/c/d")
-	require.True(t, ok)
+	err = s.Unsubscribe(client, "#/#")
+	require.Equal(t, packets.ErrTopicFilterInvalid, err)
+}
 
-	ok = s.Unsubscribe("d/e/f")
-	require.True(t, ok)
+func TestPublishToInlineSubscribers(t *testing.T) {
+	s := newServer()
+	tt := map[string]bool{
+		"client-1": true,
+		"client-2": true,
+		"client-3": true,
+	}
+	total := len(tt)
+	finishCh := make(chan string, total)
 
-	ok = s.Unsubscribe("fdasfdas/dfsfads/sa")
-	require.False(t, ok)
+	for k := range tt {
+		err := s.Subscribe(k, "a/b/c", func(client string, pk packets.Packet) {
+			require.Equal(t, []byte("hello mochi"), pk.Payload)
+			finishCh <- client
+		})
+		require.Nil(t, err)
+	}
+
+	go func() {
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+		s.publishToSubscribers(pkx)
+	}()
+
+	for i := 0; i < total; i++ {
+		id := <-finishCh
+		delete(tt, id)
+	}
+	require.Equal(t, 0, len(tt))
+}
+
+func TestServerSubscribeWithRetain(t *testing.T) {
+	s := newServer()
+
+	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(1), retained)
+
+	tt := map[string]bool{
+		"client-1": true,
+		"client-2": true,
+		"client-3": true,
+	}
+	total := len(tt)
+	finishCh := make(chan string, total)
+
+	for k := range tt {
+		err := s.Subscribe(k, "a/b/c", func(client string, pk packets.Packet) {
+			require.Equal(t, []byte("hello mochi"), pk.Payload)
+			finishCh <- client
+		})
+		require.Nil(t, err)
+	}
+
+	for i := 0; i < total; i++ {
+		id := <-finishCh
+		delete(tt, id)
+	}
+	require.Equal(t, 0, len(tt))
 }
 
 func TestLoadServerInfoRestoreOnRestart(t *testing.T) {
