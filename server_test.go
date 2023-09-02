@@ -3244,7 +3244,7 @@ func TestServerSubscribe(t *testing.T) {
 			desc:    "invalid client id",
 			filter:  "a/b/c",
 			client:  "",
-			handler: nil,
+			handler: handler,
 			expert:  packets.ErrClientIdentifierNotValid,
 		},
 	}
