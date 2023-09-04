@@ -389,7 +389,10 @@ func (x *TopicsIndex) InlineUnsubscribe(id int, filter string) bool {
 	}
 
 	particle.inlineSubscriptions.Delete(id)
-	x.trim(particle)
+
+	if particle.inlineSubscriptions.Len() == 0 {
+		x.trim(particle)
+	}
 	return true
 }
 

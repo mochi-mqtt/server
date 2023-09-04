@@ -47,10 +47,11 @@ func main() {
 
 		// Subscribe to a filter and handle any received messages via a callback function.
 		callbackFn := func(cl *mqtt.Client, sub packets.Subscription, pk packets.Packet) {
-			server.Log.Info().Str("client", cl.ID).Str("topic", pk.TopicName).Str("payload", string(pk.Payload)).Msgf("inline client received message from subscription")
+			server.Log.Info().Str("client", cl.ID).Int("subid", sub.Identifier).Str("topic", pk.TopicName).Str("payload", string(pk.Payload)).Msgf("inline client received message from subscription")
 		}
 		server.Log.Info().Msgf("inline client subscribing")
 		server.Subscribe("direct/#", 1, callbackFn)
+		server.Subscribe("direct/#", 2, callbackFn)
 	}()
 
 	// There is a shorthand convenience function, Publish, for easily sending
