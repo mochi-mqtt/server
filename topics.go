@@ -186,31 +186,36 @@ func (s *SharedSubscriptions) GetAll() map[string]map[string]packets.Subscriptio
 	return m
 }
 
+// InlineSubFn is the signature for a callback function which will be called
+// when an inline client receives a message on a topic it is subscribed to.
+// The sub argument contains information about the subscription that was matched for any filters.
+type InlineSubFn func(cl *Client, sub packets.Subscription, pk packets.Packet)
+
 // InlineSubscriptions represents a map of internal subscriptions keyed on client.
 type InlineSubscriptions struct {
-	internal map[string]packets.InlineSubscription
+	internal map[int]InlineSubscription
 	sync.RWMutex
 }
 
 // NewInlineSubscriptions returns a new instance of InlineSubscriptions.
 func NewInlineSubscriptions() *InlineSubscriptions {
 	return &InlineSubscriptions{
-		internal: map[string]packets.InlineSubscription{},
+		internal: map[int]InlineSubscription{},
 	}
 }
 
 // Add adds a new internal subscription for a client id.
-func (s *InlineSubscriptions) Add(val packets.InlineSubscription) {
+func (s *InlineSubscriptions) Add(val InlineSubscription) {
 	s.Lock()
 	defer s.Unlock()
 	s.internal[val.Identifier] = val
 }
 
 // GetAll returns all internal subscriptions.
-func (s *InlineSubscriptions) GetAll() map[string]packets.InlineSubscription {
+func (s *InlineSubscriptions) GetAll() map[int]InlineSubscription {
 	s.RLock()
 	defer s.RUnlock()
-	m := map[string]packets.InlineSubscription{}
+	m := map[int]InlineSubscription{}
 	for k, v := range s.internal {
 		m[k] = v
 	}
@@ -218,7 +223,7 @@ func (s *InlineSubscriptions) GetAll() map[string]packets.InlineSubscription {
 }
 
 // Get returns an internal subscription for a client id.
-func (s *InlineSubscriptions) Get(id string) (val packets.InlineSubscription, ok bool) {
+func (s *InlineSubscriptions) Get(id int) (val InlineSubscription, ok bool) {
 	s.RLock()
 	defer s.RUnlock()
 	val, ok = s.internal[id]
@@ -234,7 +239,7 @@ func (s *InlineSubscriptions) Len() int {
 }
 
 // Delete removes an internal subscription by the client id.
-func (s *InlineSubscriptions) Delete(id string) {
+func (s *InlineSubscriptions) Delete(id int) {
 	s.Lock()
 	defer s.Unlock()
 	delete(s.internal, id)
@@ -298,12 +303,17 @@ func (s *Subscriptions) Delete(id string) {
 // ClientSubscriptions is a map of aggregated subscriptions for a client.
 type ClientSubscriptions map[string]packets.Subscription
 
+type InlineSubscription struct {
+	packets.Subscription
+	Handler InlineSubFn
+}
+
 // Subscribers contains the shared and non-shared subscribers matching a topic.
 type Subscribers struct {
 	Shared              map[string]map[string]packets.Subscription
 	SharedSelected      map[string]packets.Subscription
 	Subscriptions       map[string]packets.Subscription
-	InlineSubscriptions map[string]packets.InlineSubscription
+	InlineSubscriptions map[int]InlineSubscription
 }
 
 // SelectShared returns one subscriber for each shared subscription group.
@@ -355,7 +365,7 @@ func NewTopicsIndex() *TopicsIndex {
 
 // InlineSubscribe adds a new internal subscription for a topic filter, returning
 // true if the subscription was new.
-func (x *TopicsIndex) InlineSubscribe(subscription packets.InlineSubscription) bool {
+func (x *TopicsIndex) InlineSubscribe(subscription InlineSubscription) bool {
 	x.root.Lock()
 	defer x.root.Unlock()
 
@@ -369,7 +379,7 @@ func (x *TopicsIndex) InlineSubscribe(subscription packets.InlineSubscription) b
 
 // InlineUnsubscribe removes an internal subscription for a topic filter associated with a specific client,
 // returning true if the subscription existed.
-func (x *TopicsIndex) InlineUnsubscribe(client, filter string) bool {
+func (x *TopicsIndex) InlineUnsubscribe(id int, filter string) bool {
 	x.root.Lock()
 	defer x.root.Unlock()
 
@@ -378,7 +388,7 @@ func (x *TopicsIndex) InlineUnsubscribe(client, filter string) bool {
 		return false
 	}
 
-	particle.inlineSubscriptions.Delete(client)
+	particle.inlineSubscriptions.Delete(id)
 	x.trim(particle)
 	return true
 }
@@ -572,7 +582,7 @@ func (x *TopicsIndex) Subscribers(topic string) *Subscribers {
 		Shared:              map[string]map[string]packets.Subscription{},
 		SharedSelected:      map[string]packets.Subscription{},
 		Subscriptions:       map[string]packets.Subscription{},
-		InlineSubscriptions: map[string]packets.InlineSubscription{},
+		InlineSubscriptions: map[int]InlineSubscription{},
 	})
 }
 
@@ -654,11 +664,11 @@ func (x *TopicsIndex) gatherSharedSubscriptions(particle *particle, subs *Subscr
 // gatherSharedSubscriptions gathers all inline subscriptions for a particle.
 func (x *TopicsIndex) gatherInlineSubscriptions(particle *particle, subs *Subscribers) {
 	if subs.InlineSubscriptions == nil {
-		subs.InlineSubscriptions = map[string]packets.InlineSubscription{}
+		subs.InlineSubscriptions = map[int]InlineSubscription{}
 	}
 
-	for filter, inline := range particle.inlineSubscriptions.GetAll() {
-		subs.InlineSubscriptions[filter] = inline
+	for id, inline := range particle.inlineSubscriptions.GetAll() {
+		subs.InlineSubscriptions[id] = inline
 	}
 }
 

@@ -179,13 +179,6 @@ type Subscription struct {
 	FwdRetainedFlag   bool // true if the subscription forms part of a publish response to a client subscription and packet is retained.
 }
 
-// InlineSubscription represents an internal subscription, and the Handler is a callback function used to process messages.
-type InlineSubscription struct {
-	Filter     string
-	Identifier string
-	Handler    func(filter string, packet Packet)
-}
-
 // Copy creates a new instance of a packet, but with an empty header for inheriting new QoS flags, etc.
 func (pk *Packet) Copy(allowTransfer bool) Packet {
 	p := Packet{

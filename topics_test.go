@@ -5,7 +5,6 @@
 package mqtt
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/mochi-mqtt/server/v2/packets"
@@ -155,83 +154,6 @@ func TestSubscriptionsDelete(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestInlineSubscriptionAdd(t *testing.T) {
-	subscriptions := NewInlineSubscriptions()
-	handler := func(client string, pk packets.Packet) {
-		// handler logic
-	}
-
-	subscription := packets.InlineSubscription{
-		Filter:     "topic/filter",
-		Identifier: "inline-client-id-1",
-		Handler:    handler,
-	}
-	subscriptions.Add(subscription)
-
-	sub, ok := subscriptions.Get("inline-client-id-1")
-	require.True(t, ok)
-	require.Equal(t, fmt.Sprintf("%p", handler), fmt.Sprintf("%p", sub.Handler))
-}
-
-func TestInlineSubscriptionGet(t *testing.T) {
-	subscriptions := NewInlineSubscriptions()
-	handler := func(client string, pk packets.Packet) {
-		// handler logic
-	}
-
-	subscription := packets.InlineSubscription{
-		Filter:     "topic/filter",
-		Identifier: "inline-client-id-1",
-		Handler:    handler,
-	}
-	subscriptions.Add(subscription)
-
-	sub, ok := subscriptions.Get("inline-client-id-1")
-	require.True(t, ok)
-	require.Equal(t, fmt.Sprintf("%p", handler), fmt.Sprintf("%p", sub.Handler))
-
-	_, ok = subscriptions.Get("non-existent-topic")
-	require.False(t, ok)
-}
-
-func TestInlineSubscriptionsGetAll(t *testing.T) {
-	subscriptions := NewInlineSubscriptions()
-	handler := func(client string, pk packets.Packet) {
-		// handler logic
-	}
-
-	subscription := packets.InlineSubscription{
-		Filter:     "topic/filter",
-		Identifier: "inline-client-id-1",
-		Handler:    handler,
-	}
-	subscriptions.Add(subscription)
-
-	allSubs := subscriptions.GetAll()
-	require.Len(t, allSubs, 1)
-	require.Equal(t, fmt.Sprintf("%p", handler), fmt.Sprintf("%p", allSubs["inline-client-id-1"].Handler))
-}
-
-func TestInlineSubscriptionDelete(t *testing.T) {
-	subscriptions := NewInlineSubscriptions()
-	handler := func(client string, pk packets.Packet) {
-		// handler logic
-	}
-
-	subscription := packets.InlineSubscription{
-		Filter:     "topic/filter",
-		Identifier: "inline-client-id-1",
-		Handler:    handler,
-	}
-	subscriptions.Add(subscription)
-
-	subscriptions.Delete("inline-client-id-1")
-	_, ok := subscriptions.Get("inline-client-id-1")
-	require.False(t, ok)
-	require.Empty(t, subscriptions.GetAll())
-	require.Zero(t, subscriptions.Len())
-}
-
 func TestNewTopicsIndex(t *testing.T) {
 	index := NewTopicsIndex()
 	require.NotNil(t, index)
@@ -300,67 +222,6 @@ func TestSubscribe(t *testing.T) {
 	client, exists := final.subscriptions.Get("cl1")
 	require.True(t, exists)
 	require.Equal(t, byte(1), client.Qos)
-}
-
-func TestInlineSubscribe(t *testing.T) {
-
-	handler := func(client string, pk packets.Packet) {
-		// handler logic
-	}
-
-	tt := []struct {
-		desc         string
-		filter       string
-		subscription packets.InlineSubscription
-		wasNew       bool
-	}{
-		{
-			desc:         "subscribe",
-			filter:       "a/b/c",
-			subscription: packets.InlineSubscription{Filter: "a/b/c", Handler: handler, Identifier: "client-1"},
-			wasNew:       true,
-		},
-		{
-			desc:         "subscribe existed",
-			filter:       "a/b/c",
-			subscription: packets.InlineSubscription{Filter: "a/b/c", Handler: handler, Identifier: "client-1"},
-			wasNew:       false,
-		},
-		{
-			desc:         "subscribe different client id",
-			filter:       "a/b/c",
-			subscription: packets.InlineSubscription{Filter: "a/b/c", Handler: handler, Identifier: "client-2"},
-			wasNew:       true,
-		},
-		{
-			desc:         "subscribe case sensitive didnt exist",
-			filter:       "A/B/c",
-			subscription: packets.InlineSubscription{Filter: "A/B/c", Handler: handler, Identifier: "client-1"},
-			wasNew:       true,
-		},
-		{
-			desc:         "wildcard+ sub",
-			filter:       "d/+",
-			subscription: packets.InlineSubscription{Filter: "d/+", Handler: handler, Identifier: "client-1"},
-			wasNew:       true,
-		},
-		{
-			desc:         "wildcard# sub",
-			filter:       "d/e/#",
-			subscription: packets.InlineSubscription{Filter: "d/e/#", Handler: handler, Identifier: "client-1"},
-			wasNew:       true,
-		},
-	}
-
-	index := NewTopicsIndex()
-	for _, tx := range tt {
-		t.Run(tx.desc, func(t *testing.T) {
-			require.Equal(t, tx.wasNew, index.InlineSubscribe(tx.subscription))
-		})
-	}
-
-	final := index.root.particles.get("a").particles.get("b").particles.get("c")
-	require.NotNil(t, final)
 }
 
 func TestSubscribeShared(t *testing.T) {
@@ -432,53 +293,6 @@ func TestUnsubscribe(t *testing.T) {
 	require.True(t, exists)
 
 	ok = index.Unsubscribe("fdasfdas/dfsfads/sa", "nobody")
-	require.False(t, ok)
-}
-
-func TestInlineUnsubscribe(t *testing.T) {
-	handler := func(client string, pk packets.Packet) {
-		// handler logic
-	}
-
-	index := NewTopicsIndex()
-	client := "client-1"
-
-	index.InlineSubscribe(packets.InlineSubscription{Filter: "a/b/c/d", Handler: handler, Identifier: client})
-	sub, exists := index.root.particles.get("a").particles.get("b").particles.get("c").particles.get("d").inlineSubscriptions.Get(client)
-	require.NotNil(t, sub)
-	require.True(t, exists)
-
-	index.InlineSubscribe(packets.InlineSubscription{Filter: "a/b/+/d", Handler: handler, Identifier: client})
-	sub, exists = index.root.particles.get("a").particles.get("b").particles.get("+").particles.get("d").inlineSubscriptions.Get(client)
-	require.NotNil(t, sub)
-	require.True(t, exists)
-
-	index.InlineSubscribe(packets.InlineSubscription{Filter: "d/e/f", Handler: handler, Identifier: client})
-	sub, exists = index.root.particles.get("d").particles.get("e").particles.get("f").inlineSubscriptions.Get(client)
-	require.NotNil(t, sub)
-	require.True(t, exists)
-
-	index.InlineSubscribe(packets.InlineSubscription{Filter: "d/e/f", Handler: handler, Identifier: client})
-	sub, exists = index.root.particles.get("d").particles.get("e").particles.get("f").inlineSubscriptions.Get(client)
-	require.NotNil(t, sub)
-	require.True(t, exists)
-
-	index.InlineSubscribe(packets.InlineSubscription{Filter: "#", Handler: handler, Identifier: client})
-	sub, exists = index.root.particles.get("#").inlineSubscriptions.Get(client)
-	require.NotNil(t, sub)
-	require.True(t, exists)
-
-	ok := index.InlineUnsubscribe(client, "a/b/c/d")
-	require.True(t, ok)
-	require.Nil(t, index.root.particles.get("a").particles.get("b").particles.get("c"))
-	sub, exists = index.root.particles.get("a").particles.get("b").particles.get("+").particles.get("d").inlineSubscriptions.Get(client)
-	require.NotNil(t, sub)
-	require.True(t, exists)
-
-	ok = index.InlineUnsubscribe(client, "d/e/f")
-	require.True(t, ok)
-
-	ok = index.InlineUnsubscribe(client, "fdasfdas/dfsfads/sa")
 	require.False(t, ok)
 }
 
