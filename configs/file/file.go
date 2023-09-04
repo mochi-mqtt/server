@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"log/slog"
 	"os"
 	"strconv"
@@ -36,11 +35,9 @@ type Config struct {
 			Stats       *Stats       `yaml:"stats"`
 			TCP         *TCP         `yaml:"tcp"`
 			Websocket   *Websocket   `yaml:"websocket"`
-			TLS         *TLS         `yaml:"tls_options"`
+			TLS         *TLS         `yaml:"tls"`
 		} `yaml:"listeners"`
-		Logging struct {
-			Level string `yaml:"level"`
-		}
+		Logging *Logging `yaml:"logging"`
 		// Options contains configurable options for the server.
 		mqtt.Options `yaml:"options"`
 	} `yaml:"server"`
@@ -71,6 +68,10 @@ type Websocket struct {
 	TLSEnabled bool `yaml:"tls_enabled"`
 }
 
+type Logging struct {
+	Level string `yaml:"level"`
+}
+
 // Configure attempts to open the configuration file defined by CONFIG_FILE_NAME.
 // If no file is found, a default mqtt.Server instance is created.
 func Configure() (*mqtt.Server, error) {
@@ -92,6 +93,10 @@ func Configure() (*mqtt.Server, error) {
 		if config.Server.Hooks.AllowAll {
 			_ = server.AddHook(new(auth.AllowHook), nil)
 		}
+	}
+
+	if err := configureLogging(config.Server.Logging, server); err != nil {
+		return nil, err
 	}
 
 	// listeners configuration
@@ -125,7 +130,8 @@ func configureTLS(config *TLS) (*tls.Config, error) {
 	}
 
 	tlsc := new(tls.Config)
-	if config.Cert != "" {
+	if config.Cert != "" && config.Key != "" { // Skip if cert and key are missing
+		slog.Info("Certificate and Key information found in config", "step", "config")
 		cert, err := tls.LoadX509KeyPair(config.Cert, config.Key)
 		if err != nil {
 			return nil, err
@@ -133,8 +139,8 @@ func configureTLS(config *TLS) (*tls.Config, error) {
 		tlsc.Certificates = []tls.Certificate{cert}
 	}
 
-	if config.CACert != "" {
-		caCert, err := ioutil.ReadFile(config.CACert)
+	if config.CACert != "" { // Skip if CA certificate is missing
+		caCert, err := os.ReadFile(config.CACert)
 		if err != nil {
 			return nil, err
 		}
@@ -214,6 +220,32 @@ func configureWebsocket(config *Websocket, server *mqtt.Server, tlsc *tls.Config
 
 	wsl := listeners.NewWebsocket("ws", port, lc)
 	return server.AddListener(wsl)
+}
+
+func configureLogging(config *Logging, server *mqtt.Server) error {
+	// 	if config == nil {
+	// 		return nil
+	// 	}
+
+	// 	var level slog.Level
+	// 	switch config.Level {
+	// 	case slog.LevelDebug.String():
+	// 		level = slog.LevelDebug
+	// 	case slog.LevelInfo.String():
+	// 		level = slog.LevelInfo
+	// 	case slog.LevelWarn.String():
+	// 		level = slog.LevelWarn
+	// 	case slog.LevelError.String():
+	// 		level = slog.LevelError
+	// 	default:
+	// 		slog.Warn(fmt.Sprintf("logging level not recognized, defaulting to level %s", slog.LevelInfo.String()))
+	// 		level = slog.LevelInfo
+	// 	}
+
+	// logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	// nlogger := log
+
+	return nil
 }
 
 func formatPort(port int) string {
