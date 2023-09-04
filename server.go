@@ -871,10 +871,8 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 		subscribers.MergeSharedSelected()
 	}
 
-	if inlineClient, ok := s.Clients.Get(InlineClientId); ok {
-		for _, inlineSubscription := range subscribers.InlineSubscriptions {
-			inlineSubscription.Handler(inlineClient, inlineSubscription.Subscription, pk)
-		}
+	for _, inlineSubscription := range subscribers.InlineSubscriptions {
+		inlineSubscription.Handler(s.inlineClient, inlineSubscription.Subscription, pk)
 	}
 
 	for id, subs := range subscribers.Subscriptions {
