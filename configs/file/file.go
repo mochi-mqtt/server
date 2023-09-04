@@ -86,6 +86,7 @@ func Configure() (*mqtt.Server, error) {
 		return nil, err
 	}
 
+	// TODO : Wait for slog change to make level var for level config
 	server := mqtt.New(&config.Server.Options)
 
 	// hooks configuration
@@ -95,9 +96,9 @@ func Configure() (*mqtt.Server, error) {
 		}
 	}
 
-	if err := configureLogging(config.Server.Logging, server); err != nil {
-		return nil, err
-	}
+	// if err := configureLogging(config.Server.Logging, server); err != nil {
+	// 	return nil, err
+	// }
 
 	// listeners configuration
 	tlsc, err := configureTLS(config.Server.Listeners.TLS)
@@ -222,31 +223,29 @@ func configureWebsocket(config *Websocket, server *mqtt.Server, tlsc *tls.Config
 	return server.AddListener(wsl)
 }
 
-func configureLogging(config *Logging, server *mqtt.Server) error {
-	// 	if config == nil {
-	// 		return nil
-	// 	}
+// TODO : wait for slog change
+// func configureLogging(config *Logging, server *mqtt.Server) error {
+// 	if config == nil {
+// 		return nil
+// 	}
 
-	// 	var level slog.Level
-	// 	switch config.Level {
-	// 	case slog.LevelDebug.String():
-	// 		level = slog.LevelDebug
-	// 	case slog.LevelInfo.String():
-	// 		level = slog.LevelInfo
-	// 	case slog.LevelWarn.String():
-	// 		level = slog.LevelWarn
-	// 	case slog.LevelError.String():
-	// 		level = slog.LevelError
-	// 	default:
-	// 		slog.Warn(fmt.Sprintf("logging level not recognized, defaulting to level %s", slog.LevelInfo.String()))
-	// 		level = slog.LevelInfo
-	// 	}
+// 	var level slog.Level
+// 	switch config.Level {
+// 	case slog.LevelDebug.String():
+// 		level = slog.LevelDebug
+// 	case slog.LevelInfo.String():
+// 		level = slog.LevelInfo
+// 	case slog.LevelWarn.String():
+// 		level = slog.LevelWarn
+// 	case slog.LevelError.String():
+// 		level = slog.LevelError
+// 	default:
+// 		slog.Warn(fmt.Sprintf("logging level not recognized, defaulting to level %s", slog.LevelInfo.String()))
+// 		level = slog.LevelInfo
+// 	}
 
-	// logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	// nlogger := log
-
-	return nil
-}
+// 	return nil
+// }
 
 func formatPort(port int) string {
 	return fmt.Sprintf(":%s", strconv.Itoa(port))
