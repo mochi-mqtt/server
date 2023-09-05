@@ -665,15 +665,13 @@ func (s *Server) Publish(topic string, payload []byte, retain bool, qos byte) er
 	})
 }
 
-// Subscribe directly subscribes to one or more filters.
+// Subscribe adds an inline subscription for the specified topic filter and subscription identifier
+// with the provided handler function.
 func (s *Server) Subscribe(filter string, subscriptionId int, handler InlineSubFn) error {
 	if handler == nil {
 		return packets.ErrInlineSubscriptionHandlerInvalid
-	}
-
-	reasonCodes := make([]byte, 1)
-	if !IsValidFilter(filter, false) {
-		reasonCodes[0] = packets.ErrTopicFilterInvalid.Code
+	} else if !IsValidFilter(filter, false) {
+		return packets.ErrTopicFilterInvalid
 	}
 	subscription := packets.Subscription{
 		Identifier: subscriptionId,
@@ -690,9 +688,10 @@ func (s *Server) Subscribe(filter string, subscriptionId int, handler InlineSubF
 		Subscription: subscription,
 		Handler:      handler,
 	}
-	s.Topics.InlineSubscribe(inlineSubscription)
 
-	s.hooks.OnSubscribed(s.inlineClient, pk, reasonCodes)
+	s.Topics.InlineSubscribe(inlineSubscription)
+	s.hooks.OnSubscribed(s.inlineClient, pk, []byte{packets.CodeSuccess.Code})
+
 	// Handling retained messages.
 	for _, pkv := range s.Topics.Messages(filter) { // [MQTT-3.8.4-4]
 		handler(s.inlineClient, inlineSubscription.Subscription, pkv)
@@ -700,8 +699,8 @@ func (s *Server) Subscribe(filter string, subscriptionId int, handler InlineSubF
 	return nil
 }
 
-// Unsubscribe removes the inline subscription for the specified client and topic filter.
-// This function allows you to unsubscribe a specific client from the internal subscription
+// Unsubscribe removes an inline subscription for the specified subscription and topic filter.
+// It allows you to unsubscribe a specific subscription from the internal subscription
 // associated with the given topic filter.
 func (s *Server) Unsubscribe(filter string, subscriptionId int) error {
 	if !IsValidFilter(filter, false) {

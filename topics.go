@@ -751,9 +751,9 @@ type particle struct {
 	particles           particles            // a map of child particles
 	subscriptions       *Subscriptions       // a map of subscriptions made by clients to this ending address
 	shared              *SharedSubscriptions // a map of shared subscriptions keyed on group name
-	inlineSubscriptions *InlineSubscriptions
-	retainPath          string // path of a retained message
-	sync.Mutex                 // mutex for when making changes to the particle
+	inlineSubscriptions *InlineSubscriptions // a map of inline subscriptions for this particle
+	retainPath          string               // path of a retained message
+	sync.Mutex                               // mutex for when making changes to the particle
 }
 
 // newParticle returns a pointer to a new instance of particle.
