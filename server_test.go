@@ -3304,25 +3304,16 @@ func TestServerUnsubscribe(t *testing.T) {
 	require.Equal(t, packets.ErrTopicFilterInvalid, err)
 }
 
-type inlineHandlerDataWarpper struct {
-	clientId   string
-	payload    []byte
-	listenner  string
-	filter     string
-	identifier int
-}
-
 func TestPublishToInlineSubscriber(t *testing.T) {
 	s := newServer()
-	finishCh := make(chan *inlineHandlerDataWarpper)
+	finishCh := make(chan bool)
 	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
-		finishCh <- &inlineHandlerDataWarpper{
-			clientId:   cl.ID,
-			payload:    pk.Payload,
-			listenner:  cl.Net.Listener,
-			filter:     sub.Filter,
-			identifier: sub.Identifier,
-		}
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
 	})
 	require.Nil(t, err)
 
@@ -3331,18 +3322,13 @@ func TestPublishToInlineSubscriber(t *testing.T) {
 		s.publishToSubscribers(pkx)
 	}()
 
-	data := <-finishCh
-	require.Equal(t, InlineClientId, data.clientId)
-	require.Equal(t, []byte("hello mochi"), data.payload)
-	require.Equal(t, LocalListener, data.listenner)
-	require.Equal(t, "a/b/c", data.filter)
-	require.Equal(t, 1, data.identifier)
+	require.Equal(t, true, <-finishCh)
 }
 
 func TestPublishToInlineSubscribersDiffrentFilter(t *testing.T) {
 	s := newServer()
 	subNumber := 2
-	finishch := make(chan bool, subNumber)
+	finishCh := make(chan bool, subNumber)
 
 	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
 		require.Equal(t, []byte("hello mochi"), pk.Payload)
@@ -3350,7 +3336,7 @@ func TestPublishToInlineSubscribersDiffrentFilter(t *testing.T) {
 		require.Equal(t, LocalListener, cl.Net.Listener)
 		require.Equal(t, "a/b/c", sub.Filter)
 		require.Equal(t, 1, sub.Identifier)
-		finishch <- true
+		finishCh <- true
 	})
 	require.Nil(t, err)
 
@@ -3360,7 +3346,7 @@ func TestPublishToInlineSubscribersDiffrentFilter(t *testing.T) {
 		require.Equal(t, LocalListener, cl.Net.Listener)
 		require.Equal(t, "z/e/n", sub.Filter)
 		require.Equal(t, 1, sub.Identifier)
-		finishch <- true
+		finishCh <- true
 	})
 	require.Nil(t, err)
 
@@ -3373,7 +3359,7 @@ func TestPublishToInlineSubscribersDiffrentFilter(t *testing.T) {
 	}()
 
 	for i := 0; i < subNumber; i++ {
-		require.Equal(t, true, <-finishch)
+		require.Equal(t, true, <-finishCh)
 	}
 }
 
@@ -3435,7 +3421,7 @@ func TestServerSubscribeWithRetain(t *testing.T) {
 func TestServerSubscribeWithRetainDiffrentFilter(t *testing.T) {
 	s := newServer()
 	subNumber := 2
-	finishch := make(chan bool, subNumber)
+	finishCh := make(chan bool, subNumber)
 
 	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
 	require.Equal(t, int64(1), retained)
@@ -3448,7 +3434,7 @@ func TestServerSubscribeWithRetainDiffrentFilter(t *testing.T) {
 		require.Equal(t, LocalListener, cl.Net.Listener)
 		require.Equal(t, "a/b/c", sub.Filter)
 		require.Equal(t, 1, sub.Identifier)
-		finishch <- true
+		finishCh <- true
 	})
 	require.Nil(t, err)
 
@@ -3458,12 +3444,12 @@ func TestServerSubscribeWithRetainDiffrentFilter(t *testing.T) {
 		require.Equal(t, LocalListener, cl.Net.Listener)
 		require.Equal(t, "z/e/n", sub.Filter)
 		require.Equal(t, 1, sub.Identifier)
-		finishch <- true
+		finishCh <- true
 	})
 	require.Nil(t, err)
 
 	for i := 0; i < subNumber; i++ {
-		require.Equal(t, true, <-finishch)
+		require.Equal(t, true, <-finishCh)
 	}
 }
 
