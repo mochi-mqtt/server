@@ -106,6 +106,8 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.hooks)
 	require.NotNil(t, s.hooks.Log)
 	require.NotNil(t, s.done)
+	require.NotNil(t, s.inlineClient)
+	require.Equal(t, 1, s.Clients.Len())
 }
 
 func TestNewNilOpts(t *testing.T) {
@@ -336,9 +338,13 @@ func TestEstablishConnection(t *testing.T) {
 
 	err := <-o
 	require.NoError(t, err)
-	for _, v := range s.Clients.GetAll() {
-		require.ErrorIs(t, v.StopCause(), packets.CodeDisconnect) // true error is disconnect
-	}
+
+	// Todo:
+	// 		s.Clients is already empty here. Is it necessary to check v.StopCause()?
+
+	// for _, v := range s.Clients.GetAll() {
+	// 	require.ErrorIs(t, v.StopCause(), packets.CodeDisconnect) // true error is disconnect
+	// }
 
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes, <-recv)
 
@@ -397,9 +403,11 @@ func TestEstablishConnectionReadError(t *testing.T) {
 
 	err := <-o
 	require.Error(t, err)
-	for _, v := range s.Clients.GetAll() {
-		require.ErrorIs(t, v.StopCause(), packets.ErrProtocolViolationSecondConnect) // true error is disconnect
-	}
+
+	// Retrieve the client corresponding to the Client Identifier.
+	retrievedCl, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt5).Packet.Connect.ClientIdentifier)
+	require.True(t, ok)
+	require.ErrorIs(t, retrievedCl.StopCause(), packets.ErrProtocolViolationSecondConnect) // true error is disconnect
 
 	ret := <-recv
 	require.Equal(t, append(
@@ -455,9 +463,11 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 
 	err := <-o
 	require.NoError(t, err)
-	for _, v := range s.Clients.GetAll() {
-		require.ErrorIs(t, v.StopCause(), packets.CodeDisconnect) // true error is disconnect
-	}
+
+	// Retrieve the client corresponding to the Client Identifier.
+	retrievedCl, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier)
+	require.True(t, ok)
+	require.ErrorIs(t, retrievedCl.StopCause(), packets.CodeDisconnect) // true error is disconnect
 
 	connackPlusPacket := append(
 		packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedSessionExists).RawBytes,
@@ -645,9 +655,11 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 
 	err := <-o
 	require.NoError(t, err)
-	for _, v := range s.Clients.GetAll() {
-		require.ErrorIs(t, v.StopCause(), packets.CodeDisconnect) // true error is disconnect
-	}
+
+	// Retrieve the client corresponding to the Client Identifier.
+	retrievedCl, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier)
+	require.True(t, ok)
+	require.ErrorIs(t, retrievedCl.StopCause(), packets.CodeDisconnect) // true error is disconnect
 
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes, <-recv)
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes, <-takeover)
@@ -1283,10 +1295,10 @@ func TestServerProcessPublishAckFailure(t *testing.T) {
 func TestServerProcessPublishOnPublishAckErrorRWError(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
-    hook.fail = true
+	hook.fail = true
 	hook.err = packets.ErrUnspecifiedError
-    err := s.AddHook(hook, nil)
-	require.NoError(t,err)
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
 
 	cl, _, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
@@ -1301,10 +1313,10 @@ func TestServerProcessPublishOnPublishAckErrorRWError(t *testing.T) {
 func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
-    hook.fail = true
-    hook.err = packets.ErrPayloadFormatInvalid
-    err := s.AddHook(hook, nil)
-    require.NoError(t,err)
+	hook.fail = true
+	hook.err = packets.ErrPayloadFormatInvalid
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
 	s.Serve()
 	defer s.Close()
 
@@ -1326,10 +1338,10 @@ func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
 func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
-    hook.fail = true
-    hook.err = packets.CodeSuccessIgnore
-    err := s.AddHook(hook, nil)
-    require.NoError(t,err)
+	hook.fail = true
+	hook.err = packets.CodeSuccessIgnore
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
 	s.Serve()
 	defer s.Close()
 
@@ -1337,20 +1349,19 @@ func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 	s.Clients.Add(cl)
 
 	receiver, r2, w2 := newTestClient()
-    receiver.ID = "receiver"
-    s.Clients.Add(receiver)
-    s.Topics.Subscribe(receiver.ID, packets.Subscription{Filter: "a/b/c"})
+	receiver.ID = "receiver"
+	s.Clients.Add(receiver)
+	s.Topics.Subscribe(receiver.ID, packets.Subscription{Filter: "a/b/c"})
 
-    require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.PacketsReceived))
-    require.Equal(t, 0, len(s.Topics.Messages("a/b/c")))
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.PacketsReceived))
+	require.Equal(t, 0, len(s.Topics.Messages("a/b/c")))
 
-    receiverBuf := make(chan []byte)
-    go func() {
-        buf, err := io.ReadAll(r2)
-        require.NoError(t, err)
-        receiverBuf <- buf
-    }()
-
+	receiverBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r2)
+		require.NoError(t, err)
+		receiverBuf <- buf
+	}()
 
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
@@ -1523,7 +1534,6 @@ func TestServerProcessPacketPublishDowngradeQos(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPuback).RawBytes, buf)
 }
 
-
 func TestPublishToSubscribersSelfNoLocal(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
@@ -1692,7 +1702,6 @@ func TestPublishToSubscribersPkIgnore(t *testing.T) {
 
 	require.Equal(t, []byte{}, <-receiverBuf)
 }
-
 
 func TestPublishToClientServerDowngradeQos(t *testing.T) {
 	s := newServer()
@@ -2003,7 +2012,6 @@ func TestNoRetainMessageIfUnavailable(t *testing.T) {
 	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Retained))
 }
 
-
 func TestNoRetainMessageIfPkIgnore(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -2020,7 +2028,7 @@ func TestNoRetainMessage(t *testing.T) {
 	cl, _, _ := newTestClient()
 	s.Clients.Add(cl)
 
-	s.retainMessage(new(Client),  *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	s.retainMessage(new(Client), *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
 	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Retained))
 }
 
@@ -2965,9 +2973,11 @@ func TestServerLoadClients(t *testing.T) {
 	}
 
 	s := newServer()
-	require.Equal(t, 0, s.Clients.Len())
+	// Here, server.Clients also includes a server.inlineClient,
+	// so the total number of clients here should be increased by 1
+	require.Equal(t, 1, s.Clients.Len())
 	s.loadClients(v)
-	require.Equal(t, 3, s.Clients.Len())
+	require.Equal(t, 4, s.Clients.Len())
 	cl, ok := s.Clients.Get("mochi")
 	require.True(t, ok)
 	require.Equal(t, "mochi", cl.ID)
@@ -2995,7 +3005,10 @@ func TestServerLoadInflightMessages(t *testing.T) {
 		{ID: "zen"},
 		{ID: "mochi-co"},
 	})
-	require.Equal(t, 3, s.Clients.Len())
+
+	// server.Clients also includes a server.inlineClient,
+	// so the total number of clients here should be increased by 1
+	require.Equal(t, 4, s.Clients.Len())
 
 	v := []storage.Message{
 		{Origin: "mochi", PacketID: 1, Payload: []byte("hello world"), TopicName: "a/b/c"},
@@ -3151,11 +3164,15 @@ func TestServerClearExpiredClients(t *testing.T) {
 	cl2.Properties.Props.SessionExpiryIntervalFlag = true
 	s.Clients.Add(cl2)
 
-	require.Equal(t, 4, s.Clients.Len())
+	// server.Clients also includes a server.inlineClient,
+	// so the total number of clients here should be increased by 1
+	require.Equal(t, 5, s.Clients.Len())
 
 	s.clearExpiredClients(n)
 
-	require.Equal(t, 2, s.Clients.Len())
+	// server.Clients also includes a server.inlineClient,
+	// so the total number of clients here should be increased by 1
+	require.Equal(t, 3, s.Clients.Len())
 }
 
 func TestLoadServerInfoRestoreOnRestart(t *testing.T) {
