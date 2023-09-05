@@ -3191,3 +3191,311 @@ func TestAtomicItoa(t *testing.T) {
 	ip := &i
 	require.Equal(t, "22", AtomicItoa(ip))
 }
+
+func TestServerSubscribe(t *testing.T) {
+
+	handler := func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		// handler logic
+	}
+
+	s := New(nil)
+	require.NotNil(t, s)
+
+	tt := []struct {
+		desc       string
+		filter     string
+		identifier int
+		handler    InlineSubFn
+		expect     error
+	}{
+		{
+			desc:       "subscribe",
+			filter:     "a/b/c",
+			identifier: 1,
+			handler:    handler,
+			expect:     nil,
+		},
+		{
+			desc:       "re-subscribe",
+			filter:     "a/b/c",
+			identifier: 1,
+			handler:    handler,
+			expect:     nil,
+		},
+		{
+			desc:       "subscribe d/e/f",
+			filter:     "d/e/f",
+			identifier: 1,
+			handler:    handler,
+			expect:     nil,
+		},
+		{
+			desc:       "re-subscribe d/e/f by different identifier",
+			filter:     "d/e/f",
+			identifier: 2,
+			handler:    handler,
+			expect:     nil,
+		},
+		{
+			desc:       "subscribe different handler",
+			filter:     "a/b/c",
+			identifier: 1,
+			handler:    func(cl *Client, sub packets.Subscription, pk packets.Packet) {},
+			expect:     nil,
+		},
+		{
+			desc:       "subscribe $SYS/info",
+			filter:     "$SYS/info",
+			identifier: 1,
+			handler:    handler,
+			expect:     nil,
+		},
+		{
+			desc:       "subscribe invalied ###",
+			filter:     "###",
+			identifier: 1,
+			handler:    handler,
+			expect:     packets.ErrTopicFilterInvalid,
+		},
+		{
+			desc:       "subscribe invalid handler",
+			filter:     "a/b/c",
+			identifier: 1,
+			handler:    nil,
+			expect:     packets.ErrInlineSubscriptionHandlerInvalid,
+		},
+	}
+
+	for _, tx := range tt {
+		t.Run(tx.desc, func(t *testing.T) {
+			require.Equal(t, tx.expect, s.Subscribe(tx.filter, tx.identifier, tx.handler))
+		})
+	}
+}
+
+func TestServerUnsubscribe(t *testing.T) {
+	handler := func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		// handler logic
+	}
+
+	s := New(nil)
+	err := s.Subscribe("a/b/c", 1, handler)
+	require.Nil(t, err)
+
+	err = s.Subscribe("d/e/f", 1, handler)
+	require.Nil(t, err)
+
+	err = s.Subscribe("d/e/f", 2, handler)
+	require.Nil(t, err)
+
+	err = s.Unsubscribe("a/b/c", 1)
+	require.Nil(t, err)
+
+	err = s.Unsubscribe("d/e/f", 1)
+	require.Nil(t, err)
+
+	err = s.Unsubscribe("d/e/f", 2)
+	require.Nil(t, err)
+
+	err = s.Unsubscribe("not/exist", 1)
+	require.Nil(t, err)
+
+	err = s.Unsubscribe("#/#/invalid", 1)
+	require.Equal(t, packets.ErrTopicFilterInvalid, err)
+}
+
+type inlineHandlerDataWarpper struct {
+	clientId   string
+	payload    []byte
+	listenner  string
+	filter     string
+	identifier int
+}
+
+func TestPublishToInlineSubscriber(t *testing.T) {
+	s := newServer()
+	finishCh := make(chan *inlineHandlerDataWarpper)
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		finishCh <- &inlineHandlerDataWarpper{
+			clientId:   cl.ID,
+			payload:    pk.Payload,
+			listenner:  cl.Net.Listener,
+			filter:     sub.Filter,
+			identifier: sub.Identifier,
+		}
+	})
+	require.Nil(t, err)
+
+	go func() {
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+		s.publishToSubscribers(pkx)
+	}()
+
+	data := <-finishCh
+	require.Equal(t, InlineClientId, data.clientId)
+	require.Equal(t, []byte("hello mochi"), data.payload)
+	require.Equal(t, LocalListener, data.listenner)
+	require.Equal(t, "a/b/c", data.filter)
+	require.Equal(t, 1, data.identifier)
+}
+
+func TestPublishToInlineSubscribersDiffrentFilter(t *testing.T) {
+	s := newServer()
+	subNumber := 2
+	finishch := make(chan bool, subNumber)
+
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishch <- true
+	})
+	require.Nil(t, err)
+
+	err = s.Subscribe("z/e/n", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("mochi mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "z/e/n", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishch <- true
+	})
+	require.Nil(t, err)
+
+	go func() {
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+		s.publishToSubscribers(pkx)
+
+		pkx = *packets.TPacketData[packets.Publish].Get(packets.TPublishCopyBasic).Packet
+		s.publishToSubscribers(pkx)
+	}()
+
+	for i := 0; i < subNumber; i++ {
+		require.Equal(t, true, <-finishch)
+	}
+}
+
+func TestPublishToInlineSubscribersDiffrentIdentifier(t *testing.T) {
+	s := newServer()
+	subNumber := 2
+	finishCh := make(chan bool, subNumber)
+
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	err = s.Subscribe("a/b/c", 2, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 2, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	go func() {
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+		s.publishToSubscribers(pkx)
+	}()
+
+	for i := 0; i < subNumber; i++ {
+		require.Equal(t, true, <-finishCh)
+	}
+}
+
+func TestServerSubscribeWithRetain(t *testing.T) {
+	s := newServer()
+	subNumber := 1
+	finishCh := make(chan bool, subNumber)
+
+	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(1), retained)
+
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+	require.Equal(t, true, <-finishCh)
+}
+
+func TestServerSubscribeWithRetainDiffrentFilter(t *testing.T) {
+	s := newServer()
+	subNumber := 2
+	finishch := make(chan bool, subNumber)
+
+	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(1), retained)
+	retained = s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishCopyBasic).Packet)
+	require.Equal(t, int64(1), retained)
+
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishch <- true
+	})
+	require.Nil(t, err)
+
+	err = s.Subscribe("z/e/n", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("mochi mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "z/e/n", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishch <- true
+	})
+	require.Nil(t, err)
+
+	for i := 0; i < subNumber; i++ {
+		require.Equal(t, true, <-finishch)
+	}
+}
+
+func TestServerSubscribeWithRetainDiffrentIdentifier(t *testing.T) {
+	s := newServer()
+	subNumber := 2
+	finishCh := make(chan bool, subNumber)
+
+	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(1), retained)
+
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	err = s.Subscribe("a/b/c", 2, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 2, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	for i := 0; i < subNumber; i++ {
+		require.Equal(t, true, <-finishCh)
+	}
+}
