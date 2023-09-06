@@ -691,7 +691,21 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	if !cl.Net.Inline && !s.hooks.OnACLCheck(cl, pk.TopicName, true) {
-		return nil
+		if pk.FixedHeader.Qos == 0 {
+			return nil
+		}
+
+		if cl.Properties.ProtocolVersion != 5 {
+			return s.DisconnectClient(cl, packets.ErrNotAuthorized)
+		}
+
+		if pk.FixedHeader.Qos == 1 {
+			ack := s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, packets.ErrNotAuthorized)
+			return cl.WritePacket(ack)
+		}
+
+		ack := s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.ErrNotAuthorized)
+		return cl.WritePacket(ack)
 	}
 
 	pk.Origin = cl.ID
