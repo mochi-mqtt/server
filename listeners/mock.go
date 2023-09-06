@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package listeners
@@ -9,7 +9,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/rs/zerolog"
+	"log/slog"
 )
 
 // MockEstablisher is a function signature which can be used in testing.
@@ -53,7 +53,7 @@ func (l *MockListener) Serve(establisher EstablishFn) {
 }
 
 // Init initializes the listener.
-func (l *MockListener) Init(log *zerolog.Logger) error {
+func (l *MockListener) Init(log *slog.Logger) error {
 	if l.ErrListen {
 		return fmt.Errorf("listen failure")
 	}

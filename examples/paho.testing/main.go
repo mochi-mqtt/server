@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package main
@@ -11,9 +11,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mochi-co/mqtt/v2"
-	"github.com/mochi-co/mqtt/v2/listeners"
-	"github.com/mochi-co/mqtt/v2/packets"
+	mqtt "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/listeners"
+	"github.com/mochi-mqtt/server/v2/packets"
 )
 
 func main() {
@@ -28,6 +28,7 @@ func main() {
 	server := mqtt.New(nil)
 	server.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true
 	server.Options.Capabilities.Compatibilities.PassiveClientDisconnect = true
+	server.Options.Capabilities.Compatibilities.NoInheritedPropertiesOnAck = true
 
 	_ = server.AddHook(new(pahoAuthHook), nil)
 	tcp := listeners.NewTCP("t1", ":1883", nil)
@@ -44,9 +45,9 @@ func main() {
 	}()
 
 	<-done
-	server.Log.Warn().Msg("caught signal, stopping...")
+	server.Log.Warn("caught signal, stopping...")
 	server.Close()
-	server.Log.Info().Msg("main.go finished")
+	server.Log.Info("main.go finished")
 }
 
 type pahoAuthHook struct {

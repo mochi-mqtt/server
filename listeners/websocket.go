@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package listeners
@@ -14,8 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"log/slog"
+
 	"github.com/gorilla/websocket"
-	"github.com/rs/zerolog"
 )
 
 var (
@@ -30,7 +31,7 @@ type Websocket struct { // [MQTT-4.2.0-1]
 	address   string              // the network address to bind to
 	config    *Config             // configuration values for the listener
 	listen    *http.Server        // an http server for serving websocket connections
-	log       *zerolog.Logger     // server logger
+	log       *slog.Logger        // server logger
 	establish EstablishFn         // the server's establish connection handler
 	upgrader  *websocket.Upgrader //  upgrade the incoming http/tcp connection to a websocket compliant connection.
 	end       uint32              // ensure the close methods are only called once
@@ -75,7 +76,7 @@ func (l *Websocket) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *Websocket) Init(log *zerolog.Logger) error {
+func (l *Websocket) Init(log *slog.Logger) error {
 	l.log = log
 
 	mux := http.NewServeMux()
@@ -99,9 +100,9 @@ func (l *Websocket) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.Close()
 
-	err = l.establish(l.id, &wsConn{c.UnderlyingConn(), c})
+	err = l.establish(l.id, &wsConn{Conn: c.UnderlyingConn(), c: c})
 	if err != nil {
-		l.log.Warn().Err(err).Send()
+		l.log.Warn("", "error", err)
 	}
 }
 
@@ -135,25 +136,41 @@ func (l *Websocket) Close(closeClients CloseFn) {
 type wsConn struct {
 	net.Conn
 	c *websocket.Conn
+
+	// reader for the current message (may be nil)
+	r io.Reader
 }
 
 // Read reads the next span of bytes from the websocket connection and returns the number of bytes read.
 func (ws *wsConn) Read(p []byte) (int, error) {
-	op, r, err := ws.c.NextReader()
-	if err != nil {
-		return 0, err
+	if ws.r == nil {
+		op, r, err := ws.c.NextReader()
+		if err != nil {
+			return 0, err
+		}
+
+		if op != websocket.BinaryMessage {
+			err = ErrInvalidMessage
+			return 0, err
+		}
+
+		ws.r = r
 	}
 
-	if op != websocket.BinaryMessage {
-		err = ErrInvalidMessage
-		return 0, err
-	}
-
-	var n, br int
+	var n int
 	for {
-		br, err = r.Read(p[n:])
+		// buffer is full, return what we've read so far
+		if n == len(p) {
+			return n, nil
+		}
+
+		br, err := ws.r.Read(p[n:])
 		n += br
 		if err != nil {
+			// when ANY error occurs, we consider this the end of the current message (either because it really is, via
+			// io.EOF, or because something bad happened, in which case we want to drop the remainder)
+			ws.r = nil
+
 			if errors.Is(err, io.EOF) {
 				err = nil
 			}

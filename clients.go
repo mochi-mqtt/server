@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 J. Blake / mochi-co
+// SPDX-FileCopyrightText: 2023 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package mqtt
@@ -17,7 +17,7 @@ import (
 
 	"github.com/rs/xid"
 
-	"github.com/mochi-co/mqtt/v2/packets"
+	"github.com/mochi-mqtt/server/v2/packets"
 )
 
 const (
@@ -192,7 +192,8 @@ func (cl *Client) WriteLoop() {
 		select {
 		case pk := <-cl.State.outbound:
 			if err := cl.WritePacket(*pk); err != nil {
-				cl.ops.log.Debug().Err(err).Str("client", cl.ID).Interface("packet", pk).Msg("failed publishing packet")
+				// TODO : Figure out what to do with error
+				cl.ops.log.Debug("failed publishing packet", "error", err, "client", cl.ID, "packet", pk)
 			}
 			atomic.AddInt32(&cl.State.outboundQty, -1)
 		case <-cl.State.open.Done():

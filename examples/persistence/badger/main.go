@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2022 mochi-co
+// SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
 package main
@@ -10,10 +10,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mochi-co/mqtt/v2"
-	"github.com/mochi-co/mqtt/v2/hooks/auth"
-	"github.com/mochi-co/mqtt/v2/hooks/storage/badger"
-	"github.com/mochi-co/mqtt/v2/listeners"
+	mqtt "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/hooks/auth"
+	"github.com/mochi-mqtt/server/v2/hooks/storage/badger"
+	"github.com/mochi-mqtt/server/v2/listeners"
 )
 
 func main() {
@@ -52,8 +52,7 @@ func main() {
 	}()
 
 	<-done
-	server.Log.Warn().Msg("caught signal, stopping...")
+	server.Log.Warn("caught signal, stopping...")
 	server.Close()
-	server.Log.Info().Msg("main.go finished")
-
+	server.Log.Info("main.go finished")
 }
