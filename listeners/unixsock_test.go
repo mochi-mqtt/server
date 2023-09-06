@@ -38,19 +38,19 @@ func TestUnixSockProtocol(t *testing.T) {
 
 func TestUnixSockInit(t *testing.T) {
 	l := NewUnixSock("t1", testUnixAddr)
-	err := l.Init(&logger)
+	err := l.Init(logger)
 	l.Close(MockCloser)
 	require.NoError(t, err)
 
 	l2 := NewUnixSock("t2", testUnixAddr)
-	err = l2.Init(&logger)
+	err = l2.Init(logger)
 	l2.Close(MockCloser)
 	require.NoError(t, err)
 }
 
 func TestUnixSockServeAndClose(t *testing.T) {
 	l := NewUnixSock("t1", testUnixAddr)
-	err := l.Init(&logger)
+	err := l.Init(logger)
 	require.NoError(t, err)
 
 	o := make(chan bool)
@@ -75,7 +75,7 @@ func TestUnixSockServeAndClose(t *testing.T) {
 
 func TestUnixSockEstablishThenEnd(t *testing.T) {
 	l := NewUnixSock("t1", testUnixAddr)
-	err := l.Init(&logger)
+	err := l.Init(logger)
 	require.NoError(t, err)
 
 	o := make(chan bool)

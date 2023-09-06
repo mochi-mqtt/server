@@ -5,16 +5,16 @@
 package auth
 
 import (
+	"log/slog"
 	"os"
 	"testing"
 
-	"github.com/mochi-mqtt/server/v2"
+	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/packets"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
-var logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.Disabled)
+var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 // func teardown(t *testing.T, path string, h *Hook) {
 // 	h.Stop()
@@ -34,7 +34,7 @@ func TestBasicProvides(t *testing.T) {
 
 func TestBasicInitBadConfig(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 
 	err := h.Init(map[string]any{})
 	require.Error(t, err)
@@ -42,7 +42,7 @@ func TestBasicInitBadConfig(t *testing.T) {
 
 func TestBasicInitDefaultConfig(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 
 	err := h.Init(nil)
 	require.NoError(t, err)
@@ -50,7 +50,7 @@ func TestBasicInitDefaultConfig(t *testing.T) {
 
 func TestBasicInitWithLedgerPointer(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 
 	ln := &Ledger{
 		Auth: []AuthRule{
@@ -79,7 +79,7 @@ func TestBasicInitWithLedgerPointer(t *testing.T) {
 
 func TestBasicInitWithLedgerJSON(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 
 	require.Nil(t, h.ledger)
 	err := h.Init(&Options{
@@ -93,7 +93,7 @@ func TestBasicInitWithLedgerJSON(t *testing.T) {
 
 func TestBasicInitWithLedgerYAML(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 
 	require.Nil(t, h.ledger)
 	err := h.Init(&Options{
@@ -107,7 +107,7 @@ func TestBasicInitWithLedgerYAML(t *testing.T) {
 
 func TestBasicInitWithLedgerBadDAta(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 
 	require.Nil(t, h.ledger)
 	err := h.Init(&Options{
@@ -119,7 +119,7 @@ func TestBasicInitWithLedgerBadDAta(t *testing.T) {
 
 func TestOnConnectAuthenticate(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 
 	ln := new(Ledger)
 	ln.Auth = checkLedger.Auth
@@ -158,7 +158,7 @@ func TestOnConnectAuthenticate(t *testing.T) {
 
 func TestOnACL(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 
 	ln := new(Ledger)
 	ln.Auth = checkLedger.Auth

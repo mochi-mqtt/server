@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -20,11 +21,10 @@ import (
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/mochi-mqtt/server/v2/system"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
-var logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.Disabled)
+var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 type ProtocolTest []struct {
 	protocolVersion byte
@@ -35,6 +35,11 @@ type ProtocolTest []struct {
 
 type AllowHook struct {
 	HookBase
+}
+
+func (h *AllowHook) SetOpts(l *slog.Logger, opts *HookOptions) {
+	h.Log = l
+	h.Opts = opts
 }
 
 func (h *AllowHook) ID() string {
@@ -51,6 +56,11 @@ func (h *AllowHook) OnACLCheck(cl *Client, topic string, write bool) bool     { 
 type DelayHook struct {
 	HookBase
 	DisconnectDelay time.Duration
+}
+
+func (h *DelayHook) SetOpts(l *slog.Logger, opts *HookOptions) {
+	h.Log = l
+	h.Opts = opts
 }
 
 func (h *DelayHook) ID() string {
@@ -71,9 +81,10 @@ func newServer() *Server {
 	cc.ReceiveMaximum = 0
 
 	s := New(&Options{
-		Logger:       &logger,
+		Logger:       logger,
 		Capabilities: &cc,
 	})
+
 	s.AddHook(new(AllowHook), nil)
 	return s
 }
@@ -116,7 +127,7 @@ func TestNewNilOpts(t *testing.T) {
 
 func TestServerNewClient(t *testing.T) {
 	s := New(nil)
-	s.Log = &logger
+	s.Log = logger
 	r, _ := net.Pipe()
 
 	cl := s.NewClient(r, "testing", "test", false)
@@ -143,7 +154,8 @@ func TestServerNewClientInline(t *testing.T) {
 
 func TestServerAddHook(t *testing.T) {
 	s := New(nil)
-	s.Log = &logger
+
+	s.Log = logger
 	require.NotNil(t, s)
 
 	require.Equal(t, int64(0), s.hooks.Len())
@@ -662,7 +674,7 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 
 func TestEstablishConnectionBadAuthentication(t *testing.T) {
 	s := New(&Options{
-		Logger: &logger,
+		Logger: logger,
 	})
 	defer s.Close()
 
@@ -696,7 +708,7 @@ func TestEstablishConnectionBadAuthentication(t *testing.T) {
 
 func TestEstablishConnectionBadAuthenticationAckFailure(t *testing.T) {
 	s := New(&Options{
-		Logger: &logger,
+		Logger: logger,
 	})
 	defer s.Close()
 
@@ -1283,10 +1295,10 @@ func TestServerProcessPublishAckFailure(t *testing.T) {
 func TestServerProcessPublishOnPublishAckErrorRWError(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
-    hook.fail = true
+	hook.fail = true
 	hook.err = packets.ErrUnspecifiedError
-    err := s.AddHook(hook, nil)
-	require.NoError(t,err)
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
 
 	cl, _, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
@@ -1301,10 +1313,10 @@ func TestServerProcessPublishOnPublishAckErrorRWError(t *testing.T) {
 func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
-    hook.fail = true
-    hook.err = packets.ErrPayloadFormatInvalid
-    err := s.AddHook(hook, nil)
-    require.NoError(t,err)
+	hook.fail = true
+	hook.err = packets.ErrPayloadFormatInvalid
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
 	s.Serve()
 	defer s.Close()
 
@@ -1326,10 +1338,10 @@ func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
 func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
-    hook.fail = true
-    hook.err = packets.CodeSuccessIgnore
-    err := s.AddHook(hook, nil)
-    require.NoError(t,err)
+	hook.fail = true
+	hook.err = packets.CodeSuccessIgnore
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
 	s.Serve()
 	defer s.Close()
 
@@ -1337,20 +1349,19 @@ func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 	s.Clients.Add(cl)
 
 	receiver, r2, w2 := newTestClient()
-    receiver.ID = "receiver"
-    s.Clients.Add(receiver)
-    s.Topics.Subscribe(receiver.ID, packets.Subscription{Filter: "a/b/c"})
+	receiver.ID = "receiver"
+	s.Clients.Add(receiver)
+	s.Topics.Subscribe(receiver.ID, packets.Subscription{Filter: "a/b/c"})
 
-    require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.PacketsReceived))
-    require.Equal(t, 0, len(s.Topics.Messages("a/b/c")))
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.PacketsReceived))
+	require.Equal(t, 0, len(s.Topics.Messages("a/b/c")))
 
-    receiverBuf := make(chan []byte)
-    go func() {
-        buf, err := io.ReadAll(r2)
-        require.NoError(t, err)
-        receiverBuf <- buf
-    }()
-
+	receiverBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r2)
+		require.NoError(t, err)
+		receiverBuf <- buf
+	}()
 
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
@@ -1399,7 +1410,7 @@ func TestServerProcessPublishInvalidTopic(t *testing.T) {
 
 func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 	s := New(&Options{
-		Logger: &logger,
+		Logger: logger,
 	})
 	s.Serve()
 	defer s.Close()
@@ -1522,7 +1533,6 @@ func TestServerProcessPacketPublishDowngradeQos(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPuback).RawBytes, buf)
 }
-
 
 func TestPublishToSubscribersSelfNoLocal(t *testing.T) {
 	s := newServer()
@@ -1693,7 +1703,6 @@ func TestPublishToSubscribersPkIgnore(t *testing.T) {
 	require.Equal(t, []byte{}, <-receiverBuf)
 }
 
-
 func TestPublishToClientServerDowngradeQos(t *testing.T) {
 	s := newServer()
 	s.Options.Capabilities.MaximumQos = 1
@@ -1759,7 +1768,7 @@ func TestPublishToClientExceedClientWritesPending(t *testing.T) {
 	cl := newClient(w, &ops{
 		info:  new(system.Info),
 		hooks: new(Hooks),
-		log:   &logger,
+		log:   logger,
 		options: &Options{
 			Capabilities: &Capabilities{
 				MaximumClientWritesPending: 3,
@@ -2003,7 +2012,6 @@ func TestNoRetainMessageIfUnavailable(t *testing.T) {
 	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Retained))
 }
 
-
 func TestNoRetainMessageIfPkIgnore(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -2020,7 +2028,7 @@ func TestNoRetainMessage(t *testing.T) {
 	cl, _, _ := newTestClient()
 	s.Clients.Add(cl)
 
-	s.retainMessage(new(Client),  *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	s.retainMessage(new(Client), *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
 	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Retained))
 }
 
@@ -2604,7 +2612,7 @@ func TestServerProcessSubscribeNoConnection(t *testing.T) {
 
 func TestServerProcessSubscribeACLCheckDeny(t *testing.T) {
 	s := New(&Options{
-		Logger: &logger,
+		Logger: logger,
 	})
 	s.Serve()
 	cl, r, w := newTestClient()
@@ -2623,7 +2631,7 @@ func TestServerProcessSubscribeACLCheckDeny(t *testing.T) {
 
 func TestServerProcessSubscribeACLCheckDenyObscure(t *testing.T) {
 	s := New(&Options{
-		Logger: &logger,
+		Logger: logger,
 	})
 	s.Serve()
 	s.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true
