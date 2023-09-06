@@ -797,7 +797,10 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		s.retainMessage(cl, pk)
 	}
 
-	if pk.FixedHeader.Qos == 0 {
+	// If it's inlineClient, it can't handle PUBREC and PUBREL.
+	// When it publishes a package with a qos > 0, the server treats
+	// the package as qos=0, and the client receives it as qos=1 or 2.
+	if pk.FixedHeader.Qos == 0 || cl.Net.Inline {
 		s.publishToSubscribers(pk)
 		s.hooks.OnPublished(cl, pk)
 		return nil
