@@ -6,23 +6,21 @@ package listeners
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/rs/zerolog"
 )
 
 // HTTPHealthCheck is a listener for providing an HTTP healthcheck endpoint.
 type HTTPHealthCheck struct {
 	sync.RWMutex
-	id      string          // the internal id of the listener
-	address string          // the network address to bind to
-	config  *Config         // configuration values for the listener
-	listen  *http.Server    // the http server
-	log     *zerolog.Logger // server logger
-	end     uint32          // ensure the close methods are only called once
+	id      string       // the internal id of the listener
+	address string       // the network address to bind to
+	config  *Config      // configuration values for the listener
+	listen  *http.Server // the http server
+	end     uint32       // ensure the close methods are only called once
 }
 
 // NewHTTPHealthCheck initialises and returns a new HTTP listener, listening on an address.
@@ -57,9 +55,7 @@ func (l *HTTPHealthCheck) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *HTTPHealthCheck) Init(log *zerolog.Logger) error {
-	l.log = log
-
+func (l *HTTPHealthCheck) Init(_ *slog.Logger) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthcheck", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

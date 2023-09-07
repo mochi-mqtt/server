@@ -9,7 +9,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/rs/zerolog"
+	"log/slog"
 )
 
 // Config contains configuration values for a listener.
@@ -28,12 +28,12 @@ type CloseFn func(id string)
 // Listener is an interface for network listeners. A network listener listens
 // for incoming client connections and adds them to the server.
 type Listener interface {
-	Init(*zerolog.Logger) error // open the network address
-	Serve(EstablishFn)          // starting actively listening for new connections
-	ID() string                 // return the id of the listener
-	Address() string            // the address of the listener
-	Protocol() string           // the protocol in use by the listener
-	Close(CloseFn)              // stop and close the listener
+	Init(*slog.Logger) error // open the network address
+	Serve(EstablishFn)       // starting actively listening for new connections
+	ID() string              // return the id of the listener
+	Address() string         // the address of the listener
+	Protocol() string        // the protocol in use by the listener
+	Close(CloseFn)           // stop and close the listener
 }
 
 // Listeners contains the network listeners for the broker.

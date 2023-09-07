@@ -10,18 +10,18 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/rs/zerolog"
+	"log/slog"
 )
 
 // TCP is a listener for establishing client connections on basic TCP protocol.
 type TCP struct { // [MQTT-4.2.0-1]
 	sync.RWMutex
-	id      string          // the internal id of the listener
-	address string          // the network address to bind to
-	listen  net.Listener    // a net.Listener which will listen for new clients
-	config  *Config         // configuration values for the listener
-	log     *zerolog.Logger // server logger
-	end     uint32          // ensure the close methods are only called once
+	id      string       // the internal id of the listener
+	address string       // the network address to bind to
+	listen  net.Listener // a net.Listener which will listen for new clients
+	config  *Config      // configuration values for the listener
+	log     *slog.Logger // server logger
+	end     uint32       // ensure the close methods are only called once
 }
 
 // NewTCP initialises and returns a new TCP listener, listening on an address.
@@ -53,7 +53,7 @@ func (l *TCP) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *TCP) Init(log *zerolog.Logger) error {
+func (l *TCP) Init(log *slog.Logger) error {
 	l.log = log
 
 	var err error
@@ -83,7 +83,7 @@ func (l *TCP) Serve(establish EstablishFn) {
 			go func() {
 				err = establish(l.id, conn)
 				if err != nil {
-					l.log.Warn().Err(err).Send()
+					l.log.Warn("", "error", err)
 				}
 			}()
 		}

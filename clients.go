@@ -192,7 +192,8 @@ func (cl *Client) WriteLoop() {
 		select {
 		case pk := <-cl.State.outbound:
 			if err := cl.WritePacket(*pk); err != nil {
-				cl.ops.log.Debug().Err(err).Str("client", cl.ID).Interface("packet", pk).Msg("failed publishing packet")
+				// TODO : Figure out what to do with error
+				cl.ops.log.Debug("failed publishing packet", "error", err, "client", cl.ID, "packet", pk)
 			}
 			atomic.AddInt32(&cl.State.outboundQty, -1)
 		case <-cl.State.open.Done():
