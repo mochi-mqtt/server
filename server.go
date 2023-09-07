@@ -111,16 +111,16 @@ type Options struct {
 // Server is an MQTT broker server. It should be created with server.New()
 // in order to ensure all the internal fields are correctly populated.
 type Server struct {
-	Options   *Options             // configurable server options
-	Listeners *listeners.Listeners // listeners are network interfaces which listen for new connections
-	Clients   *Clients             // clients known to the broker
-	Topics    *TopicsIndex         // an index of topic filter subscriptions and retained messages
-	Info      *system.Info         // values about the server commonly known as $SYS topics
-	loop      *loop                // loop contains tickers for the system event loop
-	done      chan bool            // indicate that the server is ending
-	Log       *slog.Logger         // minimal no-alloc logger
-	hooks     *Hooks               // hooks contains hooks for extra functionality such as auth and persistent storage.
-  inlineClient *Client           // inlineClient is a special client used for inline subscriptions and inline Publish.
+	Options      *Options             // configurable server options
+	Listeners    *listeners.Listeners // listeners are network interfaces which listen for new connections
+	Clients      *Clients             // clients known to the broker
+	Topics       *TopicsIndex         // an index of topic filter subscriptions and retained messages
+	Info         *system.Info         // values about the server commonly known as $SYS topics
+	loop         *loop                // loop contains tickers for the system event loop
+	done         chan bool            // indicate that the server is ending
+	Log          *slog.Logger         // minimal no-alloc logger
+	hooks        *Hooks               // hooks contains hooks for extra functionality such as auth and persistent storage.
+	inlineClient *Client              // inlineClient is a special client used for inline subscriptions and inline Publish.
 }
 
 // loop contains interval tickers for the system events loop.

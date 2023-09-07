@@ -47,9 +47,9 @@ func main() {
 
 		// Subscribe to a filter and handle any received messages via a callback function.
 		callbackFn := func(cl *mqtt.Client, sub packets.Subscription, pk packets.Packet) {
-			server.Log.Info().Str("client", cl.ID).Int("subid", sub.Identifier).Str("topic", pk.TopicName).Str("payload", string(pk.Payload)).Msgf("inline client received message from subscription")
+			server.Log.Info("inline client received message from subscription", "client", cl.ID, "subscriptionId", sub.Identifier, "topic", pk.TopicName, "payload", string(pk.Payload))
 		}
-		server.Log.Info().Msgf("inline client subscribing")
+		server.Log.Info("inline client subscribing")
 		server.Subscribe("direct/#", 1, callbackFn)
 		server.Subscribe("direct/#", 2, callbackFn)
 	}()
@@ -60,16 +60,16 @@ func main() {
 		for range time.Tick(time.Second * 3) {
 			err := server.Publish("direct/publish", []byte("scheduled message"), false, 0)
 			if err != nil {
-				server.Log.Error().Err(err).Msg("server.Publish")
+				server.Log.Error("server.Publish", "error", err)
 			}
-			server.Log.Info().Msgf("main.go issued direct message to direct/publish")
+			server.Log.Info("main.go issued direct message to direct/publish")
 		}
 	}()
 
 	go func() {
 		time.Sleep(time.Second * 10)
 		// Unsubscribe from the same filter to stop receiving messages.
-		server.Log.Info().Msgf("inline client unsubscribing")
+		server.Log.Info("inline client unsubscribing")
 		server.Unsubscribe("direct/#", 1)
 	}()
 	// If you want to have more control over your packets, you can directly inject a packet of any kind into the broker.
@@ -89,7 +89,7 @@ func main() {
 	//}()
 
 	<-done
-	server.Log.Warn().Msg("caught signal, stopping...")
+	server.Log.Warn("caught signal, stopping...")
 	_ = server.Close()
-	server.Log.Info().Msg("main.go finished")
+	server.Log.Info("main.go finished")
 }
