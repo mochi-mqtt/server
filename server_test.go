@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -52,6 +53,26 @@ func (h *AllowHook) Provides(b byte) bool {
 
 func (h *AllowHook) OnConnectAuthenticate(cl *Client, pk packets.Packet) bool { return true }
 func (h *AllowHook) OnACLCheck(cl *Client, topic string, write bool) bool     { return true }
+
+type DenyHook struct {
+	HookBase
+}
+
+func (h *DenyHook) SetOpts(l *slog.Logger, opts *HookOptions) {
+	h.Log = l
+	h.Opts = opts
+}
+
+func (h *DenyHook) ID() string {
+	return "deny-all-auth"
+}
+
+func (h *DenyHook) Provides(b byte) bool {
+	return bytes.Contains([]byte{OnConnectAuthenticate, OnACLCheck}, []byte{b})
+}
+
+func (h *DenyHook) OnConnectAuthenticate(cl *Client, pk packets.Packet) bool { return false }
+func (h *DenyHook) OnACLCheck(cl *Client, topic string, write bool) bool     { return false }
 
 type DelayHook struct {
 	HookBase
@@ -1409,14 +1430,64 @@ func TestServerProcessPublishInvalidTopic(t *testing.T) {
 }
 
 func TestServerProcessPublishACLCheckDeny(t *testing.T) {
+	cc := *DefaultServerCapabilities
 	s := New(&Options{
-		Logger: logger,
+		Logger:       logger,
+		Capabilities: &cc,
 	})
+	s.AddHook(new(DenyHook), nil)
 	s.Serve()
 	defer s.Close()
-	cl, _, _ := newTestClient()
-	err := s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
-	require.NoError(t, err) // ACL check fails silently
+
+	tests := []struct {
+		name             string
+		protocolVersion  byte
+		pk               packets.Packet
+		expectErr        error
+		expectReponse    []byte
+		expectDisconnect bool
+	}{
+		{"v4_QOS0", 4, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet,
+			nil, nil, false},
+		{"v4_QOS1", 4, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet,
+			packets.ErrNotAuthorized, nil, true},
+		{"v4_QOS2", 4, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet,
+			packets.ErrNotAuthorized, nil, true},
+
+		{"v5_QOS0", 5, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).Packet,
+			nil, nil, false},
+		{"v5_QOS1", 5, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1Mqtt5).Packet,
+			nil, packets.TPacketData[packets.Puback].Get(packets.TPubrecMqtt5NotAuthorized).RawBytes, false},
+		{"v5_QOS2", 5, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2Mqtt5).Packet,
+			nil, packets.TPacketData[packets.Pubrec].Get(packets.TPubrecMqtt5NotAuthorized).RawBytes, false},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			cl, r, w := newTestClient()
+			cl.Properties.ProtocolVersion = tt.protocolVersion
+
+			wg := sync.WaitGroup{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				err := s.processPublish(cl, tt.pk)
+				require.ErrorIs(t, err, tt.expectErr)
+				w.Close()
+			}()
+
+			buf, err := io.ReadAll(r)
+			require.NoError(t, err)
+
+			if tt.expectReponse != nil {
+				require.Equal(t, tt.expectReponse, buf)
+			}
+
+			require.Equal(t, tt.expectDisconnect, cl.Closed())
+			wg.Wait()
+		})
+	}
 }
 
 func TestServerProcessPublishOnMessageRecvRejected(t *testing.T) {
