@@ -42,7 +42,7 @@ func TestHTTPStatsTLSProtocol(t *testing.T) {
 		TLSConfig: tlsConfigBasic,
 	}, nil)
 
-	l.Init(logger)
+	_ = l.Init(logger)
 	require.Equal(t, "https", l.Protocol())
 }
 

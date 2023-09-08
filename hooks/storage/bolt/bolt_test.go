@@ -38,7 +38,7 @@ var (
 )
 
 func teardown(t *testing.T, path string, h *Hook) {
-	h.Stop()
+	_ = h.Stop()
 	err := os.Remove(path)
 	require.NoError(t, err)
 }

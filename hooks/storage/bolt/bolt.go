@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
-// package bolt is provided for historical compatibility and may not be actively updated, you should use the badger hook instead.
+
+// Package bolt is provided for historical compatibility and may not be actively updated, you should use the badger hook instead.
 package bolt
 
 import (
@@ -132,8 +133,7 @@ func (h *Hook) OnSessionEstablished(cl *mqtt.Client, pk packets.Packet) {
 	h.updateClient(cl)
 }
 
-// OnWillSent is called when a client sends a will message and the will message is removed
-// from the client record.
+// OnWillSent is called when a client sends a Will Message and the Will Message is removed from the client record.
 func (h *Hook) OnWillSent(cl *mqtt.Client, pk packets.Packet) {
 	h.updateClient(cl)
 }

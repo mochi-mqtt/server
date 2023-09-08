@@ -40,7 +40,6 @@ const (
 	TConnectMqtt5
 	TConnectMqtt5LWT
 	TConnectClean
-	TConnectCleanLWT
 	TConnectUserPass
 	TConnectUserPassLWT
 	TConnectMalProtocolName
@@ -61,7 +60,6 @@ const (
 	TConnectInvalidProtocolVersion2
 	TConnectInvalidReservedBit
 	TConnectInvalidClientIDTooLong
-	TConnectInvalidPasswordNoUsername
 	TConnectInvalidFlagNoUsername
 	TConnectInvalidFlagNoPassword
 	TConnectInvalidUsernameNoFlag
@@ -186,7 +184,6 @@ const (
 	TUnsubscribe
 	TUnsubscribeMany
 	TUnsubscribeMqtt5
-	TUnsubscribeDropProperties
 	TUnsubscribeMalPacketID
 	TUnsubscribeMalTopicName
 	TUnsubscribeMalProperties
@@ -204,7 +201,6 @@ const (
 	TDisconnect
 	TDisconnectTakeover
 	TDisconnectMqtt5
-	TDisconnectNormalMqtt5
 	TDisconnectSecondConnect
 	TDisconnectReceiveMaximum
 	TDisconnectDropProperties

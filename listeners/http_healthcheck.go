@@ -79,9 +79,9 @@ func (l *HTTPHealthCheck) Init(_ *slog.Logger) error {
 // Serve starts listening for new connections and serving responses.
 func (l *HTTPHealthCheck) Serve(establish EstablishFn) {
 	if l.listen.TLSConfig != nil {
-		l.listen.ListenAndServeTLS("", "")
+		_ = l.listen.ListenAndServeTLS("", "")
 	} else {
-		l.listen.ListenAndServe()
+		_ = l.listen.ListenAndServe()
 	}
 }
 
@@ -93,7 +93,7 @@ func (l *HTTPHealthCheck) Close(closeClients CloseFn) {
 	if atomic.CompareAndSwapUint32(&l.end, 0, 1) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		l.listen.Shutdown(ctx)
+		_ = l.listen.Shutdown(ctx)
 	}
 
 	closeClients(l.id)

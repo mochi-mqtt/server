@@ -50,8 +50,8 @@ func main() {
 			server.Log.Info("inline client received message from subscription", "client", cl.ID, "subscriptionId", sub.Identifier, "topic", pk.TopicName, "payload", string(pk.Payload))
 		}
 		server.Log.Info("inline client subscribing")
-		server.Subscribe("direct/#", 1, callbackFn)
-		server.Subscribe("direct/#", 2, callbackFn)
+		_ = server.Subscribe("direct/#", 1, callbackFn)
+		_ = server.Subscribe("direct/#", 2, callbackFn)
 	}()
 
 	// There is a shorthand convenience function, Publish, for easily sending
@@ -70,10 +70,11 @@ func main() {
 		time.Sleep(time.Second * 10)
 		// Unsubscribe from the same filter to stop receiving messages.
 		server.Log.Info("inline client unsubscribing")
-		server.Unsubscribe("direct/#", 1)
+		_ = server.Unsubscribe("direct/#", 1)
 	}()
 	// If you want to have more control over your packets, you can directly inject a packet of any kind into the broker.
 	//go func() {
+	//  cl := server.NewClient(nil, "local", "inline", true)
 	//	for range time.Tick(time.Second * 5) {
 	//		err := server.InjectPacket(cl, packets.Packet{
 	//			FixedHeader: packets.FixedHeader{

@@ -22,7 +22,7 @@ type Config struct {
 // EstablishFn is a callback function for establishing new clients.
 type EstablishFn func(id string, c net.Conn) error
 
-// CloseFunc is a callback function for closing all listener clients.
+// CloseFn is a callback function for closing all listener clients.
 type CloseFn func(id string)
 
 // Listener is an interface for network listeners. A network listener listens

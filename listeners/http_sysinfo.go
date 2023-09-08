@@ -81,9 +81,9 @@ func (l *HTTPStats) Init(_ *slog.Logger) error {
 // Serve starts listening for new connections and serving responses.
 func (l *HTTPStats) Serve(establish EstablishFn) {
 	if l.listen.TLSConfig != nil {
-		l.listen.ListenAndServeTLS("", "")
+		_ = l.listen.ListenAndServeTLS("", "")
 	} else {
-		l.listen.ListenAndServe()
+		_ = l.listen.ListenAndServe()
 	}
 }
 
@@ -95,7 +95,7 @@ func (l *HTTPStats) Close(closeClients CloseFn) {
 	if atomic.CompareAndSwapUint32(&l.end, 0, 1) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		l.listen.Shutdown(ctx)
+		_ = l.listen.Shutdown(ctx)
 	}
 
 	closeClients(l.id)
@@ -107,8 +107,8 @@ func (l *HTTPStats) jsonHandler(w http.ResponseWriter, req *http.Request) {
 
 	out, err := json.MarshalIndent(info, "", "\t")
 	if err != nil {
-		io.WriteString(w, err.Error())
+		_, _ = io.WriteString(w, err.Error())
 	}
 
-	w.Write(out)
+	_, _ = w.Write(out)
 }

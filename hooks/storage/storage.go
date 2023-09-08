@@ -25,7 +25,7 @@ var (
 	ErrDBFileNotOpen = errors.New("db file not open")
 )
 
-// Client is a storable representation of an mqtt client.
+// Client is a storable representation of an MQTT client.
 type Client struct {
 	Will            ClientWill       `json:"will"`            // will topic and payload data if applicable
 	Properties      ClientProperties `json:"properties"`      // the connect properties for the client
@@ -147,7 +147,7 @@ func (d *Message) ToPacket() packets.Packet {
 	return pk
 }
 
-// Subscription is a storable representation of an mqtt subscription.
+// Subscription is a storable representation of an MQTT subscription.
 type Subscription struct {
 	T                 string `json:"t"`
 	ID                string `json:"id" storm:"id"`

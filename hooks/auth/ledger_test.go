@@ -561,17 +561,17 @@ func TestLedgerUpdate(t *testing.T) {
 		},
 	}
 
-	new := &Ledger{
+	n := &Ledger{
 		Auth: AuthRules{
 			{Remote: "127.0.0.1", Allow: true},
 			{Remote: "192.168.*", Allow: true},
 		},
 	}
 
-	old.Update(new)
+	old.Update(n)
 	require.Len(t, old.Auth, 2)
 	require.Equal(t, RString("192.168.*"), old.Auth[1].Remote)
-	require.NotSame(t, new, old)
+	require.NotSame(t, n, old)
 }
 
 func TestLedgerToJSON(t *testing.T) {

@@ -15,7 +15,7 @@ import (
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/mochi-mqtt/server/v2/system"
 
-	redis "github.com/go-redis/redis/v8"
+	"github.com/go-redis/redis/v8"
 )
 
 // defaultAddr is the default address to the redis service.
@@ -134,7 +134,7 @@ func (h *Hook) Init(config any) error {
 	return nil
 }
 
-// Close closes the redis connection.
+// Stop closes the redis connection.
 func (h *Hook) Stop() error {
 	h.Log.Info("disconnecting from redis service")
 
@@ -146,8 +146,7 @@ func (h *Hook) OnSessionEstablished(cl *mqtt.Client, pk packets.Packet) {
 	h.updateClient(cl)
 }
 
-// OnWillSent is called when a client sends a will message and the will message is removed
-// from the client record.
+// OnWillSent is called when a client sends a Will Message and the Will Message is removed from the client record.
 func (h *Hook) OnWillSent(cl *mqtt.Client, pk packets.Packet) {
 	h.updateClient(cl)
 }

@@ -114,7 +114,7 @@ func (h *Hook) OnQosDropped(cl *mqtt.Client, pk packets.Packet) {
 	h.Log.Debug("inflight dropped", "m", h.packetMeta(pk))
 }
 
-// OnLWTSent is called when a will message has been issued from a disconnecting client.
+// OnLWTSent is called when a Will Message has been issued from a disconnecting client.
 func (h *Hook) OnLWTSent(cl *mqtt.Client, pk packets.Packet) {
 	h.Log.Debug("sent lwt for client", "method", "OnLWTSent", "client", cl.ID)
 }
@@ -136,25 +136,25 @@ func (h *Hook) StoredClients() (v []storage.Client, err error) {
 	return v, nil
 }
 
-// StoredClients is called when the server restores subscriptions from a store.
+// StoredSubscriptions is called when the server restores subscriptions from a store.
 func (h *Hook) StoredSubscriptions() (v []storage.Subscription, err error) {
 	h.Log.Debug("", "method", "StoredSubscriptions")
 	return v, nil
 }
 
-// StoredClients is called when the server restores retained messages from a store.
+// StoredRetainedMessages is called when the server restores retained messages from a store.
 func (h *Hook) StoredRetainedMessages() (v []storage.Message, err error) {
 	h.Log.Debug("", "method", "StoredRetainedMessages")
 	return v, nil
 }
 
-// StoredClients is called when the server restores inflight messages from a store.
+// StoredInflightMessages is called when the server restores inflight messages from a store.
 func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 	h.Log.Debug("", "method", "StoredInflightMessages")
 	return v, nil
 }
 
-// StoredClients is called when the server restores system info from a store.
+// StoredSysInfo is called when the server restores system info from a store.
 func (h *Hook) StoredSysInfo() (v storage.SystemInfo, err error) {
 	h.Log.Debug("", "method", "StoredSysInfo")
 

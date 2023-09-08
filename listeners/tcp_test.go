@@ -39,7 +39,7 @@ func TestTCPProtocolTLS(t *testing.T) {
 		TLSConfig: tlsConfigBasic,
 	})
 
-	l.Init(logger)
+	_ = l.Init(logger)
 	defer l.listen.Close()
 	require.Equal(t, "tcp", l.Protocol())
 }
@@ -124,7 +124,7 @@ func TestTCPEstablishThenEnd(t *testing.T) {
 	}()
 
 	time.Sleep(time.Millisecond)
-	net.Dial("tcp", l.listen.Addr().String())
+	_, _ = net.Dial("tcp", l.listen.Addr().String())
 	require.Equal(t, true, <-established)
 	l.Close(MockCloser)
 	<-o

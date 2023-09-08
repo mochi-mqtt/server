@@ -39,7 +39,7 @@ func TestHTTPHealthCheckTLSProtocol(t *testing.T) {
 		TLSConfig: tlsConfigBasic,
 	})
 
-	l.Init(logger)
+	_ = l.Init(logger)
 	require.Equal(t, "https", l.Protocol())
 }
 
