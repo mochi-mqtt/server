@@ -30,7 +30,7 @@ type Websocket struct { // [MQTT-4.2.0-1]
 	id        string              // the internal id of the listener
 	address   string              // the network address to bind to
 	config    *Config             // configuration values for the listener
-	listen    *http.Server        // an http server for serving websocket connections
+	listen    *http.Server        // a http server for serving websocket connections
 	log       *slog.Logger        // server logger
 	establish EstablishFn         // the server's establish connection handler
 	upgrader  *websocket.Upgrader //  upgrade the incoming http/tcp connection to a websocket compliant connection.
@@ -112,9 +112,9 @@ func (l *Websocket) Serve(establish EstablishFn) {
 	l.establish = establish
 
 	if l.listen.TLSConfig != nil {
-		l.listen.ListenAndServeTLS("", "")
+		_ = l.listen.ListenAndServeTLS("", "")
 	} else {
-		l.listen.ListenAndServe()
+		_ = l.listen.ListenAndServe()
 	}
 }
 
@@ -126,7 +126,7 @@ func (l *Websocket) Close(closeClients CloseFn) {
 	if atomic.CompareAndSwapUint32(&l.end, 0, 1) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		l.listen.Shutdown(ctx)
+		_ = l.listen.Shutdown(ctx)
 	}
 
 	closeClients(l.id)
@@ -137,7 +137,7 @@ type wsConn struct {
 	net.Conn
 	c *websocket.Conn
 
-	// reader for the current message (may be nil)
+	// reader for the current message (can be nil)
 	r io.Reader
 }
 

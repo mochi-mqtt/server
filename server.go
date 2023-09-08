@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
 
-// package mqtt provides a high performance, fully compliant MQTT v5 broker server with v3.1.1 backward compatibility.
+// Package mqtt provides a high performance, fully compliant MQTT v5 broker server with v3.1.1 backward compatibility.
 package mqtt
 
 import (
@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	Version                       = "2.3.0" // the current server version.
+	Version                       = "2.4.0" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 	LocalListener                 = "local"
 	InlineClientId                = "inline"
@@ -38,7 +38,7 @@ var (
 		MaximumSessionExpiryInterval: math.MaxUint32, // maximum number of seconds to keep disconnected sessions
 		MaximumMessageExpiryInterval: 60 * 60 * 24,   // maximum message expiry if message expiry is 0 or over
 		ReceiveMaximum:               1024,           // maximum number of concurrent qos messages per client
-		MaximumQos:                   2,              // maxmimum qos value available to clients
+		MaximumQos:                   2,              // maximum qos value available to clients
 		RetainAvailable:              1,              // retain messages is available
 		MaximumPacketSize:            0,              // no maximum packet size
 		TopicAliasMaximum:            math.MaxUint16, // maximum topic alias value
@@ -49,8 +49,9 @@ var (
 		MaximumClientWritesPending:   1024 * 8,       // maximum number of pending message writes for a client
 	}
 
-	ErrListenerIDExists = errors.New("listener id already exists") // a listener with the same id already exists.
-	ErrConnectionClosed = errors.New("connection not open")        // connection is closed
+	ErrListenerIDExists       = errors.New("listener id already exists")                               // a listener with the same id already exists
+	ErrConnectionClosed       = errors.New("connection not open")                                      // connection is closed
+	ErrInlineClientNotEnabled = errors.New("please set Options.InlineClient=true to use this feature") // inline client is not enabled by default
 )
 
 // Capabilities indicates the capabilities and features provided by the server.
@@ -106,6 +107,10 @@ type Options struct {
 
 	// SysTopicResendInterval specifies the interval between $SYS topic updates in seconds.
 	SysTopicResendInterval int64
+
+	// Enable Inline client to allow direct subscribing and publishing from the parent codebase,
+	// with negligible performance difference (disabled by default to prevent confusion in statistics).
+	InlineClient bool
 }
 
 // Server is an MQTT broker server. It should be created with server.New()
@@ -119,8 +124,8 @@ type Server struct {
 	loop         *loop                // loop contains tickers for the system event loop
 	done         chan bool            // indicate that the server is ending
 	Log          *slog.Logger         // minimal no-alloc logger
-	hooks        *Hooks               // hooks contains hooks for extra functionality such as auth and persistent storage.
-	inlineClient *Client              // inlineClient is a special client used for inline subscriptions and inline Publish.
+	hooks        *Hooks               // hooks contains hooks for extra functionality such as auth and persistent storage
+	inlineClient *Client              // inlineClient is a special client used for inline subscriptions and inline Publish
 }
 
 // loop contains interval tickers for the system events loop.
@@ -129,7 +134,7 @@ type loop struct {
 	clientExpiry   *time.Ticker     // interval ticker for cleaning expired clients
 	inflightExpiry *time.Ticker     // interval ticker for cleaning up expired inflight messages
 	retainedExpiry *time.Ticker     // interval ticker for cleaning retained messages
-	willDelaySend  *time.Ticker     // interval ticker for sending will messages with a delay
+	willDelaySend  *time.Ticker     // interval ticker for sending Will Messages with a delay
 	willDelayed    *packets.Packets // activate LWT packets which will be sent after a delay
 }
 
@@ -173,8 +178,11 @@ func New(opts *Options) *Server {
 			Log: opts.Logger,
 		},
 	}
-	s.inlineClient = s.NewClient(nil, LocalListener, InlineClientId, true)
-	s.Clients.Add(s.inlineClient)
+
+	if s.Options.InlineClient {
+		s.inlineClient = s.NewClient(nil, LocalListener, InlineClientId, true)
+		s.Clients.Add(s.inlineClient)
+	}
 
 	return s
 }
@@ -426,7 +434,7 @@ func (s *Server) receivePacket(cl *Client, pk packets.Packet) error {
 		if code, ok := err.(packets.Code); ok &&
 			cl.Properties.ProtocolVersion == 5 &&
 			code.Code >= packets.ErrUnspecifiedError.Code {
-			s.DisconnectClient(cl, code)
+			_ = s.DisconnectClient(cl, code)
 		}
 
 		s.Log.Warn("error processing packet", "error", err, "client", cl.ID, "listener", cl.Net.Listener, "pk", pk)
@@ -464,7 +472,7 @@ func (s *Server) validateConnect(cl *Client, pk packets.Packet) packets.Code {
 // session is abandoned.
 func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 	if existing, ok := s.Clients.Get(pk.Connect.ClientIdentifier); ok {
-		s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                       // [MQTT-3.1.4-3]
+		_ = s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                   // [MQTT-3.1.4-3]
 		if pk.Connect.Clean || (existing.Properties.Clean && existing.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
 			existing.ClearInflights(math.MaxInt64, 0)
@@ -649,11 +657,15 @@ func (s *Server) processPingreq(cl *Client, _ packets.Packet) error {
 	})
 }
 
-// Publish publishes a publish packet into the broker as if it were sent from the speicfied client.
+// Publish publishes a publish packet into the broker as if it were sent from the specified client.
 // This is a convenience function which wraps InjectPacket. As such, this method can publish packets
 // to any topic (including $SYS) and bypass ACL checks. The qos byte is used for limiting the
 // outbound qos (mqtt v5) rather than issuing to the broker (we assume qos 2 complete).
 func (s *Server) Publish(topic string, payload []byte, retain bool, qos byte) error {
+	if !s.Options.InlineClient {
+		return ErrInlineClientNotEnabled
+	}
+
 	return s.InjectPacket(s.inlineClient, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type:   packets.Publish,
@@ -669,11 +681,18 @@ func (s *Server) Publish(topic string, payload []byte, retain bool, qos byte) er
 // Subscribe adds an inline subscription for the specified topic filter and subscription identifier
 // with the provided handler function.
 func (s *Server) Subscribe(filter string, subscriptionId int, handler InlineSubFn) error {
+	if !s.Options.InlineClient {
+		return ErrInlineClientNotEnabled
+	}
+
 	if handler == nil {
 		return packets.ErrInlineSubscriptionHandlerInvalid
-	} else if !IsValidFilter(filter, false) {
+	}
+
+	if !IsValidFilter(filter, false) {
 		return packets.ErrTopicFilterInvalid
 	}
+
 	subscription := packets.Subscription{
 		Identifier: subscriptionId,
 		Filter:     filter,
@@ -704,6 +723,10 @@ func (s *Server) Subscribe(filter string, subscriptionId int, handler InlineSubF
 // It allows you to unsubscribe a specific subscription from the internal subscription
 // associated with the given topic filter.
 func (s *Server) Unsubscribe(filter string, subscriptionId int) error {
+	if !s.Options.InlineClient {
+		return ErrInlineClientNotEnabled
+	}
+
 	if !IsValidFilter(filter, false) {
 		return packets.ErrTopicFilterInvalid
 	}
@@ -761,12 +784,12 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 			return s.DisconnectClient(cl, packets.ErrNotAuthorized)
 		}
 
-		if pk.FixedHeader.Qos == 1 {
-			ack := s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, packets.ErrNotAuthorized)
-			return cl.WritePacket(ack)
+		ackType := packets.Puback
+		if pk.FixedHeader.Qos == 2 {
+			ackType = packets.Pubrec
 		}
 
-		ack := s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.ErrNotAuthorized)
+		ack := s.buildAck(pk.PacketID, ackType, 0, pk.Properties, packets.ErrNotAuthorized)
 		return cl.WritePacket(ack)
 	}
 
@@ -790,7 +813,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	if pk.FixedHeader.Qos > s.Options.Capabilities.MaximumQos {
-		pk.FixedHeader.Qos = s.Options.Capabilities.MaximumQos // [MQTT-3.2.2-9] Reduce Qos based on server max qos capability
+		pk.FixedHeader.Qos = s.Options.Capabilities.MaximumQos // [MQTT-3.2.2-9] Reduce qos based on server max qos capability
 	}
 
 	pkx, err := s.hooks.OnPublish(cl, pk)
@@ -1373,7 +1396,7 @@ func (s *Server) Close() error {
 func (s *Server) closeListenerClients(listener string) {
 	clients := s.Clients.GetByListener(listener)
 	for _, cl := range clients {
-		s.DisconnectClient(cl, packets.ErrServerShuttingDown)
+		_ = s.DisconnectClient(cl, packets.ErrServerShuttingDown)
 	}
 }
 

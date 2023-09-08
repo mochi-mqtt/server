@@ -98,7 +98,7 @@ func TestNetEstablishThenEnd(t *testing.T) {
 	}()
 
 	time.Sleep(time.Millisecond)
-	net.Dial("tcp", n.Addr().String())
+	_, _ = net.Dial("tcp", n.Addr().String())
 	require.Equal(t, true, <-established)
 	l.Close(MockCloser)
 	<-o

@@ -89,7 +89,7 @@ func TestUnixSockEstablishThenEnd(t *testing.T) {
 	}()
 
 	time.Sleep(time.Millisecond)
-	net.Dial("unix", l.listen.Addr().String())
+	_, _ = net.Dial("unix", l.listen.Addr().String())
 	require.Equal(t, true, <-established)
 	l.Close(MockCloser)
 	<-o

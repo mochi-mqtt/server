@@ -705,7 +705,7 @@ func IsSharedFilter(filter string) bool {
 
 // IsValidFilter returns true if the filter is valid.
 func IsValidFilter(filter string, forPublish bool) bool {
-	if !forPublish && len(filter) == 0 { // publishing can accept zero-length topic filter if topic alias exists, so we don't enforce for publihs.
+	if !forPublish && len(filter) == 0 { // publishing can accept zero-length topic filter if topic alias exists, so we don't enforce for publish.
 		return false // [MQTT-4.7.3-1]
 	}
 

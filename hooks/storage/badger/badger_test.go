@@ -38,8 +38,8 @@ var (
 )
 
 func teardown(t *testing.T, path string, h *Hook) {
-	h.Stop()
-	h.db.Badger().Close()
+	_ = h.Stop()
+	_ = h.db.Badger().Close()
 	err := os.RemoveAll("./" + strings.Replace(path, "..", "", -1))
 	require.NoError(t, err)
 }

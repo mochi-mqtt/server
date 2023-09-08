@@ -128,8 +128,7 @@ func (h *Hook) OnSessionEstablished(cl *mqtt.Client, pk packets.Packet) {
 	h.updateClient(cl)
 }
 
-// OnWillSent is called when a client sends a will message and the will message is removed
-// from the client record.
+// OnWillSent is called when a client sends a Will Message and the Will Message is removed from the client record.
 func (h *Hook) OnWillSent(cl *mqtt.Client, pk packets.Packet) {
 	h.updateClient(cl)
 }

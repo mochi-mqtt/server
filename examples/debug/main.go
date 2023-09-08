@@ -61,6 +61,6 @@ func main() {
 
 	<-done
 	server.Log.Warn("caught signal, stopping...")
-	server.Close()
+	_ = server.Close()
 	server.Log.Info("main.go finished")
 }

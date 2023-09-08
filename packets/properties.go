@@ -77,7 +77,7 @@ type UserProperty struct { // [MQTT-1.5.7-1]
 	Val string `json:"v"`
 }
 
-// Properties contains all of the mqtt v5 properties available for a packet.
+// Properties contains all mqtt v5 properties available for a packet.
 // Some properties have valid values of 0 or not-present. In this case, we opt for
 // property flags to indicate the usage of property.
 // Refer to mqtt v5 2.2.2.2 Property spec for more information.
@@ -355,7 +355,7 @@ func (p *Properties) Encode(pkt byte, mods Mods, b *bytes.Buffer, n int) {
 	}
 
 	encodeLength(b, int64(buf.Len()))
-	buf.WriteTo(b) // [MQTT-3.1.3-10]
+	_, _ = buf.WriteTo(b) // [MQTT-3.1.3-10]
 }
 
 // Decode decodes property bytes into a properties struct.

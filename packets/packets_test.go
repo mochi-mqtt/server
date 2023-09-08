@@ -150,7 +150,7 @@ func TestPacketEncode(t *testing.T) {
 				}
 
 				pk := new(Packet)
-				copier.Copy(pk, wanted.Packet)
+				_ = copier.Copy(pk, wanted.Packet)
 				require.Equal(t, pkt, pk.FixedHeader.Type, pkInfo, pkt, wanted.Desc)
 
 				pk.Mods.AllowResponseInfo = true
@@ -218,7 +218,7 @@ func TestPacketDecode(t *testing.T) {
 
 				pk := &Packet{FixedHeader: FixedHeader{Type: pkt}}
 				pk.Mods.AllowResponseInfo = true
-				pk.FixedHeader.Decode(wanted.RawBytes[0])
+				_ = pk.FixedHeader.Decode(wanted.RawBytes[0])
 				if len(wanted.RawBytes) > 0 {
 					pk.FixedHeader.Remaining = int(wanted.RawBytes[1])
 				}

@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -25,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+var logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 type ProtocolTest []struct {
 	protocolVersion byte
@@ -100,13 +99,24 @@ func newServer() *Server {
 	cc := *DefaultServerCapabilities
 	cc.MaximumMessageExpiryInterval = 0
 	cc.ReceiveMaximum = 0
-
 	s := New(&Options{
 		Logger:       logger,
 		Capabilities: &cc,
 	})
+	_ = s.AddHook(new(AllowHook), nil)
+	return s
+}
 
-	s.AddHook(new(AllowHook), nil)
+func newServerWithInlineClient() *Server {
+	cc := *DefaultServerCapabilities
+	cc.MaximumMessageExpiryInterval = 0
+	cc.ReceiveMaximum = 0
+	s := New(&Options{
+		Logger:       logger,
+		Capabilities: &cc,
+		InlineClient: true,
+	})
+	_ = s.AddHook(new(AllowHook), nil)
 	return s
 }
 
@@ -138,6 +148,14 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.hooks)
 	require.NotNil(t, s.hooks.Log)
 	require.NotNil(t, s.done)
+	require.Nil(t, s.inlineClient)
+	require.Equal(t, 0, s.Clients.Len())
+}
+
+func TestNewWithInlineClient(t *testing.T) {
+	s := New(&Options{
+		InlineClient: true,
+	})
 	require.NotNil(t, s.inlineClient)
 	require.Equal(t, 1, s.Clients.Len())
 }
@@ -282,8 +300,8 @@ func TestServerReadConnectionPacket(t *testing.T) {
 	}()
 
 	go func() {
-		r.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
-		r.Close()
+		_, _ = r.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
+		_ = r.Close()
 	}()
 
 	require.Equal(t, *packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet, <-o)
@@ -303,8 +321,8 @@ func TestServerReadConnectionPacketBadFixedHeader(t *testing.T) {
 	}()
 
 	go func() {
-		r.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMalFixedHeader).RawBytes)
-		r.Close()
+		_, _ = r.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMalFixedHeader).RawBytes)
+		_ = r.Close()
 	}()
 
 	err := <-o
@@ -320,8 +338,8 @@ func TestServerReadConnectionPacketBadPacketType(t *testing.T) {
 	s.Clients.Add(cl)
 
 	go func() {
-		r.Write(packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes)
-		r.Close()
+		_, _ = r.Write(packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes)
+		_ = r.Close()
 	}()
 
 	_, err := s.readConnectionPacket(cl)
@@ -337,8 +355,8 @@ func TestServerReadConnectionPacketBadPacket(t *testing.T) {
 	s.Clients.Add(cl)
 
 	go func() {
-		r.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMalProtocolName).RawBytes)
-		r.Close()
+		_, _ = r.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMalProtocolName).RawBytes)
+		_ = r.Close()
 	}()
 
 	_, err := s.readConnectionPacket(cl)
@@ -357,8 +375,8 @@ func TestEstablishConnection(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
-		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
 	// receive the connack
@@ -381,8 +399,8 @@ func TestEstablishConnection(t *testing.T) {
 
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes, <-recv)
 
-	w.Close()
-	r.Close()
+	_ = w.Close()
+	_ = r.Close()
 
 	// client must be deleted on session close if Clean = true
 	_, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).Packet.Connect.ClientIdentifier)
@@ -400,15 +418,15 @@ func TestEstablishConnectionAckFailure(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
-		w.Close()
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+		_ = w.Close()
 	}()
 
 	err := <-o
 	require.Error(t, err)
 	require.ErrorIs(t, err, io.ErrClosedPipe)
 
-	r.Close()
+	_ = r.Close()
 }
 
 func TestEstablishConnectionReadError(t *testing.T) {
@@ -422,8 +440,8 @@ func TestEstablishConnectionReadError(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt5).RawBytes)
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes) // second connect error
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt5).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes) // second connect error
 	}()
 
 	// receive the connack
@@ -449,8 +467,8 @@ func TestEstablishConnectionReadError(t *testing.T) {
 		ret,
 	)
 
-	w.Close()
-	r.Close()
+	_ = w.Close()
+	_ = r.Close()
 }
 
 func TestEstablishConnectionInheritExisting(t *testing.T) {
@@ -473,9 +491,9 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
 		time.Sleep(time.Millisecond) // we want to receive the queued inflight, so we need to wait a moment before sending the disconnect.
-		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
 	// receive the disconnect session takeover
@@ -510,8 +528,8 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectTakeover).RawBytes, <-takeover)
 
 	time.Sleep(time.Microsecond * 100)
-	w.Close()
-	r.Close()
+	_ = w.Close()
+	_ = r.Close()
 
 	clw, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier)
 	require.True(t, ok)
@@ -526,7 +544,7 @@ func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 	s := newServer()
 	d := new(DelayHook)
 	d.DisconnectDelay = time.Millisecond * 200
-	s.AddHook(d, nil)
+	_ = s.AddHook(d, nil)
 	defer s.Close()
 
 	// Clean session, 0 session expiry interval
@@ -551,7 +569,7 @@ func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 		o1 <- err
 	}()
 	go func() {
-		w1.Write(cl1RawBytes)
+		_, _ = w1.Write(cl1RawBytes)
 	}()
 
 	// receive the first connack
@@ -580,7 +598,7 @@ func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 	go func() {
 		x := packets.TPacketData[packets.Connect].Get(packets.TConnectUserPass).RawBytes[:]
 		x[19] = '.' // differentiate username bytes in debugging
-		w2.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectUserPass).RawBytes)
+		_, _ = w2.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectUserPass).RawBytes)
 	}()
 
 	// receive the second connack
@@ -608,7 +626,7 @@ func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 	require.NotEmpty(t, clp2.State.Subscriptions.GetAll())
 	require.Empty(t, clp1.State.Subscriptions.GetAll())
 
-	w2.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+	_, _ = w2.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	require.NoError(t, <-o2)
 }
 
@@ -631,7 +649,7 @@ func TestEstablishConnectionResentPendingInflightsError(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
 	}()
 
 	go func() {
@@ -666,8 +684,8 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
-		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
 	// receive the disconnect
@@ -697,8 +715,8 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes, <-recv)
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes, <-takeover)
 
-	w.Close()
-	r.Close()
+	_ = w.Close()
+	_ = r.Close()
 
 	clw, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier)
 	require.True(t, ok)
@@ -718,8 +736,8 @@ func TestEstablishConnectionBadAuthentication(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
-		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
 	// receive the connack
@@ -735,8 +753,8 @@ func TestEstablishConnectionBadAuthentication(t *testing.T) {
 	require.ErrorIs(t, err, packets.ErrBadUsernameOrPassword)
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackBadUsernamePasswordNoSession).RawBytes, <-recv)
 
-	w.Close()
-	r.Close()
+	_ = w.Close()
+	_ = r.Close()
 }
 
 func TestEstablishConnectionBadAuthenticationAckFailure(t *testing.T) {
@@ -752,15 +770,15 @@ func TestEstablishConnectionBadAuthenticationAckFailure(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
-		w.Close()
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+		_ = w.Close()
 	}()
 
 	err := <-o
 	require.Error(t, err)
 	require.ErrorIs(t, err, io.ErrClosedPipe)
 
-	r.Close()
+	_ = r.Close()
 }
 
 func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
@@ -773,8 +791,8 @@ func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMalReservedBit).RawBytes)
-		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMalReservedBit).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
 	// receive the connack
@@ -790,7 +808,7 @@ func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
 	require.ErrorIs(t, packets.ErrProtocolViolationReservedBit, err)
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackProtocolViolationNoSession).RawBytes, <-recv)
 
-	r.Close()
+	_ = r.Close()
 }
 
 // See https://github.com/mochi-mqtt/server/issues/178
@@ -804,8 +822,8 @@ func TestServerEstablishConnectionZeroByteUsernameIsValid(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectZeroByteUsername).RawBytes)
-		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectZeroByteUsername).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
 	// receive the connack error
@@ -817,7 +835,7 @@ func TestServerEstablishConnectionZeroByteUsernameIsValid(t *testing.T) {
 	err := <-o
 	require.NoError(t, err)
 
-	r.Close()
+	_ = r.Close()
 }
 
 func TestServerEstablishConnectionInvalidConnectAckFailure(t *testing.T) {
@@ -830,15 +848,15 @@ func TestServerEstablishConnectionInvalidConnectAckFailure(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMalReservedBit).RawBytes)
-		w.Close()
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMalReservedBit).RawBytes)
+		_ = w.Close()
 	}()
 
 	err := <-o
 	require.Error(t, err)
 	require.ErrorIs(t, err, io.ErrClosedPipe)
 
-	r.Close()
+	_ = r.Close()
 }
 
 func TestServerEstablishConnectionBadPacket(t *testing.T) {
@@ -851,15 +869,15 @@ func TestServerEstablishConnectionBadPacket(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnackBadProtocolVersion).RawBytes)
-		w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnackBadProtocolVersion).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
 	err := <-o
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrProtocolViolationRequireFirstConnect)
 
-	r.Close()
+	_ = r.Close()
 }
 
 func TestServerEstablishConnectionOnConnectError(t *testing.T) {
@@ -876,14 +894,14 @@ func TestServerEstablishConnectionOnConnectError(t *testing.T) {
 	}()
 
 	go func() {
-		w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
 	}()
 
 	err = <-o
 	require.Error(t, err)
 	require.ErrorIs(t, err, errTestHook)
 
-	r.Close()
+	_ = r.Close()
 }
 
 func TestServerSendConnack(t *testing.T) {
@@ -897,7 +915,7 @@ func TestServerSendConnack(t *testing.T) {
 	go func() {
 		err := s.SendConnack(cl, packets.CodeSuccess, true, nil)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -912,7 +930,7 @@ func TestServerSendConnackFailureReason(t *testing.T) {
 	go func() {
 		err := s.SendConnack(cl, packets.ErrUnspecifiedError, true, nil)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -929,7 +947,7 @@ func TestServerSendConnackWithServerKeepalive(t *testing.T) {
 	go func() {
 		err := s.SendConnack(cl, packets.CodeSuccess, true, nil)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1008,7 +1026,7 @@ func TestServerSendConnackAdjustedExpiryInterval(t *testing.T) {
 	go func() {
 		err := s.SendConnack(cl, packets.CodeSuccess, false, nil)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1087,7 +1105,7 @@ func TestServerProcessPacketPingreq(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Pingreq].Get(packets.TPingreq).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1116,7 +1134,7 @@ func TestServerProcessPacketPublishInvalid(t *testing.T) {
 
 func TestInjectPacketPublishAndReceive(t *testing.T) {
 	s := newServer()
-	s.Serve()
+	_ = s.Serve()
 	defer s.Close()
 
 	sender, _, w1 := newTestClient()
@@ -1141,17 +1159,18 @@ func TestInjectPacketPublishAndReceive(t *testing.T) {
 	go func() {
 		err := s.InjectPacket(sender, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 		require.NoError(t, err)
-		w1.Close()
+		_ = w1.Close()
 		time.Sleep(time.Millisecond * 10)
-		w2.Close()
+		_ = w2.Close()
 	}()
 
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
 }
 
-func TestServerDirectPublishAndReceive(t *testing.T) {
-	s := newServer()
-	s.Serve()
+func TestServerPublishAndReceive(t *testing.T) {
+	s := newServerWithInlineClient()
+
+	_ = s.Serve()
 	defer s.Close()
 
 	sender, _, w1 := newTestClient()
@@ -1177,12 +1196,20 @@ func TestServerDirectPublishAndReceive(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
 		err := s.Publish(pkx.TopicName, pkx.Payload, pkx.FixedHeader.Retain, pkx.FixedHeader.Qos)
 		require.NoError(t, err)
-		w1.Close()
+		_ = w1.Close()
 		time.Sleep(time.Millisecond * 10)
-		w2.Close()
+		_ = w2.Close()
 	}()
 
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
+}
+
+func TestServerPublishNoInlineClient(t *testing.T) {
+	s := newServer()
+	pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+	err := s.Publish(pkx.TopicName, pkx.Payload, pkx.FixedHeader.Retain, pkx.FixedHeader.Qos)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInlineClientNotEnabled)
 }
 
 func TestInjectPacketError(t *testing.T) {
@@ -1209,7 +1236,7 @@ func TestInjectPacketPublishInvalidTopic(t *testing.T) {
 
 func TestServerProcessPacketPublishAndReceive(t *testing.T) {
 	s := newServer()
-	s.Serve()
+	_ = s.Serve()
 	defer s.Close()
 
 	sender, _, w1 := newTestClient()
@@ -1235,8 +1262,8 @@ func TestServerProcessPacketPublishAndReceive(t *testing.T) {
 		err := s.processPacket(sender, *packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
 		require.NoError(t, err)
 		time.Sleep(time.Millisecond * 10)
-		w1.Close()
-		w2.Close()
+		_ = w1.Close()
+		_ = w2.Close()
 	}()
 
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
@@ -1301,7 +1328,7 @@ func TestServerProcessPacketAndNextImmediate(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1313,13 +1340,13 @@ func TestServerProcessPacketAndNextImmediate(t *testing.T) {
 
 func TestServerProcessPublishAckFailure(t *testing.T) {
 	s := newServer()
-	s.Serve()
+	_ = s.Serve()
 	defer s.Close()
 
 	cl, _, w := newTestClient()
 	s.Clients.Add(cl)
 
-	w.Close()
+	_ = w.Close()
 	err := s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet)
 	require.Error(t, err)
 	require.ErrorIs(t, err, io.ErrClosedPipe)
@@ -1336,7 +1363,7 @@ func TestServerProcessPublishOnPublishAckErrorRWError(t *testing.T) {
 	cl, _, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
 	s.Clients.Add(cl)
-	w.Close()
+	_ = w.Close()
 
 	err = s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 	require.Error(t, err)
@@ -1350,7 +1377,7 @@ func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
 	hook.err = packets.ErrPayloadFormatInvalid
 	err := s.AddHook(hook, nil)
 	require.NoError(t, err)
-	s.Serve()
+	_ = s.Serve()
 	defer s.Close()
 
 	cl, r, w := newTestClient()
@@ -1360,7 +1387,7 @@ func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1375,7 +1402,7 @@ func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 	hook.err = packets.CodeSuccessIgnore
 	err := s.AddHook(hook, nil)
 	require.NoError(t, err)
-	s.Serve()
+	_ = s.Serve()
 	defer s.Close()
 
 	cl, r, w := newTestClient()
@@ -1399,8 +1426,8 @@ func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 		require.NoError(t, err)
-		w.Close()
-		w2.Close()
+		_ = w.Close()
+		_ = w2.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1412,7 +1439,7 @@ func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 
 func TestServerProcessPacketPublishMaximumReceive(t *testing.T) {
 	s := newServer()
-	s.Serve()
+	_ = s.Serve()
 	defer s.Close()
 
 	cl, r, w := newTestClient()
@@ -1424,7 +1451,7 @@ func TestServerProcessPacketPublishMaximumReceive(t *testing.T) {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 		require.Error(t, err)
 		require.ErrorIs(t, err, packets.ErrReceiveMaximum)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1434,15 +1461,15 @@ func TestServerProcessPacketPublishMaximumReceive(t *testing.T) {
 
 func TestServerProcessPublishInvalidTopic(t *testing.T) {
 	s := newServer()
-	s.Serve()
+	_ = s.Serve()
 	defer s.Close()
 	cl, _, _ := newTestClient()
 	err := s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishSpecDenySysTopic).Packet)
-	require.NoError(t, err) // $SYS topics should be ignored?
+	require.NoError(t, err) // $SYS Topics should be ignored?
 }
 
 func TestServerProcessPublishACLCheckDeny(t *testing.T) {
-	tests := []struct {
+	tt := []struct {
 		name             string
 		protocolVersion  byte
 		pk               packets.Packet
@@ -1450,54 +1477,88 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 		expectReponse    []byte
 		expectDisconnect bool
 	}{
-		{"v4_QOS0", 4, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet,
-			nil, nil, false},
-		{"v4_QOS1", 4, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet,
-			packets.ErrNotAuthorized, nil, true},
-		{"v4_QOS2", 4, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet,
-			packets.ErrNotAuthorized, nil, true},
-
-		{"v5_QOS0", 5, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).Packet,
-			nil, nil, false},
-		{"v5_QOS1", 5, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1Mqtt5).Packet,
-			nil, packets.TPacketData[packets.Puback].Get(packets.TPubrecMqtt5NotAuthorized).RawBytes, false},
-		{"v5_QOS2", 5, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2Mqtt5).Packet,
-			nil, packets.TPacketData[packets.Pubrec].Get(packets.TPubrecMqtt5NotAuthorized).RawBytes, false},
+		{
+			name:             "v4_QOS0",
+			protocolVersion:  4,
+			pk:               *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet,
+			expectErr:        nil,
+			expectReponse:    nil,
+			expectDisconnect: false,
+		},
+		{
+			name:             "v4_QOS1",
+			protocolVersion:  4,
+			pk:               *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet,
+			expectErr:        packets.ErrNotAuthorized,
+			expectReponse:    nil,
+			expectDisconnect: true,
+		},
+		{
+			name:             "v4_QOS2",
+			protocolVersion:  4,
+			pk:               *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet,
+			expectErr:        packets.ErrNotAuthorized,
+			expectReponse:    nil,
+			expectDisconnect: true,
+		},
+		{
+			name:             "v5_QOS0",
+			protocolVersion:  5,
+			pk:               *packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).Packet,
+			expectErr:        nil,
+			expectReponse:    nil,
+			expectDisconnect: false,
+		},
+		{
+			name:             "v5_QOS1",
+			protocolVersion:  5,
+			pk:               *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1Mqtt5).Packet,
+			expectErr:        nil,
+			expectReponse:    packets.TPacketData[packets.Puback].Get(packets.TPubrecMqtt5NotAuthorized).RawBytes,
+			expectDisconnect: false,
+		},
+		{
+			name:             "v5_QOS2",
+			protocolVersion:  5,
+			pk:               *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2Mqtt5).Packet,
+			expectErr:        nil,
+			expectReponse:    packets.TPacketData[packets.Pubrec].Get(packets.TPubrecMqtt5NotAuthorized).RawBytes,
+			expectDisconnect: false,
+		},
 	}
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
+	for _, tx := range tt {
+		t.Run(tx.name, func(t *testing.T) {
 			cc := *DefaultServerCapabilities
 			s := New(&Options{
 				Logger:       logger,
 				Capabilities: &cc,
 			})
-			s.AddHook(new(DenyHook), nil)
-			s.Serve()
+			_ = s.AddHook(new(DenyHook), nil)
+			_ = s.Serve()
 			defer s.Close()
 
 			cl, r, w := newTestClient()
-			cl.Properties.ProtocolVersion = tt.protocolVersion
+			cl.Properties.ProtocolVersion = tx.protocolVersion
 			s.Clients.Add(cl)
 
 			wg := sync.WaitGroup{}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				err := s.processPublish(cl, tt.pk)
-				require.ErrorIs(t, err, tt.expectErr)
-				w.Close()
+				err := s.processPublish(cl, tx.pk)
+				require.ErrorIs(t, err, tx.expectErr)
+				_ = w.Close()
 			}()
 
 			buf, err := io.ReadAll(r)
 			require.NoError(t, err)
 
-			if tt.expectReponse != nil {
-				require.Equal(t, tt.expectReponse, buf)
+			if tx.expectReponse != nil {
+				require.Equal(t, tx.expectReponse, buf)
 			}
 
-			require.Equal(t, tt.expectDisconnect, cl.Closed())
+			require.Equal(t, tx.expectDisconnect, cl.Closed())
 			wg.Wait()
 		})
 	}
@@ -1513,7 +1574,7 @@ func TestServerProcessPublishOnMessageRecvRejected(t *testing.T) {
 	err := s.AddHook(hook, nil)
 	require.NoError(t, err)
 
-	s.Serve()
+	_ = s.Serve()
 	defer s.Close()
 	cl, _, _ := newTestClient()
 	err = s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
@@ -1527,7 +1588,7 @@ func TestServerProcessPacketPublishQos0(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1544,7 +1605,7 @@ func TestServerProcessPacketPublishQos1PacketIDInUse(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1563,7 +1624,7 @@ func TestServerProcessPacketPublishQos2PacketIDInUse(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2Mqtt5).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1579,7 +1640,7 @@ func TestServerProcessPacketPublishQos1(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1594,7 +1655,7 @@ func TestServerProcessPacketPublishQos2(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1610,7 +1671,7 @@ func TestServerProcessPacketPublishDowngradeQos(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1630,7 +1691,7 @@ func TestPublishToSubscribersSelfNoLocal(t *testing.T) {
 		pkx.Origin = cl.ID
 		s.publishToSubscribers(pkx)
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	receiverBuf := make(chan []byte)
@@ -1682,9 +1743,9 @@ func TestPublishToSubscribers(t *testing.T) {
 	go func() {
 		s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 		time.Sleep(time.Millisecond)
-		w1.Close()
-		w2.Close()
-		w3.Close()
+		_ = w1.Close()
+		_ = w2.Close()
+		_ = w3.Close()
 	}()
 
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-cl1Recv)
@@ -1725,7 +1786,7 @@ func TestPublishToSubscribersMessageExpiryDelta(t *testing.T) {
 		pkx.Created = time.Now().Unix() - 30
 		s.publishToSubscribers(pkx)
 		time.Sleep(time.Millisecond)
-		w1.Close()
+		_ = w1.Close()
 	}()
 
 	b := <-cl1Recv
@@ -1749,7 +1810,7 @@ func TestPublishToSubscribersIdentifiers(t *testing.T) {
 	go func() {
 		s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	receiverBuf := make(chan []byte)
@@ -1774,7 +1835,7 @@ func TestPublishToSubscribersPkIgnore(t *testing.T) {
 		pk.Ignore = true
 		s.publishToSubscribers(pk)
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	receiverBuf := make(chan []byte)
@@ -1801,9 +1862,9 @@ func TestPublishToClientServerDowngradeQos(t *testing.T) {
 	go func() {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 		pkx.FixedHeader.Qos = 2
-		s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, pkx)
+		_, _ = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, pkx)
 		time.Sleep(time.Microsecond * 100)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	receiverBuf := make(chan []byte)
@@ -1830,9 +1891,9 @@ func TestPublishToClientSubscriptionDowngradeQos(t *testing.T) {
 	go func() {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 		pkx.FixedHeader.Qos = 2
-		s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, pkx)
+		_, _ = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, pkx)
 		time.Sleep(time.Microsecond * 100)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	receiverBuf := make(chan []byte)
@@ -1881,10 +1942,10 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 
 	go func() {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).Packet
-		s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
-		s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
+		_, _ = s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
+		_, _ = s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	receiverBuf := make(chan []byte)
@@ -1937,6 +1998,19 @@ func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
 }
 
+func TestPublishToClientACLNotAuthorized(t *testing.T) {
+	s := New(&Options{
+		Logger: logger,
+	})
+	err := s.AddHook(new(DenyHook), nil)
+	require.NoError(t, err)
+	cl, _, _ := newTestClient()
+
+	_, err = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c"}, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrNotAuthorized)
+}
+
 func TestPublishToClientNoConn(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -1963,10 +2037,10 @@ func TestProcessPublishWithTopicAlias(t *testing.T) {
 		pkx.Properties.SubscriptionIdentifier = []int{} // must not contain from client to server
 		pkx.TopicName = ""
 		pkx.Properties.TopicAlias = 1
-		s.processPacket(cl2, pkx)
+		_ = s.processPacket(cl2, pkx)
 		time.Sleep(time.Millisecond)
-		w2.Close()
-		w.Close()
+		_ = w2.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -1985,12 +2059,12 @@ func TestPublishToSubscribersExhaustedSendQuota(t *testing.T) {
 
 	// coverage: subscriber publish errors are non-returnable
 	// can we hook into zerolog ?
-	r.Close()
+	_ = r.Close()
 	pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 	pkx.PacketID = 0
 	s.publishToSubscribers(pkx)
 	time.Sleep(time.Millisecond)
-	w.Close()
+	_ = w.Close()
 }
 
 func TestPublishToSubscribersExhaustedPacketIDs(t *testing.T) {
@@ -2006,12 +2080,12 @@ func TestPublishToSubscribersExhaustedPacketIDs(t *testing.T) {
 
 	// coverage: subscriber publish errors are non-returnable
 	// can we hook into zerolog ?
-	r.Close()
+	_ = r.Close()
 	pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 	pkx.PacketID = 0
 	s.publishToSubscribers(pkx)
 	time.Sleep(time.Millisecond)
-	w.Close()
+	_ = w.Close()
 }
 
 func TestPublishToSubscribersNoConnection(t *testing.T) {
@@ -2023,10 +2097,10 @@ func TestPublishToSubscribersNoConnection(t *testing.T) {
 
 	// coverage: subscriber publish errors are non-returnable
 	// can we hook into zerolog ?
-	r.Close()
+	_ = r.Close()
 	s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 	time.Sleep(time.Millisecond)
-	w.Close()
+	_ = w.Close()
 }
 
 func TestPublishRetainedToClient(t *testing.T) {
@@ -2043,7 +2117,7 @@ func TestPublishRetainedToClient(t *testing.T) {
 	go func() {
 		s.publishRetainedToClient(cl, packets.Subscription{Filter: "a/b/c"}, false)
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2062,7 +2136,7 @@ func TestPublishRetainedToClientIsShared(t *testing.T) {
 
 	go func() {
 		s.publishRetainedToClient(cl, sub, false)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2082,7 +2156,7 @@ func TestPublishRetainedToClientError(t *testing.T) {
 	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
 	require.Equal(t, int64(1), retained)
 
-	w.Close()
+	_ = w.Close()
 	s.publishRetainedToClient(cl, sub, false)
 }
 
@@ -2185,7 +2259,7 @@ func TestServerProcessPacketPubrec(t *testing.T) {
 
 	err := s.processPacket(cl, *packets.TPacketData[packets.Pubrec].Get(packets.TPubrec).Packet)
 	require.NoError(t, err)
-	w.Close()
+	_ = w.Close()
 
 	require.Equal(t, packets.TPacketData[packets.Pubrel].Get(packets.TPubrel).RawBytes, <-recv)
 
@@ -2213,7 +2287,7 @@ func TestServerProcessPacketPubrecNoPacketID(t *testing.T) {
 	pk := *packets.TPacketData[packets.Pubrec].Get(packets.TPubrec).Packet // not sending properties
 	err := s.processPacket(cl, pk)
 	require.NoError(t, err)
-	w.Close()
+	_ = w.Close()
 
 	require.Equal(t, packets.TPacketData[packets.Pubrel].Get(packets.TPubrelMqtt5AckNoPacket).RawBytes, <-recv)
 
@@ -2263,7 +2337,7 @@ func TestServerProcessPacketPubrel(t *testing.T) {
 
 	err := s.processPacket(cl, *packets.TPacketData[packets.Pubrel].Get(packets.TPubrel).Packet)
 	require.NoError(t, err)
-	w.Close()
+	_ = w.Close()
 
 	require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
 	require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
@@ -2292,7 +2366,7 @@ func TestServerProcessPacketPubrelNoPacketID(t *testing.T) {
 	pk := *packets.TPacketData[packets.Pubrel].Get(packets.TPubrel).Packet // not sending properties
 	err := s.processPacket(cl, pk)
 	require.NoError(t, err)
-	w.Close()
+	_ = w.Close()
 
 	require.Equal(t, packets.TPacketData[packets.Pubcomp].Get(packets.TPubcompMqtt5AckNoPacket).RawBytes, <-recv)
 
@@ -2404,7 +2478,7 @@ func TestServerProcessInboundQos2Flow(t *testing.T) {
 
 			err := s.processPacket(cl, *tx.in.Packet)
 			require.NoError(t, err)
-			w.Close()
+			_ = w.Close()
 
 			require.Equal(t, tx.out.RawBytes, <-recv)
 			if i == 0 {
@@ -2485,7 +2559,7 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 			}
 
 			time.Sleep(time.Millisecond)
-			w.Close()
+			_ = w.Close()
 
 			if i != 2 {
 				require.Equal(t, tx.out.RawBytes, <-recv)
@@ -2508,7 +2582,7 @@ func TestServerProcessPacketSubscribe(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeMqtt5).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2527,7 +2601,7 @@ func TestServerProcessPacketSubscribePacketIDInUse(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, pkx)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2553,7 +2627,7 @@ func TestServerProcessPacketSubscribeInvalidFilter(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeInvalidFilter).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2569,7 +2643,7 @@ func TestServerProcessPacketSubscribeInvalidSharedNoLocal(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeInvalidSharedNoLocal).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2589,7 +2663,7 @@ func TestServerProcessSubscribeWithRetain(t *testing.T) {
 		require.NoError(t, err)
 
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2610,7 +2684,7 @@ func TestServerProcessSubscribeDowngradeQos(t *testing.T) {
 		require.NoError(t, err)
 
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2632,7 +2706,7 @@ func TestServerProcessSubscribeWithRetainHandling1(t *testing.T) {
 		require.NoError(t, err)
 
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2653,7 +2727,7 @@ func TestServerProcessSubscribeWithRetainHandling2(t *testing.T) {
 		require.NoError(t, err)
 
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2674,7 +2748,7 @@ func TestServerProcessSubscribeWithNotRetainAsPublished(t *testing.T) {
 		require.NoError(t, err)
 
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2688,7 +2762,7 @@ func TestServerProcessSubscribeWithNotRetainAsPublished(t *testing.T) {
 func TestServerProcessSubscribeNoConnection(t *testing.T) {
 	s := newServer()
 	cl, r, _ := newTestClient()
-	r.Close()
+	_ = r.Close()
 	err := s.processSubscribe(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribe).Packet)
 	require.Error(t, err)
 	require.ErrorIs(t, err, io.ErrClosedPipe)
@@ -2698,14 +2772,14 @@ func TestServerProcessSubscribeACLCheckDeny(t *testing.T) {
 	s := New(&Options{
 		Logger: logger,
 	})
-	s.Serve()
+	_ = s.Serve()
 	cl, r, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
 
 	go func() {
 		err := s.processSubscribe(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribe).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2717,7 +2791,7 @@ func TestServerProcessSubscribeACLCheckDenyObscure(t *testing.T) {
 	s := New(&Options{
 		Logger: logger,
 	})
-	s.Serve()
+	_ = s.Serve()
 	s.Options.Capabilities.Compatibilities.ObscureNotAuthorized = true
 	cl, r, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
@@ -2725,7 +2799,7 @@ func TestServerProcessSubscribeACLCheckDenyObscure(t *testing.T) {
 	go func() {
 		err := s.processSubscribe(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribe).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2742,7 +2816,7 @@ func TestServerProcessSubscribeErrorDowngrade(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeInvalidSharedNoLocal).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2758,7 +2832,7 @@ func TestServerProcessPacketUnsubscribe(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribeMqtt5).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2775,7 +2849,7 @@ func TestServerProcessPacketUnsubscribePackedIDInUse(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribeMqtt5).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2811,7 +2885,7 @@ func TestServerRecievePacketDisconnectClientZeroNonZero(t *testing.T) {
 		err := s.receivePacket(cl, *packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectMqtt5).Packet)
 		require.Error(t, err)
 		require.ErrorIs(t, err, packets.ErrProtocolViolationZeroNonZeroExpiry)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2826,7 +2900,7 @@ func TestServerRecievePacketDisconnectClient(t *testing.T) {
 	go func() {
 		err := s.DisconnectClient(cl, packets.CodeDisconnect)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2871,7 +2945,7 @@ func TestServerProcessPacketAuth(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Auth].Get(packets.TAuth).Packet)
 		require.NoError(t, err)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
@@ -2905,7 +2979,7 @@ func TestServerProcessPacketAuthFailure(t *testing.T) {
 
 func TestServerSendLWT(t *testing.T) {
 	s := newServer()
-	s.Serve()
+	_ = s.Serve()
 	defer s.Close()
 
 	sender, _, w1 := newTestClient()
@@ -2935,8 +3009,8 @@ func TestServerSendLWT(t *testing.T) {
 	go func() {
 		s.sendLWT(sender)
 		time.Sleep(time.Millisecond * 10)
-		w1.Close()
-		w2.Close()
+		_ = w1.Close()
+		_ = w2.Close()
 	}()
 
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
@@ -2944,7 +3018,7 @@ func TestServerSendLWT(t *testing.T) {
 
 func TestServerSendLWTRetain(t *testing.T) {
 	s := newServer()
-	s.Serve()
+	_ = s.Serve()
 	defer s.Close()
 
 	sender, _, w1 := newTestClient()
@@ -2975,8 +3049,8 @@ func TestServerSendLWTRetain(t *testing.T) {
 	go func() {
 		s.sendLWT(sender)
 		time.Sleep(time.Millisecond * 10)
-		w1.Close()
-		w2.Close()
+		_ = w1.Close()
+		_ = w2.Close()
 	}()
 
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
@@ -3010,7 +3084,7 @@ func TestServerSendLWTDelayed(t *testing.T) {
 		s.sendDelayedLWT(time.Now().Unix())
 		require.Equal(t, 0, s.loop.willDelayed.Len())
 		time.Sleep(time.Millisecond)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	recv := make(chan []byte)
@@ -3026,7 +3100,7 @@ func TestServerSendLWTDelayed(t *testing.T) {
 func TestServerReadStore(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
-	s.AddHook(hook, nil)
+	_ = s.AddHook(hook, nil)
 
 	hook.failAt = 1 // clients
 	err := s.readStore()
@@ -3057,11 +3131,9 @@ func TestServerLoadClients(t *testing.T) {
 	}
 
 	s := newServer()
-	// Here, server.Clients also includes a server.inlineClient,
-	// so the total number of clients here should be increased by 1
-	require.Equal(t, 1, s.Clients.Len())
+	require.Equal(t, 0, s.Clients.Len())
 	s.loadClients(v)
-	require.Equal(t, 4, s.Clients.Len())
+	require.Equal(t, 3, s.Clients.Len())
 	cl, ok := s.Clients.Get("mochi")
 	require.True(t, ok)
 	require.Equal(t, "mochi", cl.ID)
@@ -3090,9 +3162,7 @@ func TestServerLoadInflightMessages(t *testing.T) {
 		{ID: "mochi-co"},
 	})
 
-	// server.Clients also includes a server.inlineClient,
-	// so the total number of clients here should be increased by 1
-	require.Equal(t, 4, s.Clients.Len())
+	require.Equal(t, 3, s.Clients.Len())
 
 	v := []storage.Message{
 		{Origin: "mochi", PacketID: 1, Payload: []byte("hello world"), TopicName: "a/b/c"},
@@ -3136,7 +3206,7 @@ func TestServerClose(t *testing.T) {
 	s := newServer()
 
 	hook := new(modifiedHookBase)
-	s.AddHook(hook, nil)
+	_ = s.AddHook(hook, nil)
 
 	cl, r, _ := newTestClient()
 	cl.Net.Listener = "t1"
@@ -3145,7 +3215,7 @@ func TestServerClose(t *testing.T) {
 
 	err := s.AddListener(listeners.NewMockListener("t1", ":1882"))
 	require.NoError(t, err)
-	s.Serve()
+	_ = s.Serve()
 
 	// receive the disconnect
 	recv := make(chan []byte)
@@ -3162,7 +3232,7 @@ func TestServerClose(t *testing.T) {
 	require.Equal(t, true, ok)
 	require.Equal(t, true, listener.(*listeners.MockListener).IsServing())
 
-	s.Close()
+	_ = s.Close()
 	time.Sleep(time.Millisecond)
 	require.Equal(t, false, listener.(*listeners.MockListener).IsServing())
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectShuttingDown).RawBytes, <-recv)
@@ -3248,15 +3318,10 @@ func TestServerClearExpiredClients(t *testing.T) {
 	cl2.Properties.Props.SessionExpiryIntervalFlag = true
 	s.Clients.Add(cl2)
 
-	// server.Clients also includes a server.inlineClient,
-	// so the total number of clients here should be increased by 1
-	require.Equal(t, 5, s.Clients.Len())
+	require.Equal(t, 4, s.Clients.Len())
 
 	s.clearExpiredClients(n)
-
-	// server.Clients also includes a server.inlineClient,
-	// so the total number of clients here should be increased by 1
-	require.Equal(t, 3, s.Clients.Len())
+	require.Equal(t, 2, s.Clients.Len())
 }
 
 func TestLoadServerInfoRestoreOnRestart(t *testing.T) {
@@ -3277,12 +3342,9 @@ func TestAtomicItoa(t *testing.T) {
 }
 
 func TestServerSubscribe(t *testing.T) {
+	handler := func(cl *Client, sub packets.Subscription, pk packets.Packet) {}
 
-	handler := func(cl *Client, sub packets.Subscription, pk packets.Packet) {
-		// handler logic
-	}
-
-	s := New(nil)
+	s := newServerWithInlineClient()
 	require.NotNil(t, s)
 
 	tt := []struct {
@@ -3335,7 +3397,7 @@ func TestServerSubscribe(t *testing.T) {
 			expect:     nil,
 		},
 		{
-			desc:       "subscribe invalied ###",
+			desc:       "subscribe invalid ###",
 			filter:     "###",
 			identifier: 1,
 			handler:    handler,
@@ -3357,12 +3419,19 @@ func TestServerSubscribe(t *testing.T) {
 	}
 }
 
+func TestServerSubscribeNoInlineClient(t *testing.T) {
+	s := newServer()
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {})
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInlineClientNotEnabled)
+}
+
 func TestServerUnsubscribe(t *testing.T) {
 	handler := func(cl *Client, sub packets.Subscription, pk packets.Packet) {
 		// handler logic
 	}
 
-	s := New(nil)
+	s := newServerWithInlineClient()
 	err := s.Subscribe("a/b/c", 1, handler)
 	require.Nil(t, err)
 
@@ -3388,8 +3457,15 @@ func TestServerUnsubscribe(t *testing.T) {
 	require.Equal(t, packets.ErrTopicFilterInvalid, err)
 }
 
-func TestPublishToInlineSubscriber(t *testing.T) {
+func TestServerUnsubscribeNoInlineClient(t *testing.T) {
 	s := newServer()
+	err := s.Unsubscribe("a/b/c", 1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInlineClientNotEnabled)
+}
+
+func TestPublishToInlineSubscriber(t *testing.T) {
+	s := newServerWithInlineClient()
 	finishCh := make(chan bool)
 	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
 		require.Equal(t, []byte("hello mochi"), pk.Payload)
@@ -3409,8 +3485,8 @@ func TestPublishToInlineSubscriber(t *testing.T) {
 	require.Equal(t, true, <-finishCh)
 }
 
-func TestPublishToInlineSubscribersDiffrentFilter(t *testing.T) {
-	s := newServer()
+func TestPublishToInlineSubscribersDifferentFilter(t *testing.T) {
+	s := newServerWithInlineClient()
 	subNumber := 2
 	finishCh := make(chan bool, subNumber)
 
@@ -3447,8 +3523,8 @@ func TestPublishToInlineSubscribersDiffrentFilter(t *testing.T) {
 	}
 }
 
-func TestPublishToInlineSubscribersDiffrentIdentifier(t *testing.T) {
-	s := newServer()
+func TestPublishToInlineSubscribersDifferentIdentifier(t *testing.T) {
+	s := newServerWithInlineClient()
 	subNumber := 2
 	finishCh := make(chan bool, subNumber)
 
@@ -3483,7 +3559,7 @@ func TestPublishToInlineSubscribersDiffrentIdentifier(t *testing.T) {
 }
 
 func TestServerSubscribeWithRetain(t *testing.T) {
-	s := newServer()
+	s := newServerWithInlineClient()
 	subNumber := 1
 	finishCh := make(chan bool, subNumber)
 
@@ -3502,8 +3578,8 @@ func TestServerSubscribeWithRetain(t *testing.T) {
 	require.Equal(t, true, <-finishCh)
 }
 
-func TestServerSubscribeWithRetainDiffrentFilter(t *testing.T) {
-	s := newServer()
+func TestServerSubscribeWithRetainDifferentFilter(t *testing.T) {
+	s := newServerWithInlineClient()
 	subNumber := 2
 	finishCh := make(chan bool, subNumber)
 
@@ -3537,8 +3613,8 @@ func TestServerSubscribeWithRetainDiffrentFilter(t *testing.T) {
 	}
 }
 
-func TestServerSubscribeWithRetainDiffrentIdentifier(t *testing.T) {
-	s := newServer()
+func TestServerSubscribeWithRetainDifferentIdentifier(t *testing.T) {
+	s := newServerWithInlineClient()
 	subNumber := 2
 	finishCh := make(chan bool, subNumber)
 
