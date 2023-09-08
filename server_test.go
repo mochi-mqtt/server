@@ -1430,15 +1430,6 @@ func TestServerProcessPublishInvalidTopic(t *testing.T) {
 }
 
 func TestServerProcessPublishACLCheckDeny(t *testing.T) {
-	cc := *DefaultServerCapabilities
-	s := New(&Options{
-		Logger:       logger,
-		Capabilities: &cc,
-	})
-	s.AddHook(new(DenyHook), nil)
-	s.Serve()
-	defer s.Close()
-
 	tests := []struct {
 		name             string
 		protocolVersion  byte
@@ -1465,8 +1456,18 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			cc := *DefaultServerCapabilities
+			s := New(&Options{
+				Logger:       logger,
+				Capabilities: &cc,
+			})
+			s.AddHook(new(DenyHook), nil)
+			s.Serve()
+			defer s.Close()
+
 			cl, r, w := newTestClient()
 			cl.Properties.ProtocolVersion = tt.protocolVersion
+			s.Clients.Add(cl)
 
 			wg := sync.WaitGroup{}
 			wg.Add(1)
