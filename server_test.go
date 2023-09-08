@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -25,7 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+var logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 type ProtocolTest []struct {
 	protocolVersion byte
@@ -100,12 +99,23 @@ func newServer() *Server {
 	cc := *DefaultServerCapabilities
 	cc.MaximumMessageExpiryInterval = 0
 	cc.ReceiveMaximum = 0
-
 	s := New(&Options{
 		Logger:       logger,
 		Capabilities: &cc,
 	})
+	_ = s.AddHook(new(AllowHook), nil)
+	return s
+}
 
+func newServerWithInlineClient() *Server {
+	cc := *DefaultServerCapabilities
+	cc.MaximumMessageExpiryInterval = 0
+	cc.ReceiveMaximum = 0
+	s := New(&Options{
+		Logger:       logger,
+		Capabilities: &cc,
+		InlineClient: true,
+	})
 	_ = s.AddHook(new(AllowHook), nil)
 	return s
 }
@@ -138,6 +148,14 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.hooks)
 	require.NotNil(t, s.hooks.Log)
 	require.NotNil(t, s.done)
+	require.Nil(t, s.inlineClient)
+	require.Equal(t, 0, s.Clients.Len())
+}
+
+func TestNewWithInlineClient(t *testing.T) {
+	s := New(&Options{
+		InlineClient: true,
+	})
 	require.NotNil(t, s.inlineClient)
 	require.Equal(t, 1, s.Clients.Len())
 }
@@ -1149,8 +1167,9 @@ func TestInjectPacketPublishAndReceive(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
 }
 
-func TestServerDirectPublishAndReceive(t *testing.T) {
-	s := newServer()
+func TestServerPublishAndReceive(t *testing.T) {
+	s := newServerWithInlineClient()
+
 	_ = s.Serve()
 	defer s.Close()
 
@@ -1183,6 +1202,14 @@ func TestServerDirectPublishAndReceive(t *testing.T) {
 	}()
 
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-receiverBuf)
+}
+
+func TestServerPublishNoInlineClient(t *testing.T) {
+	s := newServer()
+	pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+	err := s.Publish(pkx.TopicName, pkx.Payload, pkx.FixedHeader.Retain, pkx.FixedHeader.Qos)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInlineClientNotEnabled)
 }
 
 func TestInjectPacketError(t *testing.T) {
@@ -3104,11 +3131,9 @@ func TestServerLoadClients(t *testing.T) {
 	}
 
 	s := newServer()
-	// Here, server.Clients also includes a server.inlineClient,
-	// so the total number of clients here should be increased by 1
-	require.Equal(t, 1, s.Clients.Len())
+	require.Equal(t, 0, s.Clients.Len())
 	s.loadClients(v)
-	require.Equal(t, 4, s.Clients.Len())
+	require.Equal(t, 3, s.Clients.Len())
 	cl, ok := s.Clients.Get("mochi")
 	require.True(t, ok)
 	require.Equal(t, "mochi", cl.ID)
@@ -3137,9 +3162,7 @@ func TestServerLoadInflightMessages(t *testing.T) {
 		{ID: "mochi-co"},
 	})
 
-	// server.Clients also includes a server.inlineClient,
-	// so the total number of clients here should be increased by 1
-	require.Equal(t, 4, s.Clients.Len())
+	require.Equal(t, 3, s.Clients.Len())
 
 	v := []storage.Message{
 		{Origin: "mochi", PacketID: 1, Payload: []byte("hello world"), TopicName: "a/b/c"},
@@ -3295,15 +3318,10 @@ func TestServerClearExpiredClients(t *testing.T) {
 	cl2.Properties.Props.SessionExpiryIntervalFlag = true
 	s.Clients.Add(cl2)
 
-	// server.Clients also includes a server.inlineClient,
-	// so the total number of clients here should be increased by 1
-	require.Equal(t, 5, s.Clients.Len())
+	require.Equal(t, 4, s.Clients.Len())
 
 	s.clearExpiredClients(n)
-
-	// server.Clients also includes a server.inlineClient,
-	// so the total number of clients here should be increased by 1
-	require.Equal(t, 3, s.Clients.Len())
+	require.Equal(t, 2, s.Clients.Len())
 }
 
 func TestLoadServerInfoRestoreOnRestart(t *testing.T) {
@@ -3324,12 +3342,9 @@ func TestAtomicItoa(t *testing.T) {
 }
 
 func TestServerSubscribe(t *testing.T) {
+	handler := func(cl *Client, sub packets.Subscription, pk packets.Packet) {}
 
-	handler := func(cl *Client, sub packets.Subscription, pk packets.Packet) {
-		// handler logic
-	}
-
-	s := New(nil)
+	s := newServerWithInlineClient()
 	require.NotNil(t, s)
 
 	tt := []struct {
@@ -3404,12 +3419,19 @@ func TestServerSubscribe(t *testing.T) {
 	}
 }
 
+func TestServerSubscribeNoInlineClient(t *testing.T) {
+	s := newServer()
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {})
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInlineClientNotEnabled)
+}
+
 func TestServerUnsubscribe(t *testing.T) {
 	handler := func(cl *Client, sub packets.Subscription, pk packets.Packet) {
 		// handler logic
 	}
 
-	s := New(nil)
+	s := newServerWithInlineClient()
 	err := s.Subscribe("a/b/c", 1, handler)
 	require.Nil(t, err)
 
@@ -3435,8 +3457,15 @@ func TestServerUnsubscribe(t *testing.T) {
 	require.Equal(t, packets.ErrTopicFilterInvalid, err)
 }
 
-func TestPublishToInlineSubscriber(t *testing.T) {
+func TestServerUnsubscribeNoInlineClient(t *testing.T) {
 	s := newServer()
+	err := s.Unsubscribe("a/b/c", 1)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInlineClientNotEnabled)
+}
+
+func TestPublishToInlineSubscriber(t *testing.T) {
+	s := newServerWithInlineClient()
 	finishCh := make(chan bool)
 	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
 		require.Equal(t, []byte("hello mochi"), pk.Payload)
@@ -3457,7 +3486,7 @@ func TestPublishToInlineSubscriber(t *testing.T) {
 }
 
 func TestPublishToInlineSubscribersDifferentFilter(t *testing.T) {
-	s := newServer()
+	s := newServerWithInlineClient()
 	subNumber := 2
 	finishCh := make(chan bool, subNumber)
 
@@ -3495,7 +3524,7 @@ func TestPublishToInlineSubscribersDifferentFilter(t *testing.T) {
 }
 
 func TestPublishToInlineSubscribersDifferentIdentifier(t *testing.T) {
-	s := newServer()
+	s := newServerWithInlineClient()
 	subNumber := 2
 	finishCh := make(chan bool, subNumber)
 
@@ -3530,7 +3559,7 @@ func TestPublishToInlineSubscribersDifferentIdentifier(t *testing.T) {
 }
 
 func TestServerSubscribeWithRetain(t *testing.T) {
-	s := newServer()
+	s := newServerWithInlineClient()
 	subNumber := 1
 	finishCh := make(chan bool, subNumber)
 
@@ -3550,7 +3579,7 @@ func TestServerSubscribeWithRetain(t *testing.T) {
 }
 
 func TestServerSubscribeWithRetainDifferentFilter(t *testing.T) {
-	s := newServer()
+	s := newServerWithInlineClient()
 	subNumber := 2
 	finishCh := make(chan bool, subNumber)
 
@@ -3585,7 +3614,7 @@ func TestServerSubscribeWithRetainDifferentFilter(t *testing.T) {
 }
 
 func TestServerSubscribeWithRetainDifferentIdentifier(t *testing.T) {
-	s := newServer()
+	s := newServerWithInlineClient()
 	subNumber := 2
 	finishCh := make(chan bool, subNumber)
 

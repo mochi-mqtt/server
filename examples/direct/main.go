@@ -26,7 +26,9 @@ func main() {
 		done <- true
 	}()
 
-	server := mqtt.New(nil)
+	server := mqtt.New(&mqtt.Options{
+		InlineClient: true, // you must enable inline client to use direct publishing and subscribing.
+	})
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
 	// Start the server
@@ -54,8 +56,9 @@ func main() {
 		_ = server.Subscribe("direct/#", 2, callbackFn)
 	}()
 
-	// There is a shorthand convenience function, Publish, for easily sending
-	// publish packets if you are not concerned with creating your own packets.
+	// There is a shorthand convenience function, Publish, for easily sending  publish packets if you are not
+	// concerned with creating your own packets.  If you want to have more control over your packets, you can
+	//directly inject a packet of any kind into the broker. See examples/hooks/main.go for usage.
 	go func() {
 		for range time.Tick(time.Second * 3) {
 			err := server.Publish("direct/publish", []byte("scheduled message"), false, 0)
@@ -72,22 +75,6 @@ func main() {
 		server.Log.Info("inline client unsubscribing")
 		_ = server.Unsubscribe("direct/#", 1)
 	}()
-	// If you want to have more control over your packets, you can directly inject a packet of any kind into the broker.
-	//go func() {
-	//  cl := server.NewClient(nil, "local", "inline", true)
-	//	for range time.Tick(time.Second * 5) {
-	//		err := server.InjectPacket(cl, packets.Packet{
-	//			FixedHeader: packets.FixedHeader{
-	//				Type: packets.Publish,
-	//			},
-	//			TopicName: "direct/publish",
-	//			Payload:   []byte("injected scheduled message"),
-	//		})
-	//		if err != nil {
-	//			log.Fatal(err)
-	//		}
-	//	}
-	//}()
 
 	<-done
 	server.Log.Warn("caught signal, stopping...")
