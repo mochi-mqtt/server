@@ -28,6 +28,8 @@ import (
 const (
 	Version                       = "2.3.0" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
+	LocalListener                 = "local"
+	InlineClientId                = "inline"
 )
 
 var (
@@ -109,15 +111,16 @@ type Options struct {
 // Server is an MQTT broker server. It should be created with server.New()
 // in order to ensure all the internal fields are correctly populated.
 type Server struct {
-	Options   *Options             // configurable server options
-	Listeners *listeners.Listeners // listeners are network interfaces which listen for new connections
-	Clients   *Clients             // clients known to the broker
-	Topics    *TopicsIndex         // an index of topic filter subscriptions and retained messages
-	Info      *system.Info         // values about the server commonly known as $SYS topics
-	loop      *loop                // loop contains tickers for the system event loop
-	done      chan bool            // indicate that the server is ending
-	Log       *slog.Logger         // minimal no-alloc logger
-	hooks     *Hooks               // hooks contains hooks for extra functionality such as auth and persistent storage.
+	Options      *Options             // configurable server options
+	Listeners    *listeners.Listeners // listeners are network interfaces which listen for new connections
+	Clients      *Clients             // clients known to the broker
+	Topics       *TopicsIndex         // an index of topic filter subscriptions and retained messages
+	Info         *system.Info         // values about the server commonly known as $SYS topics
+	loop         *loop                // loop contains tickers for the system event loop
+	done         chan bool            // indicate that the server is ending
+	Log          *slog.Logger         // minimal no-alloc logger
+	hooks        *Hooks               // hooks contains hooks for extra functionality such as auth and persistent storage.
+	inlineClient *Client              // inlineClient is a special client used for inline subscriptions and inline Publish.
 }
 
 // loop contains interval tickers for the system events loop.
@@ -170,6 +173,8 @@ func New(opts *Options) *Server {
 			Log: opts.Logger,
 		},
 	}
+	s.inlineClient = s.NewClient(nil, LocalListener, InlineClientId, true)
+	s.Clients.Add(s.inlineClient)
 
 	return s
 }
@@ -649,8 +654,7 @@ func (s *Server) processPingreq(cl *Client, _ packets.Packet) error {
 // to any topic (including $SYS) and bypass ACL checks. The qos byte is used for limiting the
 // outbound qos (mqtt v5) rather than issuing to the broker (we assume qos 2 complete).
 func (s *Server) Publish(topic string, payload []byte, retain bool, qos byte) error {
-	cl := s.NewClient(nil, "local", "inline", true)
-	return s.InjectPacket(cl, packets.Packet{
+	return s.InjectPacket(s.inlineClient, packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type:   packets.Publish,
 			Qos:    qos,
@@ -660,6 +664,64 @@ func (s *Server) Publish(topic string, payload []byte, retain bool, qos byte) er
 		Payload:   payload,
 		PacketID:  uint16(qos), // we never process the inbound qos, but we need a packet id for validity checks.
 	})
+}
+
+// Subscribe adds an inline subscription for the specified topic filter and subscription identifier
+// with the provided handler function.
+func (s *Server) Subscribe(filter string, subscriptionId int, handler InlineSubFn) error {
+	if handler == nil {
+		return packets.ErrInlineSubscriptionHandlerInvalid
+	} else if !IsValidFilter(filter, false) {
+		return packets.ErrTopicFilterInvalid
+	}
+	subscription := packets.Subscription{
+		Identifier: subscriptionId,
+		Filter:     filter,
+	}
+
+	pk := s.hooks.OnSubscribe(s.inlineClient, packets.Packet{ // subscribe like a normal client.
+		Origin:      s.inlineClient.ID,
+		FixedHeader: packets.FixedHeader{Type: packets.Subscribe},
+		Filters:     packets.Subscriptions{subscription},
+	})
+
+	inlineSubscription := InlineSubscription{
+		Subscription: subscription,
+		Handler:      handler,
+	}
+
+	s.Topics.InlineSubscribe(inlineSubscription)
+	s.hooks.OnSubscribed(s.inlineClient, pk, []byte{packets.CodeSuccess.Code})
+
+	// Handling retained messages.
+	for _, pkv := range s.Topics.Messages(filter) { // [MQTT-3.8.4-4]
+		handler(s.inlineClient, inlineSubscription.Subscription, pkv)
+	}
+	return nil
+}
+
+// Unsubscribe removes an inline subscription for the specified subscription and topic filter.
+// It allows you to unsubscribe a specific subscription from the internal subscription
+// associated with the given topic filter.
+func (s *Server) Unsubscribe(filter string, subscriptionId int) error {
+	if !IsValidFilter(filter, false) {
+		return packets.ErrTopicFilterInvalid
+	}
+
+	pk := s.hooks.OnUnsubscribe(s.inlineClient, packets.Packet{
+		Origin:      s.inlineClient.ID,
+		FixedHeader: packets.FixedHeader{Type: packets.Unsubscribe},
+		Filters: packets.Subscriptions{
+			{
+				Identifier: subscriptionId,
+				Filter:     filter,
+			},
+		},
+	})
+
+	s.Topics.InlineUnsubscribe(subscriptionId, filter)
+	s.hooks.OnUnsubscribed(s.inlineClient, pk)
+	return nil
 }
 
 // InjectPacket injects a packet into the broker as if it were sent from the specified client.
@@ -736,7 +798,10 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		s.retainMessage(cl, pk)
 	}
 
-	if pk.FixedHeader.Qos == 0 {
+	// If it's inlineClient, it can't handle PUBREC and PUBREL.
+	// When it publishes a package with a qos > 0, the server treats
+	// the package as qos=0, and the client receives it as qos=1 or 2.
+	if pk.FixedHeader.Qos == 0 || cl.Net.Inline {
 		s.publishToSubscribers(pk)
 		s.hooks.OnPublished(cl, pk)
 		return nil
@@ -807,6 +872,10 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 			subscribers.SelectShared()
 		}
 		subscribers.MergeSharedSelected()
+	}
+
+	for _, inlineSubscription := range subscribers.InlineSubscriptions {
+		inlineSubscription.Handler(s.inlineClient, inlineSubscription.Subscription, pk)
 	}
 
 	for id, subs := range subscribers.Subscriptions {

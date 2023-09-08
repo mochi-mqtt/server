@@ -117,6 +117,8 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, s.hooks)
 	require.NotNil(t, s.hooks.Log)
 	require.NotNil(t, s.done)
+	require.NotNil(t, s.inlineClient)
+	require.Equal(t, 1, s.Clients.Len())
 }
 
 func TestNewNilOpts(t *testing.T) {
@@ -348,9 +350,13 @@ func TestEstablishConnection(t *testing.T) {
 
 	err := <-o
 	require.NoError(t, err)
-	for _, v := range s.Clients.GetAll() {
-		require.ErrorIs(t, v.StopCause(), packets.CodeDisconnect) // true error is disconnect
-	}
+
+	// Todo:
+	// 		s.Clients is already empty here. Is it necessary to check v.StopCause()?
+
+	// for _, v := range s.Clients.GetAll() {
+	// 	require.ErrorIs(t, v.StopCause(), packets.CodeDisconnect) // true error is disconnect
+	// }
 
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes, <-recv)
 
@@ -409,9 +415,11 @@ func TestEstablishConnectionReadError(t *testing.T) {
 
 	err := <-o
 	require.Error(t, err)
-	for _, v := range s.Clients.GetAll() {
-		require.ErrorIs(t, v.StopCause(), packets.ErrProtocolViolationSecondConnect) // true error is disconnect
-	}
+
+	// Retrieve the client corresponding to the Client Identifier.
+	retrievedCl, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt5).Packet.Connect.ClientIdentifier)
+	require.True(t, ok)
+	require.ErrorIs(t, retrievedCl.StopCause(), packets.ErrProtocolViolationSecondConnect) // true error is disconnect
 
 	ret := <-recv
 	require.Equal(t, append(
@@ -467,9 +475,11 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 
 	err := <-o
 	require.NoError(t, err)
-	for _, v := range s.Clients.GetAll() {
-		require.ErrorIs(t, v.StopCause(), packets.CodeDisconnect) // true error is disconnect
-	}
+
+	// Retrieve the client corresponding to the Client Identifier.
+	retrievedCl, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier)
+	require.True(t, ok)
+	require.ErrorIs(t, retrievedCl.StopCause(), packets.CodeDisconnect) // true error is disconnect
 
 	connackPlusPacket := append(
 		packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedSessionExists).RawBytes,
@@ -657,9 +667,11 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 
 	err := <-o
 	require.NoError(t, err)
-	for _, v := range s.Clients.GetAll() {
-		require.ErrorIs(t, v.StopCause(), packets.CodeDisconnect) // true error is disconnect
-	}
+
+	// Retrieve the client corresponding to the Client Identifier.
+	retrievedCl, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier)
+	require.True(t, ok)
+	require.ErrorIs(t, retrievedCl.StopCause(), packets.CodeDisconnect) // true error is disconnect
 
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes, <-recv)
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes, <-takeover)
@@ -2973,9 +2985,11 @@ func TestServerLoadClients(t *testing.T) {
 	}
 
 	s := newServer()
-	require.Equal(t, 0, s.Clients.Len())
+	// Here, server.Clients also includes a server.inlineClient,
+	// so the total number of clients here should be increased by 1
+	require.Equal(t, 1, s.Clients.Len())
 	s.loadClients(v)
-	require.Equal(t, 3, s.Clients.Len())
+	require.Equal(t, 4, s.Clients.Len())
 	cl, ok := s.Clients.Get("mochi")
 	require.True(t, ok)
 	require.Equal(t, "mochi", cl.ID)
@@ -3003,7 +3017,10 @@ func TestServerLoadInflightMessages(t *testing.T) {
 		{ID: "zen"},
 		{ID: "mochi-co"},
 	})
-	require.Equal(t, 3, s.Clients.Len())
+
+	// server.Clients also includes a server.inlineClient,
+	// so the total number of clients here should be increased by 1
+	require.Equal(t, 4, s.Clients.Len())
 
 	v := []storage.Message{
 		{Origin: "mochi", PacketID: 1, Payload: []byte("hello world"), TopicName: "a/b/c"},
@@ -3159,11 +3176,15 @@ func TestServerClearExpiredClients(t *testing.T) {
 	cl2.Properties.Props.SessionExpiryIntervalFlag = true
 	s.Clients.Add(cl2)
 
-	require.Equal(t, 4, s.Clients.Len())
+	// server.Clients also includes a server.inlineClient,
+	// so the total number of clients here should be increased by 1
+	require.Equal(t, 5, s.Clients.Len())
 
 	s.clearExpiredClients(n)
 
-	require.Equal(t, 2, s.Clients.Len())
+	// server.Clients also includes a server.inlineClient,
+	// so the total number of clients here should be increased by 1
+	require.Equal(t, 3, s.Clients.Len())
 }
 
 func TestLoadServerInfoRestoreOnRestart(t *testing.T) {
@@ -3181,4 +3202,298 @@ func TestAtomicItoa(t *testing.T) {
 	i := int64(22)
 	ip := &i
 	require.Equal(t, "22", AtomicItoa(ip))
+}
+
+func TestServerSubscribe(t *testing.T) {
+
+	handler := func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		// handler logic
+	}
+
+	s := New(nil)
+	require.NotNil(t, s)
+
+	tt := []struct {
+		desc       string
+		filter     string
+		identifier int
+		handler    InlineSubFn
+		expect     error
+	}{
+		{
+			desc:       "subscribe",
+			filter:     "a/b/c",
+			identifier: 1,
+			handler:    handler,
+			expect:     nil,
+		},
+		{
+			desc:       "re-subscribe",
+			filter:     "a/b/c",
+			identifier: 1,
+			handler:    handler,
+			expect:     nil,
+		},
+		{
+			desc:       "subscribe d/e/f",
+			filter:     "d/e/f",
+			identifier: 1,
+			handler:    handler,
+			expect:     nil,
+		},
+		{
+			desc:       "re-subscribe d/e/f by different identifier",
+			filter:     "d/e/f",
+			identifier: 2,
+			handler:    handler,
+			expect:     nil,
+		},
+		{
+			desc:       "subscribe different handler",
+			filter:     "a/b/c",
+			identifier: 1,
+			handler:    func(cl *Client, sub packets.Subscription, pk packets.Packet) {},
+			expect:     nil,
+		},
+		{
+			desc:       "subscribe $SYS/info",
+			filter:     "$SYS/info",
+			identifier: 1,
+			handler:    handler,
+			expect:     nil,
+		},
+		{
+			desc:       "subscribe invalied ###",
+			filter:     "###",
+			identifier: 1,
+			handler:    handler,
+			expect:     packets.ErrTopicFilterInvalid,
+		},
+		{
+			desc:       "subscribe invalid handler",
+			filter:     "a/b/c",
+			identifier: 1,
+			handler:    nil,
+			expect:     packets.ErrInlineSubscriptionHandlerInvalid,
+		},
+	}
+
+	for _, tx := range tt {
+		t.Run(tx.desc, func(t *testing.T) {
+			require.Equal(t, tx.expect, s.Subscribe(tx.filter, tx.identifier, tx.handler))
+		})
+	}
+}
+
+func TestServerUnsubscribe(t *testing.T) {
+	handler := func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		// handler logic
+	}
+
+	s := New(nil)
+	err := s.Subscribe("a/b/c", 1, handler)
+	require.Nil(t, err)
+
+	err = s.Subscribe("d/e/f", 1, handler)
+	require.Nil(t, err)
+
+	err = s.Subscribe("d/e/f", 2, handler)
+	require.Nil(t, err)
+
+	err = s.Unsubscribe("a/b/c", 1)
+	require.Nil(t, err)
+
+	err = s.Unsubscribe("d/e/f", 1)
+	require.Nil(t, err)
+
+	err = s.Unsubscribe("d/e/f", 2)
+	require.Nil(t, err)
+
+	err = s.Unsubscribe("not/exist", 1)
+	require.Nil(t, err)
+
+	err = s.Unsubscribe("#/#/invalid", 1)
+	require.Equal(t, packets.ErrTopicFilterInvalid, err)
+}
+
+func TestPublishToInlineSubscriber(t *testing.T) {
+	s := newServer()
+	finishCh := make(chan bool)
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	go func() {
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+		s.publishToSubscribers(pkx)
+	}()
+
+	require.Equal(t, true, <-finishCh)
+}
+
+func TestPublishToInlineSubscribersDiffrentFilter(t *testing.T) {
+	s := newServer()
+	subNumber := 2
+	finishCh := make(chan bool, subNumber)
+
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	err = s.Subscribe("z/e/n", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("mochi mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "z/e/n", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	go func() {
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+		s.publishToSubscribers(pkx)
+
+		pkx = *packets.TPacketData[packets.Publish].Get(packets.TPublishCopyBasic).Packet
+		s.publishToSubscribers(pkx)
+	}()
+
+	for i := 0; i < subNumber; i++ {
+		require.Equal(t, true, <-finishCh)
+	}
+}
+
+func TestPublishToInlineSubscribersDiffrentIdentifier(t *testing.T) {
+	s := newServer()
+	subNumber := 2
+	finishCh := make(chan bool, subNumber)
+
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	err = s.Subscribe("a/b/c", 2, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 2, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	go func() {
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+		s.publishToSubscribers(pkx)
+	}()
+
+	for i := 0; i < subNumber; i++ {
+		require.Equal(t, true, <-finishCh)
+	}
+}
+
+func TestServerSubscribeWithRetain(t *testing.T) {
+	s := newServer()
+	subNumber := 1
+	finishCh := make(chan bool, subNumber)
+
+	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(1), retained)
+
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+	require.Equal(t, true, <-finishCh)
+}
+
+func TestServerSubscribeWithRetainDiffrentFilter(t *testing.T) {
+	s := newServer()
+	subNumber := 2
+	finishCh := make(chan bool, subNumber)
+
+	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(1), retained)
+	retained = s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishCopyBasic).Packet)
+	require.Equal(t, int64(1), retained)
+
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	err = s.Subscribe("z/e/n", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("mochi mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "z/e/n", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	for i := 0; i < subNumber; i++ {
+		require.Equal(t, true, <-finishCh)
+	}
+}
+
+func TestServerSubscribeWithRetainDiffrentIdentifier(t *testing.T) {
+	s := newServer()
+	subNumber := 2
+	finishCh := make(chan bool, subNumber)
+
+	retained := s.Topics.RetainMessage(*packets.TPacketData[packets.Publish].Get(packets.TPublishRetain).Packet)
+	require.Equal(t, int64(1), retained)
+
+	err := s.Subscribe("a/b/c", 1, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 1, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	err = s.Subscribe("a/b/c", 2, func(cl *Client, sub packets.Subscription, pk packets.Packet) {
+		require.Equal(t, []byte("hello mochi"), pk.Payload)
+		require.Equal(t, InlineClientId, cl.ID)
+		require.Equal(t, LocalListener, cl.Net.Listener)
+		require.Equal(t, "a/b/c", sub.Filter)
+		require.Equal(t, 2, sub.Identifier)
+		finishCh <- true
+	})
+	require.Nil(t, err)
+
+	for i := 0; i < subNumber; i++ {
+		require.Equal(t, true, <-finishCh)
+	}
 }
