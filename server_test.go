@@ -1971,6 +1971,19 @@ func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
 }
 
+func TestPublishToClientACLNotAuthorized(t *testing.T) {
+	s := New(&Options{
+		Logger: logger,
+	})
+	err := s.AddHook(new(DenyHook), nil)
+	require.NoError(t, err)
+	cl, _, _ := newTestClient()
+
+	_, err = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c"}, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrNotAuthorized)
+}
+
 func TestPublishToClientNoConn(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
