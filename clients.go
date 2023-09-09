@@ -211,6 +211,10 @@ func (cl *Client) ParseConnect(lid string, pk packets.Packet) {
 	cl.Properties.Clean = pk.Connect.Clean
 	cl.Properties.Props = pk.Properties.Copy(false)
 
+	if min := cl.ops.options.Capabilities.MinimumKeepalive; min != 0 && pk.Connect.Keepalive < min && pk.Connect.Keepalive > 0 {
+		cl.State.ServerKeepalive = true
+		pk.Connect.Keepalive = min
+	}
 	cl.State.Keepalive = pk.Connect.Keepalive                                              // [MQTT-3.2.2-22]
 	cl.State.Inflight.ResetReceiveQuota(int32(cl.ops.options.Capabilities.ReceiveMaximum)) // server receive max per client
 	cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))            // client receive max

@@ -178,6 +178,43 @@ func TestClientParseConnect(t *testing.T) {
 	require.Equal(t, int32(pk.Properties.ReceiveMaximum), cl.State.Inflight.sendQuota)
 	require.Equal(t, int32(pk.Properties.ReceiveMaximum), cl.State.Inflight.maximumSendQuota)
 }
+func TestClientParseConnectMinimumKeepalive(t *testing.T) {
+	tt := []struct {
+		name                  string
+		minKeepalive          uint16
+		keepalive             uint16
+		expectKeepalive       uint16
+		expectServerKeepalive bool
+	}{
+		{minKeepalive: 0, keepalive: 0, expectKeepalive: 0},
+		{minKeepalive: 10, keepalive: 0, expectKeepalive: 0},
+		{minKeepalive: 0, keepalive: 1, expectKeepalive: 1, expectServerKeepalive: false},
+		{minKeepalive: 10, keepalive: 1, expectKeepalive: 10, expectServerKeepalive: true},
+		{minKeepalive: 10, keepalive: 10, expectKeepalive: 10},
+		{minKeepalive: 10, keepalive: 60, expectKeepalive: 60},
+	}
+
+	for _, tx := range tt {
+		t.Run("", func(t *testing.T) {
+			cl, _, _ := newTestClient()
+			cl.ops.options.Capabilities.MinimumKeepalive = tx.minKeepalive
+
+			pk := packets.Packet{
+				ProtocolVersion: 4,
+				Connect: packets.ConnectParams{
+					ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
+					Clean:            true,
+					ClientIdentifier: "mochi",
+					Keepalive:        tx.keepalive,
+				},
+			}
+
+			cl.ParseConnect("tcp1", pk)
+			require.Equal(t, tx.expectKeepalive, cl.State.Keepalive)
+			require.Equal(t, tx.expectServerKeepalive, cl.State.ServerKeepalive)
+		})
+	}
+}
 
 func TestClientParseConnectOverrideWillDelay(t *testing.T) {
 	cl, _, _ := newTestClient()

@@ -63,6 +63,7 @@ type Capabilities struct {
 	maximumPacketID              uint32 // unexported, used for testing only
 	ReceiveMaximum               uint16
 	TopicAliasMaximum            uint16
+	MinimumKeepalive             uint16
 	SharedSubAvailable           byte
 	MinimumProtocolVersion       byte
 	Compatibilities              Compatibilities
