@@ -130,7 +130,7 @@ func (h *ExampleHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Pac
 		attribute.String("payload", string(pk.Payload)),
 	))
 
-	h.Log.DebugContext(pk.Ctx, "traceid", span.SpanContext().TraceID().String())
+	h.Log.DebugContext(pk.Ctx, "published to client", "traceid", span.SpanContext().TraceID().String())
 
 	return pkx, nil
 }
