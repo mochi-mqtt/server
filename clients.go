@@ -423,6 +423,8 @@ func (cl *Client) ReadFixedHeader(fh *packets.FixedHeader) error {
 func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err error) {
 	atomic.AddInt64(&cl.ops.info.PacketsReceived, 1)
 
+	pk.Ctx, pk.Cancel = context.WithCancel(cl.State.open)
+
 	pk.ProtocolVersion = cl.Properties.ProtocolVersion // inherit client protocol version for decoding
 	pk.FixedHeader = *fh
 	p := make([]byte, pk.FixedHeader.Remaining)

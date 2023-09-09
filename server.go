@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
-// SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: mochi-co, ishandaga <ishan@golain.io>
 
 // Package mqtt provides a high performance, fully compliant MQTT v5 broker server with v3.1.1 backward compatibility.
 package mqtt
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -22,6 +21,9 @@ import (
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/mochi-mqtt/server/v2/system"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 
 	"log/slog"
 )
@@ -112,6 +114,19 @@ type Options struct {
 	// Enable Inline client to allow direct subscribing and publishing from the parent codebase,
 	// with negligible performance difference (disabled by default to prevent confusion in statistics).
 	InlineClient bool
+
+	// Enable Tracing
+	OTELTracing bool
+	OTELMetrics bool
+
+	// name for the default tracer
+	OTELTracerName    string
+	OTELTracerOptions []trace.TracerOption
+
+	// overrides the default tracer
+	Tracer *trace.Tracer
+	// Global Metrics Provider
+	Metrics *metric.MeterProvider
 }
 
 // Server is an MQTT broker server. It should be created with server.New()
@@ -125,6 +140,7 @@ type Server struct {
 	loop         *loop                // loop contains tickers for the system event loop
 	done         chan bool            // indicate that the server is ending
 	Log          *slog.Logger         // minimal no-alloc logger
+	Tracer       trace.Tracer         // opentelemetry tracer
 	hooks        *Hooks               // hooks contains hooks for extra functionality such as auth and persistent storage
 	inlineClient *Client              // inlineClient is a special client used for inline subscriptions and inline Publish
 }
@@ -185,6 +201,10 @@ func New(opts *Options) *Server {
 		s.Clients.Add(s.inlineClient)
 	}
 
+	if s.Options.OTELTracing {
+		s.Tracer = *s.Options.Tracer
+	}
+
 	return s
 }
 
@@ -211,6 +231,18 @@ func (o *Options) ensureDefaults() {
 	if o.Logger == nil {
 		log := slog.New(slog.NewTextHandler(os.Stdout, nil))
 		o.Logger = log
+	}
+
+	if o.OTELTracing {
+		if o.Tracer == nil {
+			var t trace.Tracer
+			if len(o.OTELTracerOptions) > 0 {
+				t = otel.Tracer(o.OTELTracerName, o.OTELTracerOptions...)
+			} else {
+				t = otel.Tracer(o.OTELTracerName)
+			}
+			o.Tracer = &t
+		}
 	}
 }
 
@@ -430,6 +462,12 @@ func (s *Server) readConnectionPacket(cl *Client) (pk packets.Packet, err error)
 // receivePacket processes an incoming packet for a client, and issues a disconnect to the client
 // if an error has occurred (if mqtt v5).
 func (s *Server) receivePacket(cl *Client, pk packets.Packet) error {
+	defer pk.Cancel()
+	if s.Options.OTELTracing {
+		ctx, span := s.Tracer.Start(pk.Ctx, "mqtt.packet")
+		pk.Ctx = ctx
+		defer span.End()
+	}
 	err := s.processPacket(cl, pk)
 	if err != nil {
 		if code, ok := err.(packets.Code); ok &&
@@ -579,8 +617,6 @@ func (s *Server) SendConnack(cl *Client, reason packets.Code, present bool, prop
 // typically called as a goroutine, errors are primarily for test checking purposes.
 func (s *Server) processPacket(cl *Client, pk packets.Packet) error {
 	var err error
-	pk.Ctx, pk.Cancel = context.WithCancel(context.Background())
-	defer pk.Cancel()
 
 	switch pk.FixedHeader.Type {
 	case packets.Connect:

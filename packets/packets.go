@@ -215,6 +215,8 @@ func (pk *Packet) Copy(allowTransfer bool) Packet {
 		Created:        pk.Created,
 		Expiry:         pk.Expiry,
 		Origin:         pk.Origin,
+		Ctx:            pk.Ctx,
+		Cancel:         pk.Cancel,
 	}
 
 	if allowTransfer {
