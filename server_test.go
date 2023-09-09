@@ -51,7 +51,9 @@ func (h *AllowHook) Provides(b byte) bool {
 }
 
 func (h *AllowHook) OnConnectAuthenticate(cl *Client, pk packets.Packet) bool { return true }
-func (h *AllowHook) OnACLCheck(cl *Client, topic string, write bool) bool     { return true }
+func (h *AllowHook) OnACLCheck(cl *Client, pk packets.Packet, topic string, write bool) bool {
+	return true
+}
 
 type DenyHook struct {
 	HookBase
@@ -71,7 +73,9 @@ func (h *DenyHook) Provides(b byte) bool {
 }
 
 func (h *DenyHook) OnConnectAuthenticate(cl *Client, pk packets.Packet) bool { return false }
-func (h *DenyHook) OnACLCheck(cl *Client, topic string, write bool) bool     { return false }
+func (h *DenyHook) OnACLCheck(cl *Client, pk packets.Packet, topic string, write bool) bool {
+	return false
+}
 
 type DelayHook struct {
 	HookBase

@@ -70,7 +70,7 @@ func (h *pahoAuthHook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet)
 	return true
 }
 
-func (h *pahoAuthHook) OnACLCheck(cl *mqtt.Client, topic string, write bool) bool {
+func (h *pahoAuthHook) OnACLCheck(cl *mqtt.Client, pk packets.Packet, topic string, write bool) bool {
 	return topic != "test/nosubscribe"
 }
 

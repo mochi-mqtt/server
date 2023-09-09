@@ -6,6 +6,7 @@
 package mqtt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -578,6 +579,8 @@ func (s *Server) SendConnack(cl *Client, reason packets.Code, present bool, prop
 // typically called as a goroutine, errors are primarily for test checking purposes.
 func (s *Server) processPacket(cl *Client, pk packets.Packet) error {
 	var err error
+	pk.Ctx, pk.Cancel = context.WithCancel(context.Background())
+	defer pk.Cancel()
 
 	switch pk.FixedHeader.Type {
 	case packets.Connect:
@@ -775,7 +778,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		return s.DisconnectClient(cl, packets.ErrReceiveMaximum) // ~[MQTT-3.3.4-7] ~[MQTT-3.3.4-8]
 	}
 
-	if !cl.Net.Inline && !s.hooks.OnACLCheck(cl, pk.TopicName, true) {
+	if !cl.Net.Inline && !s.hooks.OnACLCheck(cl, pk, pk.TopicName, true) {
 		if pk.FixedHeader.Qos == 0 {
 			return nil
 		}
@@ -931,7 +934,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	}
 
 	out := pk.Copy(false)
-	if !s.hooks.OnACLCheck(cl, pk.TopicName, false) {
+	if !s.hooks.OnACLCheck(cl, pk, pk.TopicName, false) {
 		return out, packets.ErrNotAuthorized
 	}
 	if !sub.FwdRetainedFlag && ((cl.Properties.ProtocolVersion == 5 && !sub.RetainAsPublished) || cl.Properties.ProtocolVersion < 5) { // ![MQTT-3.3.1-13] [v3 MQTT-3.3.1-9]
@@ -1149,7 +1152,7 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 			reasonCodes[i] = packets.ErrTopicFilterInvalid.Code
 		} else if sub.NoLocal && IsSharedFilter(sub.Filter) {
 			reasonCodes[i] = packets.ErrProtocolViolationInvalidSharedNoLocal.Code // [MQTT-3.8.3-4]
-		} else if !s.hooks.OnACLCheck(cl, sub.Filter, false) {
+		} else if !s.hooks.OnACLCheck(cl, pk, sub.Filter, false) {
 			reasonCodes[i] = packets.ErrNotAuthorized.Code
 			if s.Options.Capabilities.Compatibilities.ObscureNotAuthorized {
 				reasonCodes[i] = packets.ErrUnspecifiedError.Code

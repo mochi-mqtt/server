@@ -73,7 +73,7 @@ type Hook interface {
 	OnStarted()
 	OnStopped()
 	OnConnectAuthenticate(cl *Client, pk packets.Packet) bool
-	OnACLCheck(cl *Client, topic string, write bool) bool
+	OnACLCheck(cl *Client, pk packets.Packet, topic string, write bool) bool
 	OnSysInfoTick(*system.Info)
 	OnConnect(cl *Client, pk packets.Packet) error
 	OnSessionEstablish(cl *Client, pk packets.Packet)
@@ -660,10 +660,10 @@ func (h *Hooks) OnConnectAuthenticate(cl *Client, pk packets.Packet) bool {
 // An implementation of this method MUST be used to allow or deny access to the
 // (see hooks/auth/allow_all or basic). It can be used in custom hooks to
 // check publishing and subscribing users against an existing permissions or roles database.
-func (h *Hooks) OnACLCheck(cl *Client, topic string, write bool) bool {
+func (h *Hooks) OnACLCheck(cl *Client, pk packets.Packet, topic string, write bool) bool {
 	for _, hook := range h.GetAll() {
 		if hook.Provides(OnACLCheck) {
-			if ok := hook.OnACLCheck(cl, topic, write); ok {
+			if ok := hook.OnACLCheck(cl, pk, topic, write); ok {
 				return true
 			}
 		}
@@ -724,7 +724,7 @@ func (h *HookBase) OnConnectAuthenticate(cl *Client, pk packets.Packet) bool {
 }
 
 // OnACLCheck is called when a user attempts to subscribe or publish to a topic.
-func (h *HookBase) OnACLCheck(cl *Client, topic string, write bool) bool {
+func (h *HookBase) OnACLCheck(cl *Client, pk packets.Packet, topic string, write bool) bool {
 	return false
 }
 

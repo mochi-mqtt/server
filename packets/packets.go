@@ -6,6 +6,7 @@ package packets
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -136,6 +137,8 @@ type Packet struct {
 	ReasonCode      byte          // reason code for a packet response (acks, etc)
 	ReservedBit     byte          // reserved, do not use (except in testing)
 	Ignore          bool          // if true, do not perform any message forwarding operations
+	Ctx             context.Context
+	Cancel          context.CancelFunc
 }
 
 // Mods specifies certain values required for certain mqtt v5 compliance within packet encoding/decoding.

@@ -7,7 +7,7 @@ package auth
 import (
 	"bytes"
 
-	"github.com/mochi-mqtt/server/v2"
+	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/packets"
 )
 
@@ -36,6 +36,6 @@ func (h *AllowHook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet) bo
 }
 
 // OnACLCheck returns true/allowed for all checks.
-func (h *AllowHook) OnACLCheck(cl *mqtt.Client, topic string, write bool) bool {
+func (h *AllowHook) OnACLCheck(cl *mqtt.Client, pk packets.Packet, topic string, write bool) bool {
 	return true
 }
