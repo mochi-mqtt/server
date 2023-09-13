@@ -189,6 +189,11 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 
 // OnDisconnect removes a client from the store if they were using a clean session.
 func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
+
+	if cl.StopCause() == packets.ErrServerShuttingDown {
+		return
+	}
+
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
@@ -210,6 +215,11 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 
 // OnSubscribed adds one or more client subscriptions to the store.
 func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []byte) {
+
+	if cl.StopCause() == packets.ErrServerShuttingDown {
+		return
+	}
+
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
@@ -238,6 +248,11 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 
 // OnUnsubscribed removes one or more client subscriptions from the store.
 func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
+
+	if cl.StopCause() == packets.ErrServerShuttingDown {
+		return
+	}
+
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
