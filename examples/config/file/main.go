@@ -10,7 +10,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/configs/file"
+	"github.com/mochi-mqtt/server/v2/hooks/auth"
+	"github.com/mochi-mqtt/server/v2/listeners"
 )
 
 func main() {
@@ -24,8 +27,10 @@ func main() {
 
 	server, err := file.Configure()
 	if err != nil {
-		slog.Default().Error(err.Error())
-		return
+		slog.Default().Error("failed to use file configuration", "error", err)
+		slog.Default().Warn("defaulting to standard broker configuration")
+		server, _ = configureServerWithDefault()
+
 	}
 
 	go func() {
@@ -37,7 +42,32 @@ func main() {
 	}()
 
 	<-done
-	server.Log.Warn().Msg("caught signal, stopping...")
+	server.Log.Warn("caught signal, stopping...")
 	server.Close()
-	server.Log.Info().Msg("main.go finished")
+	server.Log.Info("main.go finished")
+}
+
+func configureServerWithDefault() (*mqtt.Server, error) {
+	server := mqtt.New(nil)
+	_ = server.AddHook(new(auth.AllowHook), nil)
+
+	tcp := listeners.NewTCP("t1", ":1883", nil)
+	err := server.AddListener(tcp)
+	if err != nil {
+		return nil, err
+	}
+
+	ws := listeners.NewWebsocket("ws1", ":1882", nil)
+	err = server.AddListener(ws)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := listeners.NewHTTPStats("stats", ":8080", nil, server.Info)
+	err = server.AddListener(stats)
+	if err != nil {
+		return nil, err
+	}
+
+	return server, nil
 }

@@ -78,6 +78,9 @@ func Configure() (*mqtt.Server, error) {
 
 	data, err := os.ReadFile(CONFIG_FILE_NAME)
 	if err != nil {
+		if os.IsNotExist(err) {
+			slog.Default().Info("mochi_config.yml not found")
+		}
 		return nil, err
 	}
 

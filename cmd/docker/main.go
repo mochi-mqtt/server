@@ -27,27 +27,23 @@ func main() {
 
 	server, err := file.Configure()
 	if err != nil {
-		if os.IsNotExist(err) {
-			slog.Default().Info("mochi_config.yml not found")
-			slog.Default().Info("defaulting to standard broker configuration")
-			server, _ = configureServerWithDefault()
-		}
-
-		return
+		slog.Default().Error("failed to use file configuration", "error", err)
+		slog.Default().Warn("defaulting to standard broker configuration")
+		server, _ = configureServerWithDefault()
 	}
 
 	go func() {
 		err := server.Serve()
 		if err != nil {
-			slog.Default().Error(err.Error())
+			slog.Default().Error("", "error", err)
 			return
 		}
 	}()
 
 	<-done
-	server.Log.Warn().Msg("caught signal, stopping...")
+	server.Log.Warn("caught signal, stopping...")
 	server.Close()
-	server.Log.Info().Msg("main.go finished")
+	server.Log.Info("main.go finished")
 }
 
 func configureServerWithDefault() (*mqtt.Server, error) {
