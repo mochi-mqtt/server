@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -401,6 +402,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 		s.UnsubscribeClient(cl)
 		s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
 	}
+	cl.Shutdown()
 
 	return err
 }
@@ -434,7 +436,7 @@ func (s *Server) receivePacket(cl *Client, pk packets.Packet) error {
 		if code, ok := err.(packets.Code); ok &&
 			cl.Properties.ProtocolVersion == 5 &&
 			code.Code >= packets.ErrUnspecifiedError.Code {
-			_ = s.DisconnectClient(cl, code)
+			_ = s.DisconnectClient(cl, code, false)
 		}
 
 		s.Log.Warn("error processing packet", "error", err, "client", cl.ID, "listener", cl.Net.Listener, "pk", pk)
@@ -472,7 +474,7 @@ func (s *Server) validateConnect(cl *Client, pk packets.Packet) packets.Code {
 // session is abandoned.
 func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 	if existing, ok := s.Clients.Get(pk.Connect.ClientIdentifier); ok {
-		_ = s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                   // [MQTT-3.1.4-3]
+		_ = s.DisconnectClient(existing, packets.ErrSessionTakenOver, false)                            // [MQTT-3.1.4-3]
 		if pk.Connect.Clean || (existing.Properties.Clean && existing.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
 			existing.ClearInflights(math.MaxInt64, 0)
@@ -772,7 +774,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	if atomic.LoadInt32(&cl.State.Inflight.receiveQuota) == 0 {
-		return s.DisconnectClient(cl, packets.ErrReceiveMaximum) // ~[MQTT-3.3.4-7] ~[MQTT-3.3.4-8]
+		return s.DisconnectClient(cl, packets.ErrReceiveMaximum, false) // ~[MQTT-3.3.4-7] ~[MQTT-3.3.4-8]
 	}
 
 	if !cl.Net.Inline && !s.hooks.OnACLCheck(cl, pk.TopicName, true) {
@@ -781,7 +783,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		}
 
 		if cl.Properties.ProtocolVersion != 5 {
-			return s.DisconnectClient(cl, packets.ErrNotAuthorized)
+			return s.DisconnectClient(cl, packets.ErrNotAuthorized, false)
 		}
 
 		ackType := packets.Puback
@@ -1301,7 +1303,7 @@ func (s *Server) processDisconnect(cl *Client, pk packets.Packet) error {
 }
 
 // DisconnectClient sends a Disconnect packet to a client and then closes the client connection.
-func (s *Server) DisconnectClient(cl *Client, code packets.Code) error {
+func (s *Server) DisconnectClient(cl *Client, code packets.Code, sync bool) error {
 	out := packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Disconnect,
@@ -1318,7 +1320,12 @@ func (s *Server) DisconnectClient(cl *Client, code packets.Code) error {
 	// interested if the write packet fails due to a closed connection (as we are closing it).
 	err := cl.WritePacket(out)
 	if !s.Options.Capabilities.Compatibilities.PassiveClientDisconnect {
-		cl.Stop(code)
+		if sync {
+			cl.StopAndWaitShutdown(code)
+		} else {
+			cl.Stop(err)
+		}
+
 		if code.Code >= packets.ErrUnspecifiedError.Code {
 			return code
 		}
@@ -1395,9 +1402,15 @@ func (s *Server) Close() error {
 // closeListenerClients closes all clients on the specified listener.
 func (s *Server) closeListenerClients(listener string) {
 	clients := s.Clients.GetByListener(listener)
+	var wg sync.WaitGroup
 	for _, cl := range clients {
-		_ = s.DisconnectClient(cl, packets.ErrServerShuttingDown)
+		wg.Add(1)
+		go func(c *Client) {
+			s.DisconnectClient(c, packets.ErrServerShuttingDown, true)
+			wg.Done()
+		}(cl)
 	}
+	wg.Wait()
 }
 
 // sendLWT issues an LWT message to a topic when a client disconnects.

@@ -137,8 +137,9 @@ func (h *Hook) Init(config any) error {
 // Stop closes the redis connection.
 func (h *Hook) Stop() error {
 	h.Log.Info("disconnecting from redis service")
-
-	return h.db.Close()
+	err := h.db.Close()
+	h.db = nil
+	return err
 }
 
 // OnSessionEstablished adds a client to the store when their session is established.
@@ -189,11 +190,6 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 
 // OnDisconnect removes a client from the store if they were using a clean session.
 func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
-
-	if cl.StopCause() == packets.ErrServerShuttingDown {
-		return
-	}
-
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
@@ -215,11 +211,6 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 
 // OnSubscribed adds one or more client subscriptions to the store.
 func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []byte) {
-
-	if cl.StopCause() == packets.ErrServerShuttingDown {
-		return
-	}
-
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
@@ -248,11 +239,6 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 
 // OnUnsubscribed removes one or more client subscriptions from the store.
 func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
-
-	if cl.StopCause() == packets.ErrServerShuttingDown {
-		return
-	}
-
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return

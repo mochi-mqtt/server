@@ -150,6 +150,7 @@ type ClientState struct {
 	outboundQty     int32                // number of messages currently in the outbound queue
 	Keepalive       uint16               // the number of seconds the connection can wait
 	ServerKeepalive bool                 // keepalive was set by the server
+	waitShutdown    chan any
 }
 
 // newClient returns a new instance of Client. This is almost exclusively used by Server
@@ -165,6 +166,7 @@ func newClient(c net.Conn, o *ops) *Client {
 			cancelOpen:    cancel,
 			Keepalive:     defaultKeepalive,
 			outbound:      make(chan *packets.Packet, o.options.Capabilities.MaximumClientWritesPending),
+			waitShutdown:  make(chan any),
 		},
 		Properties: ClientProperties{
 			ProtocolVersion: defaultClientProtocolVersion, // default protocol version
@@ -354,6 +356,17 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 			return err
 		}
 	}
+}
+
+func (cl *Client) Shutdown() {
+	if cl.StopCause() != packets.ErrSessionTakenOver {
+		close(cl.State.waitShutdown)
+	}
+}
+
+func (cl *Client) StopAndWaitShutdown(err error) {
+	cl.Stop(err)
+	<-cl.State.waitShutdown
 }
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
