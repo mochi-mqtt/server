@@ -5,24 +5,24 @@
 package redis
 
 import (
+	"log/slog"
 	"os"
 	"sort"
 	"testing"
 	"time"
 
-	"github.com/mochi-mqtt/server/v2"
+	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/storage"
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/mochi-mqtt/server/v2/system"
 
 	miniredis "github.com/alicebob/miniredis/v2"
 	redis "github.com/go-redis/redis/v8"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
 var (
-	logger = zerolog.New(os.Stderr).With().Timestamp().Logger().Level(zerolog.Disabled)
+	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	client = &mqtt.Client{
 		ID: "test",
@@ -41,7 +41,7 @@ var (
 
 func newHook(t *testing.T, addr string) *Hook {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 
 	err := h.Init(&Options{
 		Options: &redis.Options{
@@ -87,13 +87,13 @@ func TestSysInfoKey(t *testing.T) {
 
 func TestID(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 	require.Equal(t, "redis-db", h.ID())
 }
 
 func TestProvides(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 	require.True(t, h.Provides(mqtt.OnSessionEstablished))
 	require.True(t, h.Provides(mqtt.OnDisconnect))
 	require.True(t, h.Provides(mqtt.OnSubscribed))
@@ -116,7 +116,7 @@ func TestHKey(t *testing.T) {
 	s := miniredis.RunT(t)
 	defer s.Close()
 	h := newHook(t, s.Addr())
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 	require.Equal(t, defaultHPrefix+"test", h.hKey("test"))
 }
 
@@ -126,7 +126,7 @@ func TestInitUseDefaults(t *testing.T) {
 	defer s.Close()
 
 	h := newHook(t, defaultAddr)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(nil)
 	require.NoError(t, err)
 	defer teardown(t, h)
@@ -137,7 +137,7 @@ func TestInitUseDefaults(t *testing.T) {
 
 func TestInitBadConfig(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 
 	err := h.Init(map[string]any{})
 	require.Error(t, err)
@@ -145,7 +145,7 @@ func TestInitBadConfig(t *testing.T) {
 
 func TestInitBadAddr(t *testing.T) {
 	h := new(Hook)
-	h.SetOpts(&logger, nil)
+	h.SetOpts(logger, nil)
 	err := h.Init(&Options{
 		Options: &redis.Options{
 			Addr: "abc:123",

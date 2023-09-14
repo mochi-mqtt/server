@@ -126,6 +126,7 @@ var (
 	ErrMaxConnectTime                         = Code{Code: 0xA0, Reason: "maximum connect time"}
 	ErrSubscriptionIdentifiersNotSupported    = Code{Code: 0xA1, Reason: "subscription identifiers not supported"}
 	ErrWildcardSubscriptionsNotSupported      = Code{Code: 0xA2, Reason: "wildcard subscriptions not supported"}
+	ErrInlineSubscriptionHandlerInvalid       = Code{Code: 0xA3, Reason: "inline subscription handler not valid."}
 
 	// MQTTv3 specific bytes.
 	Err3UnsupportedProtocolVersion = Code{Code: 0x01}

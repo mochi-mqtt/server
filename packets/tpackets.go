@@ -40,7 +40,6 @@ const (
 	TConnectMqtt5
 	TConnectMqtt5LWT
 	TConnectClean
-	TConnectCleanLWT
 	TConnectUserPass
 	TConnectUserPassLWT
 	TConnectMalProtocolName
@@ -61,7 +60,6 @@ const (
 	TConnectInvalidProtocolVersion2
 	TConnectInvalidReservedBit
 	TConnectInvalidClientIDTooLong
-	TConnectInvalidPasswordNoUsername
 	TConnectInvalidFlagNoUsername
 	TConnectInvalidFlagNoPassword
 	TConnectInvalidUsernameNoFlag
@@ -131,12 +129,14 @@ const (
 	TPublishSpecDenySysTopic
 	TPuback
 	TPubackMqtt5
+	TPubackMqtt5NotAuthorized
 	TPubackMalPacketID
 	TPubackMalProperties
 	TPubackUnexpectedError
 	TPubrec
 	TPubrecMqtt5
 	TPubrecMqtt5IDInUse
+	TPubrecMqtt5NotAuthorized
 	TPubrecMalPacketID
 	TPubrecMalProperties
 	TPubrecMalReasonCode
@@ -184,7 +184,6 @@ const (
 	TUnsubscribe
 	TUnsubscribeMany
 	TUnsubscribeMqtt5
-	TUnsubscribeDropProperties
 	TUnsubscribeMalPacketID
 	TUnsubscribeMalTopicName
 	TUnsubscribeMalProperties
@@ -202,7 +201,6 @@ const (
 	TDisconnect
 	TDisconnectTakeover
 	TDisconnectMqtt5
-	TDisconnectNormalMqtt5
 	TDisconnectSecondConnect
 	TDisconnectReceiveMaximum
 	TDisconnectDropProperties
@@ -1707,41 +1705,41 @@ var TPacketData = map[byte]TPacketCases{
 			},
 		},
 		{
-            Case:    TPublishQos1Mqtt5,
-            Desc:    "mqtt v5",
-            Primary: true,
-            RawBytes: []byte{
-                Publish<<4 | 1<<1, 37, // Fixed header
-                0, 5, // Topic Name - LSB+MSB
-                'a', '/', 'b', '/', 'c', // Topic Name
-                0, 7, // Packet ID - LSB+MSB
-                // Properties
-                16, // length
-                38, // User Properties (38)
-                0, 5, 'h', 'e', 'l', 'l', 'o',
-                0, 6, 228, 184, 150, 231, 149, 140,
-                'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload
-            },
-            Packet: &Packet{
-                ProtocolVersion: 5,
-                FixedHeader: FixedHeader{
-                    Type:      Publish,
-                    Remaining: 37,
-                    Qos:       1,
-                },
-                PacketID:  7,
-                TopicName: "a/b/c",
-                Properties: Properties{
-                    User: []UserProperty{
-                        {
-                            Key: "hello",
-                            Val: "世界",
-                        },
-                    },
-                },
-                Payload: []byte("hello mochi"),
-            },
-        },
+			Case:    TPublishQos1Mqtt5,
+			Desc:    "mqtt v5",
+			Primary: true,
+			RawBytes: []byte{
+				Publish<<4 | 1<<1, 37, // Fixed header
+				0, 5, // Topic Name - LSB+MSB
+				'a', '/', 'b', '/', 'c', // Topic Name
+				0, 7, // Packet ID - LSB+MSB
+				// Properties
+				16, // length
+				38, // User Properties (38)
+				0, 5, 'h', 'e', 'l', 'l', 'o',
+				0, 6, 228, 184, 150, 231, 149, 140,
+				'h', 'e', 'l', 'l', 'o', ' ', 'm', 'o', 'c', 'h', 'i', // Payload
+			},
+			Packet: &Packet{
+				ProtocolVersion: 5,
+				FixedHeader: FixedHeader{
+					Type:      Publish,
+					Remaining: 37,
+					Qos:       1,
+				},
+				PacketID:  7,
+				TopicName: "a/b/c",
+				Properties: Properties{
+					User: []UserProperty{
+						{
+							Key: "hello",
+							Val: "世界",
+						},
+					},
+				},
+				Payload: []byte("hello mochi"),
+			},
+		},
 
 		{
 			Case:    TPublishQos1Dup,
@@ -2275,6 +2273,40 @@ var TPacketData = map[byte]TPacketCases{
 			},
 		},
 		{
+			Case:    TPubackMqtt5NotAuthorized,
+			Desc:    "QOS 1 publish not authorized mqtt5",
+			Primary: true,
+			RawBytes: []byte{
+				Puback << 4, 37, // Fixed header
+				0, 7, // Packet ID - LSB+MSB
+				ErrNotAuthorized.Code, // Reason Code
+				33,                    // Properties Length
+				31, 0, 14, 'n', 'o', 't', ' ', 'a', 'u',
+				't', 'h', 'o', 'r', 'i', 'z', 'e', 'd', // Reason String (31)
+				38, // User Properties (38)
+				0, 5, 'h', 'e', 'l', 'l', 'o',
+				0, 6, 228, 184, 150, 231, 149, 140,
+			},
+			Packet: &Packet{
+				ProtocolVersion: 5,
+				FixedHeader: FixedHeader{
+					Type:      Puback,
+					Remaining: 31,
+				},
+				PacketID:   7,
+				ReasonCode: ErrNotAuthorized.Code,
+				Properties: Properties{
+					ReasonString: ErrNotAuthorized.Reason,
+					User: []UserProperty{
+						{
+							Key: "hello",
+							Val: "世界",
+						},
+					},
+				},
+			},
+		},
+		{
 			Case:  TPubackUnexpectedError,
 			Desc:  "unexpected error",
 			Group: "decode",
@@ -2403,6 +2435,40 @@ var TPacketData = map[byte]TPacketCases{
 				ReasonCode: ErrPacketIdentifierInUse.Code,
 				Properties: Properties{
 					ReasonString: ErrPacketIdentifierInUse.Reason,
+					User: []UserProperty{
+						{
+							Key: "hello",
+							Val: "世界",
+						},
+					},
+				},
+			},
+		},
+		{
+			Case:    TPubrecMqtt5NotAuthorized,
+			Desc:    "QOS 2 publish not authorized mqtt5",
+			Primary: true,
+			RawBytes: []byte{
+				Pubrec << 4, 37, // Fixed header
+				0, 7, // Packet ID - LSB+MSB
+				ErrNotAuthorized.Code, // Reason Code
+				33,                    // Properties Length
+				31, 0, 14, 'n', 'o', 't', ' ', 'a', 'u',
+				't', 'h', 'o', 'r', 'i', 'z', 'e', 'd', // Reason String (31)
+				38, // User Properties (38)
+				0, 5, 'h', 'e', 'l', 'l', 'o',
+				0, 6, 228, 184, 150, 231, 149, 140,
+			},
+			Packet: &Packet{
+				ProtocolVersion: 5,
+				FixedHeader: FixedHeader{
+					Type:      Pubrec,
+					Remaining: 31,
+				},
+				PacketID:   7,
+				ReasonCode: ErrNotAuthorized.Code,
+				Properties: Properties{
+					ReasonString: ErrNotAuthorized.Reason,
 					User: []UserProperty{
 						{
 							Key: "hello",

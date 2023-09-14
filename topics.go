@@ -186,6 +186,65 @@ func (s *SharedSubscriptions) GetAll() map[string]map[string]packets.Subscriptio
 	return m
 }
 
+// InlineSubFn is the signature for a callback function which will be called
+// when an inline client receives a message on a topic it is subscribed to.
+// The sub argument contains information about the subscription that was matched for any filters.
+type InlineSubFn func(cl *Client, sub packets.Subscription, pk packets.Packet)
+
+// InlineSubscriptions represents a map of internal subscriptions keyed on client.
+type InlineSubscriptions struct {
+	internal map[int]InlineSubscription
+	sync.RWMutex
+}
+
+// NewInlineSubscriptions returns a new instance of InlineSubscriptions.
+func NewInlineSubscriptions() *InlineSubscriptions {
+	return &InlineSubscriptions{
+		internal: map[int]InlineSubscription{},
+	}
+}
+
+// Add adds a new internal subscription for a client id.
+func (s *InlineSubscriptions) Add(val InlineSubscription) {
+	s.Lock()
+	defer s.Unlock()
+	s.internal[val.Identifier] = val
+}
+
+// GetAll returns all internal subscriptions.
+func (s *InlineSubscriptions) GetAll() map[int]InlineSubscription {
+	s.RLock()
+	defer s.RUnlock()
+	m := map[int]InlineSubscription{}
+	for k, v := range s.internal {
+		m[k] = v
+	}
+	return m
+}
+
+// Get returns an internal subscription for a client id.
+func (s *InlineSubscriptions) Get(id int) (val InlineSubscription, ok bool) {
+	s.RLock()
+	defer s.RUnlock()
+	val, ok = s.internal[id]
+	return val, ok
+}
+
+// Len returns the number of internal subscriptions.
+func (s *InlineSubscriptions) Len() int {
+	s.RLock()
+	defer s.RUnlock()
+	val := len(s.internal)
+	return val
+}
+
+// Delete removes an internal subscription by the client id.
+func (s *InlineSubscriptions) Delete(id int) {
+	s.Lock()
+	defer s.Unlock()
+	delete(s.internal, id)
+}
+
 // Subscriptions is a map of subscriptions keyed on client.
 type Subscriptions struct {
 	internal map[string]packets.Subscription
@@ -244,11 +303,17 @@ func (s *Subscriptions) Delete(id string) {
 // ClientSubscriptions is a map of aggregated subscriptions for a client.
 type ClientSubscriptions map[string]packets.Subscription
 
+type InlineSubscription struct {
+	packets.Subscription
+	Handler InlineSubFn
+}
+
 // Subscribers contains the shared and non-shared subscribers matching a topic.
 type Subscribers struct {
-	Shared         map[string]map[string]packets.Subscription
-	SharedSelected map[string]packets.Subscription
-	Subscriptions  map[string]packets.Subscription
+	Shared              map[string]map[string]packets.Subscription
+	SharedSelected      map[string]packets.Subscription
+	Subscriptions       map[string]packets.Subscription
+	InlineSubscriptions map[int]InlineSubscription
 }
 
 // SelectShared returns one subscriber for each shared subscription group.
@@ -296,6 +361,39 @@ func NewTopicsIndex() *TopicsIndex {
 			subscriptions: NewSubscriptions(),
 		},
 	}
+}
+
+// InlineSubscribe adds a new internal subscription for a topic filter, returning
+// true if the subscription was new.
+func (x *TopicsIndex) InlineSubscribe(subscription InlineSubscription) bool {
+	x.root.Lock()
+	defer x.root.Unlock()
+
+	var existed bool
+	n := x.set(subscription.Filter, 0)
+	_, existed = n.inlineSubscriptions.Get(subscription.Identifier)
+	n.inlineSubscriptions.Add(subscription)
+
+	return !existed
+}
+
+// InlineUnsubscribe removes an internal subscription for a topic filter associated with a specific client,
+// returning true if the subscription existed.
+func (x *TopicsIndex) InlineUnsubscribe(id int, filter string) bool {
+	x.root.Lock()
+	defer x.root.Unlock()
+
+	particle := x.seek(filter, 0)
+	if particle == nil {
+		return false
+	}
+
+	particle.inlineSubscriptions.Delete(id)
+
+	if particle.inlineSubscriptions.Len() == 0 {
+		x.trim(particle)
+	}
+	return true
 }
 
 // Subscribe adds a new subscription for a client to a topic filter, returning
@@ -484,9 +582,10 @@ func (x *TopicsIndex) scanMessages(filter string, d int, n *particle, pks []pack
 // their subscription ids and highest qos.
 func (x *TopicsIndex) Subscribers(topic string) *Subscribers {
 	return x.scanSubscribers(topic, 0, nil, &Subscribers{
-		Shared:         map[string]map[string]packets.Subscription{},
-		SharedSelected: map[string]packets.Subscription{},
-		Subscriptions:  map[string]packets.Subscription{},
+		Shared:              map[string]map[string]packets.Subscription{},
+		SharedSelected:      map[string]packets.Subscription{},
+		Subscriptions:       map[string]packets.Subscription{},
+		InlineSubscriptions: map[int]InlineSubscription{},
 	})
 }
 
@@ -508,10 +607,12 @@ func (x *TopicsIndex) scanSubscribers(topic string, d int, n *particle, subs *Su
 			} else {
 				x.gatherSubscriptions(topic, particle, subs)
 				x.gatherSharedSubscriptions(particle, subs)
+				x.gatherInlineSubscriptions(particle, subs)
 
 				if wild := particle.particles.get("#"); wild != nil && partKey != "+" {
 					x.gatherSubscriptions(topic, wild, subs) // also match any subs where filter/# is filter as per 4.7.1.2
 					x.gatherSharedSubscriptions(wild, subs)
+					x.gatherInlineSubscriptions(particle, subs)
 				}
 			}
 		}
@@ -520,6 +621,7 @@ func (x *TopicsIndex) scanSubscribers(topic string, d int, n *particle, subs *Su
 	if particle := n.particles.get("#"); particle != nil {
 		x.gatherSubscriptions(topic, particle, subs)
 		x.gatherSharedSubscriptions(particle, subs)
+		x.gatherInlineSubscriptions(particle, subs)
 	}
 
 	return subs
@@ -562,6 +664,17 @@ func (x *TopicsIndex) gatherSharedSubscriptions(particle *particle, subs *Subscr
 	}
 }
 
+// gatherSharedSubscriptions gathers all inline subscriptions for a particle.
+func (x *TopicsIndex) gatherInlineSubscriptions(particle *particle, subs *Subscribers) {
+	if subs.InlineSubscriptions == nil {
+		subs.InlineSubscriptions = map[int]InlineSubscription{}
+	}
+
+	for id, inline := range particle.inlineSubscriptions.GetAll() {
+		subs.InlineSubscriptions[id] = inline
+	}
+}
+
 // isolateParticle extracts a particle between d / and d+1 / without allocations.
 func isolateParticle(filter string, d int) (particle string, hasNext bool) {
 	var next, end int
@@ -592,7 +705,7 @@ func IsSharedFilter(filter string) bool {
 
 // IsValidFilter returns true if the filter is valid.
 func IsValidFilter(filter string, forPublish bool) bool {
-	if !forPublish && len(filter) == 0 { // publishing can accept zero-length topic filter if topic alias exists, so we don't enforce for publihs.
+	if !forPublish && len(filter) == 0 { // publishing can accept zero-length topic filter if topic alias exists, so we don't enforce for publish.
 		return false // [MQTT-4.7.3-1]
 	}
 
@@ -633,23 +746,25 @@ func IsValidFilter(filter string, forPublish bool) bool {
 
 // particle is a child node on the tree.
 type particle struct {
-	key           string               // the key of the particle
-	parent        *particle            // a pointer to the parent of the particle
-	particles     particles            // a map of child particles
-	subscriptions *Subscriptions       // a map of subscriptions made by clients to this ending address
-	shared        *SharedSubscriptions // a map of shared subscriptions keyed on group name
-	retainPath    string               // path of a retained message
-	sync.Mutex                         // mutex for when making changes to the particle
+	key                 string               // the key of the particle
+	parent              *particle            // a pointer to the parent of the particle
+	particles           particles            // a map of child particles
+	subscriptions       *Subscriptions       // a map of subscriptions made by clients to this ending address
+	shared              *SharedSubscriptions // a map of shared subscriptions keyed on group name
+	inlineSubscriptions *InlineSubscriptions // a map of inline subscriptions for this particle
+	retainPath          string               // path of a retained message
+	sync.Mutex                               // mutex for when making changes to the particle
 }
 
 // newParticle returns a pointer to a new instance of particle.
 func newParticle(key string, parent *particle) *particle {
 	return &particle{
-		key:           key,
-		parent:        parent,
-		particles:     newParticles(),
-		subscriptions: NewSubscriptions(),
-		shared:        NewSharedSubscriptions(),
+		key:                 key,
+		parent:              parent,
+		particles:           newParticles(),
+		subscriptions:       NewSubscriptions(),
+		shared:              NewSharedSubscriptions(),
+		inlineSubscriptions: NewInlineSubscriptions(),
 	}
 }
 

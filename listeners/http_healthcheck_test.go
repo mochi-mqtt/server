@@ -39,13 +39,13 @@ func TestHTTPHealthCheckTLSProtocol(t *testing.T) {
 		TLSConfig: tlsConfigBasic,
 	})
 
-	l.Init(nil)
+	_ = l.Init(logger)
 	require.Equal(t, "https", l.Protocol())
 }
 
 func TestHTTPHealthCheckInit(t *testing.T) {
 	l := NewHTTPHealthCheck("healthcheck", testAddr, nil)
-	err := l.Init(nil)
+	err := l.Init(logger)
 	require.NoError(t, err)
 
 	require.NotNil(t, l.listen)
@@ -55,7 +55,7 @@ func TestHTTPHealthCheckInit(t *testing.T) {
 func TestHTTPHealthCheckServeAndClose(t *testing.T) {
 	// setup http stats listener
 	l := NewHTTPHealthCheck("healthcheck", testAddr, nil)
-	err := l.Init(nil)
+	err := l.Init(logger)
 	require.NoError(t, err)
 
 	o := make(chan bool)
@@ -91,7 +91,7 @@ func TestHTTPHealthCheckServeAndClose(t *testing.T) {
 func TestHTTPHealthCheckServeAndCloseMethodNotAllowed(t *testing.T) {
 	// setup http stats listener
 	l := NewHTTPHealthCheck("healthcheck", testAddr, nil)
-	err := l.Init(nil)
+	err := l.Init(logger)
 	require.NoError(t, err)
 
 	o := make(chan bool)
@@ -129,7 +129,7 @@ func TestHTTPHealthCheckServeTLSAndClose(t *testing.T) {
 		TLSConfig: tlsConfigBasic,
 	})
 
-	err := l.Init(nil)
+	err := l.Init(logger)
 	require.NoError(t, err)
 
 	o := make(chan bool)

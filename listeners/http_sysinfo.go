@@ -8,26 +8,24 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/mochi-mqtt/server/v2/system"
-
-	"github.com/rs/zerolog"
 )
 
 // HTTPStats is a listener for presenting the server $SYS stats on a JSON http endpoint.
 type HTTPStats struct {
 	sync.RWMutex
-	id      string          // the internal id of the listener
-	address string          // the network address to bind to
-	config  *Config         // configuration values for the listener
-	listen  *http.Server    // the http server
-	log     *zerolog.Logger // server logger
-	sysInfo *system.Info    // pointers to the server data
-	end     uint32          // ensure the close methods are only called once
+	id      string       // the internal id of the listener
+	address string       // the network address to bind to
+	config  *Config      // configuration values for the listener
+	listen  *http.Server // the http server
+	sysInfo *system.Info // pointers to the server data
+	end     uint32       // ensure the close methods are only called once
 }
 
 // NewHTTPStats initialises and returns a new HTTP listener, listening on an address.
@@ -63,9 +61,7 @@ func (l *HTTPStats) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *HTTPStats) Init(log *zerolog.Logger) error {
-	l.log = log
-
+func (l *HTTPStats) Init(_ *slog.Logger) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", l.jsonHandler)
 	l.listen = &http.Server{
@@ -85,9 +81,9 @@ func (l *HTTPStats) Init(log *zerolog.Logger) error {
 // Serve starts listening for new connections and serving responses.
 func (l *HTTPStats) Serve(establish EstablishFn) {
 	if l.listen.TLSConfig != nil {
-		l.listen.ListenAndServeTLS("", "")
+		_ = l.listen.ListenAndServeTLS("", "")
 	} else {
-		l.listen.ListenAndServe()
+		_ = l.listen.ListenAndServe()
 	}
 }
 
@@ -99,7 +95,7 @@ func (l *HTTPStats) Close(closeClients CloseFn) {
 	if atomic.CompareAndSwapUint32(&l.end, 0, 1) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		l.listen.Shutdown(ctx)
+		_ = l.listen.Shutdown(ctx)
 	}
 
 	closeClients(l.id)
@@ -111,8 +107,8 @@ func (l *HTTPStats) jsonHandler(w http.ResponseWriter, req *http.Request) {
 
 	out, err := json.MarshalIndent(info, "", "\t")
 	if err != nil {
-		io.WriteString(w, err.Error())
+		_, _ = io.WriteString(w, err.Error())
 	}
 
-	w.Write(out)
+	_, _ = w.Write(out)
 }

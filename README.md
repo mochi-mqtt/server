@@ -76,6 +76,7 @@ A simple Dockerfile is provided for running the [cmd/main.go](cmd/main.go) Webso
 docker build -t mochi:latest .
 docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 mochi:latest
 ```
+_More substantial docker support is being discussed [here](https://github.com/orgs/mochi-mqtt/discussions/281#discussion-5544545) and [here](https://github.com/orgs/mochi-mqtt/discussions/209). Please join the discussion if you use Mochi-MQTT in this environment._
 
 ## Developing with Mochi MQTT
 ### Importing as a package
@@ -161,6 +162,7 @@ server := mqtt.New(&mqtt.Options{
   ClientNetWriteBufferSize: 4096,
   ClientNetReadBufferSize: 4096,
   SysTopicResendInterval: 10,
+  InlineClient: false,
 })
 ```
 
@@ -172,14 +174,14 @@ A universal event hooks system allows developers to hook into various parts of t
 
 Hooks are stackable - you can add multiple hooks to a server, and they will be run in the order they were added. Some hooks modify values, and these modified values will be passed to the subsequent hooks before being returned to the runtime code.
 
-| Type | Import | Info |
-| -- | -- |  -- |
-| Access Control | [mochi-mqtt/server/hooks/auth . AllowHook](hooks/auth/allow_all.go) | Allow access to all connecting clients and read/write to  all topics. | 
-| Access Control | [mochi-mqtt/server/hooks/auth . Auth](hooks/auth/auth.go) | Rule-based access control ledger.  | 
-| Persistence | [mochi-mqtt/server/hooks/storage/bolt](hooks/storage/bolt/bolt.go)  | Persistent storage using [BoltDB](https://dbdb.io/db/boltdb) (deprecated). | 
-| Persistence | [mochi-mqtt/server/hooks/storage/badger](hooks/storage/badger/badger.go) | Persistent storage using [BadgerDB](https://github.com/dgraph-io/badger). | 
-| Persistence | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)  | Persistent storage using [Redis](https://redis.io). | 
-| Debugging | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go) | Additional debugging output to visualise packet flow. | 
+| Type           | Import                                                                   | Info                                                                       |
+|----------------|--------------------------------------------------------------------------|----------------------------------------------------------------------------|
+| Access Control | [mochi-mqtt/server/hooks/auth . AllowHook](hooks/auth/allow_all.go)      | Allow access to all connecting clients and read/write to  all topics.      | 
+| Access Control | [mochi-mqtt/server/hooks/auth . Auth](hooks/auth/auth.go)                | Rule-based access control ledger.                                          | 
+| Persistence    | [mochi-mqtt/server/hooks/storage/bolt](hooks/storage/bolt/bolt.go)       | Persistent storage using [BoltDB](https://dbdb.io/db/boltdb) (deprecated). | 
+| Persistence    | [mochi-mqtt/server/hooks/storage/badger](hooks/storage/badger/badger.go) | Persistent storage using [BadgerDB](https://github.com/dgraph-io/badger).  | 
+| Persistence    | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)    | Persistent storage using [Redis](https://redis.io).                        | 
+| Debugging      | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go)                    | Additional debugging output to visualise packet flow.                      | 
 
 Many of the internal server functions are now exposed to developers, so you can make your own Hooks by using the above as examples. If you do, please [Open an issue](https://github.com/mochi-mqtt/server/issues) and let everyone know!
 
@@ -249,7 +251,7 @@ err := server.AddHook(new(auth.Hook), &auth.Options{
 
 The ledger can also be stored as JSON or YAML and loaded using the Data field:
 ```go
-err = server.AddHook(new(auth.Hook), &auth.Options{
+err := server.AddHook(new(auth.Hook), &auth.Options{
     Data: data, // build ledger from byte slice: yaml or json
 })
 ```
@@ -300,7 +302,7 @@ The function signatures for all the hooks and `mqtt.Hook` interface can be found
 | OnACLCheck             | Called when a user attempts to publish or subscribe to a topic filter. As above.                                                                                                                                                                                                                           |
 | OnSysInfoTick          | Called when the $SYS topic values are published out.                                                                                                                                                                                                                                                       |
 | OnConnect              | Called when a new client connects, may return an error or packet code to halt the client connection process.                                                                                                                                                                                               | 
-| OnSessionEstablish     | Called immediately after a new client connects and authenticates and immediately before the session is established and CONNACK is sent.
+| OnSessionEstablish     | Called immediately after a new client connects and authenticates and immediately before the session is established and CONNACK is sent.                                                                                                                                                                    |
 | OnSessionEstablished   | Called when a new client successfully establishes a session (after OnConnect)                                                                                                                                                                                                                              | 
 | OnDisconnect           | Called when a client is disconnected for any reason.                                                                                                                                                                                                                                                       | 
 | OnAuthPacket           | Called when an auth packet is received. It is intended to allow developers to create their own mqtt v5 Auth Packet handling mechanisms. Allows packet modification.                                                                                                                                        | 
@@ -334,8 +336,18 @@ The function signatures for all the hooks and `mqtt.Hook` interface can be found
 
 If you are building a persistent storage hook, see the existing persistent hooks for inspiration and patterns. If you are building an auth hook, you will need `OnACLCheck` and `OnConnectAuthenticate`.
 
+### Inline Client (v2.4.0+)
+It's now possible to subscribe and publish to topics directly from the embedding code, by using the `inline client` feature. The Inline Client is an embedded client which operates as part of the server, and can be enabled in the server options:
+```go
+server := mqtt.New(&mqtt.Options{
+  InlineClient: true,
+})
+```
+Once enabled, you will be able to use the `server.Publish`, `server.Subscribe`, and `server.Unsubscribe` methods to issue and received messages from broker-adjacent code.
 
-### Direct Publish
+> See [direct examples](examples/direct/main.go) for real-life usage examples.
+
+#### Inline Publish
 To publish basic message to a topic from within the embedding application, you can use the `server.Publish(topic string, payload []byte, retain bool, qos byte) error` method.
 
 ```go
@@ -343,10 +355,29 @@ err := server.Publish("direct/publish", []byte("packet scheduled message"), fals
 ```
 > The Qos byte in this case is only used to set the upper qos limit available for subscribers, as per MQTT v5 spec.
 
+#### Inline Subscribe
+To subscribe to a topic filter from within the embedding application, you can use the `server.Subscribe(filter string, subscriptionId int, handler InlineSubFn) error` method with a callback function. Note that only QoS 0 is supported for inline subscriptions. If you wish to have multiple callbacks for the same filter, you can use the MQTTv5 `subscriptionId` property to differentiate.
+
+```go
+callbackFn := func(cl *mqtt.Client, sub packets.Subscription, pk packets.Packet) {
+    server.Log.Info("inline client received message from subscription", "client", cl.ID, "subscriptionId", sub.Identifier, "topic", pk.TopicName, "payload", string(pk.Payload))
+}
+server.Subscribe("direct/#", 1, callbackFn)
+```
+
+#### Inline Unsubscribe
+You may wish to unsubscribe if you have subscribed to a filter using the inline client. You can do this easily with the `server.Unsubscribe(filter string, subscriptionId int) error` method:
+
+```go
+server.Unsubscribe("direct/#", 1)
+```
+
 ### Packet Injection
-If you want more control, or want to set specific MQTT v5 properties and other values you can create your own publish packets from a client of your choice. This method allows you to inject MQTT packets (no just publish) directly into the runtime as though they had been received by a specific client. Most of the time you'll want to use the special client flag `inline=true`, as it has unique privileges: it bypasses all ACL and topic validation checks, meaning it can even publish to $SYS topics. 
+If you want more control, or want to set specific MQTT v5 properties and other values you can create your own publish packets from a client of your choice. This method allows you to inject MQTT packets (no just publish) directly into the runtime as though they had been received by a specific client. 
 
 Packet injection can be used for any MQTT packet, including ping requests, subscriptions, etc. And because the Clients structs and methods are now exported, you can even inject packets on behalf of a connected client (if you have a very custom requirements).
+
+Most of the time you'll want to use the Inline Client described above, as it has unique privileges: it bypasses all ACL and topic validation checks, meaning it can even publish to $SYS topics. In this case, you can create an inline client from scratch which will behave the same as the built-in inline client.
 
 ```go
 cl := server.NewClient(nil, "local", "inline", true)
@@ -362,7 +393,6 @@ server.InjectPacket(cl, packets.Packet{
 > MQTT packets still need to be correctly formed, so refer our [the test packets catalogue](packets/tpackets.go) and [MQTTv5 Specification](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) for inspiration.
 
 See the [hooks example](examples/hooks/main.go) to see this feature in action.
-
 
 
 ### Testing
@@ -418,7 +448,7 @@ Million Message Challenge (hit the server with 1 million messages immediately):
 Contributions and feedback are both welcomed and encouraged! [Open an issue](https://github.com/mochi-mqtt/server/issues) to report a bug, ask a question, or make a feature request. If you open a pull request, please try to follow the following guidelines:
 - Try to maintain test coverage where reasonably possible.
 - Clearly state what the PR does and why.
-- Remember to add your SPDX FileContributor tag to files where you have made a meaningful contribution.
+- Please remember to add your SPDX FileContributor tag to files where you have made a meaningful contribution.
 
 [SPDX Annotations](https://spdx.dev) are used to clearly indicate the license, copyright, and contributions of each file in a machine-readable format. If you are adding a new file to the repository, please ensure it has the following SPDX header:
 ```go

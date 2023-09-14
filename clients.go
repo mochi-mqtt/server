@@ -99,7 +99,7 @@ func (cl *Clients) GetByListener(id string) []*Client {
 type Client struct {
 	Properties   ClientProperties // client properties
 	State        ClientState      // the operational state of the client.
-	Net          ClientConnection // network connection state of the clinet
+	Net          ClientConnection // network connection state of the client
 	ID           string           // the client id.
 	ops          *ops             // ops provides a reference to server ops.
 	sync.RWMutex                  // mutex
@@ -111,7 +111,7 @@ type ClientConnection struct {
 	bconn    *bufio.ReadWriter // a buffered net.Conn for reading packets
 	Remote   string            // the remote address of the client
 	Listener string            // listener id of the client
-	Inline   bool              // client is an inline programmetic client
+	Inline   bool              // if true, the client is the built-in 'inline' embedded client
 }
 
 // ClientProperties contains the properties which define the client behaviour.
@@ -134,7 +134,7 @@ type Will struct {
 	Retain            bool                   // -
 }
 
-// State tracks the state of the client.
+// ClientState tracks the state of the client.
 type ClientState struct {
 	TopicAliases    TopicAliases         // a map of topic aliases
 	stopCause       atomic.Value         // reason for stopping
@@ -192,7 +192,8 @@ func (cl *Client) WriteLoop() {
 		select {
 		case pk := <-cl.State.outbound:
 			if err := cl.WritePacket(*pk); err != nil {
-				cl.ops.log.Debug().Err(err).Str("client", cl.ID).Interface("packet", pk).Msg("failed publishing packet")
+				// TODO : Figure out what to do with error
+				cl.ops.log.Debug("failed publishing packet", "error", err, "client", cl.ID, "packet", pk)
 			}
 			atomic.AddInt32(&cl.State.outboundQty, -1)
 		case <-cl.State.open.Done():
@@ -310,7 +311,7 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 	return nil
 }
 
-// ClearInflights deletes all inflight messages for the client, eg. for a disconnected user with a clean session.
+// ClearInflights deletes all inflight messages for the client, e.g. for a disconnected user with a clean session.
 func (cl *Client) ClearInflights(now, maximumExpiry int64) []uint16 {
 	deleted := []uint16{}
 	for _, tk := range cl.State.Inflight.GetAll(false) {

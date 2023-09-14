@@ -6,13 +6,14 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/mochi-mqtt/server/v2"
+	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"github.com/mochi-mqtt/server/v2/packets"
@@ -62,9 +63,9 @@ func main() {
 				Payload:   []byte("injected scheduled message"),
 			})
 			if err != nil {
-				server.Log.Error().Err(err).Msg("server.InjectPacket")
+				server.Log.Error("server.InjectPacket", "error", err)
 			}
-			server.Log.Info().Msgf("main.go injected packet to direct/publish")
+			server.Log.Info("main.go injected packet to direct/publish")
 		}
 	}()
 
@@ -74,16 +75,16 @@ func main() {
 		for range time.Tick(time.Second * 5) {
 			err := server.Publish("direct/publish", []byte("packet scheduled message"), false, 0)
 			if err != nil {
-				server.Log.Error().Err(err).Msg("server.Publish")
+				server.Log.Error("server.Publish", "error", err)
 			}
-			server.Log.Info().Msgf("main.go issued direct message to direct/publish")
+			server.Log.Info("main.go issued direct message to direct/publish")
 		}
 	}()
 
 	<-done
-	server.Log.Warn().Msg("caught signal, stopping...")
-	server.Close()
-	server.Log.Info().Msg("main.go finished")
+	server.Log.Warn("caught signal, stopping...")
+	_ = server.Close()
+	server.Log.Info("main.go finished")
 }
 
 type ExampleHook struct {
@@ -106,39 +107,44 @@ func (h *ExampleHook) Provides(b byte) bool {
 }
 
 func (h *ExampleHook) Init(config any) error {
-	h.Log.Info().Msg("initialised")
+	h.Log.Info("initialised")
 	return nil
 }
 
 func (h *ExampleHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
-	h.Log.Info().Str("client", cl.ID).Msgf("client connected")
+	h.Log.Info("client connected", "client", cl.ID)
 	return nil
 }
 
 func (h *ExampleHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
-	h.Log.Info().Str("client", cl.ID).Bool("expire", expire).Err(err).Msg("client disconnected")
+	if err != nil {
+		h.Log.Info("client disconnected", "client", cl.ID, "expire", expire, "error", err)
+	} else {
+		h.Log.Info("client disconnected", "client", cl.ID, "expire", expire)
+	}
+
 }
 
 func (h *ExampleHook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []byte) {
-	h.Log.Info().Str("client", cl.ID).Interface("filters", pk.Filters).Msgf("subscribed qos=%v", reasonCodes)
+	h.Log.Info(fmt.Sprintf("subscribed qos=%v", reasonCodes), "client", cl.ID, "filters", pk.Filters)
 }
 
 func (h *ExampleHook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
-	h.Log.Info().Str("client", cl.ID).Interface("filters", pk.Filters).Msg("unsubscribed")
+	h.Log.Info("unsubscribed", "client", cl.ID, "filters", pk.Filters)
 }
 
 func (h *ExampleHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
-	h.Log.Info().Str("client", cl.ID).Str("payload", string(pk.Payload)).Msg("received from client")
+	h.Log.Info("received from client", "client", cl.ID, "payload", string(pk.Payload))
 
 	pkx := pk
 	if string(pk.Payload) == "hello" {
 		pkx.Payload = []byte("hello world")
-		h.Log.Info().Str("client", cl.ID).Str("payload", string(pkx.Payload)).Msg("received modified packet from client")
+		h.Log.Info("received modified packet from client", "client", cl.ID, "payload", string(pkx.Payload))
 	}
 
 	return pkx, nil
 }
 
 func (h *ExampleHook) OnPublished(cl *mqtt.Client, pk packets.Packet) {
-	h.Log.Info().Str("client", cl.ID).Str("payload", string(pk.Payload)).Msg("published to client")
+	h.Log.Info("published to client", "client", cl.ID, "payload", string(pk.Payload))
 }

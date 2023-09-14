@@ -14,7 +14,7 @@ import (
 	"sync"
 )
 
-// All of the valid packet types and their packet identifier.
+// All valid packet types and their packet identifiers.
 const (
 	Reserved       byte = iota // 0 - we use this in packet tests to indicate special-test or all packets.
 	Connect                    // 1
@@ -37,9 +37,9 @@ const (
 
 var (
 	// ErrNoValidPacketAvailable indicates the packet type byte provided does not exist in the mqtt specification.
-	ErrNoValidPacketAvailable error = errors.New("no valid packet available")
+	ErrNoValidPacketAvailable = errors.New("no valid packet available")
 
-	// PacketNames is a map of packet bytes to human readable names, for easier debugging.
+	// PacketNames is a map of packet bytes to human-readable names, for easier debugging.
 	PacketNames = map[byte]string{
 		0:  "Reserved",
 		1:  "Connect",
@@ -272,28 +272,28 @@ func (s Subscription) Merge(n Subscription) Subscription {
 }
 
 // encode encodes a subscription and properties into bytes.
-func (p Subscription) encode() byte {
+func (s Subscription) encode() byte {
 	var flag byte
-	flag |= p.Qos
+	flag |= s.Qos
 
-	if p.NoLocal {
+	if s.NoLocal {
 		flag |= 1 << 2
 	}
 
-	if p.RetainAsPublished {
+	if s.RetainAsPublished {
 		flag |= 1 << 3
 	}
 
-	flag |= p.RetainHandling << 4
+	flag |= s.RetainHandling << 4
 	return flag
 }
 
 // decode decodes subscription bytes into a subscription struct.
-func (p *Subscription) decode(b byte) {
-	p.Qos = b & 3                      // byte
-	p.NoLocal = 1&(b>>2) > 0           // bool
-	p.RetainAsPublished = 1&(b>>3) > 0 // bool
-	p.RetainHandling = 3 & (b >> 4)    // byte
+func (s *Subscription) decode(b byte) {
+	s.Qos = b & 3                      // byte
+	s.NoLocal = 1&(b>>2) > 0           // bool
+	s.RetainAsPublished = 1&(b>>3) > 0 // bool
+	s.RetainHandling = 3 & (b >> 4)    // byte
 }
 
 // ConnectEncode encodes a connect packet.
@@ -343,7 +343,7 @@ func (pk *Packet) ConnectEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	nb.WriteTo(buf)
+	_, _ = nb.WriteTo(buf)
 
 	return nil
 }
@@ -505,7 +505,7 @@ func (pk *Packet) ConnackEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	nb.WriteTo(buf)
+	_, _ = nb.WriteTo(buf)
 	return nil
 }
 
@@ -548,7 +548,7 @@ func (pk *Packet) DisconnectEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	nb.WriteTo(buf)
+	_, _ = nb.WriteTo(buf)
 
 	return nil
 }
@@ -619,7 +619,7 @@ func (pk *Packet) PublishEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	nb.WriteTo(buf)
+	_, _ = nb.WriteTo(buf)
 
 	return nil
 }
@@ -707,7 +707,7 @@ func (pk *Packet) encodePubAckRelRecComp(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	nb.WriteTo(buf)
+	_, _ = nb.WriteTo(buf)
 	return nil
 }
 
@@ -844,7 +844,7 @@ func (pk *Packet) SubackEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	nb.WriteTo(buf)
+	_, _ = nb.WriteTo(buf)
 
 	return nil
 }
@@ -901,7 +901,7 @@ func (pk *Packet) SubscribeEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	nb.WriteTo(buf)
+	_, _ = nb.WriteTo(buf)
 
 	return nil
 }
@@ -996,7 +996,7 @@ func (pk *Packet) UnsubackEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	nb.WriteTo(buf)
+	_, _ = nb.WriteTo(buf)
 
 	return nil
 }
@@ -1049,7 +1049,7 @@ func (pk *Packet) UnsubscribeEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	nb.WriteTo(buf)
+	_, _ = nb.WriteTo(buf)
 
 	return nil
 }
@@ -1109,7 +1109,7 @@ func (pk *Packet) AuthEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	nb.WriteTo(buf)
+	_, _ = nb.WriteTo(buf)
 	return nil
 }
 
