@@ -137,9 +137,8 @@ func (h *Hook) Init(config any) error {
 // Stop closes the redis connection.
 func (h *Hook) Stop() error {
 	h.Log.Info("disconnecting from redis service")
-	err := h.db.Close()
-	h.db = nil
-	return err
+
+	return h.db.Close()
 }
 
 // OnSessionEstablished adds a client to the store when their session is established.

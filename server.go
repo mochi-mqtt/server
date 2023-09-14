@@ -1303,7 +1303,7 @@ func (s *Server) processDisconnect(cl *Client, pk packets.Packet) error {
 }
 
 // DisconnectClient sends a Disconnect packet to a client and then closes the client connection.
-func (s *Server) DisconnectClient(cl *Client, code packets.Code, sync bool) error {
+func (s *Server) DisconnectClient(cl *Client, code packets.Code, syncMode bool) error {
 	out := packets.Packet{
 		FixedHeader: packets.FixedHeader{
 			Type: packets.Disconnect,
@@ -1320,10 +1320,10 @@ func (s *Server) DisconnectClient(cl *Client, code packets.Code, sync bool) erro
 	// interested if the write packet fails due to a closed connection (as we are closing it).
 	err := cl.WritePacket(out)
 	if !s.Options.Capabilities.Compatibilities.PassiveClientDisconnect {
-		if sync {
+		if syncMode {
 			cl.StopAndWaitShutdown(code)
 		} else {
-			cl.Stop(err)
+			cl.Stop(code)
 		}
 
 		if code.Code >= packets.ErrUnspecifiedError.Code {

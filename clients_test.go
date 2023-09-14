@@ -133,6 +133,7 @@ func TestNewClient(t *testing.T) {
 	require.NotNil(t, cl.State.Inflight.internal)
 	require.NotNil(t, cl.State.Subscriptions)
 	require.NotNil(t, cl.State.TopicAliases)
+	require.NotNil(t, cl.State.waitShutdown)
 	require.Equal(t, defaultKeepalive, cl.State.Keepalive)
 	require.Equal(t, defaultClientProtocolVersion, cl.Properties.ProtocolVersion)
 	require.NotNil(t, cl.Net.Conn)
@@ -477,6 +478,27 @@ func TestClientReadDone(t *testing.T) {
 	}()
 
 	require.NoError(t, <-o)
+}
+
+func TestClientShutdown(t *testing.T) {
+	cl, _, _ := newTestClient()
+	go func() {
+		cl.Shutdown()
+	}()
+	_, ok := <-cl.State.waitShutdown
+	require.False(t, ok)
+}
+
+func TestClientStopAndWaitShutdown(t *testing.T) {
+	cl, _, _ := newTestClient()
+	go func() {
+		cl.Shutdown()
+	}()
+	cl.StopAndWaitShutdown(nil)
+	require.Equal(t, nil, cl.State.stopCause.Load())
+	require.Equal(t, time.Now().Unix(), cl.State.disconnected)
+	require.True(t, cl.Closed())
+	require.Equal(t, nil, cl.StopCause())
 }
 
 func TestClientStop(t *testing.T) {

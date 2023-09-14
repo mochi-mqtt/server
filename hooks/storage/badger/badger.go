@@ -120,9 +120,7 @@ func (h *Hook) Init(config any) error {
 
 // Stop closes the badger instance.
 func (h *Hook) Stop() error {
-	err := h.db.Close()
-	h.db = nil
-	return err
+	return h.db.Close()
 }
 
 // OnSessionEstablished adds a client to the store when their session is established.

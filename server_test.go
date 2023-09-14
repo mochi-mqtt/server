@@ -2898,7 +2898,7 @@ func TestServerRecievePacketDisconnectClient(t *testing.T) {
 	cl, r, w := newTestClient()
 
 	go func() {
-		err := s.DisconnectClient(cl, packets.CodeDisconnect)
+		err := s.DisconnectClient(cl, packets.CodeDisconnect, false)
 		require.NoError(t, err)
 		_ = w.Close()
 	}()
@@ -3218,11 +3218,12 @@ func TestServerClose(t *testing.T) {
 	_ = s.Serve()
 
 	// receive the disconnect
-	recv := make(chan []byte)
+	recv := make(chan []byte, 1)
 	go func() {
 		buf, err := io.ReadAll(r)
 		require.NoError(t, err)
 		recv <- buf
+		cl.Shutdown()
 	}()
 
 	time.Sleep(time.Millisecond)

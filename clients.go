@@ -150,7 +150,7 @@ type ClientState struct {
 	outboundQty     int32                // number of messages currently in the outbound queue
 	Keepalive       uint16               // the number of seconds the connection can wait
 	ServerKeepalive bool                 // keepalive was set by the server
-	waitShutdown    chan any
+	waitShutdown    chan any             // channel for synchronizing shutdown
 }
 
 // newClient returns a new instance of Client. This is almost exclusively used by Server
@@ -358,12 +358,14 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 	}
 }
 
+// Shutdown synchronously notifies other goroutines that the connection has been fully closed.
 func (cl *Client) Shutdown() {
 	if cl.StopCause() != packets.ErrSessionTakenOver {
 		close(cl.State.waitShutdown)
 	}
 }
 
+// StopAndWaitShutdown instructs the client to stop and waits for the shutdown to complete.
 func (cl *Client) StopAndWaitShutdown(err error) {
 	cl.Stop(err)
 	<-cl.State.waitShutdown
