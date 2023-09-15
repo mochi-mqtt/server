@@ -133,7 +133,7 @@ func TestNewClient(t *testing.T) {
 	require.NotNil(t, cl.State.Inflight.internal)
 	require.NotNil(t, cl.State.Subscriptions)
 	require.NotNil(t, cl.State.TopicAliases)
-	require.NotNil(t, cl.State.waitShutdown)
+	require.Nil(t, cl.State.shutdownSignal)
 	require.Equal(t, defaultKeepalive, cl.State.Keepalive)
 	require.Equal(t, defaultClientProtocolVersion, cl.Properties.ProtocolVersion)
 	require.NotNil(t, cl.Net.Conn)
@@ -480,25 +480,36 @@ func TestClientReadDone(t *testing.T) {
 	require.NoError(t, <-o)
 }
 
-func TestClientShutdown(t *testing.T) {
+func TestClientOpenShutdownSignal(t *testing.T) {
 	cl, _, _ := newTestClient()
-	go func() {
-		cl.Shutdown()
-	}()
-	_, ok := <-cl.State.waitShutdown
-	require.False(t, ok)
+	cl.OpenShutdownSignal()
+	require.NotNil(t, cl.State.shutdownSignal)
 }
 
-func TestClientStopAndWaitShutdown(t *testing.T) {
+func TestClientWaitForShutdownSignal(t *testing.T) {
 	cl, _, _ := newTestClient()
+	cl.WaitForShutdownSignal()
+	require.Nil(t, nil, cl.State.shutdownSignal)
+
+	cl.OpenShutdownSignal()
 	go func() {
-		cl.Shutdown()
+		cl.SendShutdownSignal()
 	}()
-	cl.StopAndWaitShutdown(nil)
-	require.Equal(t, nil, cl.State.stopCause.Load())
-	require.Equal(t, time.Now().Unix(), cl.State.disconnected)
-	require.True(t, cl.Closed())
-	require.Equal(t, nil, cl.StopCause())
+	cl.WaitForShutdownSignal()
+	require.Nil(t, nil, cl.State.shutdownSignal)
+}
+
+func TestClientSendShutdownSignal(t *testing.T) {
+	cl, _, _ := newTestClient()
+	cl.SendShutdownSignal()
+	require.Nil(t, nil, cl.State.shutdownSignal)
+
+	cl.OpenShutdownSignal()
+	go func() {
+		cl.SendShutdownSignal()
+	}()
+	cl.WaitForShutdownSignal()
+	require.Nil(t, nil, cl.State.shutdownSignal)
 }
 
 func TestClientStop(t *testing.T) {

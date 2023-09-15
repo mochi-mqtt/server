@@ -150,7 +150,7 @@ type ClientState struct {
 	outboundQty     int32                // number of messages currently in the outbound queue
 	Keepalive       uint16               // the number of seconds the connection can wait
 	ServerKeepalive bool                 // keepalive was set by the server
-	waitShutdown    chan any             // channel for synchronizing shutdown
+	shutdownSignal  chan any             // channel for synchronizing shutdown
 }
 
 // newClient returns a new instance of Client. This is almost exclusively used by Server
@@ -166,7 +166,6 @@ func newClient(c net.Conn, o *ops) *Client {
 			cancelOpen:    cancel,
 			Keepalive:     defaultKeepalive,
 			outbound:      make(chan *packets.Packet, o.options.Capabilities.MaximumClientWritesPending),
-			waitShutdown:  make(chan any),
 		},
 		Properties: ClientProperties{
 			ProtocolVersion: defaultClientProtocolVersion, // default protocol version
@@ -358,17 +357,27 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 	}
 }
 
-// Shutdown synchronously notifies other goroutines that the connection has been fully closed.
-func (cl *Client) Shutdown() {
-	if cl.StopCause() != packets.ErrSessionTakenOver {
-		close(cl.State.waitShutdown)
+// OpenShutdownSignal initializes a shutdown signal channel for the client.
+// This channel is used to wait for a shutdown notification.
+func (cl *Client) OpenShutdownSignal() {
+	cl.State.shutdownSignal = make(chan any)
+}
+
+// WaitForShutdownSignal waits for the shutdown signal to be received.
+func (cl *Client) WaitForShutdownSignal() {
+	if cl.State.shutdownSignal != nil {
+		<-cl.State.shutdownSignal
 	}
 }
 
-// StopAndWaitShutdown instructs the client to stop and waits for the shutdown to complete.
-func (cl *Client) StopAndWaitShutdown(err error) {
-	cl.Stop(err)
-	<-cl.State.waitShutdown
+// SendShutdownSignal synchronously notifies other goroutines that the connection has been shutdown.
+func (cl *Client) SendShutdownSignal() {
+	if cl.StopCause() != packets.ErrSessionTakenOver &&
+		cl.State.shutdownSignal != nil {
+
+		close(cl.State.shutdownSignal)
+		cl.State.shutdownSignal = nil
+	}
 }
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.

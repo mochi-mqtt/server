@@ -3223,7 +3223,6 @@ func TestServerClose(t *testing.T) {
 		buf, err := io.ReadAll(r)
 		require.NoError(t, err)
 		recv <- buf
-		cl.Shutdown()
 	}()
 
 	time.Sleep(time.Millisecond)

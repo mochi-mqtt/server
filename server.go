@@ -384,6 +384,8 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	}
 
 	s.hooks.OnSessionEstablished(cl, pk)
+	cl.OpenShutdownSignal()
+	defer cl.SendShutdownSignal()
 
 	err = cl.Read(s.receivePacket)
 	if err != nil {
@@ -402,7 +404,6 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 		s.UnsubscribeClient(cl)
 		s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
 	}
-	cl.Shutdown()
 
 	return err
 }
@@ -1320,12 +1321,11 @@ func (s *Server) DisconnectClient(cl *Client, code packets.Code, syncMode bool) 
 	// interested if the write packet fails due to a closed connection (as we are closing it).
 	err := cl.WritePacket(out)
 	if !s.Options.Capabilities.Compatibilities.PassiveClientDisconnect {
-		if syncMode {
-			cl.StopAndWaitShutdown(code)
-		} else {
-			cl.Stop(code)
-		}
 
+		cl.Stop(code)
+		if syncMode {
+			cl.WaitForShutdownSignal()
+		}
 		if code.Code >= packets.ErrUnspecifiedError.Code {
 			return code
 		}
