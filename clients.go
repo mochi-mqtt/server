@@ -372,7 +372,7 @@ func (cl *Client) waitForShutdownSignal() {
 	}
 }
 
-// sendShutdownSignal synchronously notifies other goroutines that the connection has been shutdown.
+// sendShutdownSignal notifies other goroutines that the connection has been shutdown.
 func (cl *Client) sendShutdownSignal() {
 	if cl.StopCause() != packets.ErrSessionTakenOver &&
 		cl.State.shutdownSignal != nil {
