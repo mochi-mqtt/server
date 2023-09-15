@@ -357,26 +357,26 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 	}
 }
 
-// OpenShutdownSignal initializes a shutdown signal channel for the client.
+// openShutdownSignal initializes a shutdown signal channel for the client.
 // This channel is used to wait for a shutdown notification.
-func (cl *Client) OpenShutdownSignal() {
+func (cl *Client) openShutdownSignal() {
+	cl.Lock()
+	defer cl.Unlock()
 	cl.State.shutdownSignal = make(chan any)
 }
 
-// WaitForShutdownSignal waits for the shutdown signal to be received.
-func (cl *Client) WaitForShutdownSignal() {
+// waitForShutdownSignal waits for the shutdown signal to be received.
+func (cl *Client) waitForShutdownSignal() {
 	if cl.State.shutdownSignal != nil {
 		<-cl.State.shutdownSignal
 	}
 }
 
-// SendShutdownSignal synchronously notifies other goroutines that the connection has been shutdown.
-func (cl *Client) SendShutdownSignal() {
+// sendShutdownSignal synchronously notifies other goroutines that the connection has been shutdown.
+func (cl *Client) sendShutdownSignal() {
 	if cl.StopCause() != packets.ErrSessionTakenOver &&
 		cl.State.shutdownSignal != nil {
-
 		close(cl.State.shutdownSignal)
-		cl.State.shutdownSignal = nil
 	}
 }
 

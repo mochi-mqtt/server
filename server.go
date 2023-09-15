@@ -384,8 +384,8 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	}
 
 	s.hooks.OnSessionEstablished(cl, pk)
-	cl.OpenShutdownSignal()
-	defer cl.SendShutdownSignal()
+	cl.openShutdownSignal()
+	defer cl.sendShutdownSignal()
 
 	err = cl.Read(s.receivePacket)
 	if err != nil {
@@ -1324,7 +1324,7 @@ func (s *Server) DisconnectClient(cl *Client, code packets.Code, syncMode bool) 
 
 		cl.Stop(code)
 		if syncMode {
-			cl.WaitForShutdownSignal()
+			cl.waitForShutdownSignal()
 		}
 		if code.Code >= packets.ErrUnspecifiedError.Code {
 			return code
