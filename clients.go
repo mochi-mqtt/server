@@ -366,9 +366,16 @@ func (cl *Client) initShutdownSignal() {
 }
 
 // waitForShutdownSignal waits for the shutdown signal to be received.
-func (cl *Client) waitForShutdownSignal() {
+func (cl *Client) waitForShutdownSignal(ctx context.Context) {
 	if cl.State.shutdownSignal != nil {
-		<-cl.State.shutdownSignal
+		// Wait for the client to signal that it has completed its shutdown process.
+		select {
+		case <-cl.State.shutdownSignal:
+			// Shutdown signal received from the client.
+		case <-ctx.Done():
+			// Context canceled, exit waiting for the shutdown signal.
+			cl.ops.log.Error("Connection closure timed out. Adjusting the ShutdownClientsWorkerNum and ShutdownClientsTimeout in Capabilities to resolve it.")
+		}
 	}
 }
 

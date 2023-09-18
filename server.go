@@ -1411,6 +1411,7 @@ func (s *Server) closeListenerClients(listener string) {
 
 	// Create a context with a timeout. Adjust the timeout value as needed.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.Options.Capabilities.ShutdownClientsTimeout)*time.Second)
+	defer cancel()
 
 	// Start worker goroutines.
 	for i := 0; i < s.Options.Capabilities.ShutdownClientsWorkerNum; i++ {
@@ -1424,10 +1425,9 @@ func (s *Server) closeListenerClients(listener string) {
 						// The clients channel is closed, worker can exit.
 						return
 					}
-					// Disconnect the client with a server shutting down error.
 					s.DisconnectClient(c, packets.ErrServerShuttingDown)
 					// Wait for the client to signal that it has completed its shutdown process.
-					c.waitForShutdownSignal()
+					c.waitForShutdownSignal(ctx)
 				case <-ctx.Done():
 					// Context canceled, exit the worker.
 					return
@@ -1443,14 +1443,11 @@ attachJobs:
 		case jobs <- cl:
 			// Job sent to a worker.
 		case <-ctx.Done():
-			s.Log.Error("close all clients timeout", "timeout", s.Options.Capabilities.ShutdownClientsTimeout)
 			// Context canceled, exit early.
 			break attachJobs
 		}
 	}
 
-	// Cancel the context to signal workers to stop.
-	cancel()
 	close(jobs)
 	// Wait for all worker goroutines to finish before returning.
 	wg.Wait()
