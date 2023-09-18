@@ -1416,11 +1416,11 @@ func (s *Server) closeListenerClients(listener string) {
 	// Start worker goroutines.
 	for i := 0; i < s.Options.Capabilities.ShutdownClientsWorkerNum; i++ {
 		wg.Add(1)
-		go func(clients <-chan *Client) {
+		go func() {
 			defer wg.Done()
 			for {
 				select {
-				case c, ok := <-clients:
+				case c, ok := <-jobs:
 					if !ok {
 						// The clients channel is closed, worker can exit.
 						return
@@ -1433,7 +1433,7 @@ func (s *Server) closeListenerClients(listener string) {
 					return
 				}
 			}
-		}(jobs)
+		}()
 	}
 
 attachJobs:
