@@ -1412,7 +1412,7 @@ func (s *Server) closeListenerClients(listener string) {
 	// Start worker goroutines.
 	for i := 0; i < s.Options.Capabilities.ShutdownClientsWorkerNum; i++ {
 		wg.Add(1)
-		go func(clients <-chan *Client, w *sync.WaitGroup, stop <-chan bool) {
+		go func(clients <-chan *Client, stop <-chan bool) {
 			defer wg.Done()
 			for {
 				select {
@@ -1429,7 +1429,7 @@ func (s *Server) closeListenerClients(listener string) {
 					return
 				}
 			}
-		}(jobs, &wg, stop)
+		}(jobs, stop)
 	}
 
 	// Start a goroutine to handle timeout for closing all clients.
