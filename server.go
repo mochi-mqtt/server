@@ -48,6 +48,8 @@ var (
 		SharedSubAvailable:           1,              // shared subscriptions are available
 		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
 		MaximumClientWritesPending:   1024 * 8,       // maximum number of pending message writes for a client
+		ShutdownClientsWorkerNum:     1024,           // the number of worker goroutines to be used for disconnecting clients.
+		ShutdownClientsTimeout:       10,             // Maximum time(in seconds) to wait for clients to disconnect during server shutdown.
 	}
 
 	ErrListenerIDExists       = errors.New("listener id already exists")                               // a listener with the same id already exists
@@ -71,6 +73,8 @@ type Capabilities struct {
 	RetainAvailable              byte
 	WildcardSubAvailable         byte
 	SubIDAvailable               byte
+	ShutdownClientsWorkerNum     int
+	ShutdownClientsTimeout       int
 }
 
 // Compatibilities provides flags for using compatibility modes.
@@ -384,7 +388,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	}
 
 	s.hooks.OnSessionEstablished(cl, pk)
-	cl.openShutdownSignal()
+	cl.initShutdownSignal()
 	defer cl.sendShutdownSignal()
 
 	err = cl.Read(s.receivePacket)
@@ -1399,14 +1403,57 @@ func (s *Server) Close() error {
 func (s *Server) closeListenerClients(listener string) {
 	clients := s.Clients.GetByListener(listener)
 	var wg sync.WaitGroup
-	for _, cl := range clients {
+
+	// Create a channel to distribute clients among worker goroutines.
+	jobs := make(chan *Client, s.Options.Capabilities.ShutdownClientsWorkerNum)
+	// Create a stop channel to signal workers to stop gracefully.
+	stop := make(chan bool)
+
+	// Start worker goroutines.
+	for i := 0; i < s.Options.Capabilities.ShutdownClientsWorkerNum; i++ {
 		wg.Add(1)
-		go func(c *Client) {
-			s.DisconnectClient(c, packets.ErrServerShuttingDown)
-			c.waitForShutdownSignal()
-			wg.Done()
-		}(cl)
+		go func(clients <-chan *Client, w *sync.WaitGroup, stop <-chan bool) {
+			defer wg.Done()
+			for {
+				select {
+				case c, ok := <-clients:
+					if !ok {
+						// The clients channel is closed, worker can exit.
+						return
+					}
+					s.DisconnectClient(c, packets.ErrServerShuttingDown)
+					// Wait for the client to signal that it has completed its shutdown process.
+					c.waitForShutdownSignal()
+				case <-stop:
+					// Received stop signal, exit the worker.
+					return
+				}
+			}
+		}(jobs, &wg, stop)
 	}
+
+	// Start a goroutine to handle timeout for closing all clients.
+	go func() {
+		time.Sleep(time.Duration(s.Options.Capabilities.ShutdownClientsTimeout) * time.Second)
+		s.Log.Error("close all clients timeout", "timeout", s.Options.Capabilities.ShutdownClientsTimeout)
+		// Close the stop channel.
+		close(stop)
+	}()
+
+attachJobs:
+	// Distribute clients to worker goroutines by sending them through the channel.
+	for _, cl := range clients {
+		select {
+		case jobs <- cl:
+			// Job sent to a worker.
+		case <-stop:
+			// Received stop signal before all jobs are sent, exit early.
+			break attachJobs
+		}
+	}
+
+	close(jobs)
+	// Wait for all worker goroutines to finish before returning.
 	wg.Wait()
 }
 

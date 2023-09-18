@@ -357,9 +357,9 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 	}
 }
 
-// openShutdownSignal initializes a shutdown signal channel for the client.
+// initShutdownSignal initializes a shutdown signal channel for the client.
 // This channel is used to wait for a shutdown notification.
-func (cl *Client) openShutdownSignal() {
+func (cl *Client) initShutdownSignal() {
 	cl.Lock()
 	defer cl.Unlock()
 	cl.State.shutdownSignal = make(chan any)

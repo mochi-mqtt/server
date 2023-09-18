@@ -482,7 +482,7 @@ func TestClientReadDone(t *testing.T) {
 
 func TestClientOpenShutdownSignal(t *testing.T) {
 	cl, _, _ := newTestClient()
-	cl.openShutdownSignal()
+	cl.initShutdownSignal()
 	require.NotNil(t, cl.State.shutdownSignal)
 }
 
@@ -491,7 +491,7 @@ func TestClientWaitForShutdownSignal(t *testing.T) {
 	cl.waitForShutdownSignal()
 	require.Nil(t, nil, cl.State.shutdownSignal)
 
-	cl.openShutdownSignal()
+	cl.initShutdownSignal()
 	go func() {
 		cl.sendShutdownSignal()
 	}()
@@ -505,7 +505,7 @@ func TestClientSendShutdownSignal(t *testing.T) {
 	cl.sendShutdownSignal()
 	require.Nil(t, nil, cl.State.shutdownSignal)
 
-	cl.openShutdownSignal()
+	cl.initShutdownSignal()
 	go func() {
 		cl.sendShutdownSignal()
 	}()
