@@ -6,6 +6,7 @@
 package mqtt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -1401,18 +1402,20 @@ func (s *Server) Close() error {
 
 // closeListenerClients closes all clients on the specified listener.
 func (s *Server) closeListenerClients(listener string) {
+	// Get the clients associated with the specified listener.
 	clients := s.Clients.GetByListener(listener)
 	var wg sync.WaitGroup
 
 	// Create a channel to distribute clients among worker goroutines.
 	jobs := make(chan *Client, s.Options.Capabilities.ShutdownClientsWorkerNum)
-	// Create a stop channel to signal workers to stop gracefully.
-	stop := make(chan bool)
+
+	// Create a context with a timeout. Adjust the timeout value as needed.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.Options.Capabilities.ShutdownClientsTimeout)*time.Second)
 
 	// Start worker goroutines.
 	for i := 0; i < s.Options.Capabilities.ShutdownClientsWorkerNum; i++ {
 		wg.Add(1)
-		go func(clients <-chan *Client, stop <-chan bool) {
+		go func(clients <-chan *Client, ctx context.Context) {
 			defer wg.Done()
 			for {
 				select {
@@ -1421,24 +1424,17 @@ func (s *Server) closeListenerClients(listener string) {
 						// The clients channel is closed, worker can exit.
 						return
 					}
+					// Disconnect the client with a server shutting down error.
 					s.DisconnectClient(c, packets.ErrServerShuttingDown)
 					// Wait for the client to signal that it has completed its shutdown process.
 					c.waitForShutdownSignal()
-				case <-stop:
-					// Received stop signal, exit the worker.
+				case <-ctx.Done():
+					// Context canceled, exit the worker.
 					return
 				}
 			}
-		}(jobs, stop)
+		}(jobs, ctx)
 	}
-
-	// Start a goroutine to handle timeout for closing all clients.
-	go func() {
-		time.Sleep(time.Duration(s.Options.Capabilities.ShutdownClientsTimeout) * time.Second)
-		s.Log.Error("close all clients timeout", "timeout", s.Options.Capabilities.ShutdownClientsTimeout)
-		// Close the stop channel.
-		close(stop)
-	}()
 
 attachJobs:
 	// Distribute clients to worker goroutines by sending them through the channel.
@@ -1446,12 +1442,15 @@ attachJobs:
 		select {
 		case jobs <- cl:
 			// Job sent to a worker.
-		case <-stop:
-			// Received stop signal before all jobs are sent, exit early.
+		case <-ctx.Done():
+			s.Log.Error("close all clients timeout", "timeout", s.Options.Capabilities.ShutdownClientsTimeout)
+			// Context canceled, exit early.
 			break attachJobs
 		}
 	}
 
+	// Cancel the context to signal workers to stop.
+	cancel()
 	close(jobs)
 	// Wait for all worker goroutines to finish before returning.
 	wg.Wait()
