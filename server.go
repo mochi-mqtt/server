@@ -1416,7 +1416,7 @@ func (s *Server) closeListenerClients(listener string) {
 	// Start worker goroutines.
 	for i := 0; i < s.Options.Capabilities.ShutdownClientsWorkerNum; i++ {
 		wg.Add(1)
-		go func(clients <-chan *Client, ctx context.Context) {
+		go func(clients <-chan *Client) {
 			defer wg.Done()
 			for {
 				select {
@@ -1433,7 +1433,7 @@ func (s *Server) closeListenerClients(listener string) {
 					return
 				}
 			}
-		}(jobs, ctx)
+		}(jobs)
 	}
 
 attachJobs:
