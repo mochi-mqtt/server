@@ -394,11 +394,15 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	s.Log.Debug("client disconnected", "error", err, "client", cl.ID, "remote", cl.Net.Remote, "listener", listener)
 
 	expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
-	s.hooks.OnDisconnect(cl, err, expire)
+	if cl.StopCause() != packets.ErrServerShuttingDown {
+		s.hooks.OnDisconnect(cl, err, expire)
+	}
 
 	if expire && atomic.LoadUint32(&cl.State.isTakenOver) == 0 {
 		cl.ClearInflights(math.MaxInt64, 0)
-		s.UnsubscribeClient(cl)
+		if cl.StopCause() != packets.ErrServerShuttingDown {
+			s.UnsubscribeClient(cl)
+		}
 		s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
 	}
 
