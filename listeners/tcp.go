@@ -76,10 +76,6 @@ func (l *TCP) Serve(establish EstablishFn) {
 
 		conn, err := l.listen.Accept()
 		if err != nil {
-			// If the listener is shutdown, no need to print the error.
-			if atomic.LoadUint32(&l.end) == 0 {
-				l.log.Error("failed to serve.", "error", err, "listener", l.id)
-			}
 			return
 		}
 
