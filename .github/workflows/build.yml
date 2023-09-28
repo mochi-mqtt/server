@@ -3,20 +3,16 @@ name: build
 on: [push, pull_request]
 
 jobs:
-
   build:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-
     - name: Set up Go
       uses: actions/setup-go@v3
       with:
         go-version: 1.21
-
     - name: Vet
       run: go vet ./...
-
     - name: Test
       run: go test -race ./... && echo true
       
@@ -27,7 +23,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v3
       with:
-        go-version: '1.21'
+        go-version: 1.21
     - name: Check out code
       uses: actions/checkout@v3
     - name: Install dependencies
@@ -51,8 +47,8 @@ jobs:
         id: version_step
         run: |
           echo "##[set-output name=version;]VERSION=${GITHUB_REF#$"refs/tags/v"}"
-          echo "##[set-output name=version_tag;]$GITHUB_REPOSITORY:${GITHUB_REF#$"refs/tags/v"}"
-          echo "##[set-output name=latest_tag;]$GITHUB_REPOSITORY:latest"
+          echo "##[set-output name=version_tag;]mochimqtt:${GITHUB_REF#$"refs/tags/v"}"
+          echo "##[set-output name=latest_tag;]mochimqtt:latest"
       - name: Print Version
         run: |
           echo ${{steps.version_step.outputs.version_tag}}
