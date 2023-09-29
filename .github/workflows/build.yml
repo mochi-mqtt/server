@@ -41,6 +41,7 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    if: github.repository == 'mochi-mqtt/server'
     needs: build
     steps:
       - name: Checkout
