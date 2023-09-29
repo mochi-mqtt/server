@@ -40,8 +40,8 @@ jobs:
         run: goveralls -coverprofile=covprofile -service=github
 
   docker:
+    if: github.repository == 'mochi-mqtt/server' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    if: github.repository == 'mochi-mqtt/server'
     needs: build
     steps:
       - name: Checkout
