@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,8 +22,13 @@ import (
 )
 
 const (
-	defaultKeepalive             uint16 = 10 // the default connection keepalive value in seconds
+	defaultKeepalive             uint16 = 10 // the default connection keepalive value in seconds.
 	defaultClientProtocolVersion byte   = 4  // the default mqtt protocol version of connecting clients (if somehow unspecified).
+	minimumKeepalive             uint16 = 5  // the minimum recommended keepalive - values under with display a warning.
+)
+
+var (
+	ErrMinimumKeepalive = errors.New("client keepalive is below minimum recommended value and may exhibit connection instability")
 )
 
 // ReadFn is the function signature for the function used for reading and processing new packets.
@@ -210,6 +216,15 @@ func (cl *Client) ParseConnect(lid string, pk packets.Packet) {
 	cl.Properties.Username = pk.Connect.Username
 	cl.Properties.Clean = pk.Connect.Clean
 	cl.Properties.Props = pk.Properties.Copy(false)
+
+	if pk.Connect.Keepalive <= minimumKeepalive {
+		cl.ops.log.Warn(
+			ErrMinimumKeepalive.Error(),
+			"client", cl.ID,
+			"keepalive", pk.Connect.Keepalive,
+			"recommended", minimumKeepalive,
+		)
+	}
 
 	cl.State.Keepalive = pk.Connect.Keepalive                                              // [MQTT-3.2.2-22]
 	cl.State.Inflight.ResetReceiveQuota(int32(cl.ops.options.Capabilities.ReceiveMaximum)) // server receive max per client
