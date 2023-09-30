@@ -351,7 +351,7 @@ if err != nil {
 
 ### 内联客户端 (Inline Client v2.4.0+支持)
 
-现在可以通过使用内联客户端功能直接在服务端上订阅和发布主题。内联客户端是内置在服务端中的特殊的客户端，可以在服务器配置中启用：
+现在可以通过使用内联客户端功能直接在服务端上订阅主题和发布消息。内联客户端是内置在服务端中的特殊的客户端，可以在服务端的配置中启用：
 
 ```go
 server := mqtt.New(&mqtt.Options{
@@ -482,8 +482,8 @@ package name
 
 请确保为文件的每位贡献者添加一个新的SPDX-FileContributor 行。可以参考其他文件的示例。请务必记得这样做，你对这个项目的贡献是有价值且受到赞赏的 - 获得认可非常重要！
 
-## 随着时间的推移的点亮星星的人（Stargazers over time） 🥰
+## 给我们星星的人数（Stargazers over time） 🥰
 [![Stargazers over time](https://starchart.cc/mochi-mqtt/server.svg)](https://starchart.cc/mochi-mqtt/server)
 
-您是否在项目中使用 Mochi MQTT？(请告诉我们！)(https://github.com/mochi-mqtt/server/issues)
+您是否在项目中使用 Mochi MQTT？[请告诉我们！](https://github.com/mochi-mqtt/server/issues)
 
