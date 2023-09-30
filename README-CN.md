@@ -190,7 +190,7 @@ Hook钩子是可叠加的 - 你可以向服务器添加多个钩子(Hook)，它�
 
 #### 允许所有(Allow Hook)
 
-默认情况下，Mochi MQTT 使用拒绝所有(DENY-ALL)的访问控制规则。要允许连接，必须使用访问控制钩子进行覆盖。其中最简单的钩子(Hook)是 auth.AllowAll 钩子(Hook)，它为所有连接、订阅和发布提供允许所有(ALLOW-ALL)的规则。这也是使用最简单的钩子：
+默认情况下，Mochi MQTT 使用拒绝所有(DENY-ALL)的访问控制规则。要允许连接，必须实现一个访问控制的钩子(Hook)来替代默认的(DENY-ALL)钩子。其中最简单的钩子(Hook)是 auth.AllowAll 钩子(Hook)，它为所有连接、订阅和发布提供允许所有(ALLOW-ALL)的规则。这也是使用最简单的钩子：
 
 ```go
 server := mqtt.New(nil)
@@ -201,7 +201,7 @@ _ = server.AddHook(new(auth.AllowHook), nil)
 
 #### 权限认证(Auth Ledger)
 
-权限认证钩子(Auth Ledger hook)使用结构化的定义来制定访问规则。认证规则分为两种形式：身份规则（连接）和 ACL 权限规则（发布订阅）。
+权限认证钩子(Auth Ledger hook)使用结构化的定义来制定访问规则。认证规则分为两种形式：身份规则（连接时使用）和 ACL权限规则（发布订阅时使用）。
 
 身份规则(Auth rules)有四个可选参数和一个是否允许参数：
 
@@ -213,15 +213,13 @@ _ = server.AddHook(new(auth.AllowHook), nil)
 | Remote | 客户端的远程地址或 IP |
 | Allow | true（允许此用户）或 false（拒绝此用户） | 
 
-ACL rules have 3 optional criteria and an filter match:
-
-ACL权限规则(ACL rules)有三个可选参数和一个过滤器匹配参数：
+ACL权限规则(ACL rules)有三个可选参数和一个主题匹配参数：
 | 参数 | 说明 | 
 | -- | -- |
 | Client | 客户端的客户端 ID |
 | Username | 客户端的用户名 |
 | Remote | 客户端的远程地址或 IP |
-| Filters | 用于匹配的过滤器数组 |
+| Filters | 用于匹配的主题数组 |
 
 规则按索引顺序（0,1,2,3）处理，并在匹配到第一个规则时返回。请查看  [hooks/auth/ledger.go](hooks/auth/ledger.go) 的具体实现。
 
@@ -269,7 +267,7 @@ err := server.AddHook(new(auth.Hook), &auth.Options{
 
 #### Redis
 
-我们提供了一个基本的 Redis 存储Hook钩子，用于为服务端提供数据持久性。你可以将这个Redis的钩子添加到服务器中，Redis的一些参数也是可以配置的。这个钩子里使用 github.com/go-redis/redis/v8 这个库，可以通过 Options 来配置一些参数。
+我们提供了一个基本的 Redis 存储钩子(Hook)，用于为服务端提供数据持久性。你可以将这个Redis的钩子(Hook)添加到服务器中，Redis的一些参数也是可以配置的。这个钩子(Hook)里使用 github.com/go-redis/redis/v8 这个库，可以通过 Options 来配置一些参数。
 
 ```go
 err := server.AddHook(new(redis.Hook), &redis.Options{
@@ -287,7 +285,7 @@ if err != nil {
 
 #### Badger DB
 
-如果您更喜欢基于文件的存储，还有一个 BadgerDB 存储钩子可用。它可以以与其他钩子大致相同的方式添加和配置（具有较少的选项）。
+如果您更喜欢基于文件的存储，还有一个 BadgerDB 存储钩子(Hook)可用。它可以以与其他钩子大致相同的方式添加和配置（具有较少的选项）。
 
 ```go
 err := server.AddHook(new(badger.Hook), &badger.Options{
@@ -298,14 +296,14 @@ if err != nil {
 }
 ```
 
-有关 Badger 钩子的工作原理或如何使用它的更多信息，请参阅 [examples/persistence/badger/main.go](examples/persistence/badger/main.go) 或 [hooks/storage/badger](hooks/storage/badger)。
+有关 Badger 钩子(Hook)的工作原理或如何使用它的更多信息，请参阅 [examples/persistence/badger/main.go](examples/persistence/badger/main.go) 或 [hooks/storage/badger](hooks/storage/badger)。
 
-还有一个 BoltDB 钩子，已被弃用，推荐使用 Badger，但如果你想使用它，请参考 [examples/persistence/bolt/main.go](examples/persistence/bolt/main.go)。
+还有一个 BoltDB 钩子(Hook)，已被弃用，推荐使用 Badger，但如果你想使用它，请参考 [examples/persistence/bolt/main.go](examples/persistence/bolt/main.go)。
 
 ## 使用事件钩子 Event Hooks 进行开发
 
-在服务端和客户端生命周期中，开发者可以使用各种Hook钩子增加对服务端或客户端的一些自定义的处理。
-所有的钩子都定义在mqtt.Hook这个接口中了，可以在 [hooks.go](hooks.go) 中找到这些Hook钩子。
+在服务端和客户端生命周期中，开发者可以使用各种钩子(Hook)增加对服务端或客户端的一些自定义的处理。
+所有的钩子都定义在mqtt.Hook这个接口中了，可以在 [hooks.go](hooks.go) 中找到这些钩子(Hook)函数。
 
 > 最灵活的事件钩子是 OnPacketRead、OnPacketEncode 和 OnPacketSent - 这些钩子可以用来控制和修改所有传入和传出的数据包。
 
