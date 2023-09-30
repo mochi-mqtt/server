@@ -55,7 +55,7 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
 #### 版本更新时间
 除非涉及关键问题，新版本通常在周末发布。
 
-## 规划路线图
+## 规划路线图(Roadmap)
 - 请[提出问题](https://github.com/mochi-mqtt/server/issues)来请求新功能或新的hook钩子接口！
 - 集群支持。
 - 统计度量支持。
@@ -131,9 +131,9 @@ func main() {
 
 在 [examples](examples) 文件夹中可以找到更多使用不同配置运行服务端的示例。
 
-# 网络监听器 Listeners
+#### 网络监听器 (Network Listeners)
 
-服务端内置了一些已经实现的网络监听Listeners，这些Listeners允许服务端接受不同协议的连接。当前的监听Listeners有这些：
+服务端内置了一些已经实现的网络监听(Network Listeners)，这些Listeners允许服务端接受不同协议的连接。当前的监听Listeners有这些：
 
 | Listener                     | Usage                                                                                        |
 |------------------------------|----------------------------------------------------------------------------------------------|
@@ -149,7 +149,7 @@ func main() {
 可以在*listeners.Config 中配置TLS，传递给Listener使其支持TLS。
 我们提供了一些示例，可以在 [示例](examples) 文件夹或 [cmd/main.go](cmd/main.go) 中找到。
 
-### 服务端选项和功能
+### 服务端选项和功能(Server Options and Capabilities)
 
 有许多可配置的选项(Options)可用于更改服务器的行为或限制对某些功能的访问。
 ```go
@@ -169,11 +169,11 @@ server := mqtt.New(&mqtt.Options{
 请参考 mqtt.Options、mqtt.Capabilities 和 mqtt.Compatibilities 结构体，以查看完整的所有服务端选项。ClientNetWriteBufferSize 和 ClientNetReadBufferSize 可以根据你的需求配置调整每个客户端的内存使用状况。
 
 
-## 事件钩子 Event Hooks 
+## 事件钩子(Event Hooks)
 
-服务端有一个通用的事件钩子(Event Hooks)系统，它允许开发人员在服务器和客户端生命周期的各个部分定制添加和修改服务端的功能。这些通用Hook钩子用于提供从认证(authentication)、持久性存储(persistent storage)到调试工具(debugging tools)等各种功能。
+服务端有一个通用的事件钩子(Event Hooks)系统，它允许开发人员在服务器和客户端生命周期的各个阶段定制添加和修改服务端的功能。这些通用Hook钩子用于提供从认证(authentication)、持久性存储(persistent storage)到调试工具(debugging tools)等各种功能。
 
-Hook钩子是可叠加的 - 你可以向服务器添加多个钩子(Hook)，它们将按添加的顺序运行。一些钩子(Hook)修改值，这些修改后的值将在所有钩子(Hooks)返回之前传递给后续的钩子(Hook)。
+钩子(Hook)是可叠加的 - 你可以向服务器添加多个钩子(Hook)，它们将按添加的顺序运行。一些钩子(Hook)修改值，这些修改后的值将在所有钩子返回之前传递给后续的钩子(Hook)。
 
 | 类型           | 导入包                                                                   | 描述                                                                       |
 |----------------|--------------------------------------------------------------------------|----------------------------------------------------------------------------|
@@ -411,26 +411,29 @@ server.InjectPacket(cl, packets.Packet{
 具体如何使用请参考 [hooks example](examples/hooks/main.go) 。
 
 
-### Testing
-#### Unit Tests
-Mochi MQTT tests over a thousand scenarios with thoughtfully hand written unit tests to ensure each function does exactly what we expect. You can run the tests using go:
+### 测试(Testing)
+#### 单元测试(Unit Tests)
+
+Mochi MQTT 使用精心编写的单元测试，测试了一千多种场景，以确保每个函数都表现出我们期望的行为。您可以使用以下命令运行测试：
 ```
 go run --cover ./...
 ```
 
-#### Paho Interoperability Test
-You can check the broker against the [Paho Interoperability Test](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) by starting the broker using `examples/paho/main.go`, and then running the mqtt v5 and v3 tests with `python3 client_test5.py` from the _interoperability_ folder. 
+#### Paho 互操作性测试(Paho Interoperability Test)
 
-> Note that there are currently a number of outstanding issues regarding false negatives in the paho suite, and as such, certain compatibility modes are enabled in the `paho/main.go` example.
+您可以使用 `examples/paho/main.go` 启动服务器，然后在 _interoperability_ 文件夹中运行 `python3 client_test5.py` 来检查代理是否符合 [Paho互操作性测试](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) 的要求，包括 MQTT v5 和 v3 的测试。
+
+> 请注意，关于 paho 测试套件存在一些尚未解决的问题，因此在 `paho/main.go` 示例中启用了某些兼容性模式。
 
 
-## Performance Benchmarks
-Mochi MQTT performance is comparable with popular brokers such as Mosquitto, EMQX, and others.
+## 基准测试(Performance Benchmarks)
 
-Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inovex/mqtt-stresser) on a Apple Macbook Air M2, using `cmd/main.go` default settings. Taking into account bursts of high and low throughput, the median scores are the most useful. Higher is better.
+Mochi MQTT 的性能与其他的一些主流的mqtt中间件（如 Mosquitto、EMQX 等）不相上下。
 
-> The values presented in the benchmark are not representative of true messages per second throughput. They rely on an unusual calculation by mqtt-stresser, but are usable as they are consistent across all brokers.
-> Benchmarks are provided as a general performance expectation guideline only. Comparisons are performed using out-of-the-box default configurations.
+基准测试是使用 [MQTT-Stresser](https://github.com/inovex/mqtt-stresser) 在 Apple Macbook Air M2 上进行的，使用 `cmd/main.go` 默认设置。考虑到高低吞吐量的突发情况，中位数分数是最有用的。数值越高越好。
+
+
+> 基准测试中呈现的数值不代表真实每秒消息吞吐量。它们依赖于 mqtt-stresser 的一种不寻常的计算方法，但它们在所有代理之间是一致的。性能基准测试的结果仅供参考。这些比较都是使用默认配置进行的。
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=2 -num-messages=10000`
 | Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
@@ -448,7 +451,7 @@ Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inov
 | EMQX v5.0.11      | 21,553 | 17,418 | 14,356 | 4,257 | 3,980 | 3,756 |
 | Rumqtt v0.21.0    | 42,213 | 23,153 | 20,814 | 49,465 | 36,626 | 19,283 |
 
-Million Message Challenge (hit the server with 1 million messages immediately):
+百万消息挑战（立即向服务器发送100万条消息）:
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=100 -num-messages=10000`
 | Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
@@ -458,15 +461,17 @@ Million Message Challenge (hit the server with 1 million messages immediately):
 | EMQX v5.0.11      | 4,086 | 2,432 | 2,274 | 434 | 333 | 311 |
 | Rumqtt v0.21.0    | 78,972 | 5,047 | 3,804 | 4,286 | 3,249 | 2,027 |
 
-> Not sure what's going on with EMQX here, perhaps the docker out-of-the-box settings are not optimal, so take it with a pinch of salt as we know for a fact it's a solid piece of software.
+> 这里还不确定EMQX是不是哪里出了问题，可能是因为 Docker 的默认配置优化不对，所以要持保留意见，因为我们确实知道它是一款可靠的软件。
 
-## Contribution Guidelines
-Contributions and feedback are both welcomed and encouraged! [Open an issue](https://github.com/mochi-mqtt/server/issues) to report a bug, ask a question, or make a feature request. If you open a pull request, please try to follow the following guidelines:
-- Try to maintain test coverage where reasonably possible.
-- Clearly state what the PR does and why.
-- Please remember to add your SPDX FileContributor tag to files where you have made a meaningful contribution.
+## 贡献指南(Contribution Guidelines)
 
-[SPDX Annotations](https://spdx.dev) are used to clearly indicate the license, copyright, and contributions of each file in a machine-readable format. If you are adding a new file to the repository, please ensure it has the following SPDX header:
+我们欢迎代码贡献和反馈！如果你发现了漏洞(bug)或者有任何疑问，又或者是有新的需求，请[提交给我们](https://github.com/mochi-mqtt/server/issues)。如果您提交了一个PR(pull request)请求，请尽量遵循以下准则：
+
+- 在合理的情况下，尽量保持测试覆盖率。
+- 清晰地说明PR(pull request)请求的作用和原因。
+- 请不要忘记在你贡献的文件中添加 SPDX FileContributor 标签。
+
+[SPDX 注释] (https://spdx.dev) 用于智能的识别每个文件的许可证、版权和贡献。如果您正在向本仓库添加一个新文件，请确保它具有以下 SPDX 头部：
 ```go
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2023 mochi-mqtt
@@ -475,9 +480,10 @@ Contributions and feedback are both welcomed and encouraged! [Open an issue](htt
 package name
 ```
 
-Please ensure to add a new `SPDX-FileContributor` line for each contributor to the file. Refer to other files for examples. Please remember to do this, your contributions to this project are valuable and appreciated - it's important to receive credit! 
+请确保为文件的每位贡献者添加一个新的SPDX-FileContributor 行。可以参考其他文件的示例。请务必记得这样做，你对这个项目的贡献是有价值且受到赞赏的 - 获得认可非常重要！
 
-## Stargazers over time 🥰
+## 随着时间的推移的点亮星星的人（Stargazers over time） 🥰
 [![Stargazers over time](https://starchart.cc/mochi-mqtt/server.svg)](https://starchart.cc/mochi-mqtt/server)
-Are you using Mochi MQTT in a project? [Let us know!](https://github.com/mochi-mqtt/server/issues)
+
+您是否在项目中使用 Mochi MQTT？(请告诉我们！)(https://github.com/mochi-mqtt/server/issues)
 
