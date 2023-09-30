@@ -25,19 +25,19 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
 #### Mochi-MQTT 特性
 - 完全兼容 MQTT v5 功能，与 MQTT v3.1.1 和 v3.0.0 兼容：
     - MQTT v5 用户和数据包属性
-    - 主题别名
-    - 共享订阅
+    - 主题别名(Topic Aliases)
+    - 共享订阅(Shared Subscriptions)
     - 订阅选项和订阅标识符(Identifiers)
-    - 消息过期
-    - 客户端会话过期
+    - 消息过期(Message Expiry)
+    - 客户端会话过期(Client Session Expiry)
     - 发送和接收 QoS 流量控制配额(Flow Control Quotas)
-    - 服务器端的断开连接和服务器端的数据包权限验证(Auth Packets)
-    - 遗愿消息延迟间隔
+    - 服务器端的断开连接和数据包的权限验证(Auth Packets)
+    - 遗愿消息延迟间隔(Will Delay Intervals)
     - 还有 Mochi MQTT v1 的所有原始 MQTT 功能，例如完全的 QoS（0,1,2）、$SYS 主题、保留消息等。
 - 面向开发者：
     - 核心代码都已开放并可访问，以便开发者完全控制。
-    - 功能丰富且灵活的基于钩子的接口系统，支持便捷的“插件”开发。
-    - 使用特殊的内联客户端进行服务端的消息发布，也支持服务端伪装成现有的客户端。
+    - 功能丰富且灵活的基于钩子(Hook)的接口系统，支持便捷的“插件(plugin)”开发。
+    - 使用特殊的内联客户端(inline client)进行服务端的消息发布，也支持服务端伪装成现有的客户端。
 - 高性能且稳定：
     - 基于经典前缀树 Trie 的主题-订阅模型。
     - 客户端特定的写入缓冲区，避免因读取速度慢或客户端不规范行为而产生的问题。
@@ -47,7 +47,7 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
 - 内置 基于Redis、Badger 和 Bolt 的持久化（使用Hook钩子，你也可以自己创建）。
 - 内置基于规则的认证和 ACL 权限管理（使用Hook钩子，你也可以自己创建）。
 
-### 兼容性说明
+### 兼容性说明(Compatibility Notes)
 由于 v5 规范与 MQTT 的早期版本存在重叠，因此服务器可以接受 v5 和 v3 客户端，但在连接了 v5 和 v3 客户端的情况下，为 v5 客户端提供的属性和功能将会对 v3 客户端进行降级处理（例如用户属性）。
 
 对于 MQTT v3.0.0 和 v3.1.1 的支持被视为混合兼容性。在 v3 规范中没有明确限制的情况下，将使用更新的和以安全为首要考虑的 v5 规范 - 例如保留的消息(retained messages)的过期处理，传输中的消息(inflight messages)的过期处理、客户端过期处理以及QOS消息数量的限制等。
@@ -61,7 +61,7 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
 - 统计度量支持。
 - 配置文件支持（支持 Docker）。
 
-## 快速开始
+## 快速开始(Quick Start)
 ### 使用 Go 运行服务端
 Mochi MQTT 可以作为独立的中间件使用。只需拉取此仓库代码，然后在 [cmd](cmd) 文件夹中运行 [cmd/main.go](cmd/main.go) ，默认将开启下面几个服务端口， tcp (:1883)、websocket (:1882) 和服务状态监控 (:8080) 。
 
