@@ -30,8 +30,8 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
     - 订阅选项和订阅标识符(Identifiers)
     - 消息过期
     - 客户端会话过期
-    - 发送和接收 QoS 流量控制配额
-    - 服务器端的断开连接和服务器端的身份验证
+    - 发送和接收 QoS 流量控制配额(Flow Control Quotas)
+    - 服务器端的断开连接和服务器端的数据包权限验证(Auth Packets)
     - 遗愿消息延迟间隔
     - 还有 Mochi MQTT v1 的所有原始 MQTT 功能，例如完全的 QoS（0,1,2）、$SYS 主题、保留消息等。
 - 面向开发者：
@@ -50,15 +50,15 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
 ### 兼容性说明
 由于 v5 规范与 MQTT 的早期版本存在重叠，因此服务器可以接受 v5 和 v3 客户端，但在连接了 v5 和 v3 客户端的情况下，为 v5 客户端提供的属性和功能将会对 v3 客户端进行降级处理（例如用户属性）。
 
-对于 MQTT v3.0.0 和 v3.1.1 的支持被视为混合兼容性。在 v3 规范中没有明确限制的情况下，将使用更现代和以安全为首要考虑的 v5 行为 - 例如，在传输中和保留消息、客户端到期时间以及服务质量控制方面。
+对于 MQTT v3.0.0 和 v3.1.1 的支持被视为混合兼容性。在 v3 规范中没有明确限制的情况下，将使用更新的和以安全为首要考虑的 v5 规范 - 例如保留的消息(retained messages)的过期处理，进行中的消息(inflight messages)的过期处理、客户端过期处理以及QOS消息数量的限制等。
 
 #### 版本更新时间
 除非涉及关键问题，新版本通常在周末发布。
 
-## 规划路线
+## 规划路线图
 - 请[提出问题](https://github.com/mochi-mqtt/server/issues)来请求新功能或新的hook钩子接口！
 - 集群支持。
-- 更多的统计度量支持。
+- 统计度量支持。
 - 配置文件支持（支持 Docker）。
 
 ## 快速开始
@@ -151,7 +151,7 @@ func main() {
 
 ### 服务端选项和功能
 
-有许多可配置的选项可用于更改服务器的行为或限制对某些功能的访问。
+有许多可配置的选项(Options)可用于更改服务器的行为或限制对某些功能的访问。
 ```go
 server := mqtt.New(&mqtt.Options{
   Capabilities: mqtt.Capabilities{
@@ -166,14 +166,14 @@ server := mqtt.New(&mqtt.Options{
   InlineClient: false,
 })
 ```
-请查看 mqtt.Options、mqtt.Capabilities 和 mqtt.Compatibilities 结构体，以查看完整的所有服务端选项。ClientNetWriteBufferSize 和 ClientNetReadBufferSize 可以以根据你的需求配置调整每个客户端的内存使用状况。
+请参考 mqtt.Options、mqtt.Capabilities 和 mqtt.Compatibilities 结构体，以查看完整的所有服务端选项。ClientNetWriteBufferSize 和 ClientNetReadBufferSize 可以根据你的需求配置调整每个客户端的内存使用状况。
 
 
 ## 事件钩子 Event Hooks 
 
-服务端有一个通用的事件钩子(Event Hooks)系统，它允许开发人员在服务器和客户端生命周期的各个部分定制添加和修改服务端的功能。这些通用Hook钩子用于提供从认证、持久性存储到调试工具等各种功能。
+服务端有一个通用的事件钩子(Event Hooks)系统，它允许开发人员在服务器和客户端生命周期的各个部分定制添加和修改服务端的功能。这些通用Hook钩子用于提供从认证(authentication)、持久性存储(persistent storage)到调试工具(debugging tools)等各种功能。
 
-Hook钩子是可叠加的 - 你可以向服务器添加多个钩子，它们将按添加的顺序运行。一些钩子修改值，这些修改后的值将在返回到运行时代码之前传递给后续的钩子。
+Hook钩子是可叠加的 - 你可以向服务器添加多个钩子(Hook)，它们将按添加的顺序运行。一些钩子(Hook)修改值，这些修改后的值将在所有钩子(Hooks)返回之前传递给后续的钩子(Hook)。
 
 | 类型           | 导入包                                                                   | 描述                                                                       |
 |----------------|--------------------------------------------------------------------------|----------------------------------------------------------------------------|
@@ -184,13 +184,13 @@ Hook钩子是可叠加的 - 你可以向服务器添加多个钩子，它们将�
 | 数据持久性    | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)    | 使用 [Redis](https://redis.io) 进行持久性存储。                         | 
 | 调试跟踪      | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go)                    | 调试输出以查看数据包在服务端的链路追踪。   |
 
-许多内部函数都已开放并可访问，你可以参考上述示例创建自己的Hook钩子。如果你有更好的关于Hook钩子方面的建议或者疑问，你可以[提交问题](https://github.com/mochi-mqtt/server/issues)给我们。                  | 
+许多内部函数都已开放给开发者，你可以参考上述示例创建自己的Hook钩子。如果你有更好的关于Hook钩子方面的建议或者疑问，你可以[提交问题](https://github.com/mochi-mqtt/server/issues)给我们。                  | 
 
-### 访问控制
+### 访问控制(Access Control)
 
-#### 允许所有访问的Hook钩子
+#### 允许所有(Allow Hook)
 
-默认情况下，Mochi MQTT 使用 DENY-ALL 访问控制规则。要允许连接，必须使用访问控制钩子进行覆盖。其中最简单的钩子是 auth.AllowAll 钩子，它为所有连接、订阅和发布提供 ALLOW-ALL 规则。这也是使用最简单的钩子：
+默认情况下，Mochi MQTT 使用拒绝所有(DENY-ALL)的访问控制规则。要允许连接，必须使用访问控制钩子进行覆盖。其中最简单的钩子(Hook)是 auth.AllowAll 钩子(Hook)，它为所有连接、订阅和发布提供允许所有(ALLOW-ALL)的规则。这也是使用最简单的钩子：
 
 ```go
 server := mqtt.New(nil)
@@ -199,11 +199,11 @@ _ = server.AddHook(new(auth.AllowHook), nil)
 
 >如果你将服务器暴露在互联网或不受信任的网络上，请不要这样做 - 它真的应该仅用于开发、测试和调试。
 
-#### 权限认证规则的Hook钩子
+#### 权限认证(Auth Ledger)
 
-权限认证规则Hook钩子使用结构化的定义方式来制定访问规则。认证规则分为两种形式：认证规则（连接）和 ACL 规则（发布订阅）。
+权限认证钩子(Auth Ledger hook)使用结构化的定义来制定访问规则。认证规则分为两种形式：身份规则（连接）和 ACL 权限规则（发布订阅）。
 
-认证规则有四个可选参数和一个是否允许参数：
+身份规则(Auth rules)有四个可选参数和一个是否允许参数：
 
 | 参数 | 说明 | 
 | -- | -- |
@@ -215,7 +215,7 @@ _ = server.AddHook(new(auth.AllowHook), nil)
 
 ACL rules have 3 optional criteria and an filter match:
 
-ACL 规则有三个可选参数和一个过滤器匹配参数：
+ACL权限规则(ACL rules)有三个可选参数和一个过滤器匹配参数：
 | 参数 | 说明 | 
 | -- | -- |
 | Client | 客户端的客户端 ID |
