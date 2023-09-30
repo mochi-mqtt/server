@@ -50,7 +50,7 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
 ### 兼容性说明
 由于 v5 规范与 MQTT 的早期版本存在重叠，因此服务器可以接受 v5 和 v3 客户端，但在连接了 v5 和 v3 客户端的情况下，为 v5 客户端提供的属性和功能将会对 v3 客户端进行降级处理（例如用户属性）。
 
-对于 MQTT v3.0.0 和 v3.1.1 的支持被视为混合兼容性。在 v3 规范中没有明确限制的情况下，将使用更新的和以安全为首要考虑的 v5 规范 - 例如保留的消息(retained messages)的过期处理，进行中的消息(inflight messages)的过期处理、客户端过期处理以及QOS消息数量的限制等。
+对于 MQTT v3.0.0 和 v3.1.1 的支持被视为混合兼容性。在 v3 规范中没有明确限制的情况下，将使用更新的和以安全为首要考虑的 v5 规范 - 例如保留的消息(retained messages)的过期处理，传输中的消息(inflight messages)的过期处理、客户端过期处理以及QOS消息数量的限制等。
 
 #### 版本更新时间
 除非涉及关键问题，新版本通常在周末发布。
@@ -323,9 +323,9 @@ if err != nil {
 | OnPacketEncode         | 在数据包被编码并发送给客户端之前立即调用。允许修改数据包。                                                                                                                                                                                                          | 
 | OnPacketSent           | 在数据包已发送给客户端后调用。                                                                                                                                                                                                                                                 | 
 | OnPacketProcessed      | 在数据包已接收并成功由服务端处理后调用。                                                                                                                                                                                                                             | 
-| OnSubscribe            | 当客户端订阅一个或多个过滤器时调用。允许修改数据包。                                                                                                                                                                                                                       | 
+| OnSubscribe            | 当客户端订阅一个或多个主题时调用。允许修改数据包。                                                                                                                                                                                                                       | 
 | OnSubscribed           | 当客户端成功订阅一个或多个主题时调用。                                                                                                                                                                                                                                       | 
-| OnSelectSubscribers    |  当订阅者已被关联到一个主题中，但在选择共享订阅的订阅者之前调用。允许接收者修改。                                                                                                                                                  | 
+| OnSelectSubscribers    |  当订阅者已被关联到一个主题中，在选择共享订阅的订阅者之前调用。允许接收者修改。                                                                                                                                                  | 
 | OnUnsubscribe          | 当客户端取消订阅一个或多个主题时调用。允许包修改。                                                                                                                                                                                                                   | 
 | OnUnsubscribed         | 当客户端成功取消订阅一个或多个主题时调用。                                                                                                                                                                                                                                   | 
 | OnPublish              | 当客户端发布消息时调用。允许修改数据包。                                                                                                                                                                                                                                     | 
@@ -333,7 +333,7 @@ if err != nil {
 | OnPublishDropped       |  消息传递给客户端之前消息已被丢弃，将调用此方法。 例如当客户端响应时间过长需要丢弃消息时。   | 
 | OnRetainMessage        | 当消息被保留时调用。                                                                                                                                                                                                                                                              | 
 | OnRetainPublished      | 当保留的消息被发布给客户端时调用。                                                                                                                                                                                                                                                  | 
-| OnQosPublish           | Called when a publish packet with Qos >= 1 is issued to a subscriber.       当发出QoS >= 1 的消息给订阅者后调用。                                                                                                                                                                                                                               | 
+| OnQosPublish           | 当发出QoS >= 1 的消息给订阅者后调用。                                                                                                                                                                                                                               | 
 | OnQosComplete          | 在消息的QoS流程走完之后调用。                                                                                                                                                                                                                                                 | 
 | OnQosDropped           | 在消息的QoS流程未完成，同时消息到期时调用。                                                                                                                                                                                                                                                 | 
 | OnPacketIDExhausted    | 当packet ids已经用完后，没有可用的id可再分配时调用。                                                                                                                                                                                                                                        | 
@@ -347,9 +347,9 @@ if err != nil {
 | StoredRetainedMessages | 返回保留的消息，例如从持久化数据库获取保留的消息。                                                                                                                                                                                                                                                   | 
 | StoredSysInfo          | 返回存储的系统状态信息，例如从持久化数据库获取的系统状态信息。     | 
 
-如果你自己实现一个持久化存储的Hook钩子，请参考现有的持久存储Hook钩子以获取灵感和借鉴。如果您正在构建一个身份验证Hook钩子，您将需要实现OnACLCheck 和 OnConnectAuthenticate这两个函数接口。
+如果你想自己实现一个持久化存储的Hook钩子，请参考现有的持久存储Hook钩子以获取灵感和借鉴。如果您正在构建一个身份验证Hook钩子，您将需要实现OnACLCheck 和 OnConnectAuthenticate这两个函数接口。
 
-### 内联客户端 (v2.4.0+支持)
+### 内联客户端 (Inline Client v2.4.0+支持)
 
 现在可以通过使用内联客户端功能直接在服务端上订阅和发布主题。内联客户端是内置在服务端中的特殊的客户端，可以在服务器配置中启用：
 
@@ -362,16 +362,16 @@ server := mqtt.New(&mqtt.Options{
 
 具体如何使用请参考 [direct examples](examples/direct/main.go) 。
 
-#### 内联发布
-要想在服务端中直接发布Publish一个消息，可以使用 `server.Publish()`方法。
+#### 内联发布(Inline Publish)
+要想在服务端中直接发布Publish一个消息，可以使用 `server.Publish`方法。
 
 ```go
 err := server.Publish("direct/publish", []byte("packet scheduled message"), false, 0)
 ```
 > 在这种情况下，QoS级别只对订阅者有效，按照 MQTT v5 规范。
 
-#### 内联订阅
-要想在服务端中直接订阅一个主题，可以使用 `server.Subscribe()`方法并提供一个处理订阅消息的回调函数。内联订阅的 QoS默认都是0。如果您希望对相同的主题有多个回调，可以使用 MQTTv5 的 subscriptionId 属性进行区分。
+#### 内联订阅(Inline Subscribe)
+要想在服务端中直接订阅一个主题，可以使用 `server.Subscribe`方法并提供一个处理订阅消息的回调函数。内联订阅的 QoS默认都是0。如果您希望对相同的主题有多个回调，可以使用 MQTTv5 的 subscriptionId 属性进行区分。
 
 ```go
 callbackFn := func(cl *mqtt.Client, sub packets.Subscription, pk packets.Packet) {
@@ -380,20 +380,20 @@ callbackFn := func(cl *mqtt.Client, sub packets.Subscription, pk packets.Packet)
 server.Subscribe("direct/#", 1, callbackFn)
 ```
 
-#### 取消内联订阅
-如果您使用内联客户端订阅了某个主题，如果需要取消订阅。您可以使用 `server.Unsubscribe()` 方法取消内联订阅：
+#### 取消内联订阅(Inline Unsubscribe)
+如果您使用内联客户端订阅了某个主题，如果需要取消订阅。您可以使用 `server.Unsubscribe` 方法取消内联订阅：
 
 ```go
 server.Unsubscribe("direct/#", 1)
 ```
 
-### 注入数据包
+### 注入数据包(Packet Injection)
 
 如果你想要更多的服务端控制，或者想要设置特定的MQTT v5属性或其他属性，你可以选择指定的客户端创建自己的发布包(publish packets)。这种方法允许你将MQTT数据包(packets)直接注入到运行中的服务端，相当于服务端直接自己模拟接收到了某个客户端的数据包。
 
-数据包注入可用于任何MQTT数据包，包括ping请求、订阅等。你可以获取客户端的详细信息，因此你甚至可以直接在服务端模拟某个在线的客户端，发布一个数据包。
+数据包注入(Packet Injection)可用于任何MQTT数据包，包括ping请求、订阅等。你可以获取客户端的详细信息，因此你甚至可以直接在服务端模拟某个在线的客户端，发布一个数据包。
 
-大多数情况下，您可能希望使用上面描述的内联客户端，因为它具有独特的特权：它可以绕过所有ACL和主题验证检查，这意味着它甚至可以发布到$SYS主题。你也可以自己从头开始制定一个自己的内联客户端，它将与内置的内联客户端行为相同。
+大多数情况下，您可能希望使用上面描述的内联客户端(Inline Client)，因为它具有独特的特权：它可以绕过所有ACL和主题验证检查，这意味着它甚至可以发布到$SYS主题。你也可以自己从头开始制定一个自己的内联客户端，它将与内置的内联客户端行为相同。
 
 ```go
 cl := server.NewClient(nil, "local", "inline", true)
@@ -406,7 +406,7 @@ server.InjectPacket(cl, packets.Packet{
 })
 ```
 
-> MQTT数据包仍然需要正确结构，所以请参考[测试用例中数据包的定义](packets/tpackets.go) 和 [MQTTv5规范](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) 以获取一些帮助。
+> MQTT数据包仍然需要满足规范的结构，所以请参考[测试用例中数据包的定义](packets/tpackets.go) 和 [MQTTv5规范](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) 以获取一些帮助。
 
 具体如何使用请参考 [hooks example](examples/hooks/main.go) 。
 
