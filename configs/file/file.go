@@ -5,8 +5,6 @@
 package file
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"os"
@@ -31,11 +29,11 @@ type Config struct {
 			AllowAll bool `yaml:"allow_all"`
 		}
 		Listeners struct {
-			HealthCheck *HealthCheck `yaml:"healthcheck"`
-			Stats       *Stats       `yaml:"stats"`
-			TCP         *TCP         `yaml:"tcp"`
-			Websocket   *Websocket   `yaml:"websocket"`
-			TLS         *TLS         `yaml:"tls"`
+			// HealthCheck *HealthCheck `yaml:"healthcheck"`
+			Stats     *Stats     `yaml:"stats"`
+			TCP       *TCP       `yaml:"tcp"`
+			Websocket *Websocket `yaml:"websocket"`
+			// TLS         *TLS         `yaml:"tls"`
 		} `yaml:"listeners"`
 		Logging *Logging `yaml:"logging"`
 		// Options contains configurable options for the server.
@@ -43,29 +41,29 @@ type Config struct {
 	} `yaml:"server"`
 }
 
-type TLS struct {
-	Cert   string `yaml:"cert_file"`
-	Key    string `yaml:"priv_key"`
-	CACert string `yaml:"cacert_file"`
-}
+// type TLS struct {
+// 	Cert   string `yaml:"cert_file"`
+// 	Key    string `yaml:"priv_key"`
+// 	CACert string `yaml:"cacert_file"`
+// }
 
-type HealthCheck struct {
-	Port       int  `yaml:"port"`
-	TLSEnabled bool `yaml:"tls_enabled"`
-}
+// type HealthCheck struct {
+// 	Port       int  `yaml:"port"`
+// 	TLSEnabled bool `yaml:"tls_enabled"`
+// }
 
 type Stats struct {
-	Port       int  `yaml:"port"`
-	TLSEnabled bool `yaml:"tls_enabled"`
+	Port int `yaml:"port"`
+	// TLSEnabled bool `yaml:"tls_enabled"`
 }
 
 type TCP struct {
-	Port       int  `yaml:"port"`
-	TLSEnabled bool `yaml:"tls_enabled"`
+	Port int `yaml:"port"`
+	// TLSEnabled bool `yaml:"tls_enabled"`
 }
 type Websocket struct {
-	Port       int  `yaml:"port"`
-	TLSEnabled bool `yaml:"tls_enabled"`
+	Port int `yaml:"port"`
+	// TLSEnabled bool `yaml:"tls_enabled"`
 }
 
 type Logging struct {
@@ -104,59 +102,83 @@ func Configure() (*mqtt.Server, error) {
 	// }
 
 	// listeners configuration
-	tlsc, err := configureTLS(config.Server.Listeners.TLS)
-	if err != nil {
+	// tlsc, err := configureTLS(config.Server.Listeners.TLS)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// if err := configureHealthCheck(config.Server.Listeners.HealthCheck, server, tlsc); err != nil {
+	// 	return nil, err
+	// }
+
+	if err := configureStats(config.Server.Listeners.Stats, server); err != nil {
 		return nil, err
 	}
 
-	if err := configureHealthCheck(config.Server.Listeners.HealthCheck, server, tlsc); err != nil {
+	if err := configureTCP(config.Server.Listeners.TCP, server); err != nil {
 		return nil, err
 	}
 
-	if err := configureStats(config.Server.Listeners.Stats, server, tlsc); err != nil {
-		return nil, err
-	}
-
-	if err := configureTCP(config.Server.Listeners.TCP, server, tlsc); err != nil {
-		return nil, err
-	}
-
-	if err := configureWebsocket(config.Server.Listeners.Websocket, server, tlsc); err != nil {
+	if err := configureWebsocket(config.Server.Listeners.Websocket, server); err != nil {
 		return nil, err
 	}
 
 	return server, nil
 }
 
-func configureTLS(config *TLS) (*tls.Config, error) {
-	if config == nil {
-		return nil, nil
-	}
+// func configureTLS(config *TLS) (*tls.Config, error) {
+// 	if config == nil {
+// 		return nil, nil
+// 	}
 
-	tlsc := new(tls.Config)
-	if config.Cert != "" && config.Key != "" { // Skip if cert and key are missing
-		slog.Info("Certificate and Key information found in config", "step", "config")
-		cert, err := tls.LoadX509KeyPair(config.Cert, config.Key)
-		if err != nil {
-			return nil, err
-		}
-		tlsc.Certificates = []tls.Certificate{cert}
-	}
+// 	tlsc := new(tls.Config)
+// 	if config.Cert != "" && config.Key != "" { // Skip if cert and key are missing
+// 		slog.Info("Certificate and Key information found in config", "step", "config")
+// 		cert, err := tls.LoadX509KeyPair(config.Cert, config.Key)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		tlsc.Certificates = []tls.Certificate{cert}
+// 	}
 
-	if config.CACert != "" { // Skip if CA certificate is missing
-		caCert, err := os.ReadFile(config.CACert)
-		if err != nil {
-			return nil, err
-		}
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
-		tlsc.ClientCAs = caCertPool
-	}
+// 	if config.CACert != "" { // Skip if CA certificate is missing
+// 		caCert, err := os.ReadFile(config.CACert)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		caCertPool := x509.NewCertPool()
+// 		caCertPool.AppendCertsFromPEM(caCert)
+// 		tlsc.ClientCAs = caCertPool
+// 	}
 
-	return tlsc, nil
-}
+// 	return tlsc, nil
+// }
 
-func configureHealthCheck(config *HealthCheck, server *mqtt.Server, tlsc *tls.Config) error {
+// func configureHealthCheck(config *HealthCheck, server *mqtt.Server, tlsc *tls.Config) error {
+// 	if config == nil {
+// 		return nil
+// 	}
+
+// 	port := formatPort(config.Port)
+// 	lc := new(listeners.Config)
+
+// 	if config.TLSEnabled {
+// 		lc.TLSConfig = tlsc
+// 	}
+
+// 	hc := listeners.NewHTTPHealthCheck("hc", port, lc)
+// 	err := server.AddListener(hc)
+// 	if err != nil {
+// 		slog.Error(err.Error())
+// 		return err
+// 	}
+
+// 	return nil
+// }
+
+// func configureStats(config *Stats, server *mqtt.Server, tlsc *tls.Config) error {
+func configureStats(config *Stats, server *mqtt.Server) error {
+
 	if config == nil {
 		return nil
 	}
@@ -164,37 +186,17 @@ func configureHealthCheck(config *HealthCheck, server *mqtt.Server, tlsc *tls.Co
 	port := formatPort(config.Port)
 	lc := new(listeners.Config)
 
-	if config.TLSEnabled {
-		lc.TLSConfig = tlsc
-	}
-
-	hc := listeners.NewHTTPHealthCheck("hc", port, lc)
-	err := server.AddListener(hc)
-	if err != nil {
-		slog.Error(err.Error())
-		return err
-	}
-
-	return nil
-}
-
-func configureStats(config *Stats, server *mqtt.Server, tlsc *tls.Config) error {
-	if config == nil {
-		return nil
-	}
-
-	port := formatPort(config.Port)
-	lc := new(listeners.Config)
-
-	if config.TLSEnabled {
-		lc.TLSConfig = tlsc
-	}
+	// if config.TLSEnabled {
+	// 	lc.TLSConfig = tlsc
+	// }
 
 	statl := listeners.NewHTTPStats("stat", port, lc, server.Info)
 	return server.AddListener(statl)
 }
 
-func configureTCP(config *TCP, server *mqtt.Server, tlsc *tls.Config) error {
+// func configureTCP(config *TCP, server *mqtt.Server, tlsc *tls.Config) error {
+func configureTCP(config *TCP, server *mqtt.Server) error {
+
 	if config == nil {
 		return nil
 	}
@@ -202,15 +204,16 @@ func configureTCP(config *TCP, server *mqtt.Server, tlsc *tls.Config) error {
 	port := formatPort(config.Port)
 	lc := new(listeners.Config)
 
-	if config.TLSEnabled {
-		lc.TLSConfig = tlsc
-	}
+	// if config.TLSEnabled {
+	// 	lc.TLSConfig = tlsc
+	// }
 
 	tcpl := listeners.NewTCP("tcp", port, lc)
 	return server.AddListener(tcpl)
 }
 
-func configureWebsocket(config *Websocket, server *mqtt.Server, tlsc *tls.Config) error {
+// func configureWebsocket(config *Websocket, server *mqtt.Server, tlsc *tls.Config) error {
+func configureWebsocket(config *Websocket, server *mqtt.Server) error {
 	if config == nil {
 		return nil
 	}
@@ -218,9 +221,9 @@ func configureWebsocket(config *Websocket, server *mqtt.Server, tlsc *tls.Config
 	port := formatPort(config.Port)
 	lc := new(listeners.Config)
 
-	if config.TLSEnabled {
-		lc.TLSConfig = tlsc
-	}
+	// if config.TLSEnabled {
+	// 	lc.TLSConfig = tlsc
+	// }
 
 	wsl := listeners.NewWebsocket("ws", port, lc)
 	return server.AddListener(wsl)
