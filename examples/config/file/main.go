@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mochi-mqtt/server/v2/configs"
 	"github.com/mochi-mqtt/server/v2/configs/file"
 )
 
@@ -25,10 +24,8 @@ func main() {
 
 	server, err := file.Configure()
 	if err != nil {
-		slog.Error("failed to use file configuration", "error", err)
-		slog.Warn("defaulting to standard broker configuration")
-		server, _ = configs.ConfigureServerWithDefault()
-
+		slog.Error(err.Error())
+		return
 	}
 
 	go func() {

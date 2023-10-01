@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/configs"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"gopkg.in/yaml.v3"
@@ -18,7 +19,10 @@ import (
 
 const (
 	// CONFIG_FILE_NAME the name of the configuration file used for file based configuration
-	CONFIG_FILE_NAME = "mochi_config.yml"
+	CONFIG_DEFAULT_FILE_NAME = "mochi_config.yml"
+
+	CONFIG_LOGGING_OUTPUT_JSON = "JSON"
+	CONFIG_LOGGING_OUTPUT_TEXT = "TEXT"
 )
 
 // Note: struct fields must be public in order for unmarshal to
@@ -60,10 +64,13 @@ type Logging struct {
 func Configure() (*mqtt.Server, error) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil))) // set basic logger to ensure logs before configuration are in a consistent format
 
-	data, err := os.ReadFile(CONFIG_FILE_NAME)
+	data, err := os.ReadFile(CONFIG_DEFAULT_FILE_NAME)
 	if err != nil {
 		if os.IsNotExist(err) {
-			slog.Info("mochi_config.yml not found")
+			slog.Error("failed to use file configuration", "error", err)
+			slog.Warn("mochi_config.yml not found")
+			slog.Warn("defaulting to standard broker configuration")
+			return configs.ConfigureServerWithDefault()
 		}
 		return nil, err
 	}
@@ -81,9 +88,7 @@ func Configure() (*mqtt.Server, error) {
 		}
 	}
 
-	if err := configureLogging(config.Server.Logging, server); err != nil {
-		return nil, err
-	}
+	configureLogging(config.Server.Logging, server)
 
 	if err := configureStats(config.Server.Listeners.Stats, server); err != nil {
 		return nil, err
@@ -101,7 +106,6 @@ func Configure() (*mqtt.Server, error) {
 }
 
 func configureStats(config *Stats, server *mqtt.Server) error {
-
 	if config == nil {
 		return nil
 	}
@@ -114,7 +118,6 @@ func configureStats(config *Stats, server *mqtt.Server) error {
 }
 
 func configureTCP(config *TCP, server *mqtt.Server) error {
-
 	if config == nil {
 		return nil
 	}
@@ -138,39 +141,29 @@ func configureWebsocket(config *Websocket, server *mqtt.Server) error {
 	return server.AddListener(wsl)
 }
 
-func configureLogging(config *Logging, server *mqtt.Server) error { //nolint:unparam
+func configureLogging(config *Logging, server *mqtt.Server) { //nolint:unparam
 	if config == nil {
-		return nil
+		return
 	}
 
 	var level slog.Level
-	switch config.Level {
-	case slog.LevelDebug.String():
-		level = slog.LevelDebug
-	case slog.LevelInfo.String():
-		level = slog.LevelInfo
-	case slog.LevelWarn.String():
-		level = slog.LevelWarn
-	case slog.LevelError.String():
-		level = slog.LevelError
-	default:
+	if err := level.UnmarshalText([]byte(config.Level)); err != nil {
+		slog.Warn(err.Error())
 		slog.Warn(fmt.Sprintf("logging level not recognized, defaulting to level %s", slog.LevelInfo.String()))
 		level = slog.LevelInfo
 	}
 
 	var handler slog.Handler
 	switch config.Output {
-	case "JSON":
+	case CONFIG_LOGGING_OUTPUT_JSON:
 		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
-	case "TEXT":
+	case CONFIG_LOGGING_OUTPUT_TEXT:
 		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	default:
 		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 	}
 
 	server.Log = slog.New(handler)
-
-	return nil
 }
 
 func formatPort(port int) string {

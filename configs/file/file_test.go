@@ -14,7 +14,9 @@ func TestConfigure(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "test",
+			name:    "Sucesfull configuration",
+			want:    &mqtt.Server{},
+			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
