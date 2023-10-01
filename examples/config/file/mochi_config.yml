@@ -10,11 +10,8 @@ server:
       port: 1883
     websocket:
       port: 1884
-    tls:
-      certfile: cert.crt
-      keyfile: key.txt
   logging:
-    level: DEBUG
+    level: INFO
   options:
     capabilities:
       maximum_message_expiry_interval: 100

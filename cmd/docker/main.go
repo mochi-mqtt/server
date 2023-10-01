@@ -27,15 +27,15 @@ func main() {
 
 	server, err := file.Configure()
 	if err != nil {
-		slog.Default().Error("failed to use file configuration", "error", err)
-		slog.Default().Warn("defaulting to standard broker configuration")
+		slog.Error("failed to use file configuration", "error", err)
+		slog.Warn("defaulting to standard broker configuration")
 		server, _ = configureServerWithDefault()
 	}
 
 	go func() {
 		err := server.Serve()
 		if err != nil {
-			slog.Default().Error("", "error", err)
+			slog.Error("", "error", err)
 			return
 		}
 	}()

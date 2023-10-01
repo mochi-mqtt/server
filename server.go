@@ -103,14 +103,14 @@ type Options struct {
 	// 	Level: level,
 	// }))
 	// level.Set(slog.LevelDebug)
-	Logger *slog.Logger
+	Logger *slog.Logger `yaml:"-"`
 
 	// SysTopicResendInterval specifies the interval between $SYS topic updates in seconds.
-	SysTopicResendInterval int64
+	SysTopicResendInterval int64 `yaml:"sys_topic_resend_interval"`
 
 	// Enable Inline client to allow direct subscribing and publishing from the parent codebase,
 	// with negligible performance difference (disabled by default to prevent confusion in statistics).
-	InlineClient bool
+	InlineClient bool `yaml:"inline_client"`
 }
 
 // Server is an MQTT broker server. It should be created with server.New()
