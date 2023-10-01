@@ -8,9 +8,9 @@ require (
 	github.com/asdine/storm/v3 v3.2.1
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gorilla/websocket v1.5.0
-	github.com/jinzhu/copier v0.3.5
-	github.com/rs/xid v1.4.0
-	github.com/stretchr/testify v1.7.1
+	github.com/jinzhu/copier v0.4.0
+	github.com/rs/xid v1.5.0
+	github.com/stretchr/testify v1.8.4
 	github.com/timshannon/badgerhold v1.0.0
 	go.etcd.io/bbolt v1.3.7
 	gopkg.in/yaml.v3 v3.0.1
