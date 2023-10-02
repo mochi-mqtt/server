@@ -10,6 +10,8 @@
 
 </p>
 
+[English](README.md) | [简体中文](README-CN.md) | [Translators Wanted!](https://github.com/orgs/mochi-mqtt/discussions/310)
+
 🎆 **mochi-co/mqtt is now part of the new mochi-mqtt organisation.** [Read about this announcement here.](https://github.com/orgs/mochi-mqtt/discussions/271)
 
 
@@ -70,13 +72,22 @@ go build -o mqtt && ./mqtt
 ```
 
 ### Using Docker
+You can now pull and run the [official Mochi MQTT image](https://hub.docker.com/r/mochimqtt/server) from our Docker repo:
+
+```sh
+docker pull mochimqtt/server
+or
+docker run mochimqtt/server
+```
+
+This is a work in progress, and a [file-based configuration](https://github.com/orgs/mochi-mqtt/projects/2) is being developed to better support this implementation. _More substantial docker support is being discussed [here](https://github.com/orgs/mochi-mqtt/discussions/281#discussion-5544545) and [here](https://github.com/orgs/mochi-mqtt/discussions/209). Please join the discussion if you use Mochi-MQTT in this environment._
+
 A simple Dockerfile is provided for running the [cmd/main.go](cmd/main.go) Websocket, TCP, and Stats server:
 
 ```sh
 docker build -t mochi:latest .
 docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 mochi:latest
 ```
-_More substantial docker support is being discussed [here](https://github.com/orgs/mochi-mqtt/discussions/281#discussion-5544545) and [here](https://github.com/orgs/mochi-mqtt/discussions/209). Please join the discussion if you use Mochi-MQTT in this environment._
 
 ## Developing with Mochi MQTT
 ### Importing as a package
@@ -148,7 +159,8 @@ A `*listeners.Config` may be passed to configure TLS.
 
 Examples of usage can be found in the [examples](examples) folder or [cmd/main.go](cmd/main.go).
 
-### Server Options and Capabilities
+
+## Server Options and Capabilities
 A number of configurable options are available which can be used to alter the behaviour or restrict access to certain features in the server.
 
 ```go
@@ -168,6 +180,11 @@ server := mqtt.New(&mqtt.Options{
 
 Review the mqtt.Options, mqtt.Capabilities, and mqtt.Compatibilities structs for a comprehensive list of options. `ClientNetWriteBufferSize` and `ClientNetReadBufferSize` can be configured to adjust memory usage per client, based on your needs.
 
+### Default Configuration Notes
+
+Some choices were made when deciding the default configuration that need to be mentioned here:
+
+- By default, the value of `server.Options.Capabilities.MaximumMessageExpiryInterval` is set to 86400 (24 hours), in order to prevent exposing the broker to DOS attacks on hostile networks when using the out-of-the-box configuration (as an infinite expiry would allow an infinite number of retained/inflight messages to accumulate). If you are operating in a trusted environment, or you have capacity for a larger retention period, uou may wish to override this (set to `0` or `math.MaxInt` for no expiry).
 
 ## Event Hooks 
 A universal event hooks system allows developers to hook into various parts of the server and client life cycle to add and modify functionality of the broker. These universal hooks are used to provide everything from authentication, persistent storage, to debugging tools.

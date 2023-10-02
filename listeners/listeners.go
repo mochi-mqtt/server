@@ -38,8 +38,8 @@ type Listener interface {
 
 // Listeners contains the network listeners for the broker.
 type Listeners struct {
-	wg       sync.WaitGroup      // a waitgroup that waits for all listeners to finish.
-	internal map[string]Listener // a map of active listeners.
+	ClientsWg sync.WaitGroup      // a waitgroup that waits for all clients in all listeners to finish.
+	internal  map[string]Listener // a map of active listeners.
 	sync.RWMutex
 }
 
@@ -86,8 +86,6 @@ func (l *Listeners) Serve(id string, establisher EstablishFn) {
 	listener := l.internal[id]
 
 	go func(e EstablishFn) {
-		defer l.wg.Done()
-		l.wg.Add(1)
 		listener.Serve(e)
 	}(establisher)
 }
@@ -131,5 +129,5 @@ func (l *Listeners) CloseAll(closer CloseFn) {
 	for _, id := range ids {
 		l.Close(id, closer)
 	}
-	l.wg.Wait()
+	l.ClientsWg.Wait()
 }

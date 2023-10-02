@@ -92,6 +92,28 @@ func TestWebsocketServeTLSAndClose(t *testing.T) {
 		closed = true
 	})
 	require.Equal(t, true, closed)
+	<-o
+}
+
+func TestWebsocketFailedToServe(t *testing.T) {
+	l := NewWebsocket("t1", "wrong_addr", &Config{
+		TLSConfig: tlsConfigBasic,
+	})
+	err := l.Init(logger)
+	require.NoError(t, err)
+
+	o := make(chan bool)
+	go func(o chan bool) {
+		l.Serve(MockEstablisher)
+		o <- true
+	}(o)
+
+	<-o
+	var closed bool
+	l.Close(func(id string) {
+		closed = true
+	})
+	require.Equal(t, true, closed)
 }
 
 func TestWebsocketUpgrade(t *testing.T) {

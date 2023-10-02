@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	Version                       = "2.4.0" // the current server version.
+	Version                       = "2.4.1" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 	LocalListener                 = "local"
 	InlineClientId                = "inline"
@@ -367,7 +367,10 @@ func (s *Server) EstablishConnection(listener string, c net.Conn) error {
 // attachClient validates an incoming client connection and if viable, attaches the client
 // to the server, performs session housekeeping, and reads incoming packets.
 func (s *Server) attachClient(cl *Client, listener string) error {
+	defer s.Listeners.ClientsWg.Done()
+	s.Listeners.ClientsWg.Add(1)
 	defer cl.Stop(nil)
+
 	pk, err := s.readConnectionPacket(cl)
 	if err != nil {
 		return fmt.Errorf("read connection: %w", err)
@@ -1421,6 +1424,7 @@ func (s *Server) publishSysTopics() {
 // Close attempts to gracefully shut down the server, all listeners, clients, and stores.
 func (s *Server) Close() error {
 	close(s.done)
+	s.Log.Info("gracefully stopping server")
 	s.Listeners.CloseAll(s.closeListenerClients)
 	s.hooks.OnStopped()
 	s.hooks.Stop()

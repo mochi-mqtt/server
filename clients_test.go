@@ -5,10 +5,14 @@
 package mqtt
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -207,6 +211,27 @@ func TestClientParseConnectOverrideWillDelay(t *testing.T) {
 func TestClientParseConnectNoID(t *testing.T) {
 	cl, _, _ := newTestClient()
 	cl.ParseConnect("tcp1", packets.Packet{})
+	require.NotEmpty(t, cl.ID)
+}
+
+func TestClientParseConnectBelowMinimumKeepalive(t *testing.T) {
+	cl, _, _ := newTestClient()
+	var b bytes.Buffer
+	x := bufio.NewWriter(&b)
+	cl.ops.log = slog.New(slog.NewTextHandler(x, nil))
+
+	pk := packets.Packet{
+		ProtocolVersion: 4,
+		Connect: packets.ConnectParams{
+			ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
+			Keepalive:        minimumKeepalive - 1,
+			ClientIdentifier: "mochi",
+		},
+	}
+	cl.ParseConnect("tcp1", pk)
+	err := x.Flush()
+	require.NoError(t, err)
+	require.True(t, strings.Contains(b.String(), ErrMinimumKeepalive.Error()))
 	require.NotEmpty(t, cl.ID)
 }
 
