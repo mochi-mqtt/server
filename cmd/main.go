@@ -61,6 +61,6 @@ func main() {
 	<-done
 	server.Log.Warn("caught signal, stopping...")
 	_ = server.Close()
-	server.Log.Info("main.go finished")
+	server.Log.Info("mochi mqtt shutdown complete")
 
 }
