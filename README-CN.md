@@ -10,7 +10,8 @@
 
 </p>
 
-[English](README.md) | [简体中文](README-CN.md)
+[English](README.md) | [简体中文](README-CN.md) | [招募翻译者!](https://github.com/orgs/mochi-mqtt/discussions/310)
+
 
 🎆 **mochi-co/mqtt 现在已经是新的 mochi-mqtt 组织的一部分。** 详细信息请[阅读公告.](https://github.com/orgs/mochi-mqtt/discussions/271)
 
@@ -50,7 +51,7 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
 ### 兼容性说明(Compatibility Notes)
 由于 v5 规范与 MQTT 的早期版本存在重叠，因此服务器可以接受 v5 和 v3 客户端，但在连接了 v5 和 v3 客户端的情况下，为 v5 客户端提供的属性和功能将会对 v3 客户端进行降级处理（例如用户属性）。
 
-对于 MQTT v3.0.0 和 v3.1.1 的支持被视为混合兼容性。在 v3 规范中没有明确限制的情况下，将使用更新的和以安全为首要考虑的 v5 规范 - 例如保留的消息(retained messages)的过期处理，传输中的消息(inflight messages)的过期处理、客户端过期处理以及QOS消息数量的限制等。
+对于 MQTT v3.0.0 和 v3.1.1 的支持被视为混合兼容性。在 v3 规范中没有明确限制的情况下，将使用更新的和以安全为首要考虑的 v5 规范 - 例如保留的消息(retained messages)的过期处理，待发送消息(inflight messages)的过期处理、客户端过期处理以及QOS消息数量的限制等。
 
 #### 版本更新时间
 除非涉及关键问题，新版本通常在周末发布。
@@ -72,12 +73,22 @@ go build -o mqtt && ./mqtt
 
 ### 使用 Docker
 
-我们提供了一个简单的 Dockerfile，用于运行 cmd/main.go 中的 Websocket、TCP 和统计信息服务器：
+你现在可以从 Docker Hub 仓库中拉取并运行Mochi MQTT[官方镜像](https://hub.docker.com/r/mochimqtt/server)：
+```sh
+docker pull mochimqtt/server
+或者
+docker run mochimqtt/server
+```
+
+我们还在积极完善这部分的工作，现在正在实现使用[配置文件的启动](https://github.com/orgs/mochi-mqtt/projects/2)方式。更多关于 Docker 的支持正在[这里](https://github.com/orgs/mochi-mqtt/discussions/281#discussion-5544545)和[这里](https://github.com/orgs/mochi-mqtt/discussions/209)进行讨论。如果你有在这个场景下使用 Mochi-MQTT，也可以参与到讨论中来。
+
+我们提供了一个简单的 Dockerfile，用于运行 cmd/main.go 中的 Websocket(:1882)、TCP(:1883) 和服务端状态信息(:8080)这三个服务监听：
+
 ```sh
 docker build -t mochi:latest .
 docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 mochi:latest
 ```
-更多关于 Docker 的支持正在[这里](https://github.com/orgs/mochi-mqtt/discussions/281#discussion-5544545)和[这里](https://github.com/orgs/mochi-mqtt/discussions/209)进行讨论。如果你有在这个场景下使用 Mochi-MQTT，也可以参与到讨论中来。
+
 
 ## 使用 Mochi MQTT 进行开发
 ### 将Mochi MQTT作为包导入使用
@@ -168,6 +179,11 @@ server := mqtt.New(&mqtt.Options{
 ```
 请参考 mqtt.Options、mqtt.Capabilities 和 mqtt.Compatibilities 结构体，以查看完整的所有服务端选项。ClientNetWriteBufferSize 和 ClientNetReadBufferSize 可以根据你的需求配置调整每个客户端的内存使用状况。
 
+### 默认配置说明(Default Configuration Notes)
+
+关于决定默认配置的值，在这里进行一些说明：
+
+- 默认情况下，server.Options.Capabilities.MaximumMessageExpiryInterval 的值被设置为 86400（24小时），以防止在使用默认配置时网络上暴露服务器而受到恶意DOS攻击（如果不配置到期时间将允许无限数量的保留retained/待发送inflight消息累积）。如果您在一个受信任的环境中运行，或者您有更大的保留期容量，您可以选择覆盖此设置（设置为 0 或 math.MaxInt 以取消到期限制）。
 
 ## 事件钩子(Event Hooks)
 
@@ -263,7 +279,7 @@ err := server.AddHook(new(auth.Hook), &auth.Options{
 ```
 详细信息请参阅 [examples/auth/encoded/main.go](examples/auth/encoded/main.go)。
 
-### 持久化存储
+### 持久化存储(Persistent Storage)
 
 #### Redis
 
@@ -343,7 +359,7 @@ if err != nil {
 | OnRetainedExpired      | 在保留的消息已过期并应删除时调用。|                                                                                                                                                                                                                                         | 
 | StoredClients          | 这个接口需要返回客户端列表，例如从持久化数据库中获取客户端列表。                                                                                                                                                                                          | 
 | StoredSubscriptions    | 返回客户端的所有订阅，例如从持久化数据库中获取客户端的订阅列表。                            | 
-| StoredInflightMessages | 返回正在传输中的消息（inflight messages），例如从持久化数据库中获取到还有哪些消息未完成传输。                                                                                                                                                                                                                                               | 
+| StoredInflightMessages | 返回待发送消息（inflight messages），例如从持久化数据库中获取到还有哪些消息未完成传输。                                                                                                                                                                                                                                               | 
 | StoredRetainedMessages | 返回保留的消息，例如从持久化数据库获取保留的消息。                                                                                                                                                                                                                                                   | 
 | StoredSysInfo          | 返回存储的系统状态信息，例如从持久化数据库获取的系统状态信息。     | 
 
