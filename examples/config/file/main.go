@@ -21,8 +21,9 @@ func main() {
 		<-sigs
 		done <- true
 	}()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil))) // set basic logger to ensure logs before configuration are in a consistent format
 
-	server, err := file.Configure()
+	server, err := file.Configure("")
 	if err != nil {
 		slog.Error(err.Error())
 		return

@@ -14,14 +14,14 @@ func TestConfigure(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "Sucesfull configuration",
+			name:    "Sucessfull configuration",
 			want:    &mqtt.Server{},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Configure()
+			_, err := Configure("")
 			if err != nil {
 				fmt.Println(err)
 			}
