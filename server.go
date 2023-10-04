@@ -1596,8 +1596,14 @@ func (s *Server) clearExpiredClients(dt int64) {
 
 // clearExpiredRetainedMessage deletes retained messages from topics if they have expired.
 func (s *Server) clearExpiredRetainedMessages(now int64) {
+	isServerExpiryLimited := s.Options.Capabilities.MaximumMessageExpiryInterval != 0 && s.Options.Capabilities.MaximumMessageExpiryInterval != math.MaxInt
+
 	for filter, pk := range s.Topics.Retained.GetAll() {
-		if (pk.Expiry > 0 && pk.Expiry < now) || pk.Created+s.Options.Capabilities.MaximumMessageExpiryInterval < now {
+		packetExpired := pk.Expiry > 0 && pk.Expiry < now
+		maxPacketExpiry := pk.Created + s.Options.Capabilities.MaximumMessageExpiryInterval
+		forceExpiry := isServerExpiryLimited && maxPacketExpiry > 0 && maxPacketExpiry < now
+
+		if packetExpired || forceExpiry {
 			s.Topics.Retained.Delete(filter)
 			s.hooks.OnRetainedExpired(filter)
 		}

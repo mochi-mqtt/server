@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"strconv"
 	"sync"
@@ -3262,8 +3263,10 @@ func TestServerClearExpiredInflights(t *testing.T) {
 }
 
 func TestServerClearExpiredRetained(t *testing.T) {
+	// Short maximum expiry
 	s := New(nil)
 	require.NotNil(t, s)
+
 	s.Options.Capabilities.MaximumMessageExpiryInterval = 4
 
 	n := time.Now().Unix()
@@ -3274,6 +3277,36 @@ func TestServerClearExpiredRetained(t *testing.T) {
 	s.Topics.Retained.Add("m/n/o", packets.Packet{Created: n})
 
 	require.Len(t, s.Topics.Retained.GetAll(), 5)
+	s.clearExpiredRetainedMessages(n)
+	require.Len(t, s.Topics.Retained.GetAll(), 2)
+
+	// No maximum expiry (0)
+	s = New(nil)
+	require.NotNil(t, s)
+
+	s.Options.Capabilities.MaximumMessageExpiryInterval = 0
+
+	n = time.Now().Unix()
+	s.Topics.Retained.Add("a/b/c", packets.Packet{Created: n, Expiry: n - 1}) // explicit expiry set
+	s.Topics.Retained.Add("d/e/f", packets.Packet{Created: n})
+	s.Topics.Retained.Add("g/h/i", packets.Packet{Created: n - 99999999}) // kept even when old
+
+	require.Len(t, s.Topics.Retained.GetAll(), 3)
+	s.clearExpiredRetainedMessages(n)
+	require.Len(t, s.Topics.Retained.GetAll(), 2)
+
+	// No maximum expiry (math.MaxInt)
+	s = New(nil)
+	require.NotNil(t, s)
+
+	s.Options.Capabilities.MaximumMessageExpiryInterval = math.MaxInt
+
+	n = time.Now().Unix()
+	s.Topics.Retained.Add("a/b/c", packets.Packet{Created: n, Expiry: n - 1}) // explicit expiry set
+	s.Topics.Retained.Add("d/e/f", packets.Packet{Created: n})
+	s.Topics.Retained.Add("g/h/i", packets.Packet{Created: n - 99999999}) // kept even when old
+
+	require.Len(t, s.Topics.Retained.GetAll(), 3)
 	s.clearExpiredRetainedMessages(n)
 	require.Len(t, s.Topics.Retained.GetAll(), 2)
 }
