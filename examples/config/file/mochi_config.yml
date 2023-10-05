@@ -3,15 +3,20 @@ server:
     allow_all: true
   listeners:
     healthcheck:
-      port: 8081
+      - id: hc
+        port: 8081
     stats:
-      port: 8080
+      - id: stats1
+        port: 8080
     tcp:
-      port: 1883
+      - id: tcp1
+        port: 1883
     websocket:
-      port: 1884
+      - id: ws1
+        port: 1884
   logging:
     level: INFO
+    output: JSON
   options:
     capabilities:
       maximum_message_expiry_interval: 100

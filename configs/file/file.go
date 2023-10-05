@@ -24,6 +24,8 @@ const (
 	LoggingOutputText = "TEXT"
 )
 
+var readFile = os.ReadFile // for testing
+
 // Note: struct fields must be public in order for unmarshal to
 // correctly populate the data.
 type Config struct {
@@ -32,9 +34,9 @@ type Config struct {
 			AllowAll bool `yaml:"allow_all"`
 		}
 		Listeners struct {
-			Stats     *Stats     `yaml:"stats"`
-			TCP       *TCP       `yaml:"tcp"`
-			Websocket *Websocket `yaml:"websocket"`
+			Stats     []*Stats     `yaml:"stats"`
+			TCP       []*TCP       `yaml:"tcp"`
+			Websocket []*Websocket `yaml:"websocket"`
 		} `yaml:"listeners"`
 		Logging      *Logging         `yaml:"logging"`
 		mqtt.Options `yaml:"options"` // Options contains configurable options for the server.
@@ -43,14 +45,17 @@ type Config struct {
 }
 
 type Stats struct {
-	Port int `yaml:"port"`
+	ID   string `yaml:"id"`
+	Port int    `yaml:"port"`
 }
 
 type TCP struct {
-	Port int `yaml:"port"`
+	ID   string `yaml:"id"`
+	Port int    `yaml:"port"`
 }
 type Websocket struct {
-	Port int `yaml:"port"`
+	ID   string `yaml:"id"`
+	Port int    `yaml:"port"`
 }
 
 type Logging struct {
@@ -65,7 +70,7 @@ func Configure(filepath string) (*mqtt.Server, error) {
 		filepath = DefaultFileName
 	}
 
-	data, err := os.ReadFile(filepath)
+	data, err := readFile(filepath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			slog.Warn("config file not found", "filepath", filepath)
@@ -103,40 +108,58 @@ func Configure(filepath string) (*mqtt.Server, error) {
 	return server, nil
 }
 
-func configureStats(config *Stats, server *mqtt.Server) error {
+func configureStats(config []*Stats, server *mqtt.Server) error {
 	if config == nil {
 		return nil
 	}
 
-	port := formatPort(config.Port)
-	lc := new(listeners.Config)
+	for _, c := range config {
+		port := formatPort(c.Port)
+		lc := new(listeners.Config)
 
-	statl := listeners.NewHTTPStats("stat", port, lc, server.Info)
-	return server.AddListener(statl)
+		statl := listeners.NewHTTPStats(c.ID, port, lc, server.Info)
+		if err := server.AddListener(statl); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-func configureTCP(config *TCP, server *mqtt.Server) error {
+func configureTCP(config []*TCP, server *mqtt.Server) error {
 	if config == nil {
 		return nil
 	}
 
-	port := formatPort(config.Port)
-	lc := new(listeners.Config)
+	for _, c := range config {
+		port := formatPort(c.Port)
+		lc := new(listeners.Config)
 
-	tcpl := listeners.NewTCP("tcp", port, lc)
-	return server.AddListener(tcpl)
+		tcpl := listeners.NewTCP(c.ID, port, lc)
+		if err := server.AddListener(tcpl); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-func configureWebsocket(config *Websocket, server *mqtt.Server) error {
+func configureWebsocket(config []*Websocket, server *mqtt.Server) error {
 	if config == nil {
 		return nil
 	}
 
-	port := formatPort(config.Port)
-	lc := new(listeners.Config)
+	for _, c := range config {
+		port := formatPort(c.Port)
+		lc := new(listeners.Config)
 
-	wsl := listeners.NewWebsocket("ws", port, lc)
-	return server.AddListener(wsl)
+		wsl := listeners.NewWebsocket(c.ID, port, lc)
+		if err := server.AddListener(wsl); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func configureLogging(config *Logging, server *mqtt.Server) { //nolint:unparam
