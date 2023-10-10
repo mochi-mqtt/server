@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -328,9 +329,14 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 
 // ClearInflights deletes all inflight messages for the client, e.g. for a disconnected user with a clean session.
 func (cl *Client) ClearInflights(now, maximumExpiry int64) []uint16 {
+	isServerExpiryLimited := maximumExpiry != 0 && maximumExpiry != math.MaxInt
 	deleted := []uint16{}
+
 	for _, tk := range cl.State.Inflight.GetAll(false) {
-		if (tk.Expiry > 0 && tk.Expiry < now) || tk.Created+maximumExpiry < now {
+		packetExpired := tk.Expiry > 0 && tk.Expiry < now
+		forceExpiry := isServerExpiryLimited && tk.Created+maximumExpiry > 0 && tk.Created+maximumExpiry < now
+
+		if packetExpired || forceExpiry {
 			if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
 				cl.ops.hooks.OnQosDropped(cl, tk)
 				atomic.AddInt64(&cl.ops.info.Inflight, -1)

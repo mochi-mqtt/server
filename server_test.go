@@ -3240,6 +3240,7 @@ func TestServerClose(t *testing.T) {
 }
 
 func TestServerClearExpiredInflights(t *testing.T) {
+	// Short maximum expiry
 	s := New(nil)
 	require.NotNil(t, s)
 	s.Options.Capabilities.MaximumMessageExpiryInterval = 4
@@ -3249,9 +3250,9 @@ func TestServerClearExpiredInflights(t *testing.T) {
 	cl.ops.info = s.Info
 
 	cl.State.Inflight.Set(packets.Packet{PacketID: 1, Expiry: n - 1})
-	cl.State.Inflight.Set(packets.Packet{PacketID: 2, Expiry: n - 2})
-	cl.State.Inflight.Set(packets.Packet{PacketID: 3, Created: n - 3}) // within bounds
-	cl.State.Inflight.Set(packets.Packet{PacketID: 5, Created: n - 5}) // over max server expiry limit
+	cl.State.Inflight.Set(packets.Packet{PacketID: 2, Created: n - 99999999}) // over max server expiry limit
+	cl.State.Inflight.Set(packets.Packet{PacketID: 3, Created: n - 3})        // within bounds
+	cl.State.Inflight.Set(packets.Packet{PacketID: 5, Created: n - 5})        // over max server expiry limit
 	cl.State.Inflight.Set(packets.Packet{PacketID: 7, Created: n})
 
 	s.Clients.Add(cl)
@@ -3260,6 +3261,47 @@ func TestServerClearExpiredInflights(t *testing.T) {
 	s.clearExpiredInflights(n)
 	require.Len(t, cl.State.Inflight.GetAll(false), 2)
 	require.Equal(t, int64(-3), s.Info.Inflight)
+
+	// No maximum expiry (0)
+	s = New(nil)
+	require.NotNil(t, s)
+	s.Options.Capabilities.MaximumMessageExpiryInterval = 0
+
+	n = time.Now().Unix()
+	cl, _, _ = newTestClient()
+	cl.ops.info = s.Info
+
+	cl.State.Inflight.Set(packets.Packet{PacketID: 1, Expiry: n - 1})         // explicit expiry set
+	cl.State.Inflight.Set(packets.Packet{PacketID: 5, Created: n - 99999999}) // kept even when old
+	cl.State.Inflight.Set(packets.Packet{PacketID: 7, Created: n})
+
+	s.Clients.Add(cl)
+
+	require.Len(t, cl.State.Inflight.GetAll(false), 3)
+	s.clearExpiredInflights(n)
+	require.Len(t, cl.State.Inflight.GetAll(false), 2)
+	require.Equal(t, int64(-1), s.Info.Inflight)
+
+	// No maximum expiry (math.MaxInt)
+	s = New(nil)
+	require.NotNil(t, s)
+	s.Options.Capabilities.MaximumMessageExpiryInterval = math.MaxInt
+
+	n = time.Now().Unix()
+	cl, _, _ = newTestClient()
+	cl.ops.info = s.Info
+
+	cl.State.Inflight.Set(packets.Packet{PacketID: 1, Expiry: n - 1})         // explicit expiry set
+	cl.State.Inflight.Set(packets.Packet{PacketID: 3, Expiry: n - 999999})    // explicit expiry set
+	cl.State.Inflight.Set(packets.Packet{PacketID: 5, Created: n - 99999999}) // kept even when old
+	cl.State.Inflight.Set(packets.Packet{PacketID: 7, Created: n})
+
+	s.Clients.Add(cl)
+
+	require.Len(t, cl.State.Inflight.GetAll(false), 4)
+	s.clearExpiredInflights(n)
+	require.Len(t, cl.State.Inflight.GetAll(false), 2)
+	require.Equal(t, int64(-2), s.Info.Inflight)
 }
 
 func TestServerClearExpiredRetained(t *testing.T) {
