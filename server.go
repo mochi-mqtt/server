@@ -1596,14 +1596,15 @@ func (s *Server) clearExpiredClients(dt int64) {
 
 // clearExpiredRetainedMessage deletes retained messages from topics if they have expired.
 func (s *Server) clearExpiredRetainedMessages(now int64) {
-	isServerExpiryLimited := s.Options.Capabilities.MaximumMessageExpiryInterval != 0 && s.Options.Capabilities.MaximumMessageExpiryInterval != math.MaxInt
+
+	if s.Options.Capabilities.MaximumMessageExpiryInterval == 0 ||
+		// If the maximum message expiry interval is set to 0 or math.MaxInt64, do not process expired messages.
+		s.Options.Capabilities.MaximumMessageExpiryInterval == math.MaxInt64 {
+		return
+	}
 
 	for filter, pk := range s.Topics.Retained.GetAll() {
-		packetExpired := pk.Expiry > 0 && pk.Expiry < now
-		maxPacketExpiry := pk.Created + s.Options.Capabilities.MaximumMessageExpiryInterval
-		forceExpiry := isServerExpiryLimited && maxPacketExpiry > 0 && maxPacketExpiry < now
-
-		if packetExpired || forceExpiry {
+		if (pk.Expiry > 0 && pk.Expiry < now) || pk.Created+s.Options.Capabilities.MaximumMessageExpiryInterval < now {
 			s.Topics.Retained.Delete(filter)
 			s.hooks.OnRetainedExpired(filter)
 		}
@@ -1612,6 +1613,13 @@ func (s *Server) clearExpiredRetainedMessages(now int64) {
 
 // clearExpiredInflights deletes any inflight messages which have expired.
 func (s *Server) clearExpiredInflights(now int64) {
+
+	if s.Options.Capabilities.MaximumMessageExpiryInterval == 0 ||
+		s.Options.Capabilities.MaximumMessageExpiryInterval == math.MaxInt64 {
+		// If the maximum message expiry interval is set to 0 or math.MaxInt64, do not process expired messages.
+		return
+	}
+
 	for _, client := range s.Clients.GetAll() {
 		if deleted := client.ClearInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); len(deleted) > 0 {
 			for _, id := range deleted {

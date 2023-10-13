@@ -183,7 +183,7 @@ server := mqtt.New(&mqtt.Options{
 
 关于决定默认配置的值，在这里进行一些说明：
 
-- 默认情况下，server.Options.Capabilities.MaximumMessageExpiryInterval 的值被设置为 86400（24小时），以防止在使用默认配置时网络上暴露服务器而受到恶意DOS攻击（如果不配置到期时间将允许无限数量的保留retained/待发送inflight消息累积）。如果您在一个受信任的环境中运行，或者您有更大的保留期容量，您可以选择覆盖此设置（设置为 0 或 math.MaxInt 以取消到期限制）。
+- 默认情况下，server.Options.Capabilities.MaximumMessageExpiryInterval 的值被设置为 86400（24小时），以防止在使用默认配置时网络上暴露服务器而受到恶意DOS攻击（如果不配置到期时间将允许无限数量的保留retained/待发送inflight消息累积）。如果您在一个受信任的环境中运行，或者您有更大的保留期容量，您可以选择覆盖此设置（设置为 0 或 math.MaxInt64 以取消到期限制）。
 
 ## 事件钩子(Event Hooks)
 
