@@ -1598,8 +1598,8 @@ func (s *Server) clearExpiredClients(dt int64) {
 func (s *Server) clearExpiredRetainedMessages(now int64) {
 
 	if s.Options.Capabilities.MaximumMessageExpiryInterval == 0 ||
-		// If the maximum message expiry interval is set to 0 or math.MaxInt64, do not process expired messages.
 		s.Options.Capabilities.MaximumMessageExpiryInterval == math.MaxInt64 {
+		// If the maximum message expiry interval is set to 0 or math.MaxInt64, do not process expired messages.
 		return
 	}
 
