@@ -11,7 +11,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"math"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -316,12 +315,6 @@ func TestClientClearInflights(t *testing.T) {
 	require.Len(t, deleted, 3)
 	require.ElementsMatch(t, []uint16{1, 2, 5}, deleted)
 	require.Equal(t, 2, cl.State.Inflight.Len())
-
-	cl.State.Inflight.Set(packets.Packet{PacketID: 8, Created: n - 8})
-	deleted = cl.ClearInflights(n, math.MaxInt64)
-	require.Len(t, deleted, 0)
-	require.ElementsMatch(t, []uint16{}, deleted)
-	require.Equal(t, 3, cl.State.Inflight.Len())
 }
 
 func TestClientResendInflightMessages(t *testing.T) {
