@@ -337,7 +337,7 @@ func (cl *Client) ClearInflights(now, maximumExpiry int64) []uint16 {
 	}
 
 	for _, tk := range cl.State.Inflight.GetAll(false) {
-		if (tk.Expiry > 0 && tk.Expiry < now) || tk.Created+maximumExpiry < now {
+		if (tk.Expiry > 0 && tk.Expiry < now) || tk.Created < now-maximumExpiry {
 			if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
 				cl.ops.hooks.OnQosDropped(cl, tk)
 				atomic.AddInt64(&cl.ops.info.Inflight, -1)

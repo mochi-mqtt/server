@@ -1604,7 +1604,7 @@ func (s *Server) clearExpiredRetainedMessages(now int64) {
 	}
 
 	for filter, pk := range s.Topics.Retained.GetAll() {
-		if (pk.Expiry > 0 && pk.Expiry < now) || pk.Created+s.Options.Capabilities.MaximumMessageExpiryInterval < now {
+		if (pk.Expiry > 0 && pk.Expiry < now) || pk.Created < now-s.Options.Capabilities.MaximumMessageExpiryInterval {
 			s.Topics.Retained.Delete(filter)
 			s.hooks.OnRetainedExpired(filter)
 		}
