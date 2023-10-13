@@ -1596,34 +1596,26 @@ func (s *Server) clearExpiredClients(dt int64) {
 
 // clearExpiredRetainedMessage deletes retained messages from topics if they have expired.
 func (s *Server) clearExpiredRetainedMessages(now int64) {
-
-	if s.Options.Capabilities.MaximumMessageExpiryInterval == 0 ||
-		s.Options.Capabilities.MaximumMessageExpiryInterval == math.MaxInt64 {
-		// If the maximum message expiry interval is set to 0 or math.MaxInt64, do not process expired messages.
-		return
-	}
-
-	for filter, pk := range s.Topics.Retained.GetAll() {
-		if (pk.Expiry > 0 && pk.Expiry < now) || pk.Created < now-s.Options.Capabilities.MaximumMessageExpiryInterval {
-			s.Topics.Retained.Delete(filter)
-			s.hooks.OnRetainedExpired(filter)
+	// If the maximum message expiry interval is set to math.MaxInt64, do not process expired messages.
+	if s.Options.Capabilities.MaximumMessageExpiryInterval != math.MaxInt64 {
+		for filter, pk := range s.Topics.Retained.GetAll() {
+			if (pk.Expiry > 0 && pk.Expiry < now) || pk.Created < now-s.Options.Capabilities.MaximumMessageExpiryInterval {
+				s.Topics.Retained.Delete(filter)
+				s.hooks.OnRetainedExpired(filter)
+			}
 		}
 	}
 }
 
 // clearExpiredInflights deletes any inflight messages which have expired.
 func (s *Server) clearExpiredInflights(now int64) {
-
-	if s.Options.Capabilities.MaximumMessageExpiryInterval == 0 ||
-		s.Options.Capabilities.MaximumMessageExpiryInterval == math.MaxInt64 {
-		// If the maximum message expiry interval is set to 0 or math.MaxInt64, do not process expired messages.
-		return
-	}
-
-	for _, client := range s.Clients.GetAll() {
-		if deleted := client.ClearInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); len(deleted) > 0 {
-			for _, id := range deleted {
-				s.hooks.OnQosDropped(client, packets.Packet{PacketID: id})
+	// If the maximum message expiry interval is set math.MaxInt64, do not process expired messages.
+	if s.Options.Capabilities.MaximumMessageExpiryInterval != math.MaxInt64 {
+		for _, client := range s.Clients.GetAll() {
+			if deleted := client.ClearInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); len(deleted) > 0 {
+				for _, id := range deleted {
+					s.hooks.OnQosDropped(client, packets.Packet{PacketID: id})
+				}
 			}
 		}
 	}

@@ -331,21 +331,18 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 func (cl *Client) ClearInflights(now, maximumExpiry int64) []uint16 {
 	deleted := []uint16{}
 
-	if maximumExpiry == 0 || maximumExpiry == math.MaxInt64 {
-		// If the maximum message expiry interval is set to 0 or math.MaxInt64, do not process expired inflight messages.
-		return deleted
-	}
-
-	for _, tk := range cl.State.Inflight.GetAll(false) {
-		if (tk.Expiry > 0 && tk.Expiry < now) || tk.Created < now-maximumExpiry {
-			if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
-				cl.ops.hooks.OnQosDropped(cl, tk)
-				atomic.AddInt64(&cl.ops.info.Inflight, -1)
-				deleted = append(deleted, tk.PacketID)
+	// If the maximum message expiry interval is set to math.MaxInt64, do not process expired inflight messages.
+	if maximumExpiry != math.MaxInt64 {
+		for _, tk := range cl.State.Inflight.GetAll(false) {
+			if (tk.Expiry > 0 && tk.Expiry < now) || tk.Created < now-maximumExpiry {
+				if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
+					cl.ops.hooks.OnQosDropped(cl, tk)
+					atomic.AddInt64(&cl.ops.info.Inflight, -1)
+					deleted = append(deleted, tk.PacketID)
+				}
 			}
 		}
 	}
-
 	return deleted
 }
 

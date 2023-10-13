@@ -3265,10 +3265,6 @@ func TestServerClearExpiredInflights(t *testing.T) {
 	cl.State.Inflight.Set(packets.Packet{PacketID: 8, Expiry: n - 8})
 	s.clearExpiredInflights(n)
 	require.Len(t, cl.State.Inflight.GetAll(false), 3)
-
-	s.Options.Capabilities.MaximumMessageExpiryInterval = 0
-	s.clearExpiredInflights(n)
-	require.Len(t, cl.State.Inflight.GetAll(false), 3)
 }
 
 func TestServerClearExpiredRetained(t *testing.T) {
@@ -3289,10 +3285,6 @@ func TestServerClearExpiredRetained(t *testing.T) {
 
 	s.Options.Capabilities.MaximumMessageExpiryInterval = math.MaxInt64
 	s.Topics.Retained.Add("o/p/q", packets.Packet{Created: n - 8})
-	s.clearExpiredRetainedMessages(n)
-	require.Len(t, s.Topics.Retained.GetAll(), 3)
-
-	s.Options.Capabilities.MaximumMessageExpiryInterval = 0
 	s.clearExpiredRetainedMessages(n)
 	require.Len(t, s.Topics.Retained.GetAll(), 3)
 }
