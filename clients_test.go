@@ -304,17 +304,28 @@ func TestClientClearInflights(t *testing.T) {
 	cl, _, _ := newTestClient()
 
 	n := time.Now().Unix()
-	cl.State.Inflight.Set(packets.Packet{PacketID: 1, Expiry: n - 1})
-	cl.State.Inflight.Set(packets.Packet{PacketID: 2, Expiry: n - 2})
-	cl.State.Inflight.Set(packets.Packet{PacketID: 3, Created: n - 3}) // within bounds
-	cl.State.Inflight.Set(packets.Packet{PacketID: 5, Created: n - 5}) // over max server expiry limit
-	cl.State.Inflight.Set(packets.Packet{PacketID: 7, Created: n})
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 1, Expiry: n - 1})
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 2, Expiry: n - 2})
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 3, Created: n - 3}) // within bounds
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 5, Created: n - 5}) // over max server expiry limit
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 7, Created: n})
 	require.Equal(t, 5, cl.State.Inflight.Len())
 
 	deleted := cl.ClearInflights(n, 4)
 	require.Len(t, deleted, 3)
 	require.ElementsMatch(t, []uint16{1, 2, 5}, deleted)
 	require.Equal(t, 2, cl.State.Inflight.Len())
+
+	cl.State.Inflight.Set(packets.Packet{PacketID: 11, Expiry: n - 1})
+	cl.State.Inflight.Set(packets.Packet{PacketID: 12, Expiry: n - 2})  // expiry is ineffective for v3.
+	cl.State.Inflight.Set(packets.Packet{PacketID: 13, Created: n - 3}) // within bounds for v3
+	cl.State.Inflight.Set(packets.Packet{PacketID: 15, Created: n - 5}) // over max server expiry limit
+	require.Equal(t, 6, cl.State.Inflight.Len())
+
+	deleted = cl.ClearInflights(n, 4)
+	require.Len(t, deleted, 3)
+	require.ElementsMatch(t, []uint16{11, 12, 15}, deleted)
+	require.Equal(t, 3, cl.State.Inflight.Len())
 }
 
 func TestClientResendInflightMessages(t *testing.T) {

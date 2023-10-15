@@ -1596,13 +1596,17 @@ func (s *Server) clearExpiredClients(dt int64) {
 
 // clearExpiredRetainedMessage deletes retained messages from topics if they have expired.
 func (s *Server) clearExpiredRetainedMessages(now int64) {
-	// If the maximum message expiry interval is set to math.MaxInt64, do not process expired messages.
-	if s.Options.Capabilities.MaximumMessageExpiryInterval == math.MaxInt64 {
+
+	// If the maximum message expiry interval is set to 0, do not process expired messages for all protocols.
+	if s.Options.Capabilities.MaximumMessageExpiryInterval == 0 {
 		return
 	}
 
 	for filter, pk := range s.Topics.Retained.GetAll() {
-		if (pk.Expiry > 0 && pk.Expiry < now) || now-pk.Created > s.Options.Capabilities.MaximumMessageExpiryInterval {
+		expired := pk.ProtocolVersion == 5 && (pk.Expiry > 0 && pk.Expiry < now) // [MQTT-3.3.2-5]
+		abandoned := now-pk.Created > s.Options.Capabilities.MaximumMessageExpiryInterval
+
+		if expired || abandoned {
 			s.Topics.Retained.Delete(filter)
 			s.hooks.OnRetainedExpired(filter)
 		}
@@ -1611,8 +1615,9 @@ func (s *Server) clearExpiredRetainedMessages(now int64) {
 
 // clearExpiredInflights deletes any inflight messages which have expired.
 func (s *Server) clearExpiredInflights(now int64) {
-	// If the maximum message expiry interval is set math.MaxInt64, do not process expired messages.
-	if s.Options.Capabilities.MaximumMessageExpiryInterval == math.MaxInt64 {
+
+	// If the maximum message expiry interval is set to 0, do not process expired messages for all protocols.
+	if s.Options.Capabilities.MaximumMessageExpiryInterval == 0 {
 		return
 	}
 

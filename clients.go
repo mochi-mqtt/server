@@ -329,8 +329,12 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 // ClearInflights deletes all inflight messages for the client, e.g. for a disconnected user with a clean session.
 func (cl *Client) ClearInflights(now, maximumExpiry int64) []uint16 {
 	deleted := []uint16{}
+
 	for _, tk := range cl.State.Inflight.GetAll(false) {
-		if (tk.Expiry > 0 && tk.Expiry < now) || now-tk.Created > maximumExpiry {
+		expired := tk.ProtocolVersion == 5 && (tk.Expiry > 0 && tk.Expiry < now) // [MQTT-3.3.2-5]
+		abandoned := now-tk.Created > maximumExpiry
+
+		if expired || abandoned {
 			if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
 				cl.ops.hooks.OnQosDropped(cl, tk)
 				atomic.AddInt64(&cl.ops.info.Inflight, -1)
