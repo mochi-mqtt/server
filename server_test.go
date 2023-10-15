@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"io"
 	"log/slog"
-	"math"
 	"net"
 	"strconv"
 	"sync"
@@ -3261,7 +3260,7 @@ func TestServerClearExpiredInflights(t *testing.T) {
 	require.Len(t, cl.State.Inflight.GetAll(false), 2)
 	require.Equal(t, int64(-3), s.Info.Inflight)
 
-	s.Options.Capabilities.MaximumMessageExpiryInterval = math.MaxInt64
+	s.Options.Capabilities.MaximumMessageExpiryInterval = 0
 	cl.State.Inflight.Set(packets.Packet{PacketID: 8, Expiry: n - 8})
 	s.clearExpiredInflights(n)
 	require.Len(t, cl.State.Inflight.GetAll(false), 3)

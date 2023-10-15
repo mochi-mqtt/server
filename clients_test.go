@@ -326,6 +326,21 @@ func TestClientClearInflights(t *testing.T) {
 	require.Len(t, deleted, 3)
 	require.ElementsMatch(t, []uint16{11, 12, 15}, deleted)
 	require.Equal(t, 3, cl.State.Inflight.Len())
+
+	cl.State.Inflight.Set(packets.Packet{PacketID: 17, Created: n - 1})
+	deleted = cl.ClearInflights(n, 0) // maximumExpiry = 0 do not process abandon messages
+	require.Len(t, deleted, 0)
+	require.Equal(t, 4, cl.State.Inflight.Len())
+
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 18, Expiry: n - 1})
+	deleted = cl.ClearInflights(n, 0)               // maximumExpiry = 0 do not abandon messages
+	require.ElementsMatch(t, []uint16{18}, deleted) // expiry is still effective for v5.
+	require.Len(t, deleted, 1)
+	require.Equal(t, 4, cl.State.Inflight.Len())
+
+	deleted = cl.ClearInflights(n, -1) // forcibly clear all inflight messages
+	require.Len(t, deleted, 4)
+	require.Equal(t, 0, cl.State.Inflight.Len())
 }
 
 func TestClientResendInflightMessages(t *testing.T) {

@@ -327,12 +327,17 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 }
 
 // ClearInflights deletes all inflight messages for the client, e.g. for a disconnected user with a clean session.
+// When the value of maximumExpiry is set to 0, it prevents the abandonment of messages for any protocol,
+// even if the inflight message retention time exceeds maximumExpiry.
+// This means that if you want to forcibly clear inflight messages for the client,
+// you can set maximumExpiry to a value less than 0, such as -1.
 func (cl *Client) ClearInflights(now, maximumExpiry int64) []uint16 {
 	deleted := []uint16{}
 
 	for _, tk := range cl.State.Inflight.GetAll(false) {
-		expired := tk.ProtocolVersion == 5 && (tk.Expiry > 0 && tk.Expiry < now) // [MQTT-3.3.2-5]
-		abandoned := now-tk.Created > maximumExpiry
+		expired := tk.ProtocolVersion == 5 && tk.Expiry > 0 && tk.Expiry < now // [MQTT-3.3.2-5]
+		// If the maximum message expiry interval is set to 0, do not process abandon for all protocols.
+		abandoned := maximumExpiry != 0 && now-tk.Created > maximumExpiry
 
 		if expired || abandoned {
 			if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
