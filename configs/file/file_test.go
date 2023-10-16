@@ -39,6 +39,29 @@ server:
 `,
 )
 
+var goodConfigNoOptions = []byte(`
+server:
+  hooks:
+    allow_all: true
+  listeners:
+    healthcheck:
+      - id: hc
+        port: 8081
+    stats:
+      - id: stats1
+        port: 8080
+    tcp:
+      - id: tcp1
+        port: 1883
+    websocket:
+      - id: ws1
+        port: 1885
+  logging:
+    level: INFO
+    output: TEXT    
+`,
+)
+
 var invalidConfig = []byte(`
 server:
   hooks:
@@ -70,6 +93,60 @@ func TestConfigure(t *testing.T) {
 	tests := []struct {
 		name     string
 		readfile func(name string) ([]byte, error)
+		wantErr  bool
+	}{
+		{
+			name: "sucessfull configuration",
+			readfile: func(name string) ([]byte, error) {
+				return goodConfig, nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "sucessfull configuration - check server config",
+			readfile: func(name string) ([]byte, error) {
+				return goodConfig, nil
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid yaml",
+			readfile: func(name string) ([]byte, error) {
+				return invalidConfig, nil
+			},
+			wantErr: true,
+		},
+		{
+			name: "no file found",
+			readfile: func(name string) ([]byte, error) {
+				return nil, os.ErrNotExist
+			},
+			wantErr: true,
+		},
+		{
+			name: "unknown error on readfile",
+			readfile: func(name string) ([]byte, error) {
+				return nil, errors.New("unknown error")
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			readFile = tt.readfile
+			_, err := Configure("")
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestConfigureServer(t *testing.T) {
+	tests := []struct {
+		name     string
+		readfile func(name string) ([]byte, error)
 		want     *mqtt.Server
 		wantErr  bool
 	}{
@@ -81,41 +158,15 @@ func TestConfigure(t *testing.T) {
 			want:    &mqtt.Server{},
 			wantErr: false,
 		},
-		{
-			name: "invalid yaml",
-			readfile: func(name string) ([]byte, error) {
-				return invalidConfig, nil
-			},
-			want:    &mqtt.Server{},
-			wantErr: false,
-		},
-		{
-			name: "no file found",
-			readfile: func(name string) ([]byte, error) {
-				return nil, os.ErrNotExist
-			},
-			want:    &mqtt.Server{},
-			wantErr: false,
-		},
-		{
-			name: "unknown error on readfile",
-			readfile: func(name string) ([]byte, error) {
-				return nil, errors.New("unknown error")
-			},
-			want:    &mqtt.Server{},
-			wantErr: false,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			readFile = tt.readfile
 			_, err := Configure("")
-			if err != nil {
-				fmt.Println(err)
+
+			if tt.wantErr {
+				assert.Error(t, err)
 			}
-
-			assert.True(t, false)
-
 		})
 	}
 }
