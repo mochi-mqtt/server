@@ -97,12 +97,12 @@ func (h *DelayHook) OnDisconnect(cl *Client, err error, expire bool) {
 
 func newServer() *Server {
 	cc := *DefaultServerCapabilities
-	cc.MaximumMessageExpiryInterval = 0
-	cc.ReceiveMaximum = 0
 	s := New(&Options{
 		Logger:       logger,
 		Capabilities: &cc,
 	})
+	s.Options.Capabilities.MaximumMessageExpiryInterval = 0
+	s.Options.Capabilities.ReceiveMaximum = 0
 	_ = s.AddHook(new(AllowHook), nil)
 	return s
 }
