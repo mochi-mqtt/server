@@ -327,19 +327,26 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 }
 
 // ClearInflights deletes all inflight messages for the client, e.g. for a disconnected user with a clean session.
-// When the value of maximumExpiry is set to 0, it prevents the abandonment of messages for any protocol,
-// even if the inflight message retention time exceeds maximumExpiry.
-// This means that if you want to forcibly clear inflight messages for the client,
-// you can set maximumExpiry to a value less than 0, such as -1.
-func (cl *Client) ClearInflights(now, maximumExpiry int64) []uint16 {
-	deleted := []uint16{}
+func (cl *Client) ClearInflights() {
+	for _, tk := range cl.State.Inflight.GetAll(false) {
+		if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
+			cl.ops.hooks.OnQosDropped(cl, tk)
+			atomic.AddInt64(&cl.ops.info.Inflight, -1)
+		}
+	}
+}
 
+// ClearExpiredInflights deletes any inflight messages which have expired.
+func (cl *Client) ClearExpiredInflights(now, maximumExpiry int64) []uint16 {
+	deleted := []uint16{}
 	for _, tk := range cl.State.Inflight.GetAll(false) {
 		expired := tk.ProtocolVersion == 5 && tk.Expiry > 0 && tk.Expiry < now // [MQTT-3.3.2-5]
-		// If the maximum message expiry interval is set to 0, do not process abandon for all protocols.
-		abandoned := maximumExpiry != 0 && now-tk.Created > maximumExpiry
 
-		if expired || abandoned {
+		// If the maximum message expiry interval is set (greater than 0), and the message
+		// retention period exceeds the maximum expiry, the message will be forcibly removed.
+		enforced := maximumExpiry > 0 && now-tk.Created > maximumExpiry
+
+		if expired || enforced {
 			if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
 				cl.ops.hooks.OnQosDropped(cl, tk)
 				atomic.AddInt64(&cl.ops.info.Inflight, -1)
