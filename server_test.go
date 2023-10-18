@@ -122,13 +122,13 @@ func newServerWithInlineClient() *Server {
 
 func TestOptionsSetDefaults(t *testing.T) {
 	opts := &Options{}
-	opts.ensureDefaults()
+	opts.EnsureDefaults()
 
 	require.Equal(t, defaultSysTopicInterval, opts.SysTopicResendInterval)
 	require.Equal(t, DefaultServerCapabilities, opts.Capabilities)
 
 	opts = new(Options)
-	opts.ensureDefaults()
+	opts.EnsureDefaults()
 	require.Equal(t, defaultSysTopicInterval, opts.SysTopicResendInterval)
 }
 

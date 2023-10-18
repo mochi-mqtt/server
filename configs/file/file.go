@@ -38,8 +38,8 @@ type Config struct {
 			TCP       []*TCP       `yaml:"tcp"`
 			Websocket []*Websocket `yaml:"websocket"`
 		} `yaml:"listeners"`
-		Logging      *Logging         `yaml:"logging"`
-		mqtt.Options `yaml:"options"` // Options contains configurable options for the server.
+		Logging *Logging         `yaml:"logging"`
+		Options `yaml:"options"` // Options contains configurable options for the server.
 
 	} `yaml:"server"`
 }
@@ -83,7 +83,9 @@ func Configure(filepath string) (*mqtt.Server, error) {
 		return nil, err
 	}
 
-	server := mqtt.New(&config.Server.Options)
+	opts := CompareOptions(config.Server.Options)
+
+	server := mqtt.New(&opts)
 
 	if config.Server.Hooks != nil {
 		if config.Server.Hooks.AllowAll {
