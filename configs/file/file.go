@@ -83,7 +83,7 @@ func Configure(filepath string) (*mqtt.Server, error) {
 		return nil, err
 	}
 
-	opts := CompareOptions(config.Server.Options)
+	opts := CheckForDefaults(config.Server.Options)
 
 	server := mqtt.New(&opts)
 

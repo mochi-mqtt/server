@@ -49,7 +49,7 @@ type Compatibilities struct {
 	NoInheritedPropertiesOnAck *bool `yaml:"no_inherited_properties_on_ack"` // don't allow inherited user properties on ack (paho - spec violation)
 }
 
-func CompareOptions(opts Options) mqtt.Options {
+func CheckForDefaults(opts Options) mqtt.Options {
 	ropts := mqtt.Options{}
 	ropts.EnsureDefaults()
 

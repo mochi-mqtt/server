@@ -192,44 +192,6 @@ func (o *Options) EnsureDefaults() {
 	if o.Capabilities == nil {
 		o.Capabilities = DefaultServerCapabilities
 	}
-	// else {
-	// 	if o.Capabilities.MaximumSessionExpiryInterval == 0 {
-	// 		o.Capabilities.MaximumSessionExpiryInterval = DefaultServerCapabilities.MaximumSessionExpiryInterval
-	// 	}
-	// 	if o.Capabilities.MaximumMessageExpiryInterval == 0 {
-	// 		o.Capabilities.MaximumMessageExpiryInterval = DefaultServerCapabilities.MaximumMessageExpiryInterval
-	// 	}
-	// 	if o.Capabilities.ReceiveMaximum == 0 {
-	// 		o.Capabilities.ReceiveMaximum = DefaultServerCapabilities.ReceiveMaximum
-	// 	}
-	// 	if o.Capabilities.MaximumQos == 0 {
-	// 		o.Capabilities.MaximumQos = DefaultServerCapabilities.MaximumQos
-	// 	}
-	// 	if o.Capabilities.RetainAvailable == 0 {
-	// 		o.Capabilities.RetainAvailable = DefaultServerCapabilities.RetainAvailable
-	// 	}
-	// 	if o.Capabilities.MaximumPacketSize == 0 {
-	// 		o.Capabilities.MaximumPacketSize = DefaultServerCapabilities.MaximumPacketSize
-	// 	}
-	// 	if o.Capabilities.TopicAliasMaximum == 0 {
-	// 		o.Capabilities.TopicAliasMaximum = DefaultServerCapabilities.TopicAliasMaximum
-	// 	}
-	// 	if o.Capabilities.WildcardSubAvailable == 0 {
-	// 		o.Capabilities.WildcardSubAvailable = DefaultServerCapabilities.WildcardSubAvailable
-	// 	}
-	// 	if o.Capabilities.SubIDAvailable == 0 {
-	// 		o.Capabilities.SubIDAvailable = DefaultServerCapabilities.SubIDAvailable
-	// 	}
-	// 	if o.Capabilities.SharedSubAvailable == 0 {
-	// 		o.Capabilities.SharedSubAvailable = DefaultServerCapabilities.SharedSubAvailable
-	// 	}
-	// 	if o.Capabilities.MinimumProtocolVersion == 0 {
-	// 		o.Capabilities.MinimumProtocolVersion = DefaultServerCapabilities.MinimumProtocolVersion
-	// 	}
-	// 	if o.Capabilities.MaximumClientWritesPending == 0 {
-	// 		o.Capabilities.MaximumClientWritesPending = DefaultServerCapabilities.MaximumClientWritesPending
-	// 	}
-	// }
 
 	o.Capabilities.maximumPacketID = math.MaxUint16 // spec maximum is 65535
 
