@@ -568,11 +568,18 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		return packets.ErrPacketTooLarge // [MQTT-3.1.2-24] [MQTT-3.1.2-25]
 	}
 
-	nb := net.Buffers{buf.Bytes()}
 	n, err := func() (int64, error) {
 		cl.Lock()
 		defer cl.Unlock()
-		return nb.WriteTo(cl.Net.Conn)
+
+		length, werr := cl.Net.bconn.Write(buf.Bytes())
+		// immediate flush if no packets in channel and write buffer is not empty
+		if len(cl.State.outbound) == 0 && cl.Net.bconn.Writer.Size() > 0 {
+			if ferr := cl.Net.bconn.Flush(); nil != ferr {
+				return 0, ferr
+			}
+		}
+		return int64(length), werr
 	}()
 	if err != nil {
 		return err
