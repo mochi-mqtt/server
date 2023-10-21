@@ -588,15 +588,21 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		cl.Lock()
 		defer cl.Unlock()
 
-		length, werr := cl.Net.bconn.Write(buf.Bytes())
+		length, err := cl.Net.bconn.Write(buf.Bytes())
+		if nil != err {
+			return 0, err
+		}
+
 		// immediate flush if no packets in channel and write buffer is not empty
 		if len(cl.State.outbound) == 0 && cl.Net.bconn.Writer.Buffered() > 0 {
-			if ferr := cl.Net.bconn.Flush(); nil != ferr {
-				return 0, ferr
+			if err = cl.Net.bconn.Flush(); nil != err {
+				return 0, err
 			}
 		}
-		return int64(length), werr
+
+		return int64(length), nil
 	}()
+	
 	if err != nil {
 		return err
 	}
