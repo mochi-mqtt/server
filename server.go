@@ -400,7 +400,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	s.hooks.OnDisconnect(cl, err, expire)
 
 	if expire && atomic.LoadUint32(&cl.State.isTakenOver) == 0 {
-		cl.ClearInflights(math.MaxInt64, 0)
+		cl.ClearInflights()
 		s.UnsubscribeClient(cl)
 		s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
 	}
@@ -478,7 +478,7 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 		_ = s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                   // [MQTT-3.1.4-3]
 		if pk.Connect.Clean || (existing.Properties.Clean && existing.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
-			existing.ClearInflights(math.MaxInt64, 0)
+			existing.ClearInflights()
 			atomic.StoreUint32(&existing.State.isTakenOver, 1) // only set isTakenOver after unsubscribe has occurred
 			return false                                       // [MQTT-3.2.2-3]
 		}
@@ -503,7 +503,7 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 		// Clean the state of the existing client to prevent sequential take-overs
 		// from increasing memory usage by inflights + subs * client-id.
 		s.UnsubscribeClient(existing)
-		existing.ClearInflights(math.MaxInt64, 0)
+		existing.ClearInflights()
 
 		s.Log.Debug("session taken over", "client", cl.ID, "old_remote", existing.Net.Remote, "new_remote", cl.Net.Remote)
 
@@ -1597,7 +1597,14 @@ func (s *Server) clearExpiredClients(dt int64) {
 // clearExpiredRetainedMessage deletes retained messages from topics if they have expired.
 func (s *Server) clearExpiredRetainedMessages(now int64) {
 	for filter, pk := range s.Topics.Retained.GetAll() {
-		if (pk.Expiry > 0 && pk.Expiry < now) || pk.Created+s.Options.Capabilities.MaximumMessageExpiryInterval < now {
+		expired := pk.ProtocolVersion == 5 && pk.Expiry > 0 && pk.Expiry < now // [MQTT-3.3.2-5]
+
+		// If the maximum message expiry interval is set (greater than 0), and the message
+		// retention period exceeds the maximum expiry, the message will be forcibly removed.
+		enforced := s.Options.Capabilities.MaximumMessageExpiryInterval > 0 &&
+			now-pk.Created > s.Options.Capabilities.MaximumMessageExpiryInterval
+
+		if expired || enforced {
 			s.Topics.Retained.Delete(filter)
 			s.hooks.OnRetainedExpired(filter)
 		}
@@ -1607,7 +1614,7 @@ func (s *Server) clearExpiredRetainedMessages(now int64) {
 // clearExpiredInflights deletes any inflight messages which have expired.
 func (s *Server) clearExpiredInflights(now int64) {
 	for _, client := range s.Clients.GetAll() {
-		if deleted := client.ClearInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); len(deleted) > 0 {
+		if deleted := client.ClearExpiredInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); len(deleted) > 0 {
 			for _, id := range deleted {
 				s.hooks.OnQosDropped(client, packets.Packet{PacketID: id})
 			}
