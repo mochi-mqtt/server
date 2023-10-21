@@ -3268,6 +3268,11 @@ func TestServerClearExpiredInflights(t *testing.T) {
 	s.clearExpiredInflights(n)
 	require.Len(t, cl.State.Inflight.GetAll(false), 2)
 	require.Equal(t, int64(-3), s.Info.Inflight)
+
+	s.Options.Capabilities.MaximumMessageExpiryInterval = 0
+	cl.State.Inflight.Set(packets.Packet{PacketID: 8, Expiry: n - 8})
+	s.clearExpiredInflights(n)
+	require.Len(t, cl.State.Inflight.GetAll(false), 3)
 }
 
 func TestServerClearExpiredRetained(t *testing.T) {
@@ -3276,15 +3281,28 @@ func TestServerClearExpiredRetained(t *testing.T) {
 	s.Options.Capabilities.MaximumMessageExpiryInterval = 4
 
 	n := time.Now().Unix()
-	s.Topics.Retained.Add("a/b/c", packets.Packet{Created: n, Expiry: n - 1})
-	s.Topics.Retained.Add("d/e/f", packets.Packet{Created: n, Expiry: n - 2})
-	s.Topics.Retained.Add("g/h/i", packets.Packet{Created: n - 3}) // within bounds
-	s.Topics.Retained.Add("j/k/l", packets.Packet{Created: n - 5}) // over max server expiry limit
-	s.Topics.Retained.Add("m/n/o", packets.Packet{Created: n})
+	s.Topics.Retained.Add("a/b/c", packets.Packet{ProtocolVersion: 5, Created: n, Expiry: n - 1})
+	s.Topics.Retained.Add("d/e/f", packets.Packet{ProtocolVersion: 5, Created: n, Expiry: n - 2})
+	s.Topics.Retained.Add("g/h/i", packets.Packet{ProtocolVersion: 5, Created: n - 3}) // within bounds
+	s.Topics.Retained.Add("j/k/l", packets.Packet{ProtocolVersion: 5, Created: n - 5}) // over max server expiry limit
+	s.Topics.Retained.Add("m/n/o", packets.Packet{ProtocolVersion: 5, Created: n})
 
 	require.Len(t, s.Topics.Retained.GetAll(), 5)
 	s.clearExpiredRetainedMessages(n)
 	require.Len(t, s.Topics.Retained.GetAll(), 2)
+
+	s.Topics.Retained.Add("p/q/r", packets.Packet{Created: n, Expiry: n - 1})
+	s.Topics.Retained.Add("s/t/u", packets.Packet{Created: n, Expiry: n - 2}) // expiry is ineffective for v3.
+	s.Topics.Retained.Add("v/w/x", packets.Packet{Created: n - 3})            // within bounds for v3
+	s.Topics.Retained.Add("y/z/1", packets.Packet{Created: n - 5})            // over max server expiry limit
+	require.Len(t, s.Topics.Retained.GetAll(), 6)
+	s.clearExpiredRetainedMessages(n)
+	require.Len(t, s.Topics.Retained.GetAll(), 5)
+
+	s.Options.Capabilities.MaximumMessageExpiryInterval = 0
+	s.Topics.Retained.Add("2/3/4", packets.Packet{Created: n - 8})
+	s.clearExpiredRetainedMessages(n)
+	require.Len(t, s.Topics.Retained.GetAll(), 6)
 }
 
 func TestServerClearExpiredClients(t *testing.T) {
