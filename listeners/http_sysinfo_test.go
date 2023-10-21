@@ -125,3 +125,28 @@ func TestHTTPStatsServeTLSAndClose(t *testing.T) {
 	time.Sleep(time.Millisecond)
 	l.Close(MockCloser)
 }
+
+func TestHTTPStatsFailedToServe(t *testing.T) {
+	sysInfo := &system.Info{
+		Version: "test",
+	}
+
+	// setup http stats listener
+	l := NewHTTPStats("t1", "wrong_addr", nil, sysInfo)
+	err := l.Init(logger)
+	require.NoError(t, err)
+
+	o := make(chan bool)
+	go func(o chan bool) {
+		l.Serve(MockEstablisher)
+		o <- true
+	}(o)
+
+	<-o
+	// ensure listening is closed
+	var closed bool
+	l.Close(func(id string) {
+		closed = true
+	})
+	require.Equal(t, true, closed)
+}

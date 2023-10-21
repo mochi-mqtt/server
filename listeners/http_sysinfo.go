@@ -25,6 +25,7 @@ type HTTPStats struct {
 	config  *Config      // configuration values for the listener
 	listen  *http.Server // the http server
 	sysInfo *system.Info // pointers to the server data
+	log     *slog.Logger // server logger
 	end     uint32       // ensure the close methods are only called once
 }
 
@@ -61,7 +62,8 @@ func (l *HTTPStats) Protocol() string {
 }
 
 // Init initializes the listener.
-func (l *HTTPStats) Init(_ *slog.Logger) error {
+func (l *HTTPStats) Init(log *slog.Logger) error {
+	l.log = log
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", l.jsonHandler)
 	l.listen = &http.Server{
@@ -80,10 +82,17 @@ func (l *HTTPStats) Init(_ *slog.Logger) error {
 
 // Serve starts listening for new connections and serving responses.
 func (l *HTTPStats) Serve(establish EstablishFn) {
+
+	var err error
 	if l.listen.TLSConfig != nil {
-		_ = l.listen.ListenAndServeTLS("", "")
+		err = l.listen.ListenAndServeTLS("", "")
 	} else {
-		_ = l.listen.ListenAndServe()
+		err = l.listen.ListenAndServe()
+	}
+
+	// After the listener has been shutdown, no need to print the http.ErrServerClosed error.
+	if err != nil && atomic.LoadUint32(&l.end) == 0 {
+		l.log.Error("failed to serve.", "error", err, "listener", l.id)
 	}
 }
 

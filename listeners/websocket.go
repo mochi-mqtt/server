@@ -109,12 +109,18 @@ func (l *Websocket) handler(w http.ResponseWriter, r *http.Request) {
 // Serve starts waiting for new Websocket connections, and calls the connection
 // establishment callback for any received.
 func (l *Websocket) Serve(establish EstablishFn) {
+	var err error
 	l.establish = establish
 
 	if l.listen.TLSConfig != nil {
-		_ = l.listen.ListenAndServeTLS("", "")
+		err = l.listen.ListenAndServeTLS("", "")
 	} else {
-		_ = l.listen.ListenAndServe()
+		err = l.listen.ListenAndServe()
+	}
+
+	// After the listener has been shutdown, no need to print the http.ErrServerClosed error.
+	if err != nil && atomic.LoadUint32(&l.end) == 0 {
+		l.log.Error("failed to serve.", "error", err, "listener", l.id)
 	}
 }
 
