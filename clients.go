@@ -590,7 +590,7 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 
 		length, werr := cl.Net.bconn.Write(buf.Bytes())
 		// immediate flush if no packets in channel and write buffer is not empty
-		if len(cl.State.outbound) == 0 && cl.Net.bconn.Writer.Size() > 0 {
+		if len(cl.State.outbound) == 0 && cl.Net.bconn.Writer.Buffered() > 0 {
 			if ferr := cl.Net.bconn.Flush(); nil != ferr {
 				return 0, ferr
 			}
