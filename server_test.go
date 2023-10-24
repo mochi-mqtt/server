@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"bufio"
 
 	"github.com/mochi-mqtt/server/v2/hooks/storage"
 	"github.com/mochi-mqtt/server/v2/listeners"
@@ -2469,10 +2468,6 @@ func TestServerProcessInboundQos2Flow(t *testing.T) {
 		t.Run("qos step"+strconv.Itoa(i), func(t *testing.T) {
 			r, w = net.Pipe()
 			cl.Net.Conn = w
-			cl.Net.bconn = bufio.NewReadWriter(
-				bufio.NewReaderSize(w, cl.ops.options.ClientNetReadBufferSize),
-				bufio.NewWriterSize(w, cl.ops.options.ClientNetWriteBufferSize),
-			)
 
 			recv := make(chan []byte)
 			go func() { // receive the ack
@@ -2548,10 +2543,6 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 			r, w := net.Pipe()
 			time.Sleep(time.Millisecond)
 			cl.Net.Conn = w
-			cl.Net.bconn = bufio.NewReadWriter(
-				bufio.NewReaderSize(w, cl.ops.options.ClientNetReadBufferSize),
-				bufio.NewWriterSize(w, cl.ops.options.ClientNetWriteBufferSize),
-			)
 
 			recv := make(chan []byte)
 			go func() { // receive the ack
