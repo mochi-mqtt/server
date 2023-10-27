@@ -585,7 +585,6 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		return packets.ErrPacketTooLarge // [MQTT-3.1.2-24] [MQTT-3.1.2-25]
 	}
 
-	// nb := net.Buffers{buf.Bytes()}
 	n, err := func() (n int64, err error) {
 		cl.Lock()
 		defer cl.Unlock()
