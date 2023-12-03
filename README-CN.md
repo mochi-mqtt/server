@@ -10,7 +10,7 @@
 
 </p>
 
-[English](README.md) | [简体中文](README-CN.md) | [招募翻译者!](https://github.com/orgs/mochi-mqtt/discussions/310)
+[English](README.md) | [简体中文](README-CN.md) | [日本語](README-JP.md) | [招募翻译者!](https://github.com/orgs/mochi-mqtt/discussions/310)
 
 
 🎆 **mochi-co/mqtt 现在已经是新的 mochi-mqtt 组织的一部分。** 详细信息请[阅读公告.](https://github.com/orgs/mochi-mqtt/discussions/271)
