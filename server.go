@@ -1559,7 +1559,6 @@ func (s *Server) loadClients(v []storage.Client) {
 		if expire {
 			cl.ClearInflights()
 			s.UnsubscribeClient(cl)
-			s.Clients.Delete(cl.ID)
 		} else {
 			s.Clients.Add(cl)
 		}
