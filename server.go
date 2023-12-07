@@ -1553,7 +1553,16 @@ func (s *Server) loadClients(v []storage.Client) {
 			MaximumPacketSize:         c.Properties.MaximumPacketSize,
 		}
 		cl.Properties.Will = Will(c.Will)
-		s.Clients.Add(cl)
+
+		expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
+		s.hooks.OnDisconnect(cl, packets.ErrServerShuttingDown, expire)
+		if expire {
+			cl.ClearInflights()
+			s.UnsubscribeClient(cl)
+			s.Clients.Delete(cl.ID)
+		} else {
+			s.Clients.Add(cl)
+		}
 	}
 }
 

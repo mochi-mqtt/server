@@ -3128,15 +3128,50 @@ func TestServerLoadClients(t *testing.T) {
 		{ID: "mochi"},
 		{ID: "zen"},
 		{ID: "mochi-co"},
+		{ID: "v3-clean", ProtocolVersion: 4, Clean: true},
+		{ID: "v3-not-clean", ProtocolVersion: 4, Clean: false},
+		{
+			ID: "v5-clean",
+			ProtocolVersion: 5,
+			Clean: true,
+			Properties: storage.ClientProperties{
+				SessionExpiryInterval: 10,
+			},
+		},
+		{
+			ID: "v5-expire-interval-0",
+			ProtocolVersion: 5,
+			Properties: storage.ClientProperties{
+				SessionExpiryInterval: 0,
+			},
+		},
+		{
+			ID: "v5-expire-interval-not-0",
+			ProtocolVersion: 5,
+			Properties: storage.ClientProperties{
+				SessionExpiryInterval: 10,
+			},
+		},
 	}
 
 	s := newServer()
 	require.Equal(t, 0, s.Clients.Len())
 	s.loadClients(v)
-	require.Equal(t, 3, s.Clients.Len())
+	require.Equal(t, 6, s.Clients.Len())
 	cl, ok := s.Clients.Get("mochi")
 	require.True(t, ok)
 	require.Equal(t, "mochi", cl.ID)
+
+	_, ok = s.Clients.Get("v3-clean")
+	require.False(t, ok)
+	_, ok = s.Clients.Get("v3-not-clean")
+	require.True(t, ok)
+	_, ok = s.Clients.Get("v5-clean")
+	require.True(t, ok)
+	_, ok = s.Clients.Get("v5-expire-interval-0")
+	require.False(t, ok)
+	_, ok = s.Clients.Get("v5-expire-interval-not-0")
+	require.True(t, ok)
 }
 
 func TestServerLoadSubscriptions(t *testing.T) {
