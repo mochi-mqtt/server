@@ -113,11 +113,12 @@ type Client struct {
 
 // ClientConnection contains the connection transport and metadata for the client.
 type ClientConnection struct {
-	Conn     net.Conn          // the net.Conn used to establish the connection
-	bconn    *bufio.ReadWriter // a buffered net.Conn for reading packets
-	Remote   string            // the remote address of the client
-	Listener string            // listener id of the client
-	Inline   bool              // if true, the client is the built-in 'inline' embedded client
+	Conn     net.Conn      // the net.Conn used to establish the connection
+	bconn    *bufio.Reader // a buffered net.Conn for reading packets
+	outbuf   *bytes.Buffer // a buffer for writing packets
+	Remote   string        // the remote address of the client
+	Listener string        // listener id of the client
+	Inline   bool          // if true, the client is the built-in 'inline' embedded client
 }
 
 // ClientProperties contains the properties which define the client behaviour.
@@ -180,11 +181,8 @@ func newClient(c net.Conn, o *ops) *Client {
 
 	if c != nil {
 		cl.Net = ClientConnection{
-			Conn: c,
-			bconn: bufio.NewReadWriter(
-				bufio.NewReaderSize(c, o.options.ClientNetReadBufferSize),
-				bufio.NewWriterSize(c, o.options.ClientNetWriteBufferSize),
-			),
+			Conn:   c,
+			bconn:  bufio.NewReaderSize(c, o.options.ClientNetReadBufferSize),
 			Remote: c.RemoteAddr().String(),
 		}
 	}
@@ -584,11 +582,37 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		return packets.ErrPacketTooLarge // [MQTT-3.1.2-24] [MQTT-3.1.2-25]
 	}
 
-	nb := net.Buffers{buf.Bytes()}
-	n, err := func() (int64, error) {
+	n, err := func() (n int64, err error) {
 		cl.Lock()
 		defer cl.Unlock()
-		return nb.WriteTo(cl.Net.Conn)
+		if len(cl.State.outbound) == 0 {
+			if cl.Net.outbuf == nil {
+				return buf.WriteTo(cl.Net.Conn)
+			}
+
+			// first write to buffer, then flush buffer
+			n, _ = buf.WriteTo(cl.Net.outbuf) // will always be successful
+			err = cl.flushOutbuf()
+			return
+		}
+
+		// there are more writes in the queue
+		if cl.Net.outbuf == nil {
+			if l := buf.Len(); l < cl.ops.options.ClientNetWriteBufferSize {
+				cl.Net.outbuf = buf
+				return int64(l), nil
+			}
+
+			return buf.WriteTo(cl.Net.Conn)
+		}
+
+		n, _ = buf.WriteTo(cl.Net.outbuf) // will always be successful
+		if cl.Net.outbuf.Len() < cl.ops.options.ClientNetWriteBufferSize {
+			return
+		}
+
+		err = cl.flushOutbuf()
+		return
 	}()
 	if err != nil {
 		return err
@@ -603,4 +627,16 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 	cl.ops.hooks.OnPacketSent(cl, pk, buf.Bytes())
 
 	return err
+}
+
+func (cl *Client) flushOutbuf() (err error) {
+	if cl.Net.outbuf == nil {
+		return
+	}
+
+	_, err = cl.Net.outbuf.WriteTo(cl.Net.Conn)
+	if err == nil {
+		cl.Net.outbuf = nil
+	}
+	return
 }

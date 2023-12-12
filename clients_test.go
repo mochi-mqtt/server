@@ -709,6 +709,86 @@ func TestClientWritePacket(t *testing.T) {
 	}
 }
 
+func TestClientWritePacketBuffer(t *testing.T) {
+	r, w := net.Pipe()
+
+	cl := newClient(w, &ops{
+		info:  new(system.Info),
+		hooks: new(Hooks),
+		log:   logger,
+		options: &Options{
+			Capabilities: &Capabilities{
+				ReceiveMaximum:             10,
+				TopicAliasMaximum:          10000,
+				MaximumClientWritesPending: 3,
+				maximumPacketID:            10,
+			},
+		},
+	})
+
+	cl.ID = "mochi"
+	cl.State.Inflight.maximumSendQuota = 5
+	cl.State.Inflight.sendQuota = 5
+	cl.State.Inflight.maximumReceiveQuota = 10
+	cl.State.Inflight.receiveQuota = 10
+	cl.Properties.Props.TopicAliasMaximum = 0
+	cl.Properties.Props.RequestResponseInfo = 0x1
+
+	cl.ops.options.ClientNetWriteBufferSize = 10
+	defer cl.Stop(errClientStop)
+
+	small := packets.TPacketData[packets.Publish].Get(packets.TPublishNoPayload).Packet
+	large := packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+
+	cl.State.outbound <- small
+
+	tt := []struct {
+		pks  []*packets.Packet
+		size int
+	}{
+		{
+			pks:  []*packets.Packet{small, small},
+			size: 18,
+		},
+		{
+			pks:  []*packets.Packet{large},
+			size: 20,
+		},
+		{
+			pks:  []*packets.Packet{small},
+			size: 0,
+		},
+	}
+
+	go func() {
+		for i, tx := range tt {
+			for _, pk := range tx.pks {
+				cl.Properties.ProtocolVersion = pk.ProtocolVersion
+				err := cl.WritePacket(*pk)
+				require.NoError(t, err, "index: %d", i)
+				if i == len(tt)-1 {
+					cl.Net.Conn.Close()
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}()
+
+	var n int
+	var err error
+	for i, tx := range tt {
+		buf := make([]byte, 100)
+		if i == len(tt)-1 {
+			buf, err = io.ReadAll(r)
+			n = len(buf)
+		} else {
+			n, err = io.ReadAtLeast(r, buf, 1)
+		}
+		require.NoError(t, err, "index: %d", i)
+		require.Equal(t, tx.size, n, "index: %d", i)
+	}
+}
+
 func TestWriteClientOversizePacket(t *testing.T) {
 	cl, _, _ := newTestClient()
 	cl.Properties.Props.MaximumPacketSize = 2
