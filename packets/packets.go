@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/mochi-mqtt/server/v2/mempool"
 )
 
 // All valid packet types and their packet identifiers.
@@ -298,7 +300,8 @@ func (s *Subscription) decode(b byte) {
 
 // ConnectEncode encodes a connect packet.
 func (pk *Packet) ConnectEncode(buf *bytes.Buffer) error {
-	nb := bytes.NewBuffer([]byte{})
+	nb := mempool.GetBuffer()
+	defer mempool.PutBuffer(nb)
 	nb.Write(encodeBytes(pk.Connect.ProtocolName))
 	nb.WriteByte(pk.ProtocolVersion)
 
@@ -315,7 +318,8 @@ func (pk *Packet) ConnectEncode(buf *bytes.Buffer) error {
 	nb.Write(encodeUint16(pk.Connect.Keepalive))
 
 	if pk.ProtocolVersion == 5 {
-		pb := bytes.NewBuffer([]byte{})
+		pb := mempool.GetBuffer()
+		defer mempool.PutBuffer(pb)
 		(&pk.Properties).Encode(pk.FixedHeader.Type, pk.Mods, pb, 0)
 		nb.Write(pb.Bytes())
 	}
@@ -324,7 +328,8 @@ func (pk *Packet) ConnectEncode(buf *bytes.Buffer) error {
 
 	if pk.Connect.WillFlag {
 		if pk.ProtocolVersion == 5 {
-			pb := bytes.NewBuffer([]byte{})
+			pb := mempool.GetBuffer()
+			defer mempool.PutBuffer(pb)
 			(&pk.Connect).WillProperties.Encode(WillProperties, pk.Mods, pb, 0)
 			nb.Write(pb.Bytes())
 		}
@@ -493,12 +498,14 @@ func (pk *Packet) ConnectValidate() Code {
 
 // ConnackEncode encodes a Connack packet.
 func (pk *Packet) ConnackEncode(buf *bytes.Buffer) error {
-	nb := bytes.NewBuffer([]byte{})
+	nb := mempool.GetBuffer()
+	defer mempool.PutBuffer(nb)
 	nb.WriteByte(encodeBool(pk.SessionPresent))
 	nb.WriteByte(pk.ReasonCode)
 
 	if pk.ProtocolVersion == 5 {
-		pb := bytes.NewBuffer([]byte{})
+		pb := mempool.GetBuffer()
+		defer mempool.PutBuffer(pb)
 		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len()+2) // +SessionPresent +ReasonCode
 		nb.Write(pb.Bytes())
 	}
@@ -536,12 +543,14 @@ func (pk *Packet) ConnackDecode(buf []byte) error {
 
 // DisconnectEncode encodes a Disconnect packet.
 func (pk *Packet) DisconnectEncode(buf *bytes.Buffer) error {
-	nb := bytes.NewBuffer([]byte{})
+	nb := mempool.GetBuffer()
+	defer mempool.PutBuffer(nb)
 
 	if pk.ProtocolVersion == 5 {
 		nb.WriteByte(pk.ReasonCode)
 
-		pb := bytes.NewBuffer([]byte{})
+		pb := mempool.GetBuffer()
+		defer mempool.PutBuffer(pb)
 		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len())
 		nb.Write(pb.Bytes())
 	}
@@ -598,7 +607,8 @@ func (pk *Packet) PingrespDecode(buf []byte) error {
 
 // PublishEncode encodes a Publish packet.
 func (pk *Packet) PublishEncode(buf *bytes.Buffer) error {
-	nb := bytes.NewBuffer([]byte{})
+	nb := mempool.GetBuffer()
+	defer mempool.PutBuffer(nb)
 
 	nb.Write(encodeString(pk.TopicName)) // [MQTT-3.3.2-1]
 
@@ -610,7 +620,8 @@ func (pk *Packet) PublishEncode(buf *bytes.Buffer) error {
 	}
 
 	if pk.ProtocolVersion == 5 {
-		pb := bytes.NewBuffer([]byte{})
+		pb := mempool.GetBuffer()
+		defer mempool.PutBuffer(pb)
 		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len()+len(pk.Payload))
 		nb.Write(pb.Bytes())
 	}
@@ -689,11 +700,13 @@ func (pk *Packet) PublishValidate(topicAliasMaximum uint16) Code {
 
 // encodePubAckRelRecComp encodes a Puback, Pubrel, Pubrec, or Pubcomp packet.
 func (pk *Packet) encodePubAckRelRecComp(buf *bytes.Buffer) error {
-	nb := bytes.NewBuffer([]byte{})
+	nb := mempool.GetBuffer()
+	defer mempool.PutBuffer(nb)
 	nb.Write(encodeUint16(pk.PacketID))
 
 	if pk.ProtocolVersion == 5 {
-		pb := bytes.NewBuffer([]byte{})
+		pb := mempool.GetBuffer()
+		defer mempool.PutBuffer(pb)
 		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len())
 		if pk.ReasonCode >= ErrUnspecifiedError.Code || pb.Len() > 1 {
 			nb.WriteByte(pk.ReasonCode)
@@ -830,11 +843,13 @@ func (pk *Packet) ReasonCodeValid() bool {
 
 // SubackEncode encodes a Suback packet.
 func (pk *Packet) SubackEncode(buf *bytes.Buffer) error {
-	nb := bytes.NewBuffer([]byte{})
+	nb := mempool.GetBuffer()
+	defer mempool.PutBuffer(nb)
 	nb.Write(encodeUint16(pk.PacketID))
 
 	if pk.ProtocolVersion == 5 {
-		pb := bytes.NewBuffer([]byte{})
+		pb := mempool.GetBuffer()
+		defer mempool.PutBuffer(pb)
 		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len()+len(pk.ReasonCodes))
 		nb.Write(pb.Bytes())
 	}
@@ -877,10 +892,12 @@ func (pk *Packet) SubscribeEncode(buf *bytes.Buffer) error {
 		return ErrProtocolViolationNoPacketID
 	}
 
-	nb := bytes.NewBuffer([]byte{})
+	nb := mempool.GetBuffer()
+	defer mempool.PutBuffer(nb)
 	nb.Write(encodeUint16(pk.PacketID))
 
-	xb := bytes.NewBuffer([]byte{}) // capture and write filters after length checks
+	xb := mempool.GetBuffer() // capture and write filters after length checks
+	defer mempool.PutBuffer(xb)
 	for _, opts := range pk.Filters {
 		xb.Write(encodeString(opts.Filter)) // [MQTT-3.8.3-1]
 		if pk.ProtocolVersion == 5 {
@@ -891,7 +908,8 @@ func (pk *Packet) SubscribeEncode(buf *bytes.Buffer) error {
 	}
 
 	if pk.ProtocolVersion == 5 {
-		pb := bytes.NewBuffer([]byte{})
+		pb := mempool.GetBuffer()
+		defer mempool.PutBuffer(pb)
 		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len()+xb.Len())
 		nb.Write(pb.Bytes())
 	}
@@ -982,11 +1000,13 @@ func (pk *Packet) SubscribeValidate() Code {
 
 // UnsubackEncode encodes an Unsuback packet.
 func (pk *Packet) UnsubackEncode(buf *bytes.Buffer) error {
-	nb := bytes.NewBuffer([]byte{})
+	nb := mempool.GetBuffer()
+	defer mempool.PutBuffer(nb)
 	nb.Write(encodeUint16(pk.PacketID))
 
 	if pk.ProtocolVersion == 5 {
-		pb := bytes.NewBuffer([]byte{})
+		pb := mempool.GetBuffer()
+		defer mempool.PutBuffer(pb)
 		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len())
 		nb.Write(pb.Bytes())
 	}
@@ -1030,16 +1050,19 @@ func (pk *Packet) UnsubscribeEncode(buf *bytes.Buffer) error {
 		return ErrProtocolViolationNoPacketID
 	}
 
-	nb := bytes.NewBuffer([]byte{})
+	nb := mempool.GetBuffer()
+	defer mempool.PutBuffer(nb)
 	nb.Write(encodeUint16(pk.PacketID))
 
-	xb := bytes.NewBuffer([]byte{}) // capture filters and write after length checks
+	xb := mempool.GetBuffer() // capture filters and write after length checks
+	defer mempool.PutBuffer(xb)
 	for _, sub := range pk.Filters {
 		xb.Write(encodeString(sub.Filter)) // [MQTT-3.10.3-1]
 	}
 
 	if pk.ProtocolVersion == 5 {
-		pb := bytes.NewBuffer([]byte{})
+		pb := mempool.GetBuffer()
+		defer mempool.PutBuffer(pb)
 		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len()+xb.Len())
 		nb.Write(pb.Bytes())
 	}
@@ -1099,10 +1122,12 @@ func (pk *Packet) UnsubscribeValidate() Code {
 
 // AuthEncode encodes an Auth packet.
 func (pk *Packet) AuthEncode(buf *bytes.Buffer) error {
-	nb := bytes.NewBuffer([]byte{})
+	nb := mempool.GetBuffer()
+	defer mempool.PutBuffer(nb)
 	nb.WriteByte(pk.ReasonCode)
 
-	pb := bytes.NewBuffer([]byte{})
+	pb := mempool.GetBuffer()
+	defer mempool.PutBuffer(pb)
 	pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len())
 	nb.Write(pb.Bytes())
 
