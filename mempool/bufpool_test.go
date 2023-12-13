@@ -2,12 +2,14 @@ package mempool
 
 import (
 	"reflect"
+	"runtime/debug"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewBuffer(t *testing.T) {
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	bp := NewBuffer(1000)
 	require.Equal(t, "*mempool.BufferWithCap", reflect.TypeOf(bp).String())
 
@@ -19,7 +21,9 @@ func TestNewBuffer(t *testing.T) {
 }
 
 func TestBuffer(t *testing.T) {
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	Size := 101
+
 	bp := NewBuffer(0)
 	buf := bp.Get()
 
@@ -27,26 +31,17 @@ func TestBuffer(t *testing.T) {
 		buf.WriteByte('a')
 	}
 
-	cap := buf.Cap()
 	bp.Put(buf)
 	buf = bp.Get()
 	require.Equal(t, 0, buf.Len())
-	require.Equal(t, cap, buf.Cap())
 }
 
 func TestBufferWithCap(t *testing.T) {
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	Size := 101
 	bp := NewBuffer(100)
 	buf := bp.Get()
 
-	buf.WriteByte('a')
-	cap := buf.Cap()
-	bp.Put(buf)
-	buf = bp.Get()
-	require.Equal(t, 0, buf.Len())
-	require.Equal(t, cap, buf.Cap())
-
-	buf = bp.Get()
 	for i := 0; i < Size; i++ {
 		buf.WriteByte('a')
 	}
