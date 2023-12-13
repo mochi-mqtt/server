@@ -1554,6 +1554,9 @@ func (s *Server) loadClients(v []storage.Client) {
 		}
 		cl.Properties.Will = Will(c.Will)
 
+		// cancel the context, update cl.State such as disconnected time and stopCause.
+		cl.Stop(packets.ErrServerShuttingDown)
+		
 		expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
 		s.hooks.OnDisconnect(cl, packets.ErrServerShuttingDown, expire)
 		if expire {
