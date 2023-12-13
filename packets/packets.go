@@ -615,11 +615,10 @@ func (pk *Packet) PublishEncode(buf *bytes.Buffer) error {
 		nb.Write(pb.Bytes())
 	}
 
-	nb.Write(pk.Payload)
-
-	pk.FixedHeader.Remaining = nb.Len()
+	pk.FixedHeader.Remaining = nb.Len() + len(pk.Payload)
 	pk.FixedHeader.Encode(buf)
 	_, _ = nb.WriteTo(buf)
+	buf.Write(pk.Payload)
 
 	return nil
 }
