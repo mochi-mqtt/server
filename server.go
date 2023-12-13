@@ -233,8 +233,6 @@ func (s *Server) NewClient(c net.Conn, listener string, id string, inline bool) 
 		// By default, we don't want to restrict developer publishes,
 		// but if you do, reset this after creating inline client.
 		cl.State.Inflight.ResetReceiveQuota(math.MaxInt32)
-	} else {
-		go cl.WriteLoop() // can only write to real clients
 	}
 
 	return cl
@@ -332,6 +330,8 @@ func (s *Server) EstablishConnection(listener string, c net.Conn) error {
 func (s *Server) attachClient(cl *Client, listener string) error {
 	defer s.Listeners.ClientsWg.Done()
 	s.Listeners.ClientsWg.Add(1)
+	
+	go cl.WriteLoop()
 	defer cl.Stop(nil)
 
 	pk, err := s.readConnectionPacket(cl)
