@@ -37,6 +37,59 @@ type Websocket struct { // [MQTT-4.2.0-1]
 	end       uint32              // ensure the close methods are only called once
 }
 
+// WebsocketFromHTTPServer initialises a new Websocket listener from an existing http.Server
+/**
+```go
+// usage
+func main(){
+	//....
+	server := &http.Server{
+		TLSConfig: &tls.Config{
+			MinVersion:     tls.VersionTLS12,
+			GetCertificate: certManager.GetCertificate,
+			NextProtos:     []string{acme.ALPNProto},
+		},
+		ReadTimeout:       10 * time.Minute,
+		ReadHeaderTimeout: 30 * time.Second,
+		// WriteTimeout: 60 * time.Second, // breaks sse!
+		Handler: router, // echo.Echo
+		Addr:    mainAddr,
+		BaseContext: func(l net.Listener) context.Context {
+			return baseCtx
+		},
+	}
+	// Create the new MQTT Server.
+	mqtt := mqtt.New(nil)
+	//....
+	ws := listeners.WebsocketFromHTTPServer("id-mqtt-ws", server)
+	err := mqtt.AddListener(ws)
+  	if err != nil {
+    	log.Fatal(err)
+  	}
+	// attache ws handler to echo router
+	router.GET("/mqtt", func(context echo.Context) error {
+		ws.Handler(context.Response().Writer, context.Request())
+		return nil
+	})
+	//...
+}
+```
+**/
+func WebsocketFromHTTPServer(id string, server *http.Server) *Websocket {
+
+	return &Websocket{
+		id:      id,
+		address: server.Addr,
+		listen:  server,
+		upgrader: &websocket.Upgrader{
+			Subprotocols: []string{"mqtt"},
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+		},
+	}
+}
+
 // NewWebsocket initialises and returns a new Websocket listener, listening on an address.
 func NewWebsocket(id, address string, config *Config) *Websocket {
 	if config == nil {
@@ -68,7 +121,7 @@ func (l *Websocket) Address() string {
 
 // Protocol returns the address of the listener.
 func (l *Websocket) Protocol() string {
-	if l.config.TLSConfig != nil {
+	if l.listen.TLSConfig != nil {
 		return "wss"
 	}
 
@@ -78,15 +131,17 @@ func (l *Websocket) Protocol() string {
 // Init initializes the listener.
 func (l *Websocket) Init(log *slog.Logger) error {
 	l.log = log
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", l.handler)
-	l.listen = &http.Server{
-		Addr:         l.address,
-		Handler:      mux,
-		TLSConfig:    l.config.TLSConfig,
-		ReadTimeout:  60 * time.Second,
-		WriteTimeout: 60 * time.Second,
+	// listen only if the server is not already defined
+	if l.listen == nil {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", l.handler)
+		l.listen = &http.Server{
+			Addr:         l.address,
+			Handler:      mux,
+			TLSConfig:    l.config.TLSConfig,
+			ReadTimeout:  60 * time.Second,
+			WriteTimeout: 60 * time.Second,
+		}
 	}
 
 	return nil
@@ -104,6 +159,11 @@ func (l *Websocket) handler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		l.log.Warn("", "error", err)
 	}
+}
+
+// Public handler upgrades and handles an incoming websocket connection. (Just a link to the private hanlder)
+func (l *Websocket) Handler(w http.ResponseWriter, r *http.Request) {
+	l.handler(w, r)
 }
 
 // Serve starts waiting for new Websocket connections, and calls the connection
