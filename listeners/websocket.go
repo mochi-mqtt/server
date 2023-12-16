@@ -31,6 +31,7 @@ type Websocket struct { // [MQTT-4.2.0-1]
 	address   string              // the network address to bind to
 	config    *Config             // configuration values for the listener
 	listen    *http.Server        // a http server for serving websocket connections
+	external  bool                // if true the Websocket will not call Serve
 	log       *slog.Logger        // server logger
 	establish EstablishFn         // the server's establish connection handler
 	upgrader  *websocket.Upgrader //  upgrade the incoming http/tcp connection to a websocket compliant connection.
@@ -78,9 +79,10 @@ func main(){
 func WebsocketFromHTTPServer(id string, server *http.Server) *Websocket {
 
 	return &Websocket{
-		id:      id,
-		address: server.Addr,
-		listen:  server,
+		id:       id,
+		address:  server.Addr,
+		listen:   server,
+		external: true,
 		upgrader: &websocket.Upgrader{
 			Subprotocols: []string{"mqtt"},
 			CheckOrigin: func(r *http.Request) bool {
@@ -169,9 +171,11 @@ func (l *Websocket) Handler(w http.ResponseWriter, r *http.Request) {
 // Serve starts waiting for new Websocket connections, and calls the connection
 // establishment callback for any received.
 func (l *Websocket) Serve(establish EstablishFn) {
-	var err error
 	l.establish = establish
-
+	if l.external {
+		return
+	}
+	var err error
 	if l.listen.TLSConfig != nil {
 		err = l.listen.ListenAndServeTLS("", "")
 	} else {
