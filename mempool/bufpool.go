@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-var bufPool = NewBuffer(64 * 1024)
+var bufPool = NewBuffer(0)
 
 // GetBuffer takes a Buffer from the default buffer pool
 func GetBuffer() *bytes.Buffer { return bufPool.Get() }
