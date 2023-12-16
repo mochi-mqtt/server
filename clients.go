@@ -598,10 +598,7 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 
 		// there are more writes in the queue
 		if cl.Net.outbuf == nil {
-			if l := buf.Len(); l < cl.ops.options.ClientNetWriteBufferSize {
-				cl.Net.outbuf = buf
-				return int64(l), nil
-			}
+			cl.Net.outbuf = new(bytes.Buffer)
 
 			return buf.WriteTo(cl.Net.Conn)
 		}
