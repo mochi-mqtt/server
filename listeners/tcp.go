@@ -44,6 +44,9 @@ func (l *TCP) ID() string {
 
 // Address returns the address of the listener.
 func (l *TCP) Address() string {
+	if l.listen != nil {
+		return l.listen.Addr().String()
+	}
 	return l.address
 }
 
