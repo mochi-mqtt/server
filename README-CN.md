@@ -200,7 +200,7 @@ server := mqtt.New(&mqtt.Options{
 | 数据持久性    | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)    | 使用 [Redis](https://redis.io) 进行持久性存储。                         | 
 | 调试跟踪      | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go)                    | 调试输出以查看数据包在服务端的链路追踪。   |
 
-许多内部函数都已开放给开发者，你可以参考上述示例创建自己的Hook钩子。如果你有更好的关于Hook钩子方面的建议或者疑问，你可以[提交问题](https://github.com/mochi-mqtt/server/issues)给我们。                  | 
+许多内部函数都已开放给开发者，你可以参考上述示例创建自己的Hook钩子。如果你有更好的关于Hook钩子方面的建议或者疑问，你可以[提交问题](https://github.com/mochi-mqtt/server/issues)给我们。
 
 ### 访问控制(Access Control)
 
