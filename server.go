@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	Version                       = "2.4.1" // the current server version.
+	Version                       = "2.4.4" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 	LocalListener                 = "local"
 	InlineClientId                = "inline"
@@ -330,7 +330,7 @@ func (s *Server) EstablishConnection(listener string, c net.Conn) error {
 func (s *Server) attachClient(cl *Client, listener string) error {
 	defer s.Listeners.ClientsWg.Done()
 	s.Listeners.ClientsWg.Add(1)
-	
+
 	go cl.WriteLoop()
 	defer cl.Stop(nil)
 
@@ -1556,7 +1556,7 @@ func (s *Server) loadClients(v []storage.Client) {
 
 		// cancel the context, update cl.State such as disconnected time and stopCause.
 		cl.Stop(packets.ErrServerShuttingDown)
-		
+
 		expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
 		s.hooks.OnDisconnect(cl, packets.ErrServerShuttingDown, expire)
 		if expire {
