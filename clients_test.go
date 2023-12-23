@@ -302,19 +302,56 @@ func TestClientNextPacketIDOverflow(t *testing.T) {
 
 func TestClientClearInflights(t *testing.T) {
 	cl, _, _ := newTestClient()
+	n := time.Now().Unix()
+
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 1, Expiry: n - 1})
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 2, Expiry: n - 2})
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 3, Created: n - 3}) // within bounds
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 5, Created: n - 5}) // over max server expiry limit
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 7, Created: n})
+
+	require.Equal(t, 5, cl.State.Inflight.Len())
+	cl.ClearInflights()
+	require.Equal(t, 0, cl.State.Inflight.Len())
+}
+
+func TestClientClearExpiredInflights(t *testing.T) {
+	cl, _, _ := newTestClient()
 
 	n := time.Now().Unix()
-	cl.State.Inflight.Set(packets.Packet{PacketID: 1, Expiry: n - 1})
-	cl.State.Inflight.Set(packets.Packet{PacketID: 2, Expiry: n - 2})
-	cl.State.Inflight.Set(packets.Packet{PacketID: 3, Created: n - 3}) // within bounds
-	cl.State.Inflight.Set(packets.Packet{PacketID: 5, Created: n - 5}) // over max server expiry limit
-	cl.State.Inflight.Set(packets.Packet{PacketID: 7, Created: n})
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 1, Expiry: n - 1})
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 2, Expiry: n - 2})
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 3, Created: n - 3}) // within bounds
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 5, Created: n - 5}) // over max server expiry limit
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 7, Created: n})
 	require.Equal(t, 5, cl.State.Inflight.Len())
 
-	deleted := cl.ClearInflights(n, 4)
+	deleted := cl.ClearExpiredInflights(n, 4)
 	require.Len(t, deleted, 3)
 	require.ElementsMatch(t, []uint16{1, 2, 5}, deleted)
 	require.Equal(t, 2, cl.State.Inflight.Len())
+
+	cl.State.Inflight.Set(packets.Packet{PacketID: 11, Expiry: n - 1})
+	cl.State.Inflight.Set(packets.Packet{PacketID: 12, Expiry: n - 2})  // expiry is ineffective for v3.
+	cl.State.Inflight.Set(packets.Packet{PacketID: 13, Created: n - 3}) // within bounds for v3
+	cl.State.Inflight.Set(packets.Packet{PacketID: 15, Created: n - 5}) // over max server expiry limit
+	require.Equal(t, 6, cl.State.Inflight.Len())
+
+	deleted = cl.ClearExpiredInflights(n, 4)
+	require.Len(t, deleted, 3)
+	require.ElementsMatch(t, []uint16{11, 12, 15}, deleted)
+	require.Equal(t, 3, cl.State.Inflight.Len())
+
+	cl.State.Inflight.Set(packets.Packet{PacketID: 17, Created: n - 1})
+	deleted = cl.ClearExpiredInflights(n, 0) // maximumExpiry = 0 do not process abandon messages
+	require.Len(t, deleted, 0)
+	require.Equal(t, 4, cl.State.Inflight.Len())
+
+	cl.State.Inflight.Set(packets.Packet{ProtocolVersion: 5, PacketID: 18, Expiry: n - 1})
+	deleted = cl.ClearExpiredInflights(n, 0)        // maximumExpiry = 0 do not abandon messages
+	require.ElementsMatch(t, []uint16{18}, deleted) // expiry is still effective for v5.
+	require.Len(t, deleted, 1)
+	require.Equal(t, 4, cl.State.Inflight.Len())
 }
 
 func TestClientResendInflightMessages(t *testing.T) {
@@ -669,6 +706,86 @@ func TestClientWritePacket(t *testing.T) {
 		if tt.Packet.FixedHeader.Type == packets.Publish {
 			require.Equal(t, int64(1), atomic.LoadInt64(&cl.ops.info.MessagesSent))
 		}
+	}
+}
+
+func TestClientWritePacketBuffer(t *testing.T) {
+	r, w := net.Pipe()
+
+	cl := newClient(w, &ops{
+		info:  new(system.Info),
+		hooks: new(Hooks),
+		log:   logger,
+		options: &Options{
+			Capabilities: &Capabilities{
+				ReceiveMaximum:             10,
+				TopicAliasMaximum:          10000,
+				MaximumClientWritesPending: 3,
+				maximumPacketID:            10,
+			},
+		},
+	})
+
+	cl.ID = "mochi"
+	cl.State.Inflight.maximumSendQuota = 5
+	cl.State.Inflight.sendQuota = 5
+	cl.State.Inflight.maximumReceiveQuota = 10
+	cl.State.Inflight.receiveQuota = 10
+	cl.Properties.Props.TopicAliasMaximum = 0
+	cl.Properties.Props.RequestResponseInfo = 0x1
+
+	cl.ops.options.ClientNetWriteBufferSize = 10
+	defer cl.Stop(errClientStop)
+
+	small := packets.TPacketData[packets.Publish].Get(packets.TPublishNoPayload).Packet
+	large := packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+
+	cl.State.outbound <- small
+
+	tt := []struct {
+		pks  []*packets.Packet
+		size int
+	}{
+		{
+			pks:  []*packets.Packet{small, small},
+			size: 18,
+		},
+		{
+			pks:  []*packets.Packet{large},
+			size: 20,
+		},
+		{
+			pks:  []*packets.Packet{small},
+			size: 0,
+		},
+	}
+
+	go func() {
+		for i, tx := range tt {
+			for _, pk := range tx.pks {
+				cl.Properties.ProtocolVersion = pk.ProtocolVersion
+				err := cl.WritePacket(*pk)
+				require.NoError(t, err, "index: %d", i)
+				if i == len(tt)-1 {
+					cl.Net.Conn.Close()
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}()
+
+	var n int
+	var err error
+	for i, tx := range tt {
+		buf := make([]byte, 100)
+		if i == len(tt)-1 {
+			buf, err = io.ReadAll(r)
+			n = len(buf)
+		} else {
+			n, err = io.ReadAtLeast(r, buf, 1)
+		}
+		require.NoError(t, err, "index: %d", i)
+		require.Equal(t, tx.size, n, "index: %d", i)
 	}
 }
 
