@@ -27,7 +27,10 @@ func main() {
 	server := mqtt.New(nil)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
-	ws := listeners.NewWebsocket("ws1", ":1882", nil)
+	ws := listeners.NewWebsocket(listeners.Config{
+		ID:      "ws1",
+		Address: ":1882",
+	})
 	err := server.AddListener(ws)
 	if err != nil {
 		log.Fatal(err)

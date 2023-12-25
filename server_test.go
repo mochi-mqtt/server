@@ -220,6 +220,34 @@ func TestServerAddListener(t *testing.T) {
 	require.Equal(t, ErrListenerIDExists, err)
 }
 
+func TestServerAddHooksFromConfig(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+	s.Log = logger
+
+	hooks := []HookLoadConfig{
+		{Hook: new(modifiedHookBase)},
+	}
+
+	err := s.AddHooksFromConfig(hooks)
+	require.NoError(t, err)
+}
+
+func TestServerAddHooksFromConfigError(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+	s.Log = logger
+
+	hooks := []HookLoadConfig{
+		{Hook: new(modifiedHookBase), Config: map[string]interface{}{}},
+	}
+
+	err := s.AddHooksFromConfig(hooks)
+	require.Error(t, err)
+}
+
 func TestServerAddListenerInitFailure(t *testing.T) {
 	s := newServer()
 	defer s.Close()
@@ -230,6 +258,60 @@ func TestServerAddListenerInitFailure(t *testing.T) {
 	m.ErrListen = true
 	err := s.AddListener(m)
 	require.Error(t, err)
+}
+
+func TestServerAddListenersFromConfig(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+	s.Log = logger
+
+	lc := []listeners.Config{
+		{Type: listeners.TypeTCP, ID: "tcp", Address: ":1883"},
+		{Type: listeners.TypeWS, ID: "ws", Address: ":1882"},
+		{Type: listeners.TypeHealthCheck, ID: "health", Address: ":1881"},
+		{Type: listeners.TypeSysInfo, ID: "info", Address: ":1880"},
+		{Type: listeners.TypeUnix, ID: "unix", Address: "mochi.sock"},
+		{Type: listeners.TypeMock, ID: "mock", Address: "0"},
+		{Type: "unknown", ID: "unknown"},
+	}
+
+	err := s.AddListenersFromConfig(lc)
+	require.NoError(t, err)
+	require.Equal(t, 6, s.Listeners.Len())
+
+	tcp, _ := s.Listeners.Get("tcp")
+	require.Equal(t, "[::]:1883", tcp.Address())
+
+	ws, _ := s.Listeners.Get("ws")
+	require.Equal(t, ":1882", ws.Address())
+
+	health, _ := s.Listeners.Get("health")
+	require.Equal(t, ":1881", health.Address())
+
+	info, _ := s.Listeners.Get("info")
+	require.Equal(t, ":1880", info.Address())
+
+	unix, _ := s.Listeners.Get("unix")
+	require.Equal(t, "mochi.sock", unix.Address())
+
+	mock, _ := s.Listeners.Get("mock")
+	require.Equal(t, "0", mock.Address())
+}
+
+func TestServerAddListenersFromConfigError(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+	s.Log = logger
+
+	lc := []listeners.Config{
+		{Type: listeners.TypeTCP, ID: "tcp", Address: "x"},
+	}
+
+	err := s.AddListenersFromConfig(lc)
+	require.Error(t, err)
+	require.Equal(t, 0, s.Listeners.Len())
 }
 
 func TestServerServe(t *testing.T) {
@@ -251,6 +333,57 @@ func TestServerServe(t *testing.T) {
 
 	require.Equal(t, true, ok)
 	require.Equal(t, true, listener.(*listeners.MockListener).IsServing())
+}
+
+func TestServerServeFromConfig(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+
+	s.Options.Listeners = []listeners.Config{
+		{Type: listeners.TypeMock, ID: "mock", Address: "0"},
+	}
+
+	s.Options.Hooks = []HookLoadConfig{
+		{Hook: new(modifiedHookBase)},
+	}
+
+	err := s.Serve()
+	require.NoError(t, err)
+
+	time.Sleep(time.Millisecond)
+
+	require.Equal(t, 1, s.Listeners.Len())
+	listener, ok := s.Listeners.Get("mock")
+
+	require.Equal(t, true, ok)
+	require.Equal(t, true, listener.(*listeners.MockListener).IsServing())
+}
+
+func TestServerServeFromConfigListenerError(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+
+	s.Options.Listeners = []listeners.Config{
+		{Type: listeners.TypeTCP, ID: "tcp", Address: "x"},
+	}
+
+	err := s.Serve()
+	require.Error(t, err)
+}
+
+func TestServerServeFromConfigHookError(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+
+	s.Options.Hooks = []HookLoadConfig{
+		{Hook: new(modifiedHookBase), Config: map[string]interface{}{}},
+	}
+
+	err := s.Serve()
+	require.Error(t, err)
 }
 
 func TestServerServeReadStoreFailure(t *testing.T) {
@@ -3131,22 +3264,22 @@ func TestServerLoadClients(t *testing.T) {
 		{ID: "v3-clean", ProtocolVersion: 4, Clean: true},
 		{ID: "v3-not-clean", ProtocolVersion: 4, Clean: false},
 		{
-			ID: "v5-clean",
+			ID:              "v5-clean",
 			ProtocolVersion: 5,
-			Clean: true,
+			Clean:           true,
 			Properties: storage.ClientProperties{
 				SessionExpiryInterval: 10,
 			},
 		},
 		{
-			ID: "v5-expire-interval-0",
+			ID:              "v5-expire-interval-0",
 			ProtocolVersion: 5,
 			Properties: storage.ClientProperties{
 				SessionExpiryInterval: 0,
 			},
 		},
 		{
-			ID: "v5-expire-interval-not-0",
+			ID:              "v5-expire-interval-not-0",
 			ProtocolVersion: 5,
 			Properties: storage.ClientProperties{
 				SessionExpiryInterval: 10,

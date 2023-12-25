@@ -17,38 +17,35 @@ import (
 )
 
 func TestNewHTTPStats(t *testing.T) {
-	l := NewHTTPStats("t1", testAddr, nil, nil)
+	l := NewHTTPStats(basicConfig, nil)
 	require.Equal(t, "t1", l.id)
 	require.Equal(t, testAddr, l.address)
 }
 
 func TestHTTPStatsID(t *testing.T) {
-	l := NewHTTPStats("t1", testAddr, nil, nil)
+	l := NewHTTPStats(basicConfig, nil)
 	require.Equal(t, "t1", l.ID())
 }
 
 func TestHTTPStatsAddress(t *testing.T) {
-	l := NewHTTPStats("t1", testAddr, nil, nil)
+	l := NewHTTPStats(basicConfig, nil)
 	require.Equal(t, testAddr, l.Address())
 }
 
 func TestHTTPStatsProtocol(t *testing.T) {
-	l := NewHTTPStats("t1", testAddr, nil, nil)
+	l := NewHTTPStats(basicConfig, nil)
 	require.Equal(t, "http", l.Protocol())
 }
 
 func TestHTTPStatsTLSProtocol(t *testing.T) {
-	l := NewHTTPStats("t1", testAddr, &Config{
-		TLSConfig: tlsConfigBasic,
-	}, nil)
-
+	l := NewHTTPStats(tlsConfig, nil)
 	_ = l.Init(logger)
 	require.Equal(t, "https", l.Protocol())
 }
 
 func TestHTTPStatsInit(t *testing.T) {
 	sysInfo := new(system.Info)
-	l := NewHTTPStats("t1", testAddr, nil, sysInfo)
+	l := NewHTTPStats(basicConfig, sysInfo)
 	err := l.Init(logger)
 	require.NoError(t, err)
 
@@ -64,7 +61,7 @@ func TestHTTPStatsServeAndClose(t *testing.T) {
 	}
 
 	// setup http stats listener
-	l := NewHTTPStats("t1", testAddr, nil, sysInfo)
+	l := NewHTTPStats(basicConfig, sysInfo)
 	err := l.Init(logger)
 	require.NoError(t, err)
 
@@ -109,9 +106,7 @@ func TestHTTPStatsServeTLSAndClose(t *testing.T) {
 		Version: "test",
 	}
 
-	l := NewHTTPStats("t1", testAddr, &Config{
-		TLSConfig: tlsConfigBasic,
-	}, sysInfo)
+	l := NewHTTPStats(tlsConfig, sysInfo)
 
 	err := l.Init(logger)
 	require.NoError(t, err)
@@ -132,7 +127,9 @@ func TestHTTPStatsFailedToServe(t *testing.T) {
 	}
 
 	// setup http stats listener
-	l := NewHTTPStats("t1", "wrong_addr", nil, sysInfo)
+	config := basicConfig
+	config.Address = "wrong_addr"
+	l := NewHTTPStats(config, sysInfo)
 	err := l.Init(logger)
 	require.NoError(t, err)
 

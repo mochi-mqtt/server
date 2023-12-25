@@ -14,45 +14,40 @@ import (
 )
 
 func TestNewTCP(t *testing.T) {
-	l := NewTCP("t1", testAddr, nil)
+	l := NewTCP(basicConfig)
 	require.Equal(t, "t1", l.id)
 	require.Equal(t, testAddr, l.address)
 }
 
 func TestTCPID(t *testing.T) {
-	l := NewTCP("t1", testAddr, nil)
+	l := NewTCP(basicConfig)
 	require.Equal(t, "t1", l.ID())
 }
 
 func TestTCPAddress(t *testing.T) {
-	l := NewTCP("t1", testAddr, nil)
+	l := NewTCP(basicConfig)
 	require.Equal(t, testAddr, l.Address())
 }
 
 func TestTCPProtocol(t *testing.T) {
-	l := NewTCP("t1", testAddr, nil)
+	l := NewTCP(basicConfig)
 	require.Equal(t, "tcp", l.Protocol())
 }
 
 func TestTCPProtocolTLS(t *testing.T) {
-	l := NewTCP("t1", testAddr, &Config{
-		TLSConfig: tlsConfigBasic,
-	})
-
+	l := NewTCP(tlsConfig)
 	_ = l.Init(logger)
 	defer l.listen.Close()
 	require.Equal(t, "tcp", l.Protocol())
 }
 
 func TestTCPInit(t *testing.T) {
-	l := NewTCP("t1", testAddr, nil)
+	l := NewTCP(basicConfig)
 	err := l.Init(logger)
 	l.Close(MockCloser)
 	require.NoError(t, err)
 
-	l2 := NewTCP("t2", testAddr, &Config{
-		TLSConfig: tlsConfigBasic,
-	})
+	l2 := NewTCP(tlsConfig)
 	err = l2.Init(logger)
 	l2.Close(MockCloser)
 	require.NoError(t, err)
@@ -60,7 +55,7 @@ func TestTCPInit(t *testing.T) {
 }
 
 func TestTCPServeAndClose(t *testing.T) {
-	l := NewTCP("t1", testAddr, nil)
+	l := NewTCP(basicConfig)
 	err := l.Init(logger)
 	require.NoError(t, err)
 
@@ -85,9 +80,7 @@ func TestTCPServeAndClose(t *testing.T) {
 }
 
 func TestTCPServeTLSAndClose(t *testing.T) {
-	l := NewTCP("t1", testAddr, &Config{
-		TLSConfig: tlsConfigBasic,
-	})
+	l := NewTCP(tlsConfig)
 	err := l.Init(logger)
 	require.NoError(t, err)
 
@@ -109,7 +102,7 @@ func TestTCPServeTLSAndClose(t *testing.T) {
 }
 
 func TestTCPEstablishThenEnd(t *testing.T) {
-	l := NewTCP("t1", testAddr, nil)
+	l := NewTCP(basicConfig)
 	err := l.Init(logger)
 	require.NoError(t, err)
 

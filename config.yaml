@@ -1,0 +1,15 @@
+listeners:
+  - type: "tcp"
+    id: "tcp1"
+    address: ":1883"
+  - type: "ws"
+    id: "ws1"
+    address: ":1882"
+  - type: "sysinfo"
+    id: "stats"
+    address: ":1880"
+hooks:
+  auth:
+    allow_all: true
+options:
+  inline_client: true

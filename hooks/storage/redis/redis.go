@@ -51,8 +51,12 @@ func sysInfoKey() string {
 
 // Options contains configuration settings for the bolt instance.
 type Options struct {
-	HPrefix string
-	Options *redis.Options
+	Address  string `yaml:"address" json:"address"`
+	Username string `yaml:"username" json:"username"`
+	Password string `yaml:"password" json:"password"`
+	Database int    `yaml:"database" json:"database"`
+	HPrefix  string `yaml:"h_prefix" json:"h_prefix"`
+	Options  *redis.Options
 }
 
 // Hook is a persistent storage hook based using Redis as a backend.
@@ -105,23 +109,31 @@ func (h *Hook) Init(config any) error {
 	h.ctx = context.Background()
 
 	if config == nil {
-		config = &Options{
-			Options: &redis.Options{
-				Addr: defaultAddr,
-			},
+		config = new(Options)
+	}
+	h.config = config.(*Options)
+	if h.config.Options == nil {
+		h.config.Options = &redis.Options{
+			Addr: defaultAddr,
 		}
+		h.config.Options.Addr = h.config.Address
+		h.config.Options.DB = h.config.Database
+		h.config.Options.Username = h.config.Username
+		h.config.Options.Password = h.config.Password
 	}
 
-	h.config = config.(*Options)
 	if h.config.HPrefix == "" {
 		h.config.HPrefix = defaultHPrefix
 	}
 
-	h.Log.Info("connecting to redis service",
+	h.Log.Info(
+		"connecting to redis service",
+		"prefix", h.config.HPrefix,
 		"address", h.config.Options.Addr,
 		"username", h.config.Options.Username,
 		"password-len", len(h.config.Options.Password),
-		"db", h.config.Options.DB)
+		"db", h.config.Options.DB,
+	)
 
 	h.db = redis.NewClient(h.config.Options)
 	_, err := h.db.Ping(context.Background()).Result()

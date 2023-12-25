@@ -51,7 +51,7 @@ func sysInfoKey() string {
 // Options contains configuration settings for the BadgerDB instance.
 type Options struct {
 	Options *badgerhold.Options
-	Path    string
+	Path    string `yaml:"path" json:"path"`
 }
 
 // Hook is a persistent storage hook based using BadgerDB file store as a backend.

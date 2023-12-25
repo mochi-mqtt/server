@@ -32,7 +32,10 @@ func main() {
 	server.Options.Capabilities.MaximumClientWritesPending = 16 * 1024
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
-	tcp := listeners.NewTCP("t1", *tcpAddr, nil)
+	tcp := listeners.NewTCP(listeners.Config{
+		ID:      "t1",
+		Address: *tcpAddr,
+	})
 	err := server.AddListener(tcp)
 	if err != nil {
 		log.Fatal(err)
