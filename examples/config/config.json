@@ -36,6 +36,7 @@
       }
     },
     "auth": {
+      "allow_all": false,
       "ledger": {
         "auth": [
           {

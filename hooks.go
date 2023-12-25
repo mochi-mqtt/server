@@ -62,6 +62,7 @@ var (
 	ErrInvalidConfigType = errors.New("invalid config type provided")
 )
 
+// HookLoadConfig contains the hook and configuration as loaded from a configuration (usually file).
 type HookLoadConfig struct {
 	Hook   Hook
 	Config any

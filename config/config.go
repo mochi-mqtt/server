@@ -17,29 +17,34 @@ import (
 	mqtt "github.com/mochi-mqtt/server/v2"
 )
 
+// config defines the structure of configuration data to be parsed from a config source.
 type config struct {
 	Options     mqtt.Options
 	Listeners   []listeners.Config `yaml:"listeners" json:"listeners"`
 	HookConfigs HookConfigs        `yaml:"hooks" json:"hooks"`
 }
 
+// HookConfigs contains configurations to enable individual hooks.
 type HookConfigs struct {
 	Auth    *HookAuthConfig    `yaml:"auth" json:"auth"`
 	Storage *HookStorageConfig `yaml:"storage" json:"storage"`
 	Debug   *debug.Options     `yaml:"debug" json:"debug"`
 }
 
+// HookAuthConfig contains configurations for the auth hook.
 type HookAuthConfig struct {
 	Ledger   auth.Ledger `yaml:"ledger" json:"ledger"`
 	AllowAll bool        `yaml:"allow_all" json:"allow_all"`
 }
 
+// HookStorageConfig contains configurations for the different storage hooks.
 type HookStorageConfig struct {
 	Badger *badger.Options `yaml:"badger" json:"badger"`
 	Bolt   *bolt.Options   `yaml:"bolt" json:"bolt"`
 	Redis  *redis.Options  `yaml:"redis" json:"redis"`
 }
 
+// ToHooks converts Hook file configurations into Hooks to be added to the server.
 func (hc HookConfigs) ToHooks() []mqtt.HookLoadConfig {
 	var hlc []mqtt.HookLoadConfig
 
@@ -61,6 +66,7 @@ func (hc HookConfigs) ToHooks() []mqtt.HookLoadConfig {
 	return hlc
 }
 
+// toHooksAuth converts auth hook configurations into auth hooks.
 func (hc HookConfigs) toHooksAuth() []mqtt.HookLoadConfig {
 	var hlc []mqtt.HookLoadConfig
 	if hc.Auth.AllowAll {
@@ -82,6 +88,7 @@ func (hc HookConfigs) toHooksAuth() []mqtt.HookLoadConfig {
 	return hlc
 }
 
+// toHooksAuth converts storage hook configurations into storage hooks.
 func (hc HookConfigs) toHooksStorage() []mqtt.HookLoadConfig {
 	var hlc []mqtt.HookLoadConfig
 	if hc.Storage.Badger != nil {
@@ -107,6 +114,8 @@ func (hc HookConfigs) toHooksStorage() []mqtt.HookLoadConfig {
 	return hlc
 }
 
+// FromBytes unmarshals a byte slice of JSON or YAML config data into a valid server options value.
+// Any hooks configurations are converted into Hooks using the toHooks methods in this package.
 func FromBytes(b []byte) (*mqtt.Options, error) {
 	c := new(config)
 	o := mqtt.Options{}

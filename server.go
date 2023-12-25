@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	Version                       = "2.4.4" // the current server version.
+	Version                       = "2.5.0" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 	LocalListener                 = "local"
 	InlineClientId                = "inline"
@@ -85,8 +85,11 @@ type Compatibilities struct {
 
 // Options contains configurable options for the server.
 type Options struct {
+	// Listeners specifies any listeners which should be dynamically added on serve. Used when setting listeners by config.
 	Listeners []listeners.Config `yaml:"listeners" json:"listeners"`
-	Hooks     []HookLoadConfig   `yaml:"hooks" json:"hooks"`
+
+	// Hooks specifies any hooks which should be dynamically added on serve. Used when setting hooks by config.
+	Hooks []HookLoadConfig `yaml:"hooks" json:"hooks"`
 
 	// Capabilities defines the server features and behaviour. If you only wish to modify
 	// several of these values, set them explicitly - e.g.
@@ -255,6 +258,8 @@ func (s *Server) AddHook(hook Hook, config any) error {
 	return s.hooks.Add(hook, config)
 }
 
+// AddHooksFromConfig adds hooks to the server which were specified in the hooks config (usually from a config file).
+// New built-in hooks should be added to this list.
 func (s *Server) AddHooksFromConfig(hooks []HookLoadConfig) error {
 	for _, h := range hooks {
 		if err := s.AddHook(h.Hook, h.Config); err != nil {
@@ -282,6 +287,8 @@ func (s *Server) AddListener(l listeners.Listener) error {
 	return nil
 }
 
+// AddListenersFromConfig adds listeners to the server which were specified in the listeners config (usually from a config file).
+// New built-in listeners should be added to this list.
 func (s *Server) AddListenersFromConfig(configs []listeners.Config) error {
 	for _, conf := range configs {
 		var l listeners.Listener

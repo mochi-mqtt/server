@@ -23,6 +23,7 @@ hooks:
       address: "localhost:6379"
       database: 1
   auth:
+    allow_all: false
     ledger:
       auth:
         - username: peach
