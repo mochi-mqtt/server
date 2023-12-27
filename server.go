@@ -500,10 +500,11 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 			}
 			cl.State.Subscriptions.Add(sub.Filter, sub)
 		}
-
+	
 		// Clean the state of the existing client to prevent sequential take-overs
 		// from increasing memory usage by inflights + subs * client-id.
-		if !s.Options.Capabilities.Compatibilities.TakeoverSubInheritable {
+		uninheritable := !s.Options.Capabilities.Compatibilities.TakeoverSubInheritable
+		if uninheritable {
 			s.UnsubscribeClient(existing)
 		}
 		existing.ClearInflights()
