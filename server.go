@@ -79,6 +79,7 @@ type Compatibilities struct {
 	AlwaysReturnResponseInfo   bool // always return response info (useful for testing)
 	RestoreSysInfoOnRestart    bool // restore system info from store as if server never stopped
 	NoInheritedPropertiesOnAck bool // don't allow inherited user properties on ack (paho - spec violation)
+	TakeoverSubInheritable 	   bool // the new connection will inherit the subscriptions from the previous one.
 }
 
 // Options contains configurable options for the server.
@@ -502,11 +503,12 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 
 		// Clean the state of the existing client to prevent sequential take-overs
 		// from increasing memory usage by inflights + subs * client-id.
-		s.UnsubscribeClient(existing)
+		if !s.Options.Capabilities.Compatibilities.TakeoverSubInheritable {
+			s.UnsubscribeClient(existing)
+		}
 		existing.ClearInflights()
 
 		s.Log.Debug("session taken over", "client", cl.ID, "old_remote", existing.Net.Remote, "new_remote", cl.Net.Remote)
-
 		return true // [MQTT-3.2.2-3]
 	}
 
