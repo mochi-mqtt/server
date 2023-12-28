@@ -348,7 +348,7 @@ func (pk *Packet) ConnectEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	_, _ = nb.WriteTo(buf)
+	buf.Write(nb.Bytes())
 
 	return nil
 }
@@ -512,7 +512,8 @@ func (pk *Packet) ConnackEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	_, _ = nb.WriteTo(buf)
+	buf.Write(nb.Bytes())
+
 	return nil
 }
 
@@ -557,7 +558,7 @@ func (pk *Packet) DisconnectEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	_, _ = nb.WriteTo(buf)
+	buf.Write(nb.Bytes())
 
 	return nil
 }
@@ -628,7 +629,7 @@ func (pk *Packet) PublishEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len() + len(pk.Payload)
 	pk.FixedHeader.Encode(buf)
-	_, _ = nb.WriteTo(buf)
+	buf.Write(nb.Bytes())
 	buf.Write(pk.Payload)
 
 	return nil
@@ -719,7 +720,7 @@ func (pk *Packet) encodePubAckRelRecComp(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	_, _ = nb.WriteTo(buf)
+	buf.Write(nb.Bytes())
 	return nil
 }
 
@@ -858,7 +859,7 @@ func (pk *Packet) SubackEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	_, _ = nb.WriteTo(buf)
+	buf.Write(nb.Bytes())
 
 	return nil
 }
@@ -918,7 +919,7 @@ func (pk *Packet) SubscribeEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	_, _ = nb.WriteTo(buf)
+	buf.Write(nb.Bytes())
 
 	return nil
 }
@@ -1015,7 +1016,7 @@ func (pk *Packet) UnsubackEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	_, _ = nb.WriteTo(buf)
+	buf.Write(nb.Bytes())
 
 	return nil
 }
@@ -1071,7 +1072,7 @@ func (pk *Packet) UnsubscribeEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	_, _ = nb.WriteTo(buf)
+	buf.Write(nb.Bytes())
 
 	return nil
 }
@@ -1133,7 +1134,7 @@ func (pk *Packet) AuthEncode(buf *bytes.Buffer) error {
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
-	_, _ = nb.WriteTo(buf)
+	buf.Write(nb.Bytes())
 	return nil
 }
 

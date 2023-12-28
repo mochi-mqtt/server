@@ -582,7 +582,7 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		return packets.ErrPacketTooLarge // [MQTT-3.1.2-24] [MQTT-3.1.2-25]
 	}
 
-	n, err := func() (n int64, err error) {
+	n, err := func() (int64, error) {
 		cl.Lock()
 		defer cl.Unlock()
 		if len(cl.State.outbound) == 0 {
@@ -591,9 +591,9 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 			}
 
 			// first write to buffer, then flush buffer
-			n, _ = buf.WriteTo(cl.Net.outbuf) // will always be successful
+			n, _ := cl.Net.outbuf.Write(buf.Bytes()) // will always be successful
 			err = cl.flushOutbuf()
-			return
+			return int64(n), err
 		}
 
 		// there are more writes in the queue
@@ -604,13 +604,13 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 			cl.Net.outbuf = new(bytes.Buffer)
 		}
 
-		n, _ = buf.WriteTo(cl.Net.outbuf) // will always be successful
+		n, _ := cl.Net.outbuf.Write(buf.Bytes()) // will always be successful
 		if cl.Net.outbuf.Len() < cl.ops.options.ClientNetWriteBufferSize {
-			return
+			return int64(n), nil
 		}
 
 		err = cl.flushOutbuf()
-		return
+		return int64(n), err
 	}()
 	if err != nil {
 		return err

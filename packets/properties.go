@@ -359,7 +359,7 @@ func (p *Properties) Encode(pkt byte, mods Mods, b *bytes.Buffer, n int) {
 	}
 
 	encodeLength(b, int64(buf.Len()))
-	_, _ = buf.WriteTo(b) // [MQTT-3.1.3-10]
+	b.Write(buf.Bytes()) // [MQTT-3.1.3-10]
 }
 
 // Decode decodes property bytes into a properties struct.
