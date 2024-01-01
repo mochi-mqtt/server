@@ -934,7 +934,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	}
 
 	out := pk.Copy(false)
-	if !s.hooks.OnACLCheck(cl, pk.TopicName, false) {
+	if !s.hooks.OnACLCheck(cl, pk.TopicName, true) {
 		return out, packets.ErrNotAuthorized
 	}
 	if !sub.FwdRetainedFlag && ((cl.Properties.ProtocolVersion == 5 && !sub.RetainAsPublished) || cl.Properties.ProtocolVersion < 5) { // ![MQTT-3.3.1-13] [v3 MQTT-3.3.1-9]
