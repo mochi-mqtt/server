@@ -1010,9 +1010,8 @@ func (pk *Packet) UnsubackEncode(buf *bytes.Buffer) error {
 		defer mempool.PutBuffer(pb)
 		pk.Properties.Encode(pk.FixedHeader.Type, pk.Mods, pb, nb.Len())
 		nb.Write(pb.Bytes())
+		nb.Write(pk.ReasonCodes)
 	}
-
-	nb.Write(pk.ReasonCodes)
 
 	pk.FixedHeader.Remaining = nb.Len()
 	pk.FixedHeader.Encode(buf)
