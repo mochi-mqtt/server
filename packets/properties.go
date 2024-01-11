@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+
+	"github.com/mochi-mqtt/server/v2/mempool"
 )
 
 const (
@@ -199,7 +201,8 @@ func (p *Properties) Encode(pkt byte, mods Mods, b *bytes.Buffer, n int) {
 		return
 	}
 
-	var buf bytes.Buffer
+	buf := mempool.GetBuffer()
+	defer mempool.PutBuffer(buf)
 	if p.canEncode(pkt, PropPayloadFormat) && p.PayloadFormatFlag {
 		buf.WriteByte(PropPayloadFormat)
 		buf.WriteByte(p.PayloadFormat)
@@ -230,7 +233,7 @@ func (p *Properties) Encode(pkt byte, mods Mods, b *bytes.Buffer, n int) {
 		for _, v := range p.SubscriptionIdentifier {
 			if v > 0 {
 				buf.WriteByte(PropSubscriptionIdentifier)
-				encodeLength(&buf, int64(v))
+				encodeLength(buf, int64(v))
 			}
 		}
 	}
@@ -321,7 +324,8 @@ func (p *Properties) Encode(pkt byte, mods Mods, b *bytes.Buffer, n int) {
 	}
 
 	if !mods.DisallowProblemInfo && p.canEncode(pkt, PropUser) {
-		pb := bytes.NewBuffer([]byte{})
+		pb := mempool.GetBuffer()
+		defer mempool.PutBuffer(pb)
 		for _, v := range p.User {
 			pb.WriteByte(PropUser)
 			pb.Write(encodeString(v.Key))
@@ -355,7 +359,7 @@ func (p *Properties) Encode(pkt byte, mods Mods, b *bytes.Buffer, n int) {
 	}
 
 	encodeLength(b, int64(buf.Len()))
-	_, _ = buf.WriteTo(b) // [MQTT-3.1.3-10]
+	b.Write(buf.Bytes()) // [MQTT-3.1.3-10]
 }
 
 // Decode decodes property bytes into a properties struct.
