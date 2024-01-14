@@ -1986,6 +1986,22 @@ func TestPublishToClientMqtt5RetainAsPublishedTrueLeverageNoConn(t *testing.T) {
 	require.ErrorIs(t, err, packets.CodeDisconnect)
 }
 
+func TestPublishToClientExceedMaximumInflight(t *testing.T) {
+	const MaxInflight uint16 = 5
+	s := newServer()
+	cl, _, _ := newTestClient()
+	s.Options.Capabilities.MaximumInflight = MaxInflight
+	cl.ops.options.Capabilities.MaximumInflight = MaxInflight
+	for i := uint16(0); i < MaxInflight; i++ {
+		cl.State.Inflight.Set(packets.Packet{PacketID: i})
+	}
+
+	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.InflightDropped))
+}
+
 func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -1996,6 +2012,7 @@ func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.InflightDropped))
 }
 
 func TestPublishToClientACLNotAuthorized(t *testing.T) {
@@ -3131,22 +3148,22 @@ func TestServerLoadClients(t *testing.T) {
 		{ID: "v3-clean", ProtocolVersion: 4, Clean: true},
 		{ID: "v3-not-clean", ProtocolVersion: 4, Clean: false},
 		{
-			ID: "v5-clean",
+			ID:              "v5-clean",
 			ProtocolVersion: 5,
-			Clean: true,
+			Clean:           true,
 			Properties: storage.ClientProperties{
 				SessionExpiryInterval: 10,
 			},
 		},
 		{
-			ID: "v5-expire-interval-0",
+			ID:              "v5-expire-interval-0",
 			ProtocolVersion: 5,
 			Properties: storage.ClientProperties{
 				SessionExpiryInterval: 0,
 			},
 		},
 		{
-			ID: "v5-expire-interval-not-0",
+			ID:              "v5-expire-interval-not-0",
 			ProtocolVersion: 5,
 			Properties: storage.ClientProperties{
 				SessionExpiryInterval: 10,

@@ -38,6 +38,7 @@ var (
 		MaximumSessionExpiryInterval: math.MaxUint32, // maximum number of seconds to keep disconnected sessions
 		MaximumMessageExpiryInterval: 60 * 60 * 24,   // maximum message expiry if message expiry is 0 or over
 		ReceiveMaximum:               1024,           // maximum number of concurrent qos messages per client
+		MaximumInflight:              1024 * 8,       // maximum number of qos > 0 messages can be stored
 		MaximumQos:                   2,              // maximum qos value available to clients
 		RetainAvailable:              1,              // retain messages is available
 		MaximumPacketSize:            0,              // no maximum packet size
@@ -56,20 +57,21 @@ var (
 
 // Capabilities indicates the capabilities and features provided by the server.
 type Capabilities struct {
-	MaximumMessageExpiryInterval int64
-	MaximumClientWritesPending   int32
-	MaximumSessionExpiryInterval uint32
-	MaximumPacketSize            uint32
+	MaximumMessageExpiryInterval int64  // maximum message expiry if message expiry is 0 or over
+	MaximumClientWritesPending   int32  // maximum number of pending message writes for a client
+	MaximumSessionExpiryInterval uint32 // maximum number of seconds to keep disconnected sessions
+	MaximumPacketSize            uint32 // maximum packet size, no limit if 0
 	maximumPacketID              uint32 // unexported, used for testing only
-	ReceiveMaximum               uint16
-	TopicAliasMaximum            uint16
-	SharedSubAvailable           byte
-	MinimumProtocolVersion       byte
+	ReceiveMaximum               uint16 // maximum number of concurrent qos messages per client
+	MaximumInflight              uint16 // maximum number of qos > 0 messages can be stored, 0(=8192)-65535
+	TopicAliasMaximum            uint16 // maximum topic alias value
+	SharedSubAvailable           byte   // support of shared subscriptions
+	MinimumProtocolVersion       byte   // minimum supported mqtt version
 	Compatibilities              Compatibilities
-	MaximumQos                   byte
-	RetainAvailable              byte
-	WildcardSubAvailable         byte
-	SubIDAvailable               byte
+	MaximumQos                   byte // maximum qos value available to clients
+	RetainAvailable              byte // support of retain messages
+	WildcardSubAvailable         byte // support of wildcard subscriptions
+	SubIDAvailable               byte // support of subscription identifiers
 }
 
 // Compatibilities provides flags for using compatibility modes.
@@ -194,6 +196,10 @@ func (o *Options) ensureDefaults() {
 	}
 
 	o.Capabilities.maximumPacketID = math.MaxUint16 // spec maximum is 65535
+
+	if o.Capabilities.MaximumInflight == 0 {
+		o.Capabilities.MaximumInflight = 1024 * 8
+	}
 
 	if o.SysTopicResendInterval == 0 {
 		o.SysTopicResendInterval = defaultSysTopicInterval
@@ -969,9 +975,17 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	}
 
 	if out.FixedHeader.Qos > 0 {
+		if cl.State.Inflight.Len() >= int(s.Options.Capabilities.MaximumInflight) {
+			// add hook?
+			atomic.AddInt64(&s.Info.InflightDropped, 1)
+			s.Log.Warn("client send quota reached", "client", cl.ID, "listener", cl.Net.Listener)
+			return out, packets.ErrQuotaExceeded
+		}
+
 		i, err := cl.NextPacketID() // [MQTT-4.3.2-1] [MQTT-4.3.3-1]
 		if err != nil {
 			s.hooks.OnPacketIDExhausted(cl, pk)
+			atomic.AddInt64(&s.Info.InflightDropped, 1)
 			s.Log.Warn("packet ids exhausted", "error", err, "client", cl.ID, "listener", cl.Net.Listener)
 			return out, packets.ErrQuotaExceeded
 		}
