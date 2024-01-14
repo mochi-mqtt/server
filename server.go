@@ -1016,8 +1016,10 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	default:
 		atomic.AddInt64(&s.Info.MessagesDropped, 1)
 		cl.ops.hooks.OnPublishDropped(cl, pk)
-		cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
-		cl.State.Inflight.IncreaseSendQuota()
+		if out.FixedHeader.Qos > 0 {
+			cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
+			cl.State.Inflight.IncreaseSendQuota()
+		}
 		return out, packets.ErrPendingClientWritesExceeded
 	}
 
