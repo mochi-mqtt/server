@@ -215,9 +215,7 @@ func (cl *Client) ParseConnect(lid string, pk packets.Packet) {
 	cl.Properties.Clean = pk.Connect.Clean
 	cl.Properties.Props = pk.Properties.Copy(false)
 
-	// Non-normative comment, The Server might choose to send fewer than Receive Maximum messages to the Client
-	// without receiving acknowledgement, even if it has more than this number of messages available to send.
-	if cl.Properties.Props.ReceiveMaximum > cl.ops.options.Capabilities.MaximumInflight {
+	if cl.Properties.Props.ReceiveMaximum > cl.ops.options.Capabilities.MaximumInflight { // 3.3.4 Non-normative
 		cl.Properties.Props.ReceiveMaximum = cl.ops.options.Capabilities.MaximumInflight
 	}
 

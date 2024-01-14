@@ -978,7 +978,7 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 		if cl.State.Inflight.Len() >= int(s.Options.Capabilities.MaximumInflight) {
 			// add hook?
 			atomic.AddInt64(&s.Info.InflightDropped, 1)
-			s.Log.Warn("client send quota reached", "client", cl.ID, "listener", cl.Net.Listener)
+			s.Log.Warn("client store quota reached", "client", cl.ID, "listener", cl.Net.Listener)
 			return out, packets.ErrQuotaExceeded
 		}
 
