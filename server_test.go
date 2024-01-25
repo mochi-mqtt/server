@@ -3390,7 +3390,7 @@ func TestLoadServerInfoRestoreOnRestart(t *testing.T) {
 
 func TestItoa(t *testing.T) {
 	i := int64(22)
-	require.Equal(t, "22", Itoa(i))
+	require.Equal(t, "22", Int64toa(i))
 }
 
 func TestServerSubscribe(t *testing.T) {

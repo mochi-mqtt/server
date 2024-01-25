@@ -1354,25 +1354,25 @@ func (s *Server) publishSysTopics() {
 	info := s.Info.Clone()
 	topics := map[string]string{
 		SysPrefix + "/broker/version":              s.Info.Version,
-		SysPrefix + "/broker/time":                 Itoa(info.Time),
-		SysPrefix + "/broker/uptime":               Itoa(info.Uptime),
-		SysPrefix + "/broker/started":              Itoa(info.Started),
-		SysPrefix + "/broker/load/bytes/received":  Itoa(info.BytesReceived),
-		SysPrefix + "/broker/load/bytes/sent":      Itoa(info.BytesSent),
-		SysPrefix + "/broker/clients/connected":    Itoa(info.ClientsConnected),
-		SysPrefix + "/broker/clients/disconnected": Itoa(info.ClientsDisconnected),
-		SysPrefix + "/broker/clients/maximum":      Itoa(info.ClientsMaximum),
-		SysPrefix + "/broker/clients/total":        Itoa(info.ClientsTotal),
-		SysPrefix + "/broker/packets/received":     Itoa(info.PacketsReceived),
-		SysPrefix + "/broker/packets/sent":         Itoa(info.PacketsSent),
-		SysPrefix + "/broker/messages/received":    Itoa(info.MessagesReceived),
-		SysPrefix + "/broker/messages/sent":        Itoa(info.MessagesSent),
-		SysPrefix + "/broker/messages/dropped":     Itoa(info.MessagesDropped),
-		SysPrefix + "/broker/messages/inflight":    Itoa(info.Inflight),
-		SysPrefix + "/broker/retained":             Itoa(info.Retained),
-		SysPrefix + "/broker/subscriptions":        Itoa(info.Subscriptions),
-		SysPrefix + "/broker/system/memory":        Itoa(info.MemoryAlloc),
-		SysPrefix + "/broker/system/threads":       Itoa(info.Threads),
+		SysPrefix + "/broker/time":                 Int64toa(info.Time),
+		SysPrefix + "/broker/uptime":               Int64toa(info.Uptime),
+		SysPrefix + "/broker/started":              Int64toa(info.Started),
+		SysPrefix + "/broker/load/bytes/received":  Int64toa(info.BytesReceived),
+		SysPrefix + "/broker/load/bytes/sent":      Int64toa(info.BytesSent),
+		SysPrefix + "/broker/clients/connected":    Int64toa(info.ClientsConnected),
+		SysPrefix + "/broker/clients/disconnected": Int64toa(info.ClientsDisconnected),
+		SysPrefix + "/broker/clients/maximum":      Int64toa(info.ClientsMaximum),
+		SysPrefix + "/broker/clients/total":        Int64toa(info.ClientsTotal),
+		SysPrefix + "/broker/packets/received":     Int64toa(info.PacketsReceived),
+		SysPrefix + "/broker/packets/sent":         Int64toa(info.PacketsSent),
+		SysPrefix + "/broker/messages/received":    Int64toa(info.MessagesReceived),
+		SysPrefix + "/broker/messages/sent":        Int64toa(info.MessagesSent),
+		SysPrefix + "/broker/messages/dropped":     Int64toa(info.MessagesDropped),
+		SysPrefix + "/broker/messages/inflight":    Int64toa(info.Inflight),
+		SysPrefix + "/broker/retained":             Int64toa(info.Retained),
+		SysPrefix + "/broker/subscriptions":        Int64toa(info.Subscriptions),
+		SysPrefix + "/broker/system/memory":        Int64toa(info.MemoryAlloc),
+		SysPrefix + "/broker/system/threads":       Int64toa(info.Threads),
 	}
 
 	for topic, payload := range topics {
@@ -1651,7 +1651,7 @@ func (s *Server) sendDelayedLWT(dt int64) {
 	}
 }
 
-// Itoa converts an int64 point to a string.
-func Itoa(ptr int64) string {
-	return strconv.FormatInt(ptr, 10)
+// Int64toa converts an int64 to a string.
+func Int64toa(v int64) string {
+	return strconv.FormatInt(v, 10)
 }
