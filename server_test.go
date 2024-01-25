@@ -3131,22 +3131,22 @@ func TestServerLoadClients(t *testing.T) {
 		{ID: "v3-clean", ProtocolVersion: 4, Clean: true},
 		{ID: "v3-not-clean", ProtocolVersion: 4, Clean: false},
 		{
-			ID: "v5-clean",
+			ID:              "v5-clean",
 			ProtocolVersion: 5,
-			Clean: true,
+			Clean:           true,
 			Properties: storage.ClientProperties{
 				SessionExpiryInterval: 10,
 			},
 		},
 		{
-			ID: "v5-expire-interval-0",
+			ID:              "v5-expire-interval-0",
 			ProtocolVersion: 5,
 			Properties: storage.ClientProperties{
 				SessionExpiryInterval: 0,
 			},
 		},
 		{
-			ID: "v5-expire-interval-not-0",
+			ID:              "v5-expire-interval-not-0",
 			ProtocolVersion: 5,
 			Properties: storage.ClientProperties{
 				SessionExpiryInterval: 10,
@@ -3388,10 +3388,9 @@ func TestLoadServerInfoRestoreOnRestart(t *testing.T) {
 	require.Equal(t, int64(60), s.Info.BytesReceived)
 }
 
-func TestAtomicItoa(t *testing.T) {
+func TestItoa(t *testing.T) {
 	i := int64(22)
-	ip := &i
-	require.Equal(t, "22", AtomicItoa(ip))
+	require.Equal(t, "22", Itoa(i))
 }
 
 func TestServerSubscribe(t *testing.T) {

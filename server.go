@@ -1351,27 +1351,28 @@ func (s *Server) publishSysTopics() {
 	atomic.StoreInt64(&s.Info.ClientsTotal, int64(s.Clients.Len()))
 	atomic.StoreInt64(&s.Info.ClientsDisconnected, atomic.LoadInt64(&s.Info.ClientsTotal)-atomic.LoadInt64(&s.Info.ClientsConnected))
 
+	info := s.Info.Clone()
 	topics := map[string]string{
 		SysPrefix + "/broker/version":              s.Info.Version,
-		SysPrefix + "/broker/time":                 AtomicItoa(&s.Info.Time),
-		SysPrefix + "/broker/uptime":               AtomicItoa(&s.Info.Uptime),
-		SysPrefix + "/broker/started":              AtomicItoa(&s.Info.Started),
-		SysPrefix + "/broker/load/bytes/received":  AtomicItoa(&s.Info.BytesReceived),
-		SysPrefix + "/broker/load/bytes/sent":      AtomicItoa(&s.Info.BytesSent),
-		SysPrefix + "/broker/clients/connected":    AtomicItoa(&s.Info.ClientsConnected),
-		SysPrefix + "/broker/clients/disconnected": AtomicItoa(&s.Info.ClientsDisconnected),
-		SysPrefix + "/broker/clients/maximum":      AtomicItoa(&s.Info.ClientsMaximum),
-		SysPrefix + "/broker/clients/total":        AtomicItoa(&s.Info.ClientsTotal),
-		SysPrefix + "/broker/packets/received":     AtomicItoa(&s.Info.PacketsReceived),
-		SysPrefix + "/broker/packets/sent":         AtomicItoa(&s.Info.PacketsSent),
-		SysPrefix + "/broker/messages/received":    AtomicItoa(&s.Info.MessagesReceived),
-		SysPrefix + "/broker/messages/sent":        AtomicItoa(&s.Info.MessagesSent),
-		SysPrefix + "/broker/messages/dropped":     AtomicItoa(&s.Info.MessagesDropped),
-		SysPrefix + "/broker/messages/inflight":    AtomicItoa(&s.Info.Inflight),
-		SysPrefix + "/broker/retained":             AtomicItoa(&s.Info.Retained),
-		SysPrefix + "/broker/subscriptions":        AtomicItoa(&s.Info.Subscriptions),
-		SysPrefix + "/broker/system/memory":        AtomicItoa(&s.Info.MemoryAlloc),
-		SysPrefix + "/broker/system/threads":       AtomicItoa(&s.Info.Threads),
+		SysPrefix + "/broker/time":                 Itoa(info.Time),
+		SysPrefix + "/broker/uptime":               Itoa(info.Uptime),
+		SysPrefix + "/broker/started":              Itoa(info.Started),
+		SysPrefix + "/broker/load/bytes/received":  Itoa(info.BytesReceived),
+		SysPrefix + "/broker/load/bytes/sent":      Itoa(info.BytesSent),
+		SysPrefix + "/broker/clients/connected":    Itoa(info.ClientsConnected),
+		SysPrefix + "/broker/clients/disconnected": Itoa(info.ClientsDisconnected),
+		SysPrefix + "/broker/clients/maximum":      Itoa(info.ClientsMaximum),
+		SysPrefix + "/broker/clients/total":        Itoa(info.ClientsTotal),
+		SysPrefix + "/broker/packets/received":     Itoa(info.PacketsReceived),
+		SysPrefix + "/broker/packets/sent":         Itoa(info.PacketsSent),
+		SysPrefix + "/broker/messages/received":    Itoa(info.MessagesReceived),
+		SysPrefix + "/broker/messages/sent":        Itoa(info.MessagesSent),
+		SysPrefix + "/broker/messages/dropped":     Itoa(info.MessagesDropped),
+		SysPrefix + "/broker/messages/inflight":    Itoa(info.Inflight),
+		SysPrefix + "/broker/retained":             Itoa(info.Retained),
+		SysPrefix + "/broker/subscriptions":        Itoa(info.Subscriptions),
+		SysPrefix + "/broker/system/memory":        Itoa(info.MemoryAlloc),
+		SysPrefix + "/broker/system/threads":       Itoa(info.Threads),
 	}
 
 	for topic, payload := range topics {
@@ -1381,7 +1382,7 @@ func (s *Server) publishSysTopics() {
 		s.publishToSubscribers(pk)
 	}
 
-	s.hooks.OnSysInfoTick(s.Info)
+	s.hooks.OnSysInfoTick(info)
 }
 
 // Close attempts to gracefully shut down the server, all listeners, clients, and stores.
@@ -1650,7 +1651,7 @@ func (s *Server) sendDelayedLWT(dt int64) {
 	}
 }
 
-// AtomicItoa converts an int64 point to a string.
-func AtomicItoa(ptr *int64) string {
-	return strconv.FormatInt(atomic.LoadInt64(ptr), 10)
+// Itoa converts an int64 point to a string.
+func Itoa(ptr int64) string {
+	return strconv.FormatInt(ptr, 10)
 }
