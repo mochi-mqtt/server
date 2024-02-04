@@ -33,21 +33,8 @@ const (
 )
 
 var (
-	// DefaultServerCapabilities defines the default features and capabilities provided by the server.
-	DefaultServerCapabilities = &Capabilities{
-		MaximumSessionExpiryInterval: math.MaxUint32, // maximum number of seconds to keep disconnected sessions
-		MaximumMessageExpiryInterval: 60 * 60 * 24,   // maximum message expiry if message expiry is 0 or over
-		ReceiveMaximum:               1024,           // maximum number of concurrent qos messages per client
-		MaximumQos:                   2,              // maximum qos value available to clients
-		RetainAvailable:              1,              // retain messages is available
-		MaximumPacketSize:            0,              // no maximum packet size
-		TopicAliasMaximum:            math.MaxUint16, // maximum topic alias value
-		WildcardSubAvailable:         1,              // wildcard subscriptions are available
-		SubIDAvailable:               1,              // subscription identifiers are available
-		SharedSubAvailable:           1,              // shared subscriptions are available
-		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
-		MaximumClientWritesPending:   1024 * 8,       // maximum number of pending message writes for a client
-	}
+	// Deprecated: Use NewDefaultServerCapabilities to avoid data race issue.
+	DefaultServerCapabilities = NewDefaultServerCapabilities()
 
 	ErrListenerIDExists       = errors.New("listener id already exists")                               // a listener with the same id already exists
 	ErrConnectionClosed       = errors.New("connection not open")                                      // connection is closed
@@ -70,6 +57,25 @@ type Capabilities struct {
 	RetainAvailable              byte
 	WildcardSubAvailable         byte
 	SubIDAvailable               byte
+}
+
+// NewDefaultServerCapabilities defines the default features and capabilities provided by the server.
+func NewDefaultServerCapabilities() *Capabilities {
+	return &Capabilities{
+		MaximumMessageExpiryInterval: 60 * 60 * 24,   // maximum message expiry if message expiry is 0 or over
+		MaximumClientWritesPending:   1024 * 8,       // maximum number of pending message writes for a client
+		MaximumSessionExpiryInterval: math.MaxUint32, // maximum number of seconds to keep disconnected sessions
+		MaximumPacketSize:            0,              // no maximum packet size
+		maximumPacketID:              math.MaxUint16,
+		ReceiveMaximum:               1024,           // maximum number of concurrent qos messages per client
+		TopicAliasMaximum:            math.MaxUint16, // maximum topic alias value
+		SharedSubAvailable:           1,              // shared subscriptions are available
+		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
+		MaximumQos:                   2,              // maximum qos value available to clients
+		RetainAvailable:              1,              // retain messages is available
+		WildcardSubAvailable:         1,              // wildcard subscriptions are available
+		SubIDAvailable:               1,              // subscription identifiers are available
+	}
 }
 
 // Compatibilities provides flags for using compatibility modes.
@@ -190,7 +196,7 @@ func New(opts *Options) *Server {
 // ensureDefaults ensures that the server starts with sane default values, if none are provided.
 func (o *Options) ensureDefaults() {
 	if o.Capabilities == nil {
-		o.Capabilities = DefaultServerCapabilities
+		o.Capabilities = NewDefaultServerCapabilities()
 	}
 
 	o.Capabilities.maximumPacketID = math.MaxUint16 // spec maximum is 65535
