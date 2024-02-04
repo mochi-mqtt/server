@@ -96,24 +96,24 @@ func (h *DelayHook) OnDisconnect(cl *Client, err error, expire bool) {
 }
 
 func newServer() *Server {
-	cc := *DefaultServerCapabilities
+	cc := NewDefaultServerCapabilities()
 	cc.MaximumMessageExpiryInterval = 0
 	cc.ReceiveMaximum = 0
 	s := New(&Options{
 		Logger:       logger,
-		Capabilities: &cc,
+		Capabilities: cc,
 	})
 	_ = s.AddHook(new(AllowHook), nil)
 	return s
 }
 
 func newServerWithInlineClient() *Server {
-	cc := *DefaultServerCapabilities
+	cc := NewDefaultServerCapabilities()
 	cc.MaximumMessageExpiryInterval = 0
 	cc.ReceiveMaximum = 0
 	s := New(&Options{
 		Logger:       logger,
-		Capabilities: &cc,
+		Capabilities: cc,
 		InlineClient: true,
 	})
 	_ = s.AddHook(new(AllowHook), nil)
@@ -125,7 +125,7 @@ func TestOptionsSetDefaults(t *testing.T) {
 	opts.ensureDefaults()
 
 	require.Equal(t, defaultSysTopicInterval, opts.SysTopicResendInterval)
-	require.Equal(t, DefaultServerCapabilities, opts.Capabilities)
+	require.Equal(t, NewDefaultServerCapabilities(), opts.Capabilities)
 
 	opts = new(Options)
 	opts.ensureDefaults()
@@ -1662,10 +1662,10 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 
 	for _, tx := range tt {
 		t.Run(tx.name, func(t *testing.T) {
-			cc := *DefaultServerCapabilities
+			cc := NewDefaultServerCapabilities()
 			s := New(&Options{
 				Logger:       logger,
-				Capabilities: &cc,
+				Capabilities: cc,
 			})
 			_ = s.AddHook(new(DenyHook), nil)
 			_ = s.Serve()
