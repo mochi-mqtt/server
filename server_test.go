@@ -3388,10 +3388,9 @@ func TestLoadServerInfoRestoreOnRestart(t *testing.T) {
 	require.Equal(t, int64(60), s.Info.BytesReceived)
 }
 
-func TestAtomicItoa(t *testing.T) {
+func TestItoa(t *testing.T) {
 	i := int64(22)
-	ip := &i
-	require.Equal(t, "22", AtomicItoa(ip))
+	require.Equal(t, "22", Int64toa(i))
 }
 
 func TestServerSubscribe(t *testing.T) {
