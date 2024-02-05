@@ -177,6 +177,7 @@ func TestOnACL(t *testing.T) {
 				Username: []byte("mochi"),
 			},
 		},
+		packets.Packet{},
 		"mochi/info",
 		true,
 	))
@@ -187,6 +188,7 @@ func TestOnACL(t *testing.T) {
 				Username: []byte("mochi"),
 			},
 		},
+		packets.Packet{},
 		"d/j/f",
 		true,
 	))
@@ -197,6 +199,7 @@ func TestOnACL(t *testing.T) {
 				Username: []byte("mochi"),
 			},
 		},
+		packets.Packet{},
 		"readonly",
 		false,
 	))
@@ -207,6 +210,7 @@ func TestOnACL(t *testing.T) {
 				Username: []byte("mochi"),
 			},
 		},
+		packets.Packet{},
 		"readonly",
 		true,
 	))

@@ -89,7 +89,7 @@ func (h *Hook) OnConnectAuthenticate(cl *mqtt.Client, pk packets.Packet) bool {
 
 // OnACLCheck returns true if the connecting client has matching read or write access to subscribe
 // or publish to a given topic.
-func (h *Hook) OnACLCheck(cl *mqtt.Client, topic string, write bool) bool {
+func (h *Hook) OnACLCheck(cl *mqtt.Client, pk packets.Packet, topic string, write bool) bool {
 	if _, ok := h.ledger.ACLOk(cl, topic, write); ok {
 		return true
 	}

@@ -7,7 +7,7 @@ package auth
 import (
 	"testing"
 
-	"github.com/mochi-mqtt/server/v2"
+	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/stretchr/testify/require"
 )
@@ -31,5 +31,5 @@ func TestAllowAllOnConnectAuthenticate(t *testing.T) {
 
 func TestAllowAllOnACLCheck(t *testing.T) {
 	h := new(AllowHook)
-	require.True(t, h.OnACLCheck(new(mqtt.Client), "any", true))
+	require.True(t, h.OnACLCheck(new(mqtt.Client), packets.Packet{}, "any", true))
 }

@@ -62,7 +62,7 @@ func (h *modifiedHookBase) OnConnectAuthenticate(cl *Client, pk packets.Packet) 
 	return true
 }
 
-func (h *modifiedHookBase) OnACLCheck(cl *Client, topic string, write bool) bool {
+func (h *modifiedHookBase) OnACLCheck(cl *Client, pk packets.Packet, topic string, write bool) bool {
 	return true
 }
 
@@ -278,13 +278,13 @@ func TestHooksOnConnectAuthenticate(t *testing.T) {
 func TestHooksOnACLCheck(t *testing.T) {
 	h := new(Hooks)
 
-	ok := h.OnACLCheck(new(Client), "a/b/c", true)
+	ok := h.OnACLCheck(new(Client), packets.Packet{}, "a/b/c", true)
 	require.False(t, ok)
 
 	err := h.Add(new(modifiedHookBase), nil)
 	require.NoError(t, err)
 
-	ok = h.OnACLCheck(new(Client), "a/b/c", true)
+	ok = h.OnACLCheck(new(Client), packets.Packet{}, "a/b/c", true)
 	require.True(t, ok)
 }
 
@@ -593,7 +593,7 @@ func TestHookBaseOnConnectAuthenticate(t *testing.T) {
 
 func TestHookBaseOnACLCheck(t *testing.T) {
 	h := new(HookBase)
-	v := h.OnACLCheck(new(Client), "topic", true)
+	v := h.OnACLCheck(new(Client), packets.Packet{}, "topic", true)
 	require.False(t, v)
 }
 
