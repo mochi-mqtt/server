@@ -71,7 +71,7 @@ func NewDefaultServerCapabilities() *Capabilities {
 		MaximumPacketSize:            0,              // no maximum packet size
 		maximumPacketID:              math.MaxUint16,
 		ReceiveMaximum:               1024,           // maximum number of concurrent qos messages per client
-    MaximumInflight:              1024 * 8,       // maximum number of qos > 0 messages can be stored
+		MaximumInflight:              1024 * 8,       // maximum number of qos > 0 messages can be stored
 		TopicAliasMaximum:            math.MaxUint16, // maximum topic alias value
 		SharedSubAvailable:           1,              // shared subscriptions are available
 		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
