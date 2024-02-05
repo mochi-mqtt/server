@@ -43,20 +43,21 @@ var (
 
 // Capabilities indicates the capabilities and features provided by the server.
 type Capabilities struct {
-	MaximumMessageExpiryInterval int64
-	MaximumClientWritesPending   int32
-	MaximumSessionExpiryInterval uint32
-	MaximumPacketSize            uint32
+	MaximumMessageExpiryInterval int64  // maximum message expiry if message expiry is 0 or over
+	MaximumClientWritesPending   int32  // maximum number of pending message writes for a client
+	MaximumSessionExpiryInterval uint32 // maximum number of seconds to keep disconnected sessions
+	MaximumPacketSize            uint32 // maximum packet size, no limit if 0
 	maximumPacketID              uint32 // unexported, used for testing only
-	ReceiveMaximum               uint16
-	TopicAliasMaximum            uint16
-	SharedSubAvailable           byte
-	MinimumProtocolVersion       byte
+	ReceiveMaximum               uint16 // maximum number of concurrent qos messages per client
+	MaximumInflight              uint16 // maximum number of qos > 0 messages can be stored, 0(=8192)-65535
+	TopicAliasMaximum            uint16 // maximum topic alias value
+	SharedSubAvailable           byte   // support of shared subscriptions
+	MinimumProtocolVersion       byte   // minimum supported mqtt version
 	Compatibilities              Compatibilities
-	MaximumQos                   byte
-	RetainAvailable              byte
-	WildcardSubAvailable         byte
-	SubIDAvailable               byte
+	MaximumQos                   byte // maximum qos value available to clients
+	RetainAvailable              byte // support of retain messages
+	WildcardSubAvailable         byte // support of wildcard subscriptions
+	SubIDAvailable               byte // support of subscription identifiers
 }
 
 // NewDefaultServerCapabilities defines the default features and capabilities provided by the server.
@@ -68,6 +69,7 @@ func NewDefaultServerCapabilities() *Capabilities {
 		MaximumPacketSize:            0,              // no maximum packet size
 		maximumPacketID:              math.MaxUint16,
 		ReceiveMaximum:               1024,           // maximum number of concurrent qos messages per client
+    MaximumInflight:              1024 * 8,       // maximum number of qos > 0 messages can be stored
 		TopicAliasMaximum:            math.MaxUint16, // maximum topic alias value
 		SharedSubAvailable:           1,              // shared subscriptions are available
 		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
@@ -200,6 +202,10 @@ func (o *Options) ensureDefaults() {
 	}
 
 	o.Capabilities.maximumPacketID = math.MaxUint16 // spec maximum is 65535
+
+	if o.Capabilities.MaximumInflight == 0 {
+		o.Capabilities.MaximumInflight = 1024 * 8
+	}
 
 	if o.SysTopicResendInterval == 0 {
 		o.SysTopicResendInterval = defaultSysTopicInterval
@@ -975,9 +981,17 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	}
 
 	if out.FixedHeader.Qos > 0 {
+		if cl.State.Inflight.Len() >= int(s.Options.Capabilities.MaximumInflight) {
+			// add hook?
+			atomic.AddInt64(&s.Info.InflightDropped, 1)
+			s.Log.Warn("client store quota reached", "client", cl.ID, "listener", cl.Net.Listener)
+			return out, packets.ErrQuotaExceeded
+		}
+
 		i, err := cl.NextPacketID() // [MQTT-4.3.2-1] [MQTT-4.3.3-1]
 		if err != nil {
 			s.hooks.OnPacketIDExhausted(cl, pk)
+			atomic.AddInt64(&s.Info.InflightDropped, 1)
 			s.Log.Warn("packet ids exhausted", "error", err, "client", cl.ID, "listener", cl.Net.Listener)
 			return out, packets.ErrQuotaExceeded
 		}
@@ -1008,8 +1022,10 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	default:
 		atomic.AddInt64(&s.Info.MessagesDropped, 1)
 		cl.ops.hooks.OnPublishDropped(cl, pk)
-		cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
-		cl.State.Inflight.IncreaseSendQuota()
+		if out.FixedHeader.Qos > 0 {
+			cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
+			cl.State.Inflight.IncreaseSendQuota()
+		}
 		return out, packets.ErrPendingClientWritesExceeded
 	}
 
