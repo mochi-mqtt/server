@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	Version                       = "2.4.5" // the current server version.
+	Version                       = "2.4.6" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 	LocalListener                 = "local"
 	InlineClientId                = "inline"
@@ -69,7 +69,7 @@ func NewDefaultServerCapabilities() *Capabilities {
 		MaximumPacketSize:            0,              // no maximum packet size
 		maximumPacketID:              math.MaxUint16,
 		ReceiveMaximum:               1024,           // maximum number of concurrent qos messages per client
-    MaximumInflight:              1024 * 8,       // maximum number of qos > 0 messages can be stored
+		MaximumInflight:              1024 * 8,       // maximum number of qos > 0 messages can be stored
 		TopicAliasMaximum:            math.MaxUint16, // maximum topic alias value
 		SharedSubAvailable:           1,              // shared subscriptions are available
 		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
