@@ -2040,6 +2040,7 @@ func TestPublishToClientSubscriptionDowngradeQos(t *testing.T) {
 }
 
 func TestPublishToClientExceedClientWritesPending(t *testing.T) {
+	var sendQuota uint16 = 5
 	s := newServer()
 
 	_, w := net.Pipe()
@@ -2050,9 +2051,12 @@ func TestPublishToClientExceedClientWritesPending(t *testing.T) {
 		options: &Options{
 			Capabilities: &Capabilities{
 				MaximumClientWritesPending: 3,
+				maximumPacketID:            10,
 			},
 		},
 	})
+	cl.Properties.Props.ReceiveMaximum = sendQuota
+	cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))
 
 	s.Clients.Add(cl)
 
@@ -2061,9 +2065,20 @@ func TestPublishToClientExceedClientWritesPending(t *testing.T) {
 		atomic.AddInt32(&cl.State.outboundQty, 1)
 	}
 
+	id, _ := cl.NextPacketID()
+	cl.State.Inflight.Set(packets.Packet{PacketID: uint16(id)})
+	cl.State.Inflight.DecreaseSendQuota()
+	sendQuota--
+
 	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, packets.Packet{})
 	require.Error(t, err)
 	require.ErrorIs(t, packets.ErrPendingClientWritesExceeded, err)
+	require.Equal(t, int32(sendQuota), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+
+	_, err = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, packets.Packet{FixedHeader: packets.FixedHeader{Qos: 1}})
+	require.Error(t, err)
+	require.ErrorIs(t, packets.ErrPendingClientWritesExceeded, err)
+	require.Equal(t, int32(sendQuota), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
 }
 
 func TestPublishToClientServerTopicAlias(t *testing.T) {
@@ -2119,6 +2134,22 @@ func TestPublishToClientMqtt5RetainAsPublishedTrueLeverageNoConn(t *testing.T) {
 	require.ErrorIs(t, err, packets.CodeDisconnect)
 }
 
+func TestPublishToClientExceedMaximumInflight(t *testing.T) {
+	const MaxInflight uint16 = 5
+	s := newServer()
+	cl, _, _ := newTestClient()
+	s.Options.Capabilities.MaximumInflight = MaxInflight
+	cl.ops.options.Capabilities.MaximumInflight = MaxInflight
+	for i := uint16(0); i < MaxInflight; i++ {
+		cl.State.Inflight.Set(packets.Packet{PacketID: i})
+	}
+
+	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.InflightDropped))
+}
+
 func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -2129,6 +2160,7 @@ func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.InflightDropped))
 }
 
 func TestPublishToClientACLNotAuthorized(t *testing.T) {

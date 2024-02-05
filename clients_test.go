@@ -37,6 +37,7 @@ func newTestClient() (cl *Client, r net.Conn, w net.Conn) {
 		options: &Options{
 			Capabilities: &Capabilities{
 				ReceiveMaximum:             10,
+				MaximumInflight:            5,
 				TopicAliasMaximum:          10000,
 				MaximumClientWritesPending: 3,
 				maximumPacketID:            10,
@@ -181,6 +182,45 @@ func TestClientParseConnect(t *testing.T) {
 	require.Equal(t, int32(cl.ops.options.Capabilities.ReceiveMaximum), cl.State.Inflight.maximumReceiveQuota)
 	require.Equal(t, int32(pk.Properties.ReceiveMaximum), cl.State.Inflight.sendQuota)
 	require.Equal(t, int32(pk.Properties.ReceiveMaximum), cl.State.Inflight.maximumSendQuota)
+}
+
+func TestClientParseConnectReceiveMaxExceedMaxInflight(t *testing.T) {
+	const MaxInflight uint16 = 1
+	cl, _, _ := newTestClient()
+	cl.ops.options.Capabilities.MaximumInflight = MaxInflight
+
+	pk := packets.Packet{
+		ProtocolVersion: 4,
+		Connect: packets.ConnectParams{
+			ProtocolName:     []byte{'M', 'Q', 'T', 'T'},
+			Clean:            true,
+			Keepalive:        60,
+			ClientIdentifier: "mochi",
+			WillFlag:         true,
+			WillTopic:        "lwt",
+			WillPayload:      []byte("lol gg"),
+			WillQos:          1,
+			WillRetain:       false,
+		},
+		Properties: packets.Properties{
+			ReceiveMaximum: uint16(5),
+		},
+	}
+
+	cl.ParseConnect("tcp1", pk)
+	require.Equal(t, pk.Connect.ClientIdentifier, cl.ID)
+	require.Equal(t, pk.Connect.Keepalive, cl.State.Keepalive)
+	require.Equal(t, pk.Connect.Clean, cl.Properties.Clean)
+	require.Equal(t, pk.Connect.ClientIdentifier, cl.ID)
+	require.Equal(t, pk.Connect.WillTopic, cl.Properties.Will.TopicName)
+	require.Equal(t, pk.Connect.WillPayload, cl.Properties.Will.Payload)
+	require.Equal(t, pk.Connect.WillQos, cl.Properties.Will.Qos)
+	require.Equal(t, pk.Connect.WillRetain, cl.Properties.Will.Retain)
+	require.Equal(t, uint32(1), cl.Properties.Will.Flag)
+	require.Equal(t, int32(cl.ops.options.Capabilities.ReceiveMaximum), cl.State.Inflight.receiveQuota)
+	require.Equal(t, int32(cl.ops.options.Capabilities.ReceiveMaximum), cl.State.Inflight.maximumReceiveQuota)
+	require.Equal(t, int32(MaxInflight), cl.State.Inflight.sendQuota)
+	require.Equal(t, int32(MaxInflight), cl.State.Inflight.maximumSendQuota)
 }
 
 func TestClientParseConnectOverrideWillDelay(t *testing.T) {

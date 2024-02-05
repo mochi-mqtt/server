@@ -51,6 +51,7 @@ type Capabilities struct {
 	MaximumPacketSize            uint32          `yaml:"maximum_packet_size" json:"maximum_packet_size"`
 	maximumPacketID              uint32          // unexported, used for testing only
 	ReceiveMaximum               uint16          `yaml:"receive_maximum" json:"receive_maximum"`
+	MaximumInflight              uint16   		`yaml:"maximum_inflight" json:"maximum_inflight"` // maximum number of qos > 0 messages can be stored, 0(=8192)-65535
 	TopicAliasMaximum            uint16          `yaml:"topic_alias_maximum" json:"topic_alias_maximum"`
 	SharedSubAvailable           byte            `yaml:"shared_sub_available" json:"shared_sub_available"`
 	MinimumProtocolVersion       byte            `yaml:"minimum_protocol_version" json:"minimum_protocol_version"`
@@ -70,6 +71,7 @@ func NewDefaultServerCapabilities() *Capabilities {
 		MaximumPacketSize:            0,              // no maximum packet size
 		maximumPacketID:              math.MaxUint16,
 		ReceiveMaximum:               1024,           // maximum number of concurrent qos messages per client
+    MaximumInflight:              1024 * 8,       // maximum number of qos > 0 messages can be stored
 		TopicAliasMaximum:            math.MaxUint16, // maximum topic alias value
 		SharedSubAvailable:           1,              // shared subscriptions are available
 		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
@@ -208,6 +210,10 @@ func (o *Options) ensureDefaults() {
 	}
 
 	o.Capabilities.maximumPacketID = math.MaxUint16 // spec maximum is 65535
+
+	if o.Capabilities.MaximumInflight == 0 {
+		o.Capabilities.MaximumInflight = 1024 * 8
+	}
 
 	if o.SysTopicResendInterval == 0 {
 		o.SysTopicResendInterval = defaultSysTopicInterval
@@ -1037,9 +1043,17 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	}
 
 	if out.FixedHeader.Qos > 0 {
+		if cl.State.Inflight.Len() >= int(s.Options.Capabilities.MaximumInflight) {
+			// add hook?
+			atomic.AddInt64(&s.Info.InflightDropped, 1)
+			s.Log.Warn("client store quota reached", "client", cl.ID, "listener", cl.Net.Listener)
+			return out, packets.ErrQuotaExceeded
+		}
+
 		i, err := cl.NextPacketID() // [MQTT-4.3.2-1] [MQTT-4.3.3-1]
 		if err != nil {
 			s.hooks.OnPacketIDExhausted(cl, pk)
+			atomic.AddInt64(&s.Info.InflightDropped, 1)
 			s.Log.Warn("packet ids exhausted", "error", err, "client", cl.ID, "listener", cl.Net.Listener)
 			return out, packets.ErrQuotaExceeded
 		}
@@ -1070,8 +1084,10 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	default:
 		atomic.AddInt64(&s.Info.MessagesDropped, 1)
 		cl.ops.hooks.OnPublishDropped(cl, pk)
-		cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
-		cl.State.Inflight.IncreaseSendQuota()
+		if out.FixedHeader.Qos > 0 {
+			cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
+			cl.State.Inflight.IncreaseSendQuota()
+		}
 		return out, packets.ErrPendingClientWritesExceeded
 	}
 
