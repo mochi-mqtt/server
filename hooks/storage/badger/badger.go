@@ -131,8 +131,6 @@ func (h *Hook) Init(config any) error {
 	options.Dir = h.config.Path
 	options.ValueDir = h.config.Path
 	options.Logger = h
-	// Set the default size of the log file to 100 MB. Modify as needed.
-	options.ValueLogFileSize = 100 * (1 << 20)
 
 	var err error
 	h.db, err = badgerhold.Open(options)

@@ -11,10 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	badgerdb "github.com/dgraph-io/badger"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/hooks/storage/badger"
 	"github.com/mochi-mqtt/server/v2/listeners"
+	"github.com/timshannon/badgerhold"
 )
 
 func main() {
@@ -36,8 +38,16 @@ func main() {
 	// GcInterval specifies the interval at which BadgerDB garbage collection process runs.
 	// Refer to https://dgraph.io/docs/badger/get-started/#garbage-collection for more information.
 	err := server.AddHook(new(badger.Hook), &badger.Options{
-		Path: badgerPath,
+		Path:       badgerPath,
 		GcInterval: 3 * time.Minute, // Set the interval for garbage collection.
+		Options: &badgerhold.Options{
+			// BadgerDB options. Modify as needed.
+			Options: badgerdb.Options{
+				NumCompactors:    2,               // Number of compactors. Compactions can be expensive.
+				MaxTableSize:     64 << 20,        // Maximum size of each table (64 MB).
+				ValueLogFileSize: 100 * (1 << 20), // Set the default size of the log file to 100 MB.
+			},
+		},
 	})
 	if err != nil {
 		log.Fatal(err)
