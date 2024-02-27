@@ -97,7 +97,6 @@ func (h *Hook) Provides(b byte) bool {
 // It uses a ticker to trigger the garbage collection at regular intervals specified by the configuration.
 // Refer to: https://dgraph.io/docs/badger/get-started/#garbage-collection
 func (h *Hook) GcLoop() {
-	h.gcTicker = time.NewTicker(h.config.GcInterval)
 	for range h.gcTicker.C {
 	again:
 		// Run the garbage collection process with a threshold of 0.7.
@@ -140,6 +139,8 @@ func (h *Hook) Init(config any) error {
 	if err != nil {
 		return err
 	}
+
+	h.gcTicker = time.NewTicker(h.config.GcInterval)
 	go h.GcLoop()
 
 	return nil
