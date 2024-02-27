@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	badgerdb "github.com/dgraph-io/badger"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/storage"
 	"github.com/mochi-mqtt/server/v2/packets"
@@ -701,4 +702,22 @@ func TestDebugf(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(logger, nil)
 	h.Debugf("test", 1, 2, 3)
+}
+
+func TestGcLoop(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(logger, nil)
+	h.Init(&Options{
+		GcInterval: 10 * time.Second, // Set the interval for garbage collection.
+		Options: &badgerhold.Options{
+			// BadgerDB options. Modify as needed.
+			Options: badgerdb.Options{
+				ValueLogFileSize: 1 << 20, // Set the default size of the log file to 1 MB.
+			},
+		},
+	})
+	defer teardown(t, h.config.Path, h)
+	h.OnSessionEstablished(client, packets.Packet{})
+	h.OnDisconnect(client, nil, true)
+	time.Sleep(20 * time.Second)
 }
