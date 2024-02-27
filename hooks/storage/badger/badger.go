@@ -22,6 +22,7 @@ import (
 const (
 	// defaultDbFile is the default file path for the badger db file.
 	defaultDbFile = ".badger"
+	defaultGcInterval = 5 * time.Minute
 )
 
 // clientKey returns a primary key for a client.
@@ -121,6 +122,10 @@ func (h *Hook) Init(config any) error {
 	h.config = config.(*Options)
 	if h.config.Path == "" {
 		h.config.Path = defaultDbFile
+	}
+
+	if h.config.GcInterval == 0 {
+		h.config.GcInterval = defaultGcInterval
 	}
 
 	options := badgerhold.DefaultOptions
