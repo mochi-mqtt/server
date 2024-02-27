@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/storage"
@@ -51,6 +52,7 @@ func sysInfoKey() string {
 // Options contains configuration settings for the BadgerDB instance.
 type Options struct {
 	Options *badgerhold.Options
+	GcInterval time.Duration
 	Path    string
 }
 
@@ -58,6 +60,7 @@ type Options struct {
 type Hook struct {
 	mqtt.HookBase
 	config *Options          // options for configuring the BadgerDB instance.
+	gcTicker *time.Ticker	 // Ticker for BadgerDB garbage collection.
 	db     *badgerhold.Store // the BadgerDB instance.
 }
 
@@ -89,6 +92,22 @@ func (h *Hook) Provides(b byte) bool {
 	}, []byte{b})
 }
 
+// GcLoop periodically runs the garbage collection process to reclaim space in the value log files.
+// It uses a ticker to trigger the garbage collection at regular intervals specified by the configuration.
+// Refer to: https://dgraph.io/docs/badger/get-started/#garbage-collection
+func (h *Hook) GcLoop() {
+	h.gcTicker = time.NewTicker(h.config.GcInterval)
+	for range h.gcTicker.C {
+	again:
+		// Run the garbage collection process with a threshold of 0.7.
+		// If the process returns nil (success), repeat the process.
+		err := h.db.Badger().RunValueLogGC(0.7)
+		if err == nil {
+			goto again // Retry garbage collection if successful.
+		}
+	}
+}
+
 // Init initializes and connects to the badger instance.
 func (h *Hook) Init(config any) error {
 	if _, ok := config.(*Options); !ok && config != nil {
@@ -108,18 +127,24 @@ func (h *Hook) Init(config any) error {
 	options.Dir = h.config.Path
 	options.ValueDir = h.config.Path
 	options.Logger = h
+	// Set the default size of the log file to 100 MB. Modify as needed.
+	options.ValueLogFileSize = 100 * (1 << 20)
 
 	var err error
 	h.db, err = badgerhold.Open(options)
 	if err != nil {
 		return err
 	}
+	go h.GcLoop()
 
 	return nil
 }
 
 // Stop closes the badger instance.
 func (h *Hook) Stop() error {
+	if h.gcTicker != nil {
+		h.gcTicker.Stop()
+	}
 	return h.db.Close()
 }
 

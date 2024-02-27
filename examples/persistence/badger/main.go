@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
@@ -31,8 +32,12 @@ func main() {
 	server := mqtt.New(nil)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
+	// AddHook adds a BadgerDB hook to the server with the specified options.
+	// GcInterval specifies the interval at which BadgerDB garbage collection process runs.
+	// Refer to https://dgraph.io/docs/badger/get-started/#garbage-collection for more information.
 	err := server.AddHook(new(badger.Hook), &badger.Options{
 		Path: badgerPath,
+		GcInterval: 3 * time.Minute, // Set the interval for garbage collection.
 	})
 	if err != nil {
 		log.Fatal(err)
