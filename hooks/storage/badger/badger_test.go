@@ -708,7 +708,7 @@ func TestGcLoop(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(logger, nil)
 	h.Init(&Options{
-		GcInterval: 10 * time.Second, // Set the interval for garbage collection.
+		GcInterval: 2 * time.Second, // Set the interval for garbage collection.
 		Options: &badgerhold.Options{
 			// BadgerDB options. Modify as needed.
 			Options: badgerdb.Options{
@@ -719,5 +719,5 @@ func TestGcLoop(t *testing.T) {
 	defer teardown(t, h.config.Path, h)
 	h.OnSessionEstablished(client, packets.Packet{})
 	h.OnDisconnect(client, nil, true)
-	time.Sleep(20 * time.Second)
+	time.Sleep(3 * time.Second)
 }
