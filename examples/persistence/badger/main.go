@@ -39,9 +39,19 @@ func main() {
 	// Refer to https://dgraph.io/docs/badger/get-started/#garbage-collection for more information.
 	err := server.AddHook(new(badger.Hook), &badger.Options{
 		Path:       badgerPath,
-		GcInterval: 3 * time.Minute, // Set the interval for garbage collection.
+
+		// Set the interval for garbage collection. Adjust according to your actual scenario.
+		GcInterval: 5 * time.Minute, 
+
+		// GcDiscardRatio specifies the ratio of log discard compared to the maximum possible log discard.
+		// Setting it to a higher value would result in fewer space reclaims, while setting it to a lower value
+		// would result in more space reclaims at the cost of increased activity on the LSM tree.
+		// discardRatio must be in the range (0.0, 1.0), both endpoints excluded, otherwise, it will be set to the default value of 0.5.
+		// Adjust according to your actual scenario.
+		GcDiscardRatio: 0.5,
+
 		Options: &badgerhold.Options{
-			// BadgerDB options. Modify as needed.
+			// BadgerDB options. Adjust according to your actual scenario.
 			Options: badgerdb.Options{
 				NumCompactors:    2,               // Number of compactors. Compactions can be expensive.
 				MaxTableSize:     64 << 20,        // Maximum size of each table (64 MB).

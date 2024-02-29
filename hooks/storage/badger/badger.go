@@ -23,6 +23,7 @@ const (
 	// defaultDbFile is the default file path for the badger db file.
 	defaultDbFile = ".badger"
 	defaultGcInterval = 5 * time.Minute
+	defaultGcDiscardRatio = 0.5
 )
 
 // clientKey returns a primary key for a client.
@@ -53,7 +54,15 @@ func sysInfoKey() string {
 // Options contains configuration settings for the BadgerDB instance.
 type Options struct {
 	Options *badgerhold.Options
+
+	// The interval for garbage collection.
 	GcInterval time.Duration
+
+	// GcDiscardRatio specifies the ratio of log discard compared to the maximum possible log discard.
+	// Setting it to a higher value would result in fewer space reclaims, while setting it to a lower value
+	// would result in more space reclaims at the cost of increased activity on the LSM tree.
+	// discardRatio must be in the range (0.0, 1.0), both endpoints excluded, otherwise, it will be set to the default value of 0.5.
+	GcDiscardRatio float64
 	Path    string
 }
 
@@ -99,9 +108,9 @@ func (h *Hook) Provides(b byte) bool {
 func (h *Hook) GcLoop() {
 	for range h.gcTicker.C {
 	again:
-		// Run the garbage collection process with a threshold of 0.7.
+		// Run the garbage collection process with a threshold.
 		// If the process returns nil (success), repeat the process.
-		err := h.db.Badger().RunValueLogGC(0.7)
+		err := h.db.Badger().RunValueLogGC(h.config.GcDiscardRatio)
 		if err == nil {
 			goto again // Retry garbage collection if successful.
 		}
@@ -125,6 +134,10 @@ func (h *Hook) Init(config any) error {
 
 	if h.config.GcInterval == 0 {
 		h.config.GcInterval = defaultGcInterval
+	}
+
+	if h.config.GcDiscardRatio <= 0.0  || h.config.GcDiscardRatio >= 1.0{
+		h.config.GcDiscardRatio = defaultGcDiscardRatio
 	}
 
 	options := badgerhold.DefaultOptions
