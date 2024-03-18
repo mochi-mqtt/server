@@ -5,18 +5,16 @@
 package main
 
 import (
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
-
 	badgerdb "github.com/dgraph-io/badger"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/hooks/storage/badger"
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"github.com/timshannon/badgerhold"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
@@ -38,10 +36,10 @@ func main() {
 	// GcInterval specifies the interval at which BadgerDB garbage collection process runs.
 	// Refer to https://dgraph.io/docs/badger/get-started/#garbage-collection for more information.
 	err := server.AddHook(new(badger.Hook), &badger.Options{
-		Path:       badgerPath,
+		Path: badgerPath,
 
 		// Set the interval for garbage collection. Adjust according to your actual scenario.
-		GcInterval: 5 * time.Minute, 
+		GcInterval: 5 * 60,
 
 		// GcDiscardRatio specifies the ratio of log discard compared to the maximum possible log discard.
 		// Setting it to a higher value would result in fewer space reclaims, while setting it to a lower value
