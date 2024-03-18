@@ -46,6 +46,7 @@ options:
     maximum_session_expiry_interval: 86400
     maximum_packet_size: 0
     receive_maximum: 1024
+    maximum_inflight: 8192
     topic_alias_maximum: 65535
     shared_sub_available: 1
     minimum_protocol_version: 3
