@@ -23,7 +23,7 @@ func main() {
 		done <- true
 	}()
 
-	configBytes, err := os.ReadFile("config.yaml")
+	configBytes, err := os.ReadFile("config.json")
 	if err != nil {
 		log.Fatal(err)
 	}

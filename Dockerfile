@@ -19,3 +19,4 @@ WORKDIR /
 COPY --from=builder /app/mochi .
 
 ENTRYPOINT [ "/mochi" ]
+CMD ["/cmd/docker", "--config", "config.yaml"]

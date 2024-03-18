@@ -60,7 +60,6 @@ Unless it's a critical issue, new releases typically go out over the weekend.
 - Please [open an issue](https://github.com/mochi-mqtt/server/issues) to request new features or event hooks!
 - Cluster support.
 - Enhanced Metrics support.
-- File-based server configuration (supporting docker).
 
 ## Quick Start
 ### Running the Broker with Go
@@ -77,17 +76,49 @@ You can now pull and run the [official Mochi MQTT image](https://hub.docker.com/
 ```sh
 docker pull mochimqtt/server
 or
-docker run mochimqtt/server
+docker run -v $(pwd)/config.yaml:/config.yaml mochimqtt/server 
 ```
 
-This is a work in progress, and a [file-based configuration](https://github.com/orgs/mochi-mqtt/projects/2) is being developed to better support this implementation. _More substantial docker support is being discussed [here](https://github.com/orgs/mochi-mqtt/discussions/281#discussion-5544545) and [here](https://github.com/orgs/mochi-mqtt/discussions/209). Please join the discussion if you use Mochi-MQTT in this environment._
+For most use cases, you can use File Based Configuration to configure the server, by specifying a valid `yaml` or `json` config file.
 
-A simple Dockerfile is provided for running the [cmd/main.go](cmd/main.go) Websocket, TCP, and Stats server:
+A simple Dockerfile is provided for running the [cmd/main.go](cmd/main.go) Websocket, TCP, and Stats server, using the `allow-all` auth hook. 
 
 ```sh
 docker build -t mochi:latest .
-docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 mochi:latest
+docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 -v $(pwd)/config.yaml:/config.yaml mochi:latest
 ```
+
+### File Based Configuration
+You can use File Based Configuration with either the Docker image (described above), or by running the build binary with the `--config=config.yaml` or `--config=config.json` parameter.
+
+Configuration files provide a convenient mechanism for easily preparing a server with the most common configurations. You can enable and configure built-in hooks and listeners, and specify server options and compatibilities:
+
+```yaml
+listeners:
+  - type: "tcp"
+    id: "tcp12"
+    address: ":1883"
+  - type: "ws"
+    id: "ws1"
+    address: ":1882"
+  - type: "sysinfo"
+    id: "stats"
+    address: ":1880"
+hooks:
+  auth:
+    allow_all: true
+options:
+  inline_client: true
+```
+
+Please review the examples found in `examples/config` for all available configuration options.
+
+There are a few conditions to note:
+1. If you use file-based configuration, you can only have one of each hook type.
+2. You can only use built in hooks with file-based configuration, as the type and configuration structure needs to be known by the server in order for it to be applied.
+3. You can only use built in listeners, for the reasons above.
+
+If you need to implement custom hooks or listeners, please do so using the traditional manner indicated in `cmd/main.go`.
 
 ## Developing with Mochi MQTT
 ### Importing as a package

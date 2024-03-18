@@ -53,7 +53,7 @@ func (hc HookConfigs) ToHooks() []mqtt.HookLoadConfig {
 	}
 
 	if hc.Storage != nil {
-		hlc = append(hlc, hc.toHooksAuth()...)
+		hlc = append(hlc, hc.toHooksStorage()...)
 	}
 
 	if hc.Debug != nil {
