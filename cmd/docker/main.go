@@ -6,7 +6,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/mochi-mqtt/server/v2/config"
 	"log"
 	"log/slog"
@@ -22,15 +21,6 @@ func main() {
 
 	configFile := flag.String("config", "config.yaml", "path to mochi config yaml or json file")
 	flag.Parse()
-
-	entries, err := os.ReadDir("./")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, e := range entries {
-		fmt.Println(e.Name())
-	}
 
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)

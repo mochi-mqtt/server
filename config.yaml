@@ -1,6 +1,6 @@
 listeners:
   - type: "tcp"
-    id: "tcp12"
+    id: "tcp1"
     address: ":1883"
   - type: "ws"
     id: "ws1"
