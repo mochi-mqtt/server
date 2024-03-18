@@ -14,6 +14,8 @@ hooks:
   storage:
     badger:
       path: badger.db
+      gc_interval: 3
+      gc_discard_ratio: 0.5
     bolt:
       path: bolt.db
     redis:

@@ -80,7 +80,6 @@ func NewDefaultServerCapabilities() *Capabilities {
 		WildcardSubAvailable:         1,              // wildcard subscriptions are available
 		SubIDAvailable:               1,              // subscription identifiers are available
 	}
-
 }
 
 // Compatibilities provides flags for using compatibility modes.

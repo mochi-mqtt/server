@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/storage"
@@ -20,7 +21,9 @@ import (
 
 const (
 	// defaultDbFile is the default file path for the badger db file.
-	defaultDbFile = ".badger"
+	defaultDbFile         = ".badger"
+	defaultGcInterval     = 5 * 60 // gc interval in seconds
+	defaultGcDiscardRatio = 0.5
 )
 
 // clientKey returns a primary key for a client.
@@ -52,13 +55,20 @@ func sysInfoKey() string {
 type Options struct {
 	Options *badgerhold.Options
 	Path    string `yaml:"path" json:"path"`
+	// GcDiscardRatio specifies the ratio of log discard compared to the maximum possible log discard.
+	// Setting it to a higher value would result in fewer space reclaims, while setting it to a lower value
+	// would result in more space reclaims at the cost of increased activity on the LSM tree.
+	// discardRatio must be in the range (0.0, 1.0), both endpoints excluded, otherwise, it will be set to the default value of 0.5.
+	GcDiscardRatio float64 `yaml:"gc_discard_ratio" json:"gc_discard_ratio"`
+	GcInterval     int64   `yaml:"gc_interval" json:"gc_interval"`
 }
 
 // Hook is a persistent storage hook based using BadgerDB file store as a backend.
 type Hook struct {
 	mqtt.HookBase
-	config *Options          // options for configuring the BadgerDB instance.
-	db     *badgerhold.Store // the BadgerDB instance.
+	config   *Options          // options for configuring the BadgerDB instance.
+	gcTicker *time.Ticker      // Ticker for BadgerDB garbage collection.
+	db       *badgerhold.Store // the BadgerDB instance.
 }
 
 // ID returns the id of the hook.
@@ -89,6 +99,21 @@ func (h *Hook) Provides(b byte) bool {
 	}, []byte{b})
 }
 
+// GcLoop periodically runs the garbage collection process to reclaim space in the value log files.
+// It uses a ticker to trigger the garbage collection at regular intervals specified by the configuration.
+// Refer to: https://dgraph.io/docs/badger/get-started/#garbage-collection
+func (h *Hook) GcLoop() {
+	for range h.gcTicker.C {
+	again:
+		// Run the garbage collection process with a threshold.
+		// If the process returns nil (success), repeat the process.
+		err := h.db.Badger().RunValueLogGC(h.config.GcDiscardRatio)
+		if err == nil {
+			goto again // Retry garbage collection if successful.
+		}
+	}
+}
+
 // Init initializes and connects to the badger instance.
 func (h *Hook) Init(config any) error {
 	if _, ok := config.(*Options); !ok && config != nil {
@@ -104,6 +129,14 @@ func (h *Hook) Init(config any) error {
 		h.config.Path = defaultDbFile
 	}
 
+	if h.config.GcInterval == 0 {
+		h.config.GcInterval = defaultGcInterval
+	}
+
+	if h.config.GcDiscardRatio <= 0.0 || h.config.GcDiscardRatio >= 1.0 {
+		h.config.GcDiscardRatio = defaultGcDiscardRatio
+	}
+
 	options := badgerhold.DefaultOptions
 	options.Dir = h.config.Path
 	options.ValueDir = h.config.Path
@@ -115,11 +148,17 @@ func (h *Hook) Init(config any) error {
 		return err
 	}
 
+	h.gcTicker = time.NewTicker(time.Duration(h.config.GcInterval) * time.Second)
+	go h.GcLoop()
+
 	return nil
 }
 
 // Stop closes the badger instance.
 func (h *Hook) Stop() error {
+	if h.gcTicker != nil {
+		h.gcTicker.Stop()
+	}
 	return h.db.Close()
 }
 
@@ -182,7 +221,7 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 		return
 	}
 
-	if cl.StopCause() == packets.ErrSessionTakenOver {
+	if errors.Is(cl.StopCause(), packets.ErrSessionTakenOver) {
 		return
 	}
 
