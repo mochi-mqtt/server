@@ -14,47 +14,44 @@ import (
 )
 
 func TestNewHTTPHealthCheck(t *testing.T) {
-	l := NewHTTPHealthCheck("healthcheck", testAddr, nil)
-	require.Equal(t, "healthcheck", l.id)
-	require.Equal(t, testAddr, l.address)
+	l := NewHTTPHealthCheck(basicConfig)
+	require.Equal(t, basicConfig.ID, l.id)
+	require.Equal(t, basicConfig.Address, l.address)
 }
 
 func TestHTTPHealthCheckID(t *testing.T) {
-	l := NewHTTPHealthCheck("healthcheck", testAddr, nil)
-	require.Equal(t, "healthcheck", l.ID())
+	l := NewHTTPHealthCheck(basicConfig)
+	require.Equal(t, basicConfig.ID, l.ID())
 }
 
 func TestHTTPHealthCheckAddress(t *testing.T) {
-	l := NewHTTPHealthCheck("healthcheck", testAddr, nil)
-	require.Equal(t, testAddr, l.Address())
+	l := NewHTTPHealthCheck(basicConfig)
+	require.Equal(t, basicConfig.Address, l.Address())
 }
 
 func TestHTTPHealthCheckProtocol(t *testing.T) {
-	l := NewHTTPHealthCheck("healthcheck", testAddr, nil)
+	l := NewHTTPHealthCheck(basicConfig)
 	require.Equal(t, "http", l.Protocol())
 }
 
 func TestHTTPHealthCheckTLSProtocol(t *testing.T) {
-	l := NewHTTPHealthCheck("healthcheck", testAddr, &Config{
-		TLSConfig: tlsConfigBasic,
-	})
-
+	l := NewHTTPHealthCheck(tlsConfig)
 	_ = l.Init(logger)
 	require.Equal(t, "https", l.Protocol())
 }
 
 func TestHTTPHealthCheckInit(t *testing.T) {
-	l := NewHTTPHealthCheck("healthcheck", testAddr, nil)
+	l := NewHTTPHealthCheck(basicConfig)
 	err := l.Init(logger)
 	require.NoError(t, err)
 
 	require.NotNil(t, l.listen)
-	require.Equal(t, testAddr, l.listen.Addr)
+	require.Equal(t, basicConfig.Address, l.listen.Addr)
 }
 
 func TestHTTPHealthCheckServeAndClose(t *testing.T) {
 	// setup http stats listener
-	l := NewHTTPHealthCheck("healthcheck", testAddr, nil)
+	l := NewHTTPHealthCheck(basicConfig)
 	err := l.Init(logger)
 	require.NoError(t, err)
 
@@ -90,7 +87,7 @@ func TestHTTPHealthCheckServeAndClose(t *testing.T) {
 
 func TestHTTPHealthCheckServeAndCloseMethodNotAllowed(t *testing.T) {
 	// setup http stats listener
-	l := NewHTTPHealthCheck("healthcheck", testAddr, nil)
+	l := NewHTTPHealthCheck(basicConfig)
 	err := l.Init(logger)
 	require.NoError(t, err)
 
@@ -125,10 +122,7 @@ func TestHTTPHealthCheckServeAndCloseMethodNotAllowed(t *testing.T) {
 }
 
 func TestHTTPHealthCheckServeTLSAndClose(t *testing.T) {
-	l := NewHTTPHealthCheck("healthcheck", testAddr, &Config{
-		TLSConfig: tlsConfigBasic,
-	})
-
+	l := NewHTTPHealthCheck(tlsConfig)
 	err := l.Init(logger)
 	require.NoError(t, err)
 

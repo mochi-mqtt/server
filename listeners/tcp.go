@@ -13,26 +13,24 @@ import (
 	"log/slog"
 )
 
+const TypeTCP = "tcp"
+
 // TCP is a listener for establishing client connections on basic TCP protocol.
 type TCP struct { // [MQTT-4.2.0-1]
 	sync.RWMutex
 	id      string       // the internal id of the listener
 	address string       // the network address to bind to
 	listen  net.Listener // a net.Listener which will listen for new clients
-	config  *Config      // configuration values for the listener
+	config  Config       // configuration values for the listener
 	log     *slog.Logger // server logger
 	end     uint32       // ensure the close methods are only called once
 }
 
-// NewTCP initialises and returns a new TCP listener, listening on an address.
-func NewTCP(id, address string, config *Config) *TCP {
-	if config == nil {
-		config = new(Config)
-	}
-
+// NewTCP initializes and returns a new TCP listener, listening on an address.
+func NewTCP(config Config) *TCP {
 	return &TCP{
-		id:      id,
-		address: address,
+		id:      config.ID,
+		address: config.Address,
 		config:  config,
 	}
 }

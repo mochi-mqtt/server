@@ -13,24 +13,23 @@ import (
 	"time"
 )
 
+const TypeHealthCheck = "healthcheck"
+
 // HTTPHealthCheck is a listener for providing an HTTP healthcheck endpoint.
 type HTTPHealthCheck struct {
 	sync.RWMutex
 	id      string       // the internal id of the listener
 	address string       // the network address to bind to
-	config  *Config      // configuration values for the listener
+	config  Config       // configuration values for the listener
 	listen  *http.Server // the http server
 	end     uint32       // ensure the close methods are only called once
 }
 
-// NewHTTPHealthCheck initialises and returns a new HTTP listener, listening on an address.
-func NewHTTPHealthCheck(id, address string, config *Config) *HTTPHealthCheck {
-	if config == nil {
-		config = new(Config)
-	}
+// NewHTTPHealthCheck initializes and returns a new HTTP listener, listening on an address.
+func NewHTTPHealthCheck(config Config) *HTTPHealthCheck {
 	return &HTTPHealthCheck{
-		id:      id,
-		address: address,
+		id:      config.ID,
+		address: config.Address,
 		config:  config,
 	}
 }

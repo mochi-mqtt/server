@@ -135,6 +135,29 @@ func TestInitUseDefaults(t *testing.T) {
 	require.Equal(t, defaultAddr, h.config.Options.Addr)
 }
 
+func TestInitUsePassConfig(t *testing.T) {
+	s := miniredis.RunT(t)
+	s.StartAddr(defaultAddr)
+	defer s.Close()
+
+	h := newHook(t, "")
+	h.SetOpts(logger, nil)
+
+	err := h.Init(&Options{
+		Address:  defaultAddr,
+		Username: "username",
+		Password: "password",
+		Database: 2,
+	})
+	require.Error(t, err)
+	h.db.FlushAll(h.ctx)
+
+	require.Equal(t, defaultAddr, h.config.Options.Addr)
+	require.Equal(t, "username", h.config.Options.Username)
+	require.Equal(t, "password", h.config.Options.Password)
+	require.Equal(t, 2, h.config.Options.DB)
+}
+
 func TestInitBadConfig(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(logger, nil)

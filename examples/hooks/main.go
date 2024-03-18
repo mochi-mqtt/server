@@ -33,7 +33,10 @@ func main() {
 	})
 
 	_ = server.AddHook(new(auth.AllowHook), nil)
-	tcp := listeners.NewTCP("t1", ":1883", nil)
+	tcp := listeners.NewTCP(listeners.Config{
+		ID:      "t1",
+		Address: ":1883",
+	})
 	err := server.AddListener(tcp)
 	if err != nil {
 		log.Fatal(err)

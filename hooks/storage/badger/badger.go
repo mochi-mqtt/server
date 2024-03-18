@@ -21,8 +21,8 @@ import (
 
 const (
 	// defaultDbFile is the default file path for the badger db file.
-	defaultDbFile = ".badger"
-	defaultGcInterval = 5 * time.Minute
+	defaultDbFile         = ".badger"
+	defaultGcInterval     = 5 * 60 // gc interval in seconds
 	defaultGcDiscardRatio = 0.5
 )
 
@@ -54,24 +54,21 @@ func sysInfoKey() string {
 // Options contains configuration settings for the BadgerDB instance.
 type Options struct {
 	Options *badgerhold.Options
-
-	// The interval for garbage collection.
-	GcInterval time.Duration
-
+	Path    string `yaml:"path" json:"path"`
 	// GcDiscardRatio specifies the ratio of log discard compared to the maximum possible log discard.
 	// Setting it to a higher value would result in fewer space reclaims, while setting it to a lower value
 	// would result in more space reclaims at the cost of increased activity on the LSM tree.
 	// discardRatio must be in the range (0.0, 1.0), both endpoints excluded, otherwise, it will be set to the default value of 0.5.
-	GcDiscardRatio float64
-	Path    string
+	GcDiscardRatio float64 `yaml:"gc_discard_ratio" json:"gc_discard_ratio"`
+	GcInterval     int64   `yaml:"gc_interval" json:"gc_interval"`
 }
 
 // Hook is a persistent storage hook based using BadgerDB file store as a backend.
 type Hook struct {
 	mqtt.HookBase
-	config *Options          // options for configuring the BadgerDB instance.
-	gcTicker *time.Ticker	 // Ticker for BadgerDB garbage collection.
-	db     *badgerhold.Store // the BadgerDB instance.
+	config   *Options          // options for configuring the BadgerDB instance.
+	gcTicker *time.Ticker      // Ticker for BadgerDB garbage collection.
+	db       *badgerhold.Store // the BadgerDB instance.
 }
 
 // ID returns the id of the hook.
@@ -136,7 +133,7 @@ func (h *Hook) Init(config any) error {
 		h.config.GcInterval = defaultGcInterval
 	}
 
-	if h.config.GcDiscardRatio <= 0.0  || h.config.GcDiscardRatio >= 1.0{
+	if h.config.GcDiscardRatio <= 0.0 || h.config.GcDiscardRatio >= 1.0 {
 		h.config.GcDiscardRatio = defaultGcDiscardRatio
 	}
 
@@ -151,7 +148,7 @@ func (h *Hook) Init(config any) error {
 		return err
 	}
 
-	h.gcTicker = time.NewTicker(h.config.GcInterval)
+	h.gcTicker = time.NewTicker(time.Duration(h.config.GcInterval) * time.Second)
 	go h.GcLoop()
 
 	return nil
@@ -224,7 +221,7 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 		return
 	}
 
-	if cl.StopCause() == packets.ErrSessionTakenOver {
+	if errors.Is(cl.StopCause(), packets.ErrSessionTakenOver) {
 		return
 	}
 

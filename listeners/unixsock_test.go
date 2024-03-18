@@ -15,41 +15,47 @@ import (
 
 const testUnixAddr = "mochi.sock"
 
+var (
+	unixConfig = Config{ID: "t1", Address: testUnixAddr}
+)
+
 func TestNewUnixSock(t *testing.T) {
-	l := NewUnixSock("t1", testUnixAddr)
+	l := NewUnixSock(unixConfig)
 	require.Equal(t, "t1", l.id)
 	require.Equal(t, testUnixAddr, l.address)
 }
 
 func TestUnixSockID(t *testing.T) {
-	l := NewUnixSock("t1", testUnixAddr)
+	l := NewUnixSock(unixConfig)
 	require.Equal(t, "t1", l.ID())
 }
 
 func TestUnixSockAddress(t *testing.T) {
-	l := NewUnixSock("t1", testUnixAddr)
+	l := NewUnixSock(unixConfig)
 	require.Equal(t, testUnixAddr, l.Address())
 }
 
 func TestUnixSockProtocol(t *testing.T) {
-	l := NewUnixSock("t1", testUnixAddr)
+	l := NewUnixSock(unixConfig)
 	require.Equal(t, "unix", l.Protocol())
 }
 
 func TestUnixSockInit(t *testing.T) {
-	l := NewUnixSock("t1", testUnixAddr)
+	l := NewUnixSock(unixConfig)
 	err := l.Init(logger)
 	l.Close(MockCloser)
 	require.NoError(t, err)
 
-	l2 := NewUnixSock("t2", testUnixAddr)
+	t2Config := unixConfig
+	t2Config.ID = "t2"
+	l2 := NewUnixSock(t2Config)
 	err = l2.Init(logger)
 	l2.Close(MockCloser)
 	require.NoError(t, err)
 }
 
 func TestUnixSockServeAndClose(t *testing.T) {
-	l := NewUnixSock("t1", testUnixAddr)
+	l := NewUnixSock(unixConfig)
 	err := l.Init(logger)
 	require.NoError(t, err)
 
@@ -74,7 +80,7 @@ func TestUnixSockServeAndClose(t *testing.T) {
 }
 
 func TestUnixSockEstablishThenEnd(t *testing.T) {
-	l := NewUnixSock("t1", testUnixAddr)
+	l := NewUnixSock(unixConfig)
 	err := l.Init(logger)
 	require.NoError(t, err)
 

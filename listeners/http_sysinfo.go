@@ -17,27 +17,26 @@ import (
 	"github.com/mochi-mqtt/server/v2/system"
 )
 
+const TypeSysInfo = "sysinfo"
+
 // HTTPStats is a listener for presenting the server $SYS stats on a JSON http endpoint.
 type HTTPStats struct {
 	sync.RWMutex
 	id      string       // the internal id of the listener
 	address string       // the network address to bind to
-	config  *Config      // configuration values for the listener
+	config  Config       // configuration values for the listener
 	listen  *http.Server // the http server
 	sysInfo *system.Info // pointers to the server data
 	log     *slog.Logger // server logger
 	end     uint32       // ensure the close methods are only called once
 }
 
-// NewHTTPStats initialises and returns a new HTTP listener, listening on an address.
-func NewHTTPStats(id, address string, config *Config, sysInfo *system.Info) *HTTPStats {
-	if config == nil {
-		config = new(Config)
-	}
+// NewHTTPStats initializes and returns a new HTTP listener, listening on an address.
+func NewHTTPStats(config Config, sysInfo *system.Info) *HTTPStats {
 	return &HTTPStats{
-		id:      id,
-		address: address,
 		sysInfo: sysInfo,
+		id:      config.ID,
+		address: config.Address,
 		config:  config,
 	}
 }

@@ -19,6 +19,9 @@ import (
 const testAddr = ":22222"
 
 var (
+	basicConfig = Config{ID: "t1", Address: testAddr}
+	tlsConfig   = Config{ID: "t1", Address: testAddr, TLSConfig: tlsConfigBasic}
+
 	logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	testCertificate = []byte(`-----BEGIN CERTIFICATE-----
@@ -65,6 +68,7 @@ func init() {
 		MinVersion:   tls.VersionTLS12,
 		Certificates: []tls.Certificate{cert},
 	}
+	tlsConfig.TLSConfig = tlsConfigBasic
 }
 
 func TestNew(t *testing.T) {

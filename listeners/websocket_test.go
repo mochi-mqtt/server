@@ -17,35 +17,33 @@ import (
 )
 
 func TestNewWebsocket(t *testing.T) {
-	l := NewWebsocket("t1", testAddr, nil)
+	l := NewWebsocket(basicConfig)
 	require.Equal(t, "t1", l.id)
 	require.Equal(t, testAddr, l.address)
 }
 
 func TestWebsocketID(t *testing.T) {
-	l := NewWebsocket("t1", testAddr, nil)
+	l := NewWebsocket(basicConfig)
 	require.Equal(t, "t1", l.ID())
 }
 
 func TestWebsocketAddress(t *testing.T) {
-	l := NewWebsocket("t1", testAddr, nil)
+	l := NewWebsocket(basicConfig)
 	require.Equal(t, testAddr, l.Address())
 }
 
 func TestWebsocketProtocol(t *testing.T) {
-	l := NewWebsocket("t1", testAddr, nil)
+	l := NewWebsocket(basicConfig)
 	require.Equal(t, "ws", l.Protocol())
 }
 
 func TestWebsocketProtocolTLS(t *testing.T) {
-	l := NewWebsocket("t1", testAddr, &Config{
-		TLSConfig: tlsConfigBasic,
-	})
+	l := NewWebsocket(tlsConfig)
 	require.Equal(t, "wss", l.Protocol())
 }
 
 func TestWebsocketInit(t *testing.T) {
-	l := NewWebsocket("t1", testAddr, nil)
+	l := NewWebsocket(basicConfig)
 	require.Nil(t, l.listen)
 	err := l.Init(logger)
 	require.NoError(t, err)
@@ -53,7 +51,7 @@ func TestWebsocketInit(t *testing.T) {
 }
 
 func TestWebsocketServeAndClose(t *testing.T) {
-	l := NewWebsocket("t1", testAddr, nil)
+	l := NewWebsocket(basicConfig)
 	_ = l.Init(logger)
 
 	o := make(chan bool)
@@ -74,9 +72,7 @@ func TestWebsocketServeAndClose(t *testing.T) {
 }
 
 func TestWebsocketServeTLSAndClose(t *testing.T) {
-	l := NewWebsocket("t1", testAddr, &Config{
-		TLSConfig: tlsConfigBasic,
-	})
+	l := NewWebsocket(tlsConfig)
 	err := l.Init(logger)
 	require.NoError(t, err)
 
@@ -96,9 +92,9 @@ func TestWebsocketServeTLSAndClose(t *testing.T) {
 }
 
 func TestWebsocketFailedToServe(t *testing.T) {
-	l := NewWebsocket("t1", "wrong_addr", &Config{
-		TLSConfig: tlsConfigBasic,
-	})
+	config := tlsConfig
+	config.Address = "wrong_addr"
+	l := NewWebsocket(config)
 	err := l.Init(logger)
 	require.NoError(t, err)
 
@@ -117,7 +113,7 @@ func TestWebsocketFailedToServe(t *testing.T) {
 }
 
 func TestWebsocketUpgrade(t *testing.T) {
-	l := NewWebsocket("t1", testAddr, nil)
+	l := NewWebsocket(basicConfig)
 	_ = l.Init(logger)
 
 	e := make(chan bool)
@@ -136,7 +132,7 @@ func TestWebsocketUpgrade(t *testing.T) {
 }
 
 func TestWebsocketConnectionReads(t *testing.T) {
-	l := NewWebsocket("t1", testAddr, nil)
+	l := NewWebsocket(basicConfig)
 	_ = l.Init(nil)
 
 	recv := make(chan []byte)

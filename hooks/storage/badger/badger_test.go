@@ -708,7 +708,7 @@ func TestGcLoop(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(logger, nil)
 	h.Init(&Options{
-		GcInterval: 2 * time.Second, // Set the interval for garbage collection.
+		GcInterval: 2, // Set the interval for garbage collection.
 		Options: &badgerhold.Options{
 			// BadgerDB options. Modify as needed.
 			Options: badgerdb.Options{

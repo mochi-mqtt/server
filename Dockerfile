@@ -11,21 +11,12 @@ RUN go mod download
 
 COPY . ./
 
-RUN go build -o /app/mochi ./cmd
-
+RUN go build -o /app/mochi ./cmd/docker
 
 FROM alpine
 
 WORKDIR /
 COPY --from=builder /app/mochi .
 
-# tcp
-EXPOSE 1883
-
-# websockets
-EXPOSE 1882
-
-# dashboard
-EXPOSE 8080
-
 ENTRYPOINT [ "/mochi" ]
+CMD ["/cmd/docker", "--config", "config.yaml"]
