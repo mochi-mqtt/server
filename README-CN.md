@@ -60,7 +60,6 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
 - 请[提出问题](https://github.com/mochi-mqtt/server/issues)来请求新功能或新的hook钩子接口！
 - 集群支持。
 - 统计度量支持。
-- 配置文件支持（支持 Docker）。
 
 ## 快速开始(Quick Start)
 ### 使用 Go 运行服务端
@@ -77,17 +76,48 @@ go build -o mqtt && ./mqtt
 ```sh
 docker pull mochimqtt/server
 或者
-docker run mochimqtt/server
+docker run -v $(pwd)/config.yaml:/config.yaml mochimqtt/server
 ```
 
-我们还在积极完善这部分的工作，现在正在实现使用[配置文件的启动](https://github.com/orgs/mochi-mqtt/projects/2)方式。更多关于 Docker 的支持正在[这里](https://github.com/orgs/mochi-mqtt/discussions/281#discussion-5544545)和[这里](https://github.com/orgs/mochi-mqtt/discussions/209)进行讨论。如果你有在这个场景下使用 Mochi-MQTT，也可以参与到讨论中来。
-
-我们提供了一个简单的 Dockerfile，用于运行 cmd/main.go 中的 Websocket(:1882)、TCP(:1883) 和服务端状态信息(:8080)这三个服务监听：
+一般情况下，您可以使用基于文件的方式来配置服务端，只需指定一个有效的 yaml 或 json 配置文件。
+我们提供了一个简单的 Dockerfile，用于运行 [cmd/main.go](cmd/main.go)  中的 Websocket(:1882)、TCP(:1883) 和服务端状态信息(:8080)这三个网络服务，它使用了一个 allow-all 的鉴权策略(Hook)。
 
 ```sh
 docker build -t mochi:latest .
-docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 mochi:latest
+docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 -v $(pwd)/config.yaml:/config.yaml mochi:latest
 ```
+
+### 基于文件的配置
+你可以使用基于文件的配置与 Docker 镜像（上节所述）一起使用，或者通过运行编译好的可执行文件并使用 `--config=config.yaml` 或 `--config=config.json` 指定配置文件。
+
+配置文件使得服务端更易于管理和维护。你可以启用和配置内置的钩子(hooks)和监听器(listeners)，并指定服务器的一些选项(options)和能力(compatibilities)：
+
+```yaml
+listeners:
+  - type: "tcp"
+    id: "tcp12"
+    address: ":1883"
+  - type: "ws"
+    id: "ws1"
+    address: ":1882"
+  - type: "sysinfo"
+    id: "stats"
+    address: ":1880"
+hooks:
+  auth:
+    allow_all: true
+options:
+  inline_client: true
+```
+
+你可以参考请 [examples/config](examples/config) 中的示例，以了解所有可用的配置。
+有一些需要注意的地方：
+
+1. 如果你使用基于文件的配置，现在支持配置的hook类型只有auth、storage、debug这三种，每种类型的钩子只能有一个。
+2. 你只能在基于文件的配置中使用内置钩子(mochi-mqtt里面默认已经存在的hook，你自己创建的不算)，因为钩子的配置需要先跟conf.toml的结构匹配。
+3. 你只能使用内置监听器(listeners)，原因同上。
+
+如果你需要实现自定义的钩子(Hooks)或监听器(listeners)，请使用 [cmd/main.go](cmd/main.go) 中那样的传统方式来实现。
 
 
 ## 使用 Mochi MQTT 进行开发

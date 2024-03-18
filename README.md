@@ -111,14 +111,14 @@ options:
   inline_client: true
 ```
 
-Please review the examples found in `examples/config` for all available configuration options.
+Please review the examples found in [examples/config](examples/config) for all available configuration options.
 
 There are a few conditions to note:
-1. If you use file-based configuration, you can only have one of each hook type.
+1. If you use file-based configuration, the supported hook types for configuration are currently limited to auth, storage, and debug. Each type of hook can only have one instance.
 2. You can only use built in hooks with file-based configuration, as the type and configuration structure needs to be known by the server in order for it to be applied.
 3. You can only use built in listeners, for the reasons above.
 
-If you need to implement custom hooks or listeners, please do so using the traditional manner indicated in `cmd/main.go`.
+If you need to implement custom hooks or listeners, please do so using the traditional manner indicated in [cmd/main.go](cmd/main.go).
 
 ## Developing with Mochi MQTT
 ### Importing as a package
