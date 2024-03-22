@@ -11,12 +11,11 @@ import (
 	"strings"
 	"time"
 
+	badgerdb "github.com/dgraph-io/badger/v4"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/storage"
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/mochi-mqtt/server/v2/system"
-
-	"github.com/timshannon/badgerhold"
 )
 
 const (
@@ -28,7 +27,7 @@ const (
 
 // clientKey returns a primary key for a client.
 func clientKey(cl *mqtt.Client) string {
-	return cl.ID
+	return storage.ClientKey + "_" + cl.ID
 }
 
 // subscriptionKey returns a primary key for a subscription.
@@ -51,9 +50,52 @@ func sysInfoKey() string {
 	return storage.SysInfoKey
 }
 
+// Serializable is an interface for objects that can be serialized and deserialized.
+type Serializable interface {
+	UnmarshalBinary([]byte) error
+	MarshalBinary() (data []byte, err error)
+}
+
+// setKv stores a key-value pair in the database.
+func setKv[T Serializable](db *badgerdb.DB, key string, obj T) error {
+	return db.Update(func(txn *badgerdb.Txn) error {
+		data, err := obj.MarshalBinary()
+		if err != nil {
+			return err
+		}
+		err = txn.Set([]byte(key), data)
+		return err
+	})
+}
+
+// delKv deletes a key-value pair from the database.
+func delKv(db *badgerdb.DB, key string) error {
+	return db.Update(func(txn *badgerdb.Txn) error {
+		return txn.Delete([]byte(key))
+	})
+}
+
+// getKv retrieves the value associated with a key from the database.
+func getKv[T Serializable](db *badgerdb.DB, key string, obj T) error {
+	return db.View(func(txn *badgerdb.Txn) error {
+		item, err := txn.Get([]byte(key))
+		if err != nil {
+			return err
+		}
+		value, err := item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		if err := obj.UnmarshalBinary(value); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 // Options contains configuration settings for the BadgerDB instance.
 type Options struct {
-	Options *badgerhold.Options
+	Options *badgerdb.Options
 	Path    string `yaml:"path" json:"path"`
 	// GcDiscardRatio specifies the ratio of log discard compared to the maximum possible log discard.
 	// Setting it to a higher value would result in fewer space reclaims, while setting it to a lower value
@@ -66,9 +108,9 @@ type Options struct {
 // Hook is a persistent storage hook based using BadgerDB file store as a backend.
 type Hook struct {
 	mqtt.HookBase
-	config   *Options          // options for configuring the BadgerDB instance.
-	gcTicker *time.Ticker      // Ticker for BadgerDB garbage collection.
-	db       *badgerhold.Store // the BadgerDB instance.
+	config   *Options     // options for configuring the BadgerDB instance.
+	gcTicker *time.Ticker // Ticker for BadgerDB garbage collection.
+	db       *badgerdb.DB // the BadgerDB instance.
 }
 
 // ID returns the id of the hook.
@@ -102,12 +144,12 @@ func (h *Hook) Provides(b byte) bool {
 // GcLoop periodically runs the garbage collection process to reclaim space in the value log files.
 // It uses a ticker to trigger the garbage collection at regular intervals specified by the configuration.
 // Refer to: https://dgraph.io/docs/badger/get-started/#garbage-collection
-func (h *Hook) GcLoop() {
+func (h *Hook) gcLoop() {
 	for range h.gcTicker.C {
 	again:
 		// Run the garbage collection process with a threshold.
 		// If the process returns nil (success), repeat the process.
-		err := h.db.Badger().RunValueLogGC(h.config.GcDiscardRatio)
+		err := h.db.RunValueLogGC(h.config.GcDiscardRatio)
 		if err == nil {
 			goto again // Retry garbage collection if successful.
 		}
@@ -137,19 +179,20 @@ func (h *Hook) Init(config any) error {
 		h.config.GcDiscardRatio = defaultGcDiscardRatio
 	}
 
-	options := badgerhold.DefaultOptions
-	options.Dir = h.config.Path
-	options.ValueDir = h.config.Path
-	options.Logger = h
+	if h.config.Options == nil {
+		defaultOpts := badgerdb.DefaultOptions(h.config.Path)
+		h.config.Options = &defaultOpts
+	}
+	h.config.Options.Logger = h
 
 	var err error
-	h.db, err = badgerhold.Open(options)
+	h.db, err = badgerdb.Open(*h.config.Options)
 	if err != nil {
 		return err
 	}
 
 	h.gcTicker = time.NewTicker(time.Duration(h.config.GcInterval) * time.Second)
-	go h.GcLoop()
+	go h.gcLoop()
 
 	return nil
 }
@@ -202,7 +245,7 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 		Will: storage.ClientWill(cl.Properties.Will),
 	}
 
-	err := h.db.Upsert(in.ID, in)
+	err := setKv(h.db, in.ID, in)
 	if err != nil {
 		h.Log.Error("failed to upsert client data", "error", err, "data", in)
 	}
@@ -225,7 +268,7 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 		return
 	}
 
-	err := h.db.Delete(clientKey(cl), new(storage.Client))
+	err := delKv(h.db, clientKey(cl))
 	if err != nil {
 		h.Log.Error("failed to delete client data", "error", err, "data", clientKey(cl))
 	}
@@ -252,7 +295,7 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 			RetainAsPublished: pk.Filters[i].RetainAsPublished,
 		}
 
-		err := h.db.Upsert(in.ID, in)
+		err := setKv(h.db, in.ID, in)
 		if err != nil {
 			h.Log.Error("failed to upsert subscription data", "error", err, "data", in)
 		}
@@ -267,7 +310,7 @@ func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 	}
 
 	for i := 0; i < len(pk.Filters); i++ {
-		err := h.db.Delete(subscriptionKey(cl, pk.Filters[i].Filter), new(storage.Subscription))
+		err := delKv(h.db, subscriptionKey(cl, pk.Filters[i].Filter))
 		if err != nil {
 			h.Log.Error("failed to delete subscription data", "error", err, "data", subscriptionKey(cl, pk.Filters[i].Filter))
 		}
@@ -282,7 +325,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 	}
 
 	if r == -1 {
-		err := h.db.Delete(retainedKey(pk.TopicName), new(storage.Message))
+		err := delKv(h.db, retainedKey(pk.TopicName))
 		if err != nil {
 			h.Log.Error("failed to delete retained message data", "error", err, "data", retainedKey(pk.TopicName))
 		}
@@ -311,7 +354,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 		},
 	}
 
-	err := h.db.Upsert(in.ID, in)
+	err := setKv(h.db, in.ID, in)
 	if err != nil {
 		h.Log.Error("failed to upsert retained message data", "error", err, "data", in)
 	}
@@ -347,7 +390,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 		},
 	}
 
-	err := h.db.Upsert(in.ID, in)
+	err := setKv(h.db, in.ID, in)
 	if err != nil {
 		h.Log.Error("failed to upsert qos inflight data", "error", err, "data", in)
 	}
@@ -360,7 +403,7 @@ func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
 		return
 	}
 
-	err := h.db.Delete(inflightKey(cl, pk), new(storage.Message))
+	err := delKv(h.db, inflightKey(cl, pk))
 	if err != nil {
 		h.Log.Error("failed to delete inflight message data", "error", err, "data", inflightKey(cl, pk))
 	}
@@ -388,7 +431,7 @@ func (h *Hook) OnSysInfoTick(sys *system.Info) {
 		Info: *sys.Clone(),
 	}
 
-	err := h.db.Upsert(in.ID, in)
+	err := setKv(h.db, in.ID, in)
 	if err != nil {
 		h.Log.Error("failed to upsert $SYS data", "error", err, "data", in)
 	}
@@ -401,7 +444,7 @@ func (h *Hook) OnRetainedExpired(filter string) {
 		return
 	}
 
-	err := h.db.Delete(retainedKey(filter), new(storage.Message))
+	err := delKv(h.db, retainedKey(filter))
 	if err != nil {
 		h.Log.Error("failed to delete expired retained message data", "error", err, "id", retainedKey(filter))
 	}
@@ -414,7 +457,7 @@ func (h *Hook) OnClientExpired(cl *mqtt.Client) {
 		return
 	}
 
-	err := h.db.Delete(clientKey(cl), new(storage.Client))
+	err := delKv(h.db, clientKey(cl))
 	if err != nil {
 		h.Log.Error("failed to delete expired client data", "error", err, "id", clientKey(cl))
 	}
@@ -427,8 +470,27 @@ func (h *Hook) StoredClients() (v []storage.Client, err error) {
 		return
 	}
 
-	err = h.db.Find(&v, badgerhold.Where("T").Eq(storage.ClientKey))
-	if err != nil && !errors.Is(err, badgerhold.ErrNotFound) {
+	err = h.db.View(func(txn *badgerdb.Txn) error {
+		iterator := txn.NewIterator(badgerdb.DefaultIteratorOptions)
+		defer iterator.Close()
+
+		prefix := []byte(storage.ClientKey)
+		for iterator.Seek(prefix); iterator.ValidForPrefix(prefix); iterator.Next() {
+			item := iterator.Item()
+			value, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			obj := storage.Client{}
+			if err := obj.UnmarshalBinary(value); err != nil {
+				return err
+			}
+			v = append(v, obj)
+		}
+		return nil
+	})
+
+	if err != nil && !errors.Is(err, badgerdb.ErrKeyNotFound) {
 		return
 	}
 
@@ -442,8 +504,28 @@ func (h *Hook) StoredSubscriptions() (v []storage.Subscription, err error) {
 		return
 	}
 
-	err = h.db.Find(&v, badgerhold.Where("T").Eq(storage.SubscriptionKey))
-	if err != nil && !errors.Is(err, badgerhold.ErrNotFound) {
+	v = make([]storage.Subscription, 0)
+	err = h.db.View(func(txn *badgerdb.Txn) error {
+		iterator := txn.NewIterator(badgerdb.DefaultIteratorOptions)
+		defer iterator.Close()
+
+		prefix := []byte(storage.SubscriptionKey)
+		for iterator.Seek(prefix); iterator.ValidForPrefix(prefix); iterator.Next() {
+			item := iterator.Item()
+			value, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			obj := storage.Subscription{}
+			if err := obj.UnmarshalBinary(value); err != nil {
+				return err
+			}
+			v = append(v, obj)
+		}
+		return nil
+	})
+
+	if err != nil && !errors.Is(err, badgerdb.ErrKeyNotFound) {
 		return
 	}
 
@@ -457,8 +539,28 @@ func (h *Hook) StoredRetainedMessages() (v []storage.Message, err error) {
 		return
 	}
 
-	err = h.db.Find(&v, badgerhold.Where("T").Eq(storage.RetainedKey))
-	if err != nil && !errors.Is(err, badgerhold.ErrNotFound) {
+	v = make([]storage.Message, 0)
+	err = h.db.View(func(txn *badgerdb.Txn) error {
+		iterator := txn.NewIterator(badgerdb.DefaultIteratorOptions)
+		defer iterator.Close()
+
+		prefix := []byte(storage.RetainedKey)
+		for iterator.Seek(prefix); iterator.ValidForPrefix(prefix); iterator.Next() {
+			item := iterator.Item()
+			value, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			obj := storage.Message{}
+			if err := obj.UnmarshalBinary(value); err != nil {
+				return err
+			}
+			v = append(v, obj)
+		}
+		return nil
+	})
+
+	if err != nil && !errors.Is(err, badgerdb.ErrKeyNotFound) {
 		return
 	}
 
@@ -472,8 +574,28 @@ func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 		return
 	}
 
-	err = h.db.Find(&v, badgerhold.Where("T").Eq(storage.InflightKey))
-	if err != nil && !errors.Is(err, badgerhold.ErrNotFound) {
+	v = make([]storage.Message, 0)
+	err = h.db.View(func(txn *badgerdb.Txn) error {
+		iterator := txn.NewIterator(badgerdb.DefaultIteratorOptions)
+		defer iterator.Close()
+
+		prefix := []byte(storage.InflightKey)
+		for iterator.Seek(prefix); iterator.ValidForPrefix(prefix); iterator.Next() {
+			item := iterator.Item()
+			value, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			obj := storage.Message{}
+			if err := obj.UnmarshalBinary(value); err != nil {
+				return err
+			}
+			v = append(v, obj)
+		}
+		return nil
+	})
+
+	if err != nil && !errors.Is(err, badgerdb.ErrKeyNotFound) {
 		return
 	}
 
@@ -487,8 +609,8 @@ func (h *Hook) StoredSysInfo() (v storage.SystemInfo, err error) {
 		return
 	}
 
-	err = h.db.Get(storage.SysInfoKey, &v)
-	if err != nil && !errors.Is(err, badgerhold.ErrNotFound) {
+	err = getKv(h.db, storage.SysInfoKey, &v)
+	if err != nil && !errors.Is(err, badgerdb.ErrKeyNotFound) {
 		return
 	}
 

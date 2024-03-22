@@ -5,16 +5,16 @@
 package main
 
 import (
-	badgerdb "github.com/dgraph-io/badger"
-	mqtt "github.com/mochi-mqtt/server/v2"
-	"github.com/mochi-mqtt/server/v2/hooks/auth"
-	"github.com/mochi-mqtt/server/v2/hooks/storage/badger"
-	"github.com/mochi-mqtt/server/v2/listeners"
-	"github.com/timshannon/badgerhold"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
+	badgerdb "github.com/dgraph-io/badger/v4"
+	mqtt "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/hooks/auth"
+	"github.com/mochi-mqtt/server/v2/hooks/storage/badger"
+	"github.com/mochi-mqtt/server/v2/listeners"
 )
 
 func main() {
@@ -32,6 +32,9 @@ func main() {
 	server := mqtt.New(nil)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
+	badgerOpts := badgerdb.DefaultOptions(badgerPath) // BadgerDB options. Adjust according to your actual scenario.
+	badgerOpts.ValueLogFileSize = (1 << 20)           // Set the default size of the log file to 100 MB.
+
 	// AddHook adds a BadgerDB hook to the server with the specified options.
 	// GcInterval specifies the interval at which BadgerDB garbage collection process runs.
 	// Refer to https://dgraph.io/docs/badger/get-started/#garbage-collection for more information.
@@ -48,14 +51,7 @@ func main() {
 		// Adjust according to your actual scenario.
 		GcDiscardRatio: 0.5,
 
-		Options: &badgerhold.Options{
-			// BadgerDB options. Adjust according to your actual scenario.
-			Options: badgerdb.Options{
-				NumCompactors:    2,               // Number of compactors. Compactions can be expensive.
-				MaxTableSize:     64 << 20,        // Maximum size of each table (64 MB).
-				ValueLogFileSize: 100 * (1 << 20), // Set the default size of the log file to 100 MB.
-			},
-		},
+		Options: &badgerOpts,
 	})
 	if err != nil {
 		log.Fatal(err)
