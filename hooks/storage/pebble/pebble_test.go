@@ -136,12 +136,14 @@ func TestInitBadConfig(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestInitBadPath(t *testing.T) {
+func TestInitErr(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(logger, nil)
 
 	err := h.Init(&Options{
-		Path: "\n\r",
+		Options: &pebbledb.Options{
+			ReadOnly: true,
+		},
 	})
 	require.Error(t, err)
 }
