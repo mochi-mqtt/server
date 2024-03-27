@@ -121,7 +121,7 @@ func (h *Hook) Init(config any) error {
 		h.config = config.(*Options)
 	}
 
-	if h.config.Path == "" {
+	if len(h.config.Path) == 0 {
 		h.config.Path = defaultDbFile
 	}
 
@@ -487,29 +487,29 @@ func (h *Hook) Debugf(m string, v ...interface{}) {
 }
 
 // delKv deletes a key-value pair from the database.
-func (h *Hook) delKv(key string) error {
-	err := h.db.Delete([]byte(key), h.mode)
+func (h *Hook) delKv(k string) error {
+	err := h.db.Delete([]byte(k), h.mode)
 	if err != nil {
-		h.Log.Error("failed to delete data", "error", err, "key", key)
+		h.Log.Error("failed to delete data", "error", err, "key", k)
 		return err
 	}
 	return nil
 }
 
 // setKv stores a key-value pair in the database.
-func (h *Hook) setKv(key string, obj storage.Serializable) error {
-	bs, _ := obj.MarshalBinary()
-	err := h.db.Set([]byte(key), bs, h.mode)
+func (h *Hook) setKv(k string, v storage.Serializable) error {
+	bs, _ := v.MarshalBinary()
+	err := h.db.Set([]byte(k), bs, h.mode)
 	if err != nil {
-		h.Log.Error("failed to update data", "error", err, "key", key)
+		h.Log.Error("failed to update data", "error", err, "key", k)
 		return err
 	}
 	return nil
 }
 
 // getKv retrieves the value associated with a key from the database.
-func (h *Hook) getKv(key string, obj storage.Serializable) error {
-	value, closer, err := h.db.Get([]byte(key))
+func (h *Hook) getKv(k string, v storage.Serializable) error {
+	value, closer, err := h.db.Get([]byte(k))
 	if err != nil {
 		return err
 	}
@@ -519,5 +519,5 @@ func (h *Hook) getKv(key string, obj storage.Serializable) error {
 			closer.Close()
 		}
 	}()
-	return obj.UnmarshalBinary(value)
+	return v.UnmarshalBinary(value)
 }
