@@ -459,10 +459,11 @@ func (h *Hook) StoredSysInfo() (v storage.SystemInfo, err error) {
 	}
 
 	err = h.getKv(sysInfoKey(), &v)
-	if err != nil && !errors.Is(err, pebbledb.ErrNotFound) {
-		return
+	if errors.Is(err, pebbledb.ErrNotFound) {
+		return v, nil
 	}
-	return v, nil
+
+	return
 }
 
 // Errorf satisfies the pebble interface for an error logger.

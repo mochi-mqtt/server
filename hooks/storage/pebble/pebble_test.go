@@ -793,6 +793,9 @@ func TestStoredSysInfo(t *testing.T) {
 			require.NoError(t, err)
 			defer teardown(t, h.config.Path, h)
 
+			r, err := h.StoredSysInfo()
+			require.NoError(t, err)
+
 			// populate with messages
 			err = h.setKv(storage.SysInfoKey, &storage.SystemInfo{
 				ID: storage.SysInfoKey,
@@ -803,7 +806,7 @@ func TestStoredSysInfo(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			r, err := h.StoredSysInfo()
+			r, err = h.StoredSysInfo()
 			require.NoError(t, err)
 			require.Equal(t, "2.0.0", r.Info.Version)
 		})
@@ -846,7 +849,7 @@ func TestDebugf(t *testing.T) {
 	h.Debugf("test", 1, 2, 3)
 }
 
-func TestGetDelKv(t *testing.T) {
+func TestGetSetDelKv(t *testing.T) {
 	for _, tt := range opts {
 		t.Run(tt.name, func(t *testing.T) {
 			h := new(Hook)
@@ -872,7 +875,7 @@ func TestGetDelKv(t *testing.T) {
 	}
 }
 
-func TestGetDelKvErr(t *testing.T) {
+func TestGetSetDelKvErr(t *testing.T) {
 	h := new(Hook)
 	h.SetOpts(logger, nil)
 
