@@ -16,6 +16,9 @@ hooks:
       path: badger.db
       gc_interval: 3
       gc_discard_ratio: 0.5
+    pebble:
+      path: pebble.db
+      mode: "NoSync"
     bolt:
       path: bolt.db
     redis:
