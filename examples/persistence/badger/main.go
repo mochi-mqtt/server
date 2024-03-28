@@ -33,7 +33,7 @@ func main() {
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
 	badgerOpts := badgerdb.DefaultOptions(badgerPath) // BadgerDB options. Adjust according to your actual scenario.
-	badgerOpts.ValueLogFileSize = (1 << 20)           // Set the default size of the log file to 100 MB.
+	badgerOpts.ValueLogFileSize = 100 * (1 << 20)     // Set the default size of the log file to 100 MB.
 
 	// AddHook adds a BadgerDB hook to the server with the specified options.
 	// GcInterval specifies the interval at which BadgerDB garbage collection process runs.
