@@ -6,10 +6,12 @@ package config
 
 import (
 	"encoding/json"
+
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/hooks/debug"
 	"github.com/mochi-mqtt/server/v2/hooks/storage/badger"
 	"github.com/mochi-mqtt/server/v2/hooks/storage/bolt"
+	"github.com/mochi-mqtt/server/v2/hooks/storage/pebble"
 	"github.com/mochi-mqtt/server/v2/hooks/storage/redis"
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"gopkg.in/yaml.v3"
@@ -41,6 +43,7 @@ type HookAuthConfig struct {
 type HookStorageConfig struct {
 	Badger *badger.Options `yaml:"badger" json:"badger"`
 	Bolt   *bolt.Options   `yaml:"bolt" json:"bolt"`
+	Pebble *pebble.Options `yaml:"pebble" json:"pebble"`
 	Redis  *redis.Options  `yaml:"redis" json:"redis"`
 }
 
@@ -109,6 +112,13 @@ func (hc HookConfigs) toHooksStorage() []mqtt.HookLoadConfig {
 		hlc = append(hlc, mqtt.HookLoadConfig{
 			Hook:   new(redis.Hook),
 			Config: hc.Storage.Redis,
+		})
+	}
+
+	if hc.Storage.Pebble != nil {
+		hlc = append(hlc, mqtt.HookLoadConfig{
+			Hook:   new(pebble.Hook),
+			Config: hc.Storage.Pebble,
 		})
 	}
 	return hlc

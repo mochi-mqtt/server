@@ -12,6 +12,7 @@ import (
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/hooks/storage/badger"
 	"github.com/mochi-mqtt/server/v2/hooks/storage/bolt"
+	"github.com/mochi-mqtt/server/v2/hooks/storage/pebble"
 	"github.com/mochi-mqtt/server/v2/hooks/storage/redis"
 	"github.com/mochi-mqtt/server/v2/listeners"
 
@@ -205,6 +206,26 @@ func TestToHooksStorageRedis(t *testing.T) {
 		{
 			Hook:   new(redis.Hook),
 			Config: hc.Storage.Redis,
+		},
+	}
+
+	require.Equal(t, expect, th)
+}
+
+func TestToHooksStoragePebble(t *testing.T) {
+	hc := HookConfigs{
+		Storage: &HookStorageConfig{
+			Pebble: &pebble.Options{
+				Path: "pebble",
+			},
+		},
+	}
+
+	th := hc.toHooksStorage()
+	expect := []mqtt.HookLoadConfig{
+		{
+			Hook:   new(pebble.Hook),
+			Config: hc.Storage.Pebble,
 		},
 	}
 

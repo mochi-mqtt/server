@@ -45,7 +45,7 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
     - 通过所有 [Paho互操作性测试](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability)（MQTT v5 和 MQTT v3）。
     - 超过一千多个经过仔细考虑的单元测试场景。
 - 支持 TCP、Websocket（包括 SSL/TLS）和$SYS 服务状态监控。
-- 内置 基于Redis、Badger 和 Bolt 的持久化（使用Hook钩子，你也可以自己创建）。
+- 内置 基于Redis、Badger、Pebble 和 Bolt 的持久化（使用Hook钩子，你也可以自己创建）。
 - 内置基于规则的认证和 ACL 权限管理（使用Hook钩子，你也可以自己创建）。
 
 ### 兼容性说明(Compatibility Notes)
@@ -227,6 +227,7 @@ server := mqtt.New(&mqtt.Options{
 | 访问控制 | [mochi-mqtt/server/hooks/auth . Auth](hooks/auth/auth.go)                | 基于规则的访问权限控制。  | 
 | 数据持久性    | [mochi-mqtt/server/hooks/storage/bolt](hooks/storage/bolt/bolt.go)       | 使用 [BoltDB](https://dbdb.io/db/boltdb) 进行持久性存储（已弃用）。 | 
 | 数据持久性    | [mochi-mqtt/server/hooks/storage/badger](hooks/storage/badger/badger.go) | 使用 [BadgerDB](https://github.com/dgraph-io/badger) 进行持久性存储。   | 
+| 数据持久性    | [mochi-mqtt/server/hooks/storage/pebble](hooks/storage/pebble/pebble.go) | 使用 [PebbleDB](https://github.com/cockroachdb/pebble) 进行持久性存储。   | 
 | 数据持久性    | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)    | 使用 [Redis](https://redis.io) 进行持久性存储。                         | 
 | 调试跟踪      | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go)                    | 调试输出以查看数据包在服务端的链路追踪。   |
 
@@ -329,9 +330,25 @@ if err != nil {
 ```
 有关 Redis 钩子的工作原理或如何使用它的更多信息，请参阅  [examples/persistence/redis/main.go](examples/persistence/redis/main.go) 或 [hooks/storage/redis](hooks/storage/redis) 。
 
+#### Pebble DB
+
+如果您更喜欢基于文件的存储，还有一个 PebbleDB 存储钩子(Hook)可用。它可以以与其他钩子大致相同的方式添加和配置（具有较少的选项）。
+
+```go
+err := server.AddHook(new(pebble.Hook), &pebble.Options{
+  Path: pebblePath,
+  Mode: pebble.NoSync,
+})
+if err != nil {
+  log.Fatal(err)
+}
+```
+
+有关 pebble 钩子(Hook)的工作原理或如何使用它的更多信息，请参阅 [examples/persistence/pebble/main.go](examples/persistence/pebble/main.go) 或 [hooks/storage/pebble](hooks/storage/pebble)。
+
 #### Badger DB
 
-如果您更喜欢基于文件的存储，还有一个 BadgerDB 存储钩子(Hook)可用。它可以以与其他钩子大致相同的方式添加和配置（具有较少的选项）。
+同样是基于文件的存储，还有一个 BadgerDB 存储钩子(Hook)可用。它可以以与其他钩子大致相同的方式添加和配置。
 
 ```go
 err := server.AddHook(new(badger.Hook), &badger.Options{
