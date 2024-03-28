@@ -131,7 +131,7 @@ func (h *Hook) Init(config any) error {
 		h.config = config.(*Options)
 	}
 
-	if h.config.Path == "" {
+	if len(h.config.Path) == 0 {
 		h.config.Path = defaultDbFile
 	}
 
