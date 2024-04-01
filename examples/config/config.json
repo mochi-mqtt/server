@@ -21,6 +21,10 @@
       "enable": true
     },
     "storage": {
+      "pebble": {
+        "path": "pebble.db",
+        "mode": "NoSync"
+      },
       "badger": {
         "path": "badger.db",
         "gc_interval": 3,

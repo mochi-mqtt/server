@@ -45,7 +45,7 @@ MQTT stands for [MQ Telemetry Transport](https://en.wikipedia.org/wiki/MQTT). It
     - Passes all [Paho Interoperability Tests](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) for MQTT v5 and MQTT v3.
     - Over a thousand carefully considered unit test scenarios.
 - TCP, Websocket (including SSL/TLS), and $SYS Dashboard listeners.
-- Built-in Redis, Badger, and Bolt Persistence using Hooks (but you can also make your own).
+- Built-in Redis, Badger, Pebble and Bolt Persistence using Hooks (but you can also make your own).
 - Built-in Rule-based Authentication and ACL Ledger using Hooks (also make your own).
 
 ### Compatibility Notes
@@ -228,6 +228,7 @@ Hooks are stackable - you can add multiple hooks to a server, and they will be r
 | Access Control | [mochi-mqtt/server/hooks/auth . Auth](hooks/auth/auth.go)                | Rule-based access control ledger.                                          | 
 | Persistence    | [mochi-mqtt/server/hooks/storage/bolt](hooks/storage/bolt/bolt.go)       | Persistent storage using [BoltDB](https://dbdb.io/db/boltdb) (deprecated). | 
 | Persistence    | [mochi-mqtt/server/hooks/storage/badger](hooks/storage/badger/badger.go) | Persistent storage using [BadgerDB](https://github.com/dgraph-io/badger).  | 
+| Persistence    | [mochi-mqtt/server/hooks/storage/pebble](hooks/storage/pebble/pebble.go) | Persistent storage using [PebbleDB](https://github.com/cockroachdb/pebble).  | 
 | Persistence    | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)    | Persistent storage using [Redis](https://redis.io).                        | 
 | Debugging      | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go)                    | Additional debugging output to visualise packet flow.                      | 
 
@@ -322,8 +323,21 @@ if err != nil {
 ```
 For more information on how the redis hook works, or how to use it, see the [examples/persistence/redis/main.go](examples/persistence/redis/main.go) or [hooks/storage/redis](hooks/storage/redis) code.
 
+#### Pebble DB
+There's also a Pebble Db storage hook if you prefer file-based storage. It can be added and configured in much the same way as the other hooks (with somewhat less options).
+```go
+err := server.AddHook(new(pebble.Hook), &pebble.Options{
+  Path: pebblePath,
+  Mode: pebble.NoSync,
+})
+if err != nil {
+  log.Fatal(err)
+}
+```
+For more information on how the pebble hook works, or how to use it, see the [examples/persistence/pebble/main.go](examples/persistence/pebble/main.go) or [hooks/storage/pebble](hooks/storage/pebble) code.
+
 #### Badger DB
-There's also a BadgerDB storage hook if you prefer file based storage. It can be added and configured in much the same way as the other hooks (with somewhat less options).
+Similarly, for file-based storage, there is also a BadgerDB storage hook available. It can be added and configured in much the same way as the other hooks.
 ```go
 err := server.AddHook(new(badger.Hook), &badger.Options{
   Path: badgerPath,
