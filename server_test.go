@@ -974,7 +974,7 @@ func TestEstablishConnectionMaximumClientsReached(t *testing.T) {
 
 	err := <-o
 	require.Error(t, err)
-	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
+	require.ErrorIs(t, err, packets.ErrServerBusy)
 
 	_ = r.Close()
 }

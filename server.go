@@ -420,10 +420,10 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 		if cl.Properties.ProtocolVersion < 5 {
 			s.SendConnack(cl, packets.ErrServerUnavailable, false, nil)
 		} else {
-			s.SendConnack(cl, packets.ErrQuotaExceeded, false, nil)
+			s.SendConnack(cl, packets.ErrServerBusy, false, nil)
 		}
 
-		return packets.ErrQuotaExceeded
+		return packets.ErrServerBusy
 	}
 
 	code := s.validateConnect(cl, pk) // [MQTT-3.1.4-1] [MQTT-3.1.4-2]
