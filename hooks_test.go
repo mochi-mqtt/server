@@ -78,6 +78,10 @@ func (h *modifiedHookBase) OnPublish(cl *Client, pk packets.Packet) (packets.Pac
 	return pk, nil
 }
 
+func (h *modifiedHookBase) OnSendToSubscriber(cl *Client, pk packets.Packet) bool {
+	return false
+}
+
 func (h *modifiedHookBase) OnPacketRead(cl *Client, pk packets.Packet) (packets.Packet, error) {
 	if h.fail {
 		if h.err != nil {
@@ -244,6 +248,7 @@ func TestHooksNonReturns(t *testing.T) {
 			h.OnSubscribed(cl, packets.Packet{}, []byte{1})
 			h.OnUnsubscribed(cl, packets.Packet{})
 			h.OnPublished(cl, packets.Packet{})
+			h.OnSendToSubscriber(cl, packets.Packet{})
 			h.OnPublishDropped(cl, packets.Packet{})
 			h.OnRetainMessage(cl, packets.Packet{}, 0)
 			h.OnRetainPublished(cl, packets.Packet{})
@@ -356,6 +361,21 @@ func TestHooksOnPublish(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrRejectPacket)
 	require.Equal(t, uint16(10), pk.PacketID)
+}
+
+func TestHooksOnSendToSubscriber(t *testing.T) {
+	h := new(Hooks)
+	h.Log = logger
+
+	ok := h.OnSendToSubscriber(new(Client), packets.Packet{PacketID: 10})
+	require.True(t, ok)
+
+	hook := new(modifiedHookBase)
+	err := h.Add(hook, nil)
+	require.NoError(t, err)
+
+	ok = h.OnSendToSubscriber(new(Client), packets.Packet{PacketID: 10})
+	require.False(t, ok)
 }
 
 func TestHooksOnPacketRead(t *testing.T) {
@@ -610,6 +630,11 @@ func TestHookBaseOnPublish(t *testing.T) {
 	require.Equal(t, uint16(10), pk.PacketID)
 }
 
+func TestHookBaseOnSendToSubscriber(t *testing.T) {
+	h := new(HookBase)
+	ok := h.OnSendToSubscriber(new(Client), packets.Packet{PacketID: 10})
+	require.True(t, ok)
+}
 func TestHookBaseOnPacketRead(t *testing.T) {
 	h := new(HookBase)
 	pk, err := h.OnPacketRead(new(Client), packets.Packet{PacketID: 10})
