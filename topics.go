@@ -514,7 +514,7 @@ func (x *TopicsIndex) seek(filter string, d int) *particle {
 
 // trim removes empty filter particles from the index.
 func (x *TopicsIndex) trim(n *particle) {
-	for n.parent != nil && n.retainPath == "" && n.particles.len()+n.subscriptions.Len()+n.shared.Len() == 0 {
+	for n.parent != nil && n.retainPath == "" && n.particles.len()+n.subscriptions.Len()+n.shared.Len()+n.inlineSubscriptions.Len() == 0 {
 		key := n.key
 		n = n.parent
 		n.particles.delete(key)
