@@ -944,6 +944,41 @@ func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
 	_ = r.Close()
 }
 
+func TestEstablishConnectionMaximumClientsReached(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MaximumClients = 0
+	s := New(&Options{
+		Logger:       logger,
+		Capabilities: cc,
+	})
+	_ = s.AddHook(new(AllowHook), nil)
+	defer s.Close()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r)
+	}()
+
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+	}()
+
+	// receive the connack
+	recv := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(w)
+		require.NoError(t, err)
+		recv <- buf
+	}()
+
+	err := <-o
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrServerBusy)
+
+	_ = r.Close()
+}
+
 // See https://github.com/mochi-mqtt/server/issues/178
 func TestServerEstablishConnectionZeroByteUsernameIsValid(t *testing.T) {
 	s := newServer()
