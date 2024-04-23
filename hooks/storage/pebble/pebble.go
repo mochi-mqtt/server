@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
-// SPDX-FileContributor: mochi-co, gsagula
+// SPDX-FileContributor: werbenhu
 
 package pebble
 
@@ -467,23 +467,23 @@ func (h *Hook) StoredSysInfo() (v storage.SystemInfo, err error) {
 }
 
 // Errorf satisfies the pebble interface for an error logger.
-func (h *Hook) Errorf(m string, v ...interface{}) {
+func (h *Hook) Errorf(m string, v ...any) {
 	h.Log.Error(fmt.Sprintf(strings.ToLower(strings.Trim(m, "\n")), v...), "v", v)
 
 }
 
 // Warningf satisfies the pebble interface for a warning logger.
-func (h *Hook) Warningf(m string, v ...interface{}) {
+func (h *Hook) Warningf(m string, v ...any) {
 	h.Log.Warn(fmt.Sprintf(strings.ToLower(strings.Trim(m, "\n")), v...), "v", v)
 }
 
 // Infof satisfies the pebble interface for an info logger.
-func (h *Hook) Infof(m string, v ...interface{}) {
+func (h *Hook) Infof(m string, v ...any) {
 	h.Log.Info(fmt.Sprintf(strings.ToLower(strings.Trim(m, "\n")), v...), "v", v)
 }
 
 // Debugf satisfies the pebble interface for a debug logger.
-func (h *Hook) Debugf(m string, v ...interface{}) {
+func (h *Hook) Debugf(m string, v ...any) {
 	h.Log.Debug(fmt.Sprintf(strings.ToLower(strings.Trim(m, "\n")), v...), "v", v)
 }
 

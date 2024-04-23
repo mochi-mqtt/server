@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
-// SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: mochi-co, werbenhu
 
 // Package bolt is provided for historical compatibility and may not be actively updated, you should use the badger hook instead.
 package bolt
@@ -14,23 +14,27 @@ import (
 	"github.com/mochi-mqtt/server/v2/hooks/storage"
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/mochi-mqtt/server/v2/system"
-
-	sgob "github.com/asdine/storm/codec/gob"
-	"github.com/asdine/storm/v3"
 	"go.etcd.io/bbolt"
+)
+
+var (
+	ErrBucketNotFound = errors.New("bucket not found")
+	ErrKeyNotFound    = errors.New("key not found")
 )
 
 const (
 	// defaultDbFile is the default file path for the boltdb file.
-	defaultDbFile = "bolt.db"
+	defaultDbFile = ".bolt"
 
 	// defaultTimeout is the default time to hold a connection to the file.
 	defaultTimeout = 250 * time.Millisecond
+
+	defaultBucket = "mochi"
 )
 
 // clientKey returns a primary key for a client.
 func clientKey(cl *mqtt.Client) string {
-	return cl.ID
+	return storage.ClientKey + "_" + cl.ID
 }
 
 // subscriptionKey returns a primary key for a subscription.
@@ -56,6 +60,7 @@ func sysInfoKey() string {
 // Options contains configuration settings for the bolt instance.
 type Options struct {
 	Options *bbolt.Options
+	Bucket  string `yaml:"bucket" json:"bucket"`
 	Path    string `yaml:"path" json:"path"`
 }
 
@@ -63,7 +68,7 @@ type Options struct {
 type Hook struct {
 	mqtt.HookBase
 	config *Options  // options for configuring the boltdb instance.
-	db     *storm.DB // the boltdb instance.
+	db     *bbolt.DB // the boltdb instance.
 }
 
 // ID returns the id of the hook.
@@ -110,22 +115,32 @@ func (h *Hook) Init(config any) error {
 			Timeout: defaultTimeout,
 		}
 	}
-	if h.config.Path == "" {
+	if len(h.config.Path) == 0 {
 		h.config.Path = defaultDbFile
 	}
 
+	if len(h.config.Bucket) == 0 {
+		h.config.Bucket = defaultBucket
+	}
+
 	var err error
-	h.db, err = storm.Open(h.config.Path, storm.BoltOptions(0600, h.config.Options), storm.Codec(sgob.Codec))
+	h.db, err = bbolt.Open(h.config.Path, 0600, h.config.Options)
 	if err != nil {
 		return err
 	}
 
-	return nil
+	err = h.db.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte(h.config.Bucket))
+		return err
+	})
+	return err
 }
 
 // Stop closes the boltdb instance.
 func (h *Hook) Stop() error {
-	return h.db.Close()
+	err := h.db.Close()
+	h.db = nil
+	return err
 }
 
 // OnSessionEstablished adds a client to the store when their session is established.
@@ -147,7 +162,7 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 
 	props := cl.Properties.Props.Copy(false)
 	in := &storage.Client{
-		ID:              clientKey(cl),
+		ID:              cl.ID,
 		T:               storage.ClientKey,
 		Remote:          cl.Net.Remote,
 		Listener:        cl.Net.Listener,
@@ -167,10 +182,8 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 		},
 		Will: storage.ClientWill(cl.Properties.Will),
 	}
-	err := h.db.Save(in)
-	if err != nil {
-		h.Log.Error("failed to save client data", "error", err, "data", in)
-	}
+
+	_ = h.setKv(clientKey(cl), in)
 }
 
 // OnDisconnect removes a client from the store if they were using a clean session.
@@ -188,10 +201,7 @@ func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 		return
 	}
 
-	err := h.db.DeleteStruct(&storage.Client{ID: clientKey(cl)})
-	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		h.Log.Error("failed to delete client", "error", err, "id", clientKey(cl))
-	}
+	_ = h.delKv(clientKey(cl))
 }
 
 // OnSubscribed adds one or more client subscriptions to the store.
@@ -214,11 +224,7 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 			RetainHandling:    pk.Filters[i].RetainHandling,
 			RetainAsPublished: pk.Filters[i].RetainAsPublished,
 		}
-
-		err := h.db.Save(in)
-		if err != nil {
-			h.Log.Error("failed to save subscription data", "error", err, "client", cl.ID, "data", in)
-		}
+		_ = h.setKv(in.ID, in)
 	}
 }
 
@@ -230,12 +236,7 @@ func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 	}
 
 	for i := 0; i < len(pk.Filters); i++ {
-		err := h.db.DeleteStruct(&storage.Subscription{
-			ID: subscriptionKey(cl, pk.Filters[i].Filter),
-		})
-		if err != nil {
-			h.Log.Error("failed to delete client", "error", err, "id", subscriptionKey(cl, pk.Filters[i].Filter))
-		}
+		_ = h.delKv(subscriptionKey(cl, pk.Filters[i].Filter))
 	}
 }
 
@@ -247,12 +248,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 	}
 
 	if r == -1 {
-		err := h.db.DeleteStruct(&storage.Message{
-			ID: retainedKey(pk.TopicName),
-		})
-		if err != nil {
-			h.Log.Error("failed to delete retained publish", "error", err, "id", retainedKey(pk.TopicName))
-		}
+		_ = h.delKv(retainedKey(pk.TopicName))
 		return
 	}
 
@@ -276,10 +272,8 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 			User:                   props.User,
 		},
 	}
-	err := h.db.Save(in)
-	if err != nil {
-		h.Log.Error("failed to save retained publish data", "error", err, "client", cl.ID, "data", in)
-	}
+
+	_ = h.setKv(in.ID, in)
 }
 
 // OnQosPublish adds or updates an inflight message in the store.
@@ -311,10 +305,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 		},
 	}
 
-	err := h.db.Save(in)
-	if err != nil {
-		h.Log.Error("failed to save qos inflight data", "error", err, "client", cl.ID, "data", in)
-	}
+	_ = h.setKv(in.ID, in)
 }
 
 // OnQosComplete removes a resolved inflight message from the store.
@@ -324,12 +315,7 @@ func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
 		return
 	}
 
-	err := h.db.DeleteStruct(&storage.Message{
-		ID: inflightKey(cl, pk),
-	})
-	if err != nil {
-		h.Log.Error("failed to delete inflight data", "error", err, "id", inflightKey(cl, pk))
-	}
+	_ = h.delKv(inflightKey(cl, pk))
 }
 
 // OnQosDropped removes a dropped inflight message from the store.
@@ -354,10 +340,7 @@ func (h *Hook) OnSysInfoTick(sys *system.Info) {
 		Info: *sys,
 	}
 
-	err := h.db.Save(in)
-	if err != nil {
-		h.Log.Error("failed to save $SYS data", "error", err, "data", in)
-	}
+	_ = h.setKv(in.ID, in)
 }
 
 // OnRetainedExpired deletes expired retained messages from the store.
@@ -366,10 +349,7 @@ func (h *Hook) OnRetainedExpired(filter string) {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
-
-	if err := h.db.DeleteStruct(&storage.Message{ID: retainedKey(filter)}); err != nil {
-		h.Log.Error("failed to delete retained publish", "error", err, "id", retainedKey(filter))
-	}
+	_ = h.delKv(retainedKey(filter))
 }
 
 // OnClientExpired deleted expired clients from the store.
@@ -378,25 +358,24 @@ func (h *Hook) OnClientExpired(cl *mqtt.Client) {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
-
-	err := h.db.DeleteStruct(&storage.Client{ID: clientKey(cl)})
-	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		h.Log.Error("failed to delete expired client", "error", err, "id", clientKey(cl))
-	}
+	_ = h.delKv(clientKey(cl))
 }
 
 // StoredClients returns all stored clients from the store.
 func (h *Hook) StoredClients() (v []storage.Client, err error) {
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
-		return
+		return v, storage.ErrDBFileNotOpen
 	}
 
-	err = h.db.Find("T", storage.ClientKey, &v)
-	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		return
-	}
-
+	err = h.iterKv(storage.ClientKey, func(value []byte) error {
+		obj := storage.Client{}
+		err = obj.UnmarshalBinary(value)
+		if err == nil {
+			v = append(v, obj)
+		}
+		return err
+	})
 	return v, nil
 }
 
@@ -404,58 +383,142 @@ func (h *Hook) StoredClients() (v []storage.Client, err error) {
 func (h *Hook) StoredSubscriptions() (v []storage.Subscription, err error) {
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
-		return
+		return v, storage.ErrDBFileNotOpen
 	}
 
-	err = h.db.Find("T", storage.SubscriptionKey, &v)
-	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		return
-	}
-
-	return v, nil
+	v = make([]storage.Subscription, 0)
+	err = h.iterKv(storage.SubscriptionKey, func(value []byte) error {
+		obj := storage.Subscription{}
+		err = obj.UnmarshalBinary(value)
+		if err == nil {
+			v = append(v, obj)
+		}
+		return err
+	})
+	return
 }
 
 // StoredRetainedMessages returns all stored retained messages from the store.
 func (h *Hook) StoredRetainedMessages() (v []storage.Message, err error) {
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
-		return
+		return v, storage.ErrDBFileNotOpen
 	}
 
-	err = h.db.Find("T", storage.RetainedKey, &v)
-	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		return
-	}
-
-	return v, nil
+	v = make([]storage.Message, 0)
+	err = h.iterKv(storage.RetainedKey, func(value []byte) error {
+		obj := storage.Message{}
+		err = obj.UnmarshalBinary(value)
+		if err == nil {
+			v = append(v, obj)
+		}
+		return err
+	})
+	return
 }
 
 // StoredInflightMessages returns all stored inflight messages from the store.
 func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
-		return
+		return v, storage.ErrDBFileNotOpen
 	}
 
-	err = h.db.Find("T", storage.InflightKey, &v)
-	if err != nil && !errors.Is(err, storm.ErrNotFound) {
-		return
-	}
-
-	return v, nil
+	v = make([]storage.Message, 0)
+	err = h.iterKv(storage.InflightKey, func(value []byte) error {
+		obj := storage.Message{}
+		err = obj.UnmarshalBinary(value)
+		if err == nil {
+			v = append(v, obj)
+		}
+		return err
+	})
+	return
 }
 
 // StoredSysInfo returns the system info from the store.
 func (h *Hook) StoredSysInfo() (v storage.SystemInfo, err error) {
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
-		return
+		return v, storage.ErrDBFileNotOpen
 	}
 
-	err = h.db.One("ID", storage.SysInfoKey, &v)
-	if err != nil && !errors.Is(err, storm.ErrNotFound) {
+	err = h.getKv(storage.SysInfoKey, &v)
+	if err != nil && !errors.Is(err, ErrKeyNotFound) {
 		return
 	}
 
 	return v, nil
+}
+
+// setKv stores a key-value pair in the database.
+func (h *Hook) setKv(k string, v storage.Serializable) error {
+	err := h.db.Update(func(tx *bbolt.Tx) error {
+
+		bucket := tx.Bucket([]byte(h.config.Bucket))
+		data, _ := v.MarshalBinary()
+		err := bucket.Put([]byte(k), data)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		h.Log.Error("failed to upsert data", "error", err, "key", k)
+	}
+	return err
+}
+
+// delKv deletes a key-value pair from the database.
+func (h *Hook) delKv(k string) error {
+	err := h.db.Update(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(h.config.Bucket))
+		err := bucket.Delete([]byte(k))
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		h.Log.Error("failed to delete data", "error", err, "key", k)
+	}
+	return err
+}
+
+// getKv retrieves the value associated with a key from the database.
+func (h *Hook) getKv(k string, v storage.Serializable) error {
+	err := h.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(h.config.Bucket))
+
+		value := bucket.Get([]byte(k))
+		if value == nil {
+			return ErrKeyNotFound
+		}
+
+		return v.UnmarshalBinary(value)
+	})
+	if err != nil {
+		h.Log.Error("failed to get data", "error", err, "key", k)
+	}
+	return err
+}
+
+// iterKv iterates over key-value pairs with keys having the specified prefix in the database.
+func (h *Hook) iterKv(prefix string, visit func([]byte) error) error {
+	err := h.db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte(h.config.Bucket))
+
+		c := bucket.Cursor()
+		for k, v := c.Seek([]byte(prefix)); k != nil && string(k[:len(prefix)]) == prefix; k, v = c.Next() {
+			if err := visit(v); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		h.Log.Error("failed to iter data", "error", err, "prefix", prefix)
+	}
+	return err
 }
