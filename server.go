@@ -1689,7 +1689,7 @@ func (s *Server) loadRetained(v []storage.Message) {
 // than their given expiry intervals.
 func (s *Server) clearExpiredClients(dt int64) {
 	for id, client := range s.Clients.GetAll() {
-		disconnected := atomic.LoadInt64(&client.State.disconnected)
+		disconnected := client.StopTime()
 		if disconnected == 0 {
 			continue
 		}
