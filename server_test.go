@@ -2938,6 +2938,22 @@ func TestServerProcessPacketDisconnectNonZeroExpiryViolation(t *testing.T) {
 	require.ErrorIs(t, err, packets.ErrProtocolViolationZeroNonZeroExpiry)
 }
 
+func TestServerProcessPacketDisconnectDisconnectWithWillMessage(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	cl.Properties.Props.SessionExpiryInterval = 30
+	cl.Properties.ProtocolVersion = 5
+
+	s.loop.willDelayed.Add(cl.ID, packets.Packet{TopicName: "a/b/c", Payload: []byte("hello")})
+	require.Equal(t, 1, s.loop.willDelayed.Len())
+
+	err := s.processPacket(cl, *packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectMqtt5DisconnectWithWillMessage).Packet)
+	require.Error(t, err)
+
+	require.Equal(t, 1, s.loop.willDelayed.Len())
+	require.False(t, cl.Closed())
+}
+
 func TestServerProcessPacketAuth(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()

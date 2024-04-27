@@ -1297,8 +1297,13 @@ func (s *Server) processDisconnect(cl *Client, pk packets.Packet) error {
 		cl.Properties.Props.SessionExpiryIntervalFlag = true
 	}
 
-	s.loop.willDelayed.Delete(cl.ID) // [MQTT-3.1.3-9] [MQTT-3.1.2-8]
-	cl.Stop(packets.CodeDisconnect)  // [MQTT-3.14.4-2]
+	if pk.ReasonCode == packets.CodeDisconnectWillMessage.Code {
+		return packets.CodeDisconnectWillMessage // [MQTT-3.1.2.5] Non-normative comment
+	} else {
+		s.loop.willDelayed.Delete(cl.ID) // [MQTT-3.1.3-9] [MQTT-3.1.2-8]
+	}
+
+	cl.Stop(packets.CodeDisconnect) // [MQTT-3.14.4-2]
 
 	return nil
 }
