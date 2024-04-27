@@ -3787,11 +3787,11 @@ var TPacketData = map[byte]TPacketCases{
 			Desc:    "mqtt5 disconnect with will message",
 			Primary: true,
 			RawBytes: append([]byte{
-				Disconnect << 4, 22, // fixed header
+				Disconnect << 4, 38, // fixed header
 				CodeDisconnectWillMessage.Code, // Reason Code
-				20,                             // Properties Length
+				36,                             // Properties Length
 				17, 0, 0, 0, 120,               // Session Expiry Interval (17)
-				31, 0, 12, // Reason String (31)
+				31, 0, 28, // Reason String (31)
 			}, []byte(CodeDisconnectWillMessage.Reason)...),
 			Packet: &Packet{
 				ProtocolVersion: 5,
