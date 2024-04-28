@@ -33,19 +33,31 @@ func main() {
 	server := mqtt.New(nil)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
-	tcp := listeners.NewTCP("t1", *tcpAddr, nil)
+	tcp := listeners.NewTCP(listeners.Config{
+		ID:      "t1",
+		Address: *tcpAddr,
+	})
 	err := server.AddListener(tcp)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	ws := listeners.NewWebsocket("ws1", *wsAddr, nil)
+	ws := listeners.NewWebsocket(listeners.Config{
+		ID:      "ws1",
+		Address: *wsAddr,
+	})
 	err = server.AddListener(ws)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	stats := listeners.NewHTTPStats("stats", *infoAddr, nil, server.Info)
+	stats := listeners.NewHTTPStats(
+		listeners.Config{
+			ID:      "info",
+			Address: *infoAddr,
+		},
+		server.Info,
+	)
 	err = server.AddListener(stats)
 	if err != nil {
 		log.Fatal(err)
@@ -61,6 +73,5 @@ func main() {
 	<-done
 	server.Log.Warn("caught signal, stopping...")
 	_ = server.Close()
-	server.Log.Info("main.go finished")
-
+	server.Log.Info("mochi mqtt shutdown complete")
 }

@@ -62,6 +62,12 @@ var (
 	ErrInvalidConfigType = errors.New("invalid config type provided")
 )
 
+// HookLoadConfig contains the hook and configuration as loaded from a configuration (usually file).
+type HookLoadConfig struct {
+	Hook   Hook
+	Config any
+}
+
 // Hook provides an interface of handlers for different events which occur
 // during the lifecycle of the broker.
 type Hook interface {
@@ -70,6 +76,7 @@ type Hook interface {
 	Init(config any) error
 	Stop() error
 	SetOpts(l *slog.Logger, o *HookOptions)
+
 	OnStarted()
 	OnStopped()
 	OnConnectAuthenticate(cl *Client, pk packets.Packet) bool

@@ -25,6 +25,12 @@ var (
 	ErrDBFileNotOpen = errors.New("db file not open")
 )
 
+// Serializable is an interface for objects that can be serialized and deserialized.
+type Serializable interface {
+	UnmarshalBinary([]byte) error
+	MarshalBinary() (data []byte, err error)
+}
+
 // Client is a storable representation of an MQTT client.
 type Client struct {
 	Will            ClientWill       `json:"will"`            // will topic and payload data if applicable

@@ -13,21 +13,25 @@ import (
 	"log/slog"
 )
 
+const TypeUnix = "unix"
+
 // UnixSock is a listener for establishing client connections on basic UnixSock protocol.
 type UnixSock struct {
 	sync.RWMutex
 	id      string       // the internal id of the listener.
 	address string       // the network address to bind to.
+	config  Config       // configuration values for the listener
 	listen  net.Listener // a net.Listener which will listen for new clients.
 	log     *slog.Logger // server logger
 	end     uint32       // ensure the close methods are only called once.
 }
 
-// NewUnixSock initialises and returns a new UnixSock listener, listening on an address.
-func NewUnixSock(id, address string) *UnixSock {
+// NewUnixSock initializes and returns a new UnixSock listener, listening on an address.
+func NewUnixSock(config Config) *UnixSock {
 	return &UnixSock{
-		id:      id,
-		address: address,
+		id:      config.ID,
+		address: config.Address,
+		config:  config,
 	}
 }
 

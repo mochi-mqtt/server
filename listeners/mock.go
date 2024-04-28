@@ -12,6 +12,8 @@ import (
 	"log/slog"
 )
 
+const TypeMock = "mock"
+
 // MockEstablisher is a function signature which can be used in testing.
 func MockEstablisher(id string, c net.Conn) error {
 	return nil

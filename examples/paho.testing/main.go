@@ -31,7 +31,10 @@ func main() {
 	server.Options.Capabilities.Compatibilities.NoInheritedPropertiesOnAck = true
 
 	_ = server.AddHook(new(pahoAuthHook), nil)
-	tcp := listeners.NewTCP("t1", ":1883", nil)
+	tcp := listeners.NewTCP(listeners.Config{
+		ID:      "t1",
+		Address: ":1883",
+	})
 	err := server.AddListener(tcp)
 	if err != nil {
 		log.Fatal(err)

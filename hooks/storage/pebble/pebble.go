@@ -1,47 +1,45 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
-// SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: mochi-co, gsagula
 
-package redis
+package pebble
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
+	"strings"
 
+	pebbledb "github.com/cockroachdb/pebble"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/storage"
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/mochi-mqtt/server/v2/system"
-
-	"github.com/go-redis/redis/v8"
 )
 
-// defaultAddr is the default address to the redis service.
-const defaultAddr = "localhost:6379"
-
-// defaultHPrefix is a prefix to better identify hsets created by mochi mqtt.
-const defaultHPrefix = "mochi-"
+const (
+	// defaultDbFile is the default file path for the pebble db file.
+	defaultDbFile = ".pebble"
+)
 
 // clientKey returns a primary key for a client.
 func clientKey(cl *mqtt.Client) string {
-	return cl.ID
+	return storage.ClientKey + "_" + cl.ID
 }
 
 // subscriptionKey returns a primary key for a subscription.
 func subscriptionKey(cl *mqtt.Client, filter string) string {
-	return cl.ID + ":" + filter
+	return storage.SubscriptionKey + "_" + cl.ID + ":" + filter
 }
 
 // retainedKey returns a primary key for a retained message.
 func retainedKey(topic string) string {
-	return topic
+	return storage.RetainedKey + "_" + topic
 }
 
 // inflightKey returns a primary key for an inflight message.
 func inflightKey(cl *mqtt.Client, pk packets.Packet) string {
-	return cl.ID + ":" + pk.FormatID()
+	return storage.InflightKey + "_" + cl.ID + ":" + pk.FormatID()
 }
 
 // sysInfoKey returns a primary key for system info.
@@ -49,27 +47,43 @@ func sysInfoKey() string {
 	return storage.SysInfoKey
 }
 
-// Options contains configuration settings for the bolt instance.
-type Options struct {
-	Address  string `yaml:"address" json:"address"`
-	Username string `yaml:"username" json:"username"`
-	Password string `yaml:"password" json:"password"`
-	Database int    `yaml:"database" json:"database"`
-	HPrefix  string `yaml:"h_prefix" json:"h_prefix"`
-	Options  *redis.Options
+// keyUpperBound returns the upper bound for a given byte slice by incrementing the last byte.
+// It returns nil if all bytes are incremented and equal to 0.
+func keyUpperBound(b []byte) []byte {
+	end := make([]byte, len(b))
+	copy(end, b)
+	for i := len(end) - 1; i >= 0; i-- {
+		end[i] = end[i] + 1
+		if end[i] != 0 {
+			return end[:i+1]
+		}
+	}
+	return nil
 }
 
-// Hook is a persistent storage hook based using Redis as a backend.
+const (
+	NoSync = "NoSync" // NoSync specifies the default write options for writes which do not synchronize to disk.
+	Sync   = "Sync"   // Sync specifies the default write options for writes which synchronize to disk.
+)
+
+// Options contains configuration settings for the pebble DB instance.
+type Options struct {
+	Options *pebbledb.Options
+	Mode    string `yaml:"mode" json:"mode"`
+	Path    string `yaml:"path" json:"path"`
+}
+
+// Hook is a persistent storage hook based using pebble DB file store as a backend.
 type Hook struct {
 	mqtt.HookBase
-	config *Options        // options for connecting to the Redis instance.
-	db     *redis.Client   // the Redis instance
-	ctx    context.Context // a context for the connection
+	config *Options               // options for configuring the pebble DB instance.
+	db     *pebbledb.DB           // the pebble DB instance
+	mode   *pebbledb.WriteOptions // mode holds the optional per-query parameters for Set and Delete operations
 }
 
 // ID returns the id of the hook.
 func (h *Hook) ID() string {
-	return "redis-db"
+	return "pebble-db"
 }
 
 // Provides indicates which hook methods this hook provides.
@@ -80,10 +94,10 @@ func (h *Hook) Provides(b byte) bool {
 		mqtt.OnSubscribed,
 		mqtt.OnUnsubscribed,
 		mqtt.OnRetainMessage,
+		mqtt.OnWillSent,
 		mqtt.OnQosPublish,
 		mqtt.OnQosComplete,
 		mqtt.OnQosDropped,
-		mqtt.OnWillSent,
 		mqtt.OnSysInfoTick,
 		mqtt.OnClientExpired,
 		mqtt.OnRetainedExpired,
@@ -95,62 +109,45 @@ func (h *Hook) Provides(b byte) bool {
 	}, []byte{b})
 }
 
-// hKey returns a hash set key with a unique prefix.
-func (h *Hook) hKey(s string) string {
-	return h.config.HPrefix + s
-}
-
-// Init initializes and connects to the redis service.
+// Init initializes and connects to the pebble instance.
 func (h *Hook) Init(config any) error {
 	if _, ok := config.(*Options); !ok && config != nil {
 		return mqtt.ErrInvalidConfigType
 	}
 
-	h.ctx = context.Background()
-
 	if config == nil {
-		config = new(Options)
+		h.config = new(Options)
+	} else {
+		h.config = config.(*Options)
 	}
-	h.config = config.(*Options)
+
+	if len(h.config.Path) == 0 {
+		h.config.Path = defaultDbFile
+	}
+
 	if h.config.Options == nil {
-		h.config.Options = &redis.Options{
-			Addr: defaultAddr,
-		}
-		h.config.Options.Addr = h.config.Address
-		h.config.Options.DB = h.config.Database
-		h.config.Options.Username = h.config.Username
-		h.config.Options.Password = h.config.Password
+		h.config.Options = &pebbledb.Options{}
 	}
 
-	if h.config.HPrefix == "" {
-		h.config.HPrefix = defaultHPrefix
+	h.mode = pebbledb.NoSync
+	if strings.EqualFold(h.config.Mode, "Sync") {
+		h.mode = pebbledb.Sync
 	}
 
-	h.Log.Info(
-		"connecting to redis service",
-		"prefix", h.config.HPrefix,
-		"address", h.config.Options.Addr,
-		"username", h.config.Options.Username,
-		"password-len", len(h.config.Options.Password),
-		"db", h.config.Options.DB,
-	)
-
-	h.db = redis.NewClient(h.config.Options)
-	_, err := h.db.Ping(context.Background()).Result()
+	var err error
+	h.db, err = pebbledb.Open(h.config.Path, h.config.Options)
 	if err != nil {
-		return fmt.Errorf("failed to ping service: %w", err)
+		return err
 	}
-
-	h.Log.Info("connected to redis service")
 
 	return nil
 }
 
-// Stop closes the redis connection.
+// Stop closes the pebble instance.
 func (h *Hook) Stop() error {
-	h.Log.Info("disconnecting from redis service")
-
-	return h.db.Close()
+	err := h.db.Close()
+	h.db = nil
+	return err
 }
 
 // OnSessionEstablished adds a client to the store when their session is established.
@@ -172,7 +169,7 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 
 	props := cl.Properties.Props.Copy(false)
 	in := &storage.Client{
-		ID:              clientKey(cl),
+		ID:              cl.ID,
 		T:               storage.ClientKey,
 		Remote:          cl.Net.Remote,
 		Listener:        cl.Net.Listener,
@@ -192,32 +189,27 @@ func (h *Hook) updateClient(cl *mqtt.Client) {
 		},
 		Will: storage.ClientWill(cl.Properties.Will),
 	}
-
-	err := h.db.HSet(h.ctx, h.hKey(storage.ClientKey), clientKey(cl), in).Err()
-	if err != nil {
-		h.Log.Error("failed to hset client data", "error", err, "data", in)
-	}
+	h.setKv(clientKey(cl), in)
 }
 
-// OnDisconnect removes a client from the store if they were using a clean session.
+// OnDisconnect removes a client from the store if their session has expired.
 func (h *Hook) OnDisconnect(cl *mqtt.Client, _ error, expire bool) {
 	if h.db == nil {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
 
+	h.updateClient(cl)
+
 	if !expire {
 		return
 	}
 
-	if cl.StopCause() == packets.ErrSessionTakenOver {
+	if errors.Is(cl.StopCause(), packets.ErrSessionTakenOver) {
 		return
 	}
 
-	err := h.db.HDel(h.ctx, h.hKey(storage.ClientKey), clientKey(cl)).Err()
-	if err != nil {
-		h.Log.Error("failed to delete client", "error", err, "id", clientKey(cl))
-	}
+	h.delKv(clientKey(cl))
 }
 
 // OnSubscribed adds one or more client subscriptions to the store.
@@ -240,11 +232,7 @@ func (h *Hook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []by
 			RetainHandling:    pk.Filters[i].RetainHandling,
 			RetainAsPublished: pk.Filters[i].RetainAsPublished,
 		}
-
-		err := h.db.HSet(h.ctx, h.hKey(storage.SubscriptionKey), subscriptionKey(cl, pk.Filters[i].Filter), in).Err()
-		if err != nil {
-			h.Log.Error("failed to hset subscription data", "error", err, "data", in)
-		}
+		h.setKv(in.ID, in)
 	}
 }
 
@@ -256,10 +244,7 @@ func (h *Hook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
 	}
 
 	for i := 0; i < len(pk.Filters); i++ {
-		err := h.db.HDel(h.ctx, h.hKey(storage.SubscriptionKey), subscriptionKey(cl, pk.Filters[i].Filter)).Err()
-		if err != nil {
-			h.Log.Error("failed to delete subscription data", "error", err, "id", clientKey(cl))
-		}
+		h.delKv(subscriptionKey(cl, pk.Filters[i].Filter))
 	}
 }
 
@@ -271,11 +256,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 	}
 
 	if r == -1 {
-		err := h.db.HDel(h.ctx, h.hKey(storage.RetainedKey), retainedKey(pk.TopicName)).Err()
-		if err != nil {
-			h.Log.Error("failed to delete retained message data", "error", err, "id", retainedKey(pk.TopicName))
-		}
-
+		h.delKv(retainedKey(pk.TopicName))
 		return
 	}
 
@@ -300,10 +281,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 		},
 	}
 
-	err := h.db.HSet(h.ctx, h.hKey(storage.RetainedKey), retainedKey(pk.TopicName), in).Err()
-	if err != nil {
-		h.Log.Error("failed to hset retained message data", "error", err, "data", in)
-	}
+	h.setKv(in.ID, in)
 }
 
 // OnQosPublish adds or updates an inflight message in the store.
@@ -318,6 +296,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 		ID:          inflightKey(cl, pk),
 		T:           storage.InflightKey,
 		Origin:      pk.Origin,
+		PacketID:    pk.PacketID,
 		FixedHeader: pk.FixedHeader,
 		TopicName:   pk.TopicName,
 		Payload:     pk.Payload,
@@ -334,11 +313,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 			User:                   props.User,
 		},
 	}
-
-	err := h.db.HSet(h.ctx, h.hKey(storage.InflightKey), inflightKey(cl, pk), in).Err()
-	if err != nil {
-		h.Log.Error("failed to hset qos inflight message data", "error", err, "data", in)
-	}
+	h.setKv(in.ID, in)
 }
 
 // OnQosComplete removes a resolved inflight message from the store.
@@ -347,11 +322,7 @@ func (h *Hook) OnQosComplete(cl *mqtt.Client, pk packets.Packet) {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
-
-	err := h.db.HDel(h.ctx, h.hKey(storage.InflightKey), inflightKey(cl, pk)).Err()
-	if err != nil {
-		h.Log.Error("failed to delete qos inflight message data", "error", err, "id", inflightKey(cl, pk))
-	}
+	h.delKv(inflightKey(cl, pk))
 }
 
 // OnQosDropped removes a dropped inflight message from the store.
@@ -373,13 +344,9 @@ func (h *Hook) OnSysInfoTick(sys *system.Info) {
 	in := &storage.SystemInfo{
 		ID:   sysInfoKey(),
 		T:    storage.SysInfoKey,
-		Info: *sys,
+		Info: *sys.Clone(),
 	}
-
-	err := h.db.HSet(h.ctx, h.hKey(storage.SysInfoKey), sysInfoKey(), in).Err()
-	if err != nil {
-		h.Log.Error("failed to hset server info data", "error", err, "data", in)
-	}
+	h.setKv(in.ID, in)
 }
 
 // OnRetainedExpired deletes expired retained messages from the store.
@@ -388,11 +355,7 @@ func (h *Hook) OnRetainedExpired(filter string) {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
-
-	err := h.db.HDel(h.ctx, h.hKey(storage.RetainedKey), retainedKey(filter)).Err()
-	if err != nil {
-		h.Log.Error("failed to delete expired retained message", "error", err, "id", retainedKey(filter))
-	}
+	h.delKv(retainedKey(filter))
 }
 
 // OnClientExpired deleted expired clients from the store.
@@ -401,11 +364,7 @@ func (h *Hook) OnClientExpired(cl *mqtt.Client) {
 		h.Log.Error("", "error", storage.ErrDBFileNotOpen)
 		return
 	}
-
-	err := h.db.HDel(h.ctx, h.hKey(storage.ClientKey), clientKey(cl)).Err()
-	if err != nil {
-		h.Log.Error("failed to delete expired client", "error", err, "id", clientKey(cl))
-	}
+	h.delKv(clientKey(cl))
 }
 
 // StoredClients returns all stored clients from the store.
@@ -415,21 +374,17 @@ func (h *Hook) StoredClients() (v []storage.Client, err error) {
 		return
 	}
 
-	rows, err := h.db.HGetAll(h.ctx, h.hKey(storage.ClientKey)).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		h.Log.Error("failed to HGetAll client data", "error", err)
-		return
-	}
+	iter, _ := h.db.NewIter(&pebbledb.IterOptions{
+		LowerBound: []byte(storage.ClientKey),
+		UpperBound: keyUpperBound([]byte(storage.ClientKey)),
+	})
 
-	for _, row := range rows {
-		var d storage.Client
-		if err = d.UnmarshalBinary([]byte(row)); err != nil {
-			h.Log.Error("failed to unmarshal client data", "error", err, "data", row)
+	for iter.First(); iter.Valid(); iter.Next() {
+		item := storage.Client{}
+		if err := item.UnmarshalBinary(iter.Value()); err == nil {
+			v = append(v, item)
 		}
-
-		v = append(v, d)
 	}
-
 	return v, nil
 }
 
@@ -440,21 +395,17 @@ func (h *Hook) StoredSubscriptions() (v []storage.Subscription, err error) {
 		return
 	}
 
-	rows, err := h.db.HGetAll(h.ctx, h.hKey(storage.SubscriptionKey)).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		h.Log.Error("failed to HGetAll subscription data", "error", err)
-		return
-	}
+	iter, _ := h.db.NewIter(&pebbledb.IterOptions{
+		LowerBound: []byte(storage.SubscriptionKey),
+		UpperBound: keyUpperBound([]byte(storage.SubscriptionKey)),
+	})
 
-	for _, row := range rows {
-		var d storage.Subscription
-		if err = d.UnmarshalBinary([]byte(row)); err != nil {
-			h.Log.Error("failed to unmarshal subscription data", "error", err, "data", row)
+	for iter.First(); iter.Valid(); iter.Next() {
+		item := storage.Subscription{}
+		if err := item.UnmarshalBinary(iter.Value()); err == nil {
+			v = append(v, item)
 		}
-
-		v = append(v, d)
 	}
-
 	return v, nil
 }
 
@@ -465,21 +416,17 @@ func (h *Hook) StoredRetainedMessages() (v []storage.Message, err error) {
 		return
 	}
 
-	rows, err := h.db.HGetAll(h.ctx, h.hKey(storage.RetainedKey)).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		h.Log.Error("failed to HGetAll retained message data", "error", err)
-		return
-	}
+	iter, _ := h.db.NewIter(&pebbledb.IterOptions{
+		LowerBound: []byte(storage.RetainedKey),
+		UpperBound: keyUpperBound([]byte(storage.RetainedKey)),
+	})
 
-	for _, row := range rows {
-		var d storage.Message
-		if err = d.UnmarshalBinary([]byte(row)); err != nil {
-			h.Log.Error("failed to unmarshal retained message data", "error", err, "data", row)
+	for iter.First(); iter.Valid(); iter.Next() {
+		item := storage.Message{}
+		if err := item.UnmarshalBinary(iter.Value()); err == nil {
+			v = append(v, item)
 		}
-
-		v = append(v, d)
 	}
-
 	return v, nil
 }
 
@@ -490,21 +437,17 @@ func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 		return
 	}
 
-	rows, err := h.db.HGetAll(h.ctx, h.hKey(storage.InflightKey)).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		h.Log.Error("failed to HGetAll inflight message data", "error", err)
-		return
-	}
+	iter, _ := h.db.NewIter(&pebbledb.IterOptions{
+		LowerBound: []byte(storage.InflightKey),
+		UpperBound: keyUpperBound([]byte(storage.InflightKey)),
+	})
 
-	for _, row := range rows {
-		var d storage.Message
-		if err = d.UnmarshalBinary([]byte(row)); err != nil {
-			h.Log.Error("failed to unmarshal inflight message data", "error", err, "data", row)
+	for iter.First(); iter.Valid(); iter.Next() {
+		item := storage.Message{}
+		if err := item.UnmarshalBinary(iter.Value()); err == nil {
+			v = append(v, item)
 		}
-
-		v = append(v, d)
 	}
-
 	return v, nil
 }
 
@@ -515,14 +458,67 @@ func (h *Hook) StoredSysInfo() (v storage.SystemInfo, err error) {
 		return
 	}
 
-	row, err := h.db.HGet(h.ctx, h.hKey(storage.SysInfoKey), storage.SysInfoKey).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return
+	err = h.getKv(sysInfoKey(), &v)
+	if errors.Is(err, pebbledb.ErrNotFound) {
+		return v, nil
 	}
 
-	if err = v.UnmarshalBinary([]byte(row)); err != nil {
-		h.Log.Error("failed to unmarshal sys info data", "error", err, "data", row)
+	return
+}
+
+// Errorf satisfies the pebble interface for an error logger.
+func (h *Hook) Errorf(m string, v ...interface{}) {
+	h.Log.Error(fmt.Sprintf(strings.ToLower(strings.Trim(m, "\n")), v...), "v", v)
+
+}
+
+// Warningf satisfies the pebble interface for a warning logger.
+func (h *Hook) Warningf(m string, v ...interface{}) {
+	h.Log.Warn(fmt.Sprintf(strings.ToLower(strings.Trim(m, "\n")), v...), "v", v)
+}
+
+// Infof satisfies the pebble interface for an info logger.
+func (h *Hook) Infof(m string, v ...interface{}) {
+	h.Log.Info(fmt.Sprintf(strings.ToLower(strings.Trim(m, "\n")), v...), "v", v)
+}
+
+// Debugf satisfies the pebble interface for a debug logger.
+func (h *Hook) Debugf(m string, v ...interface{}) {
+	h.Log.Debug(fmt.Sprintf(strings.ToLower(strings.Trim(m, "\n")), v...), "v", v)
+}
+
+// delKv deletes a key-value pair from the database.
+func (h *Hook) delKv(k string) error {
+	err := h.db.Delete([]byte(k), h.mode)
+	if err != nil {
+		h.Log.Error("failed to delete data", "error", err, "key", k)
+		return err
+	}
+	return nil
+}
+
+// setKv stores a key-value pair in the database.
+func (h *Hook) setKv(k string, v storage.Serializable) error {
+	bs, _ := v.MarshalBinary()
+	err := h.db.Set([]byte(k), bs, h.mode)
+	if err != nil {
+		h.Log.Error("failed to update data", "error", err, "key", k)
+		return err
+	}
+	return nil
+}
+
+// getKv retrieves the value associated with a key from the database.
+func (h *Hook) getKv(k string, v storage.Serializable) error {
+	value, closer, err := h.db.Get([]byte(k))
+	if err != nil {
+		return err
 	}
 
-	return v, nil
+	defer func() {
+		if closer != nil {
+			closer.Close()
+		}
+	}()
+	return v.UnmarshalBinary(value)
 }

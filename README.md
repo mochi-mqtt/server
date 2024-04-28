@@ -10,7 +10,7 @@
 
 </p>
 
-[English](README.md) | [简体中文](README-CN.md) | [Translators Wanted!](https://github.com/orgs/mochi-mqtt/discussions/310)
+[English](README.md) | [简体中文](README-CN.md) | [日本語](README-JP.md) | [Translators Wanted!](https://github.com/orgs/mochi-mqtt/discussions/310)
 
 🎆 **mochi-co/mqtt is now part of the new mochi-mqtt organisation.** [Read about this announcement here.](https://github.com/orgs/mochi-mqtt/discussions/271)
 
@@ -45,7 +45,7 @@ MQTT stands for [MQ Telemetry Transport](https://en.wikipedia.org/wiki/MQTT). It
     - Passes all [Paho Interoperability Tests](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) for MQTT v5 and MQTT v3.
     - Over a thousand carefully considered unit test scenarios.
 - TCP, Websocket (including SSL/TLS), and $SYS Dashboard listeners.
-- Built-in Redis, Badger, and Bolt Persistence using Hooks (but you can also make your own).
+- Built-in Redis, Badger, Pebble and Bolt Persistence using Hooks (but you can also make your own).
 - Built-in Rule-based Authentication and ACL Ledger using Hooks (also make your own).
 
 ### Compatibility Notes
@@ -60,7 +60,6 @@ Unless it's a critical issue, new releases typically go out over the weekend.
 - Please [open an issue](https://github.com/mochi-mqtt/server/issues) to request new features or event hooks!
 - Cluster support.
 - Enhanced Metrics support.
-- File-based server configuration (supporting docker).
 
 ## Quick Start
 ### Running the Broker with Go
@@ -77,17 +76,49 @@ You can now pull and run the [official Mochi MQTT image](https://hub.docker.com/
 ```sh
 docker pull mochimqtt/server
 or
-docker run mochimqtt/server
+docker run -v $(pwd)/config.yaml:/config.yaml mochimqtt/server 
 ```
 
-This is a work in progress, and a [file-based configuration](https://github.com/orgs/mochi-mqtt/projects/2) is being developed to better support this implementation. _More substantial docker support is being discussed [here](https://github.com/orgs/mochi-mqtt/discussions/281#discussion-5544545) and [here](https://github.com/orgs/mochi-mqtt/discussions/209). Please join the discussion if you use Mochi-MQTT in this environment._
+For most use cases, you can use File Based Configuration to configure the server, by specifying a valid `yaml` or `json` config file.
 
-A simple Dockerfile is provided for running the [cmd/main.go](cmd/main.go) Websocket, TCP, and Stats server:
+A simple Dockerfile is provided for running the [cmd/main.go](cmd/main.go) Websocket, TCP, and Stats server, using the `allow-all` auth hook. 
 
 ```sh
 docker build -t mochi:latest .
-docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 mochi:latest
+docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 -v $(pwd)/config.yaml:/config.yaml mochi:latest
 ```
+
+### File Based Configuration
+You can use File Based Configuration with either the Docker image (described above), or by running the build binary with the `--config=config.yaml` or `--config=config.json` parameter.
+
+Configuration files provide a convenient mechanism for easily preparing a server with the most common configurations. You can enable and configure built-in hooks and listeners, and specify server options and compatibilities:
+
+```yaml
+listeners:
+  - type: "tcp"
+    id: "tcp12"
+    address: ":1883"
+  - type: "ws"
+    id: "ws1"
+    address: ":1882"
+  - type: "sysinfo"
+    id: "stats"
+    address: ":1880"
+hooks:
+  auth:
+    allow_all: true
+options:
+  inline_client: true
+```
+
+Please review the examples found in [examples/config](examples/config) for all available configuration options.
+
+There are a few conditions to note:
+1. If you use file-based configuration, the supported hook types for configuration are currently limited to auth, storage, and debug. Each type of hook can only have one instance.
+2. You can only use built in hooks with file-based configuration, as the type and configuration structure needs to be known by the server in order for it to be applied.
+3. You can only use built in listeners, for the reasons above.
+
+If you need to implement custom hooks or listeners, please do so using the traditional manner indicated in [cmd/main.go](cmd/main.go).
 
 ## Developing with Mochi MQTT
 ### Importing as a package
@@ -184,7 +215,7 @@ Review the mqtt.Options, mqtt.Capabilities, and mqtt.Compatibilities structs for
 
 Some choices were made when deciding the default configuration that need to be mentioned here:
 
-- By default, the value of `server.Options.Capabilities.MaximumMessageExpiryInterval` is set to 86400 (24 hours), in order to prevent exposing the broker to DOS attacks on hostile networks when using the out-of-the-box configuration (as an infinite expiry would allow an infinite number of retained/inflight messages to accumulate). If you are operating in a trusted environment, or you have capacity for a larger retention period, uou may wish to override this (set to `0` or `math.MaxInt` for no expiry).
+- By default, the value of `server.Options.Capabilities.MaximumMessageExpiryInterval` is set to 86400 (24 hours), in order to prevent exposing the broker to DOS attacks on hostile networks when using the out-of-the-box configuration (as an infinite expiry would allow an infinite number of retained/inflight messages to accumulate). If you are operating in a trusted environment, or you have capacity for a larger retention period, you may wish to override this (set to `0` for no expiry).
 
 ## Event Hooks 
 A universal event hooks system allows developers to hook into various parts of the server and client life cycle to add and modify functionality of the broker. These universal hooks are used to provide everything from authentication, persistent storage, to debugging tools.
@@ -197,6 +228,7 @@ Hooks are stackable - you can add multiple hooks to a server, and they will be r
 | Access Control | [mochi-mqtt/server/hooks/auth . Auth](hooks/auth/auth.go)                | Rule-based access control ledger.                                          | 
 | Persistence    | [mochi-mqtt/server/hooks/storage/bolt](hooks/storage/bolt/bolt.go)       | Persistent storage using [BoltDB](https://dbdb.io/db/boltdb) (deprecated). | 
 | Persistence    | [mochi-mqtt/server/hooks/storage/badger](hooks/storage/badger/badger.go) | Persistent storage using [BadgerDB](https://github.com/dgraph-io/badger).  | 
+| Persistence    | [mochi-mqtt/server/hooks/storage/pebble](hooks/storage/pebble/pebble.go) | Persistent storage using [PebbleDB](https://github.com/cockroachdb/pebble).  | 
 | Persistence    | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)    | Persistent storage using [Redis](https://redis.io).                        | 
 | Debugging      | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go)                    | Additional debugging output to visualise packet flow.                      | 
 
@@ -291,8 +323,21 @@ if err != nil {
 ```
 For more information on how the redis hook works, or how to use it, see the [examples/persistence/redis/main.go](examples/persistence/redis/main.go) or [hooks/storage/redis](hooks/storage/redis) code.
 
+#### Pebble DB
+There's also a Pebble Db storage hook if you prefer file-based storage. It can be added and configured in much the same way as the other hooks (with somewhat less options).
+```go
+err := server.AddHook(new(pebble.Hook), &pebble.Options{
+  Path: pebblePath,
+  Mode: pebble.NoSync,
+})
+if err != nil {
+  log.Fatal(err)
+}
+```
+For more information on how the pebble hook works, or how to use it, see the [examples/persistence/pebble/main.go](examples/persistence/pebble/main.go) or [hooks/storage/pebble](hooks/storage/pebble) code.
+
 #### Badger DB
-There's also a BadgerDB storage hook if you prefer file based storage. It can be added and configured in much the same way as the other hooks (with somewhat less options).
+Similarly, for file-based storage, there is also a BadgerDB storage hook available. It can be added and configured in much the same way as the other hooks.
 ```go
 err := server.AddHook(new(badger.Hook), &badger.Options{
   Path: badgerPath,

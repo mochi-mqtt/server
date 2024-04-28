@@ -96,24 +96,24 @@ func (h *DelayHook) OnDisconnect(cl *Client, err error, expire bool) {
 }
 
 func newServer() *Server {
-	cc := *DefaultServerCapabilities
+	cc := NewDefaultServerCapabilities()
 	cc.MaximumMessageExpiryInterval = 0
 	cc.ReceiveMaximum = 0
 	s := New(&Options{
 		Logger:       logger,
-		Capabilities: &cc,
+		Capabilities: cc,
 	})
 	_ = s.AddHook(new(AllowHook), nil)
 	return s
 }
 
 func newServerWithInlineClient() *Server {
-	cc := *DefaultServerCapabilities
+	cc := NewDefaultServerCapabilities()
 	cc.MaximumMessageExpiryInterval = 0
 	cc.ReceiveMaximum = 0
 	s := New(&Options{
 		Logger:       logger,
-		Capabilities: &cc,
+		Capabilities: cc,
 		InlineClient: true,
 	})
 	_ = s.AddHook(new(AllowHook), nil)
@@ -125,7 +125,7 @@ func TestOptionsSetDefaults(t *testing.T) {
 	opts.ensureDefaults()
 
 	require.Equal(t, defaultSysTopicInterval, opts.SysTopicResendInterval)
-	require.Equal(t, DefaultServerCapabilities, opts.Capabilities)
+	require.Equal(t, NewDefaultServerCapabilities(), opts.Capabilities)
 
 	opts = new(Options)
 	opts.ensureDefaults()
@@ -220,6 +220,34 @@ func TestServerAddListener(t *testing.T) {
 	require.Equal(t, ErrListenerIDExists, err)
 }
 
+func TestServerAddHooksFromConfig(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+	s.Log = logger
+
+	hooks := []HookLoadConfig{
+		{Hook: new(modifiedHookBase)},
+	}
+
+	err := s.AddHooksFromConfig(hooks)
+	require.NoError(t, err)
+}
+
+func TestServerAddHooksFromConfigError(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+	s.Log = logger
+
+	hooks := []HookLoadConfig{
+		{Hook: new(modifiedHookBase), Config: map[string]interface{}{}},
+	}
+
+	err := s.AddHooksFromConfig(hooks)
+	require.Error(t, err)
+}
+
 func TestServerAddListenerInitFailure(t *testing.T) {
 	s := newServer()
 	defer s.Close()
@@ -230,6 +258,60 @@ func TestServerAddListenerInitFailure(t *testing.T) {
 	m.ErrListen = true
 	err := s.AddListener(m)
 	require.Error(t, err)
+}
+
+func TestServerAddListenersFromConfig(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+	s.Log = logger
+
+	lc := []listeners.Config{
+		{Type: listeners.TypeTCP, ID: "tcp", Address: ":1883"},
+		{Type: listeners.TypeWS, ID: "ws", Address: ":1882"},
+		{Type: listeners.TypeHealthCheck, ID: "health", Address: ":1881"},
+		{Type: listeners.TypeSysInfo, ID: "info", Address: ":1880"},
+		{Type: listeners.TypeUnix, ID: "unix", Address: "mochi.sock"},
+		{Type: listeners.TypeMock, ID: "mock", Address: "0"},
+		{Type: "unknown", ID: "unknown"},
+	}
+
+	err := s.AddListenersFromConfig(lc)
+	require.NoError(t, err)
+	require.Equal(t, 6, s.Listeners.Len())
+
+	tcp, _ := s.Listeners.Get("tcp")
+	require.Equal(t, "[::]:1883", tcp.Address())
+
+	ws, _ := s.Listeners.Get("ws")
+	require.Equal(t, ":1882", ws.Address())
+
+	health, _ := s.Listeners.Get("health")
+	require.Equal(t, ":1881", health.Address())
+
+	info, _ := s.Listeners.Get("info")
+	require.Equal(t, ":1880", info.Address())
+
+	unix, _ := s.Listeners.Get("unix")
+	require.Equal(t, "mochi.sock", unix.Address())
+
+	mock, _ := s.Listeners.Get("mock")
+	require.Equal(t, "0", mock.Address())
+}
+
+func TestServerAddListenersFromConfigError(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+	s.Log = logger
+
+	lc := []listeners.Config{
+		{Type: listeners.TypeTCP, ID: "tcp", Address: "x"},
+	}
+
+	err := s.AddListenersFromConfig(lc)
+	require.Error(t, err)
+	require.Equal(t, 0, s.Listeners.Len())
 }
 
 func TestServerServe(t *testing.T) {
@@ -251,6 +333,57 @@ func TestServerServe(t *testing.T) {
 
 	require.Equal(t, true, ok)
 	require.Equal(t, true, listener.(*listeners.MockListener).IsServing())
+}
+
+func TestServerServeFromConfig(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+
+	s.Options.Listeners = []listeners.Config{
+		{Type: listeners.TypeMock, ID: "mock", Address: "0"},
+	}
+
+	s.Options.Hooks = []HookLoadConfig{
+		{Hook: new(modifiedHookBase)},
+	}
+
+	err := s.Serve()
+	require.NoError(t, err)
+
+	time.Sleep(time.Millisecond)
+
+	require.Equal(t, 1, s.Listeners.Len())
+	listener, ok := s.Listeners.Get("mock")
+
+	require.Equal(t, true, ok)
+	require.Equal(t, true, listener.(*listeners.MockListener).IsServing())
+}
+
+func TestServerServeFromConfigListenerError(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+
+	s.Options.Listeners = []listeners.Config{
+		{Type: listeners.TypeTCP, ID: "tcp", Address: "x"},
+	}
+
+	err := s.Serve()
+	require.Error(t, err)
+}
+
+func TestServerServeFromConfigHookError(t *testing.T) {
+	s := newServer()
+	defer s.Close()
+	require.NotNil(t, s)
+
+	s.Options.Hooks = []HookLoadConfig{
+		{Hook: new(modifiedHookBase), Config: map[string]interface{}{}},
+	}
+
+	err := s.Serve()
+	require.Error(t, err)
 }
 
 func TestServerServeReadStoreFailure(t *testing.T) {
@@ -807,6 +940,41 @@ func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, packets.ErrProtocolViolationReservedBit, err)
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackProtocolViolationNoSession).RawBytes, <-recv)
+
+	_ = r.Close()
+}
+
+func TestEstablishConnectionMaximumClientsReached(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MaximumClients = 0
+	s := New(&Options{
+		Logger:       logger,
+		Capabilities: cc,
+	})
+	_ = s.AddHook(new(AllowHook), nil)
+	defer s.Close()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r)
+	}()
+
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+	}()
+
+	// receive the connack
+	recv := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(w)
+		require.NoError(t, err)
+		recv <- buf
+	}()
+
+	err := <-o
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrServerBusy)
 
 	_ = r.Close()
 }
@@ -1529,10 +1697,10 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 
 	for _, tx := range tt {
 		t.Run(tx.name, func(t *testing.T) {
-			cc := *DefaultServerCapabilities
+			cc := NewDefaultServerCapabilities()
 			s := New(&Options{
 				Logger:       logger,
-				Capabilities: &cc,
+				Capabilities: cc,
 			})
 			_ = s.AddHook(new(DenyHook), nil)
 			_ = s.Serve()
@@ -1907,6 +2075,7 @@ func TestPublishToClientSubscriptionDowngradeQos(t *testing.T) {
 }
 
 func TestPublishToClientExceedClientWritesPending(t *testing.T) {
+	var sendQuota uint16 = 5
 	s := newServer()
 
 	_, w := net.Pipe()
@@ -1917,9 +2086,12 @@ func TestPublishToClientExceedClientWritesPending(t *testing.T) {
 		options: &Options{
 			Capabilities: &Capabilities{
 				MaximumClientWritesPending: 3,
+				maximumPacketID:            10,
 			},
 		},
 	})
+	cl.Properties.Props.ReceiveMaximum = sendQuota
+	cl.State.Inflight.ResetSendQuota(int32(cl.Properties.Props.ReceiveMaximum))
 
 	s.Clients.Add(cl)
 
@@ -1928,9 +2100,20 @@ func TestPublishToClientExceedClientWritesPending(t *testing.T) {
 		atomic.AddInt32(&cl.State.outboundQty, 1)
 	}
 
+	id, _ := cl.NextPacketID()
+	cl.State.Inflight.Set(packets.Packet{PacketID: uint16(id)})
+	cl.State.Inflight.DecreaseSendQuota()
+	sendQuota--
+
 	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, packets.Packet{})
 	require.Error(t, err)
 	require.ErrorIs(t, packets.ErrPendingClientWritesExceeded, err)
+	require.Equal(t, int32(sendQuota), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+
+	_, err = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, packets.Packet{FixedHeader: packets.FixedHeader{Qos: 1}})
+	require.Error(t, err)
+	require.ErrorIs(t, packets.ErrPendingClientWritesExceeded, err)
+	require.Equal(t, int32(sendQuota), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
 }
 
 func TestPublishToClientServerTopicAlias(t *testing.T) {
@@ -1986,6 +2169,22 @@ func TestPublishToClientMqtt5RetainAsPublishedTrueLeverageNoConn(t *testing.T) {
 	require.ErrorIs(t, err, packets.CodeDisconnect)
 }
 
+func TestPublishToClientExceedMaximumInflight(t *testing.T) {
+	const MaxInflight uint16 = 5
+	s := newServer()
+	cl, _, _ := newTestClient()
+	s.Options.Capabilities.MaximumInflight = MaxInflight
+	cl.ops.options.Capabilities.MaximumInflight = MaxInflight
+	for i := uint16(0); i < MaxInflight; i++ {
+		cl.State.Inflight.Set(packets.Packet{PacketID: i})
+	}
+
+	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+	require.Error(t, err)
+	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.InflightDropped))
+}
+
 func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -1996,6 +2195,7 @@ func TestPublishToClientExhaustedPacketID(t *testing.T) {
 	_, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.InflightDropped))
 }
 
 func TestPublishToClientACLNotAuthorized(t *testing.T) {
@@ -3144,15 +3344,50 @@ func TestServerLoadClients(t *testing.T) {
 		{ID: "mochi"},
 		{ID: "zen"},
 		{ID: "mochi-co"},
+		{ID: "v3-clean", ProtocolVersion: 4, Clean: true},
+		{ID: "v3-not-clean", ProtocolVersion: 4, Clean: false},
+		{
+			ID:              "v5-clean",
+			ProtocolVersion: 5,
+			Clean:           true,
+			Properties: storage.ClientProperties{
+				SessionExpiryInterval: 10,
+			},
+		},
+		{
+			ID:              "v5-expire-interval-0",
+			ProtocolVersion: 5,
+			Properties: storage.ClientProperties{
+				SessionExpiryInterval: 0,
+			},
+		},
+		{
+			ID:              "v5-expire-interval-not-0",
+			ProtocolVersion: 5,
+			Properties: storage.ClientProperties{
+				SessionExpiryInterval: 10,
+			},
+		},
 	}
 
 	s := newServer()
 	require.Equal(t, 0, s.Clients.Len())
 	s.loadClients(v)
-	require.Equal(t, 3, s.Clients.Len())
+	require.Equal(t, 6, s.Clients.Len())
 	cl, ok := s.Clients.Get("mochi")
 	require.True(t, ok)
 	require.Equal(t, "mochi", cl.ID)
+
+	_, ok = s.Clients.Get("v3-clean")
+	require.False(t, ok)
+	_, ok = s.Clients.Get("v3-not-clean")
+	require.True(t, ok)
+	_, ok = s.Clients.Get("v5-clean")
+	require.True(t, ok)
+	_, ok = s.Clients.Get("v5-expire-interval-0")
+	require.False(t, ok)
+	_, ok = s.Clients.Get("v5-expire-interval-not-0")
+	require.True(t, ok)
 }
 
 func TestServerLoadSubscriptions(t *testing.T) {
@@ -3275,6 +3510,11 @@ func TestServerClearExpiredInflights(t *testing.T) {
 	s.clearExpiredInflights(n)
 	require.Len(t, cl.State.Inflight.GetAll(false), 2)
 	require.Equal(t, int64(-3), s.Info.Inflight)
+
+	s.Options.Capabilities.MaximumMessageExpiryInterval = 0
+	cl.State.Inflight.Set(packets.Packet{PacketID: 8, Expiry: n - 8})
+	s.clearExpiredInflights(n)
+	require.Len(t, cl.State.Inflight.GetAll(false), 3)
 }
 
 func TestServerClearExpiredRetained(t *testing.T) {
@@ -3283,15 +3523,28 @@ func TestServerClearExpiredRetained(t *testing.T) {
 	s.Options.Capabilities.MaximumMessageExpiryInterval = 4
 
 	n := time.Now().Unix()
-	s.Topics.Retained.Add("a/b/c", packets.Packet{Created: n, Expiry: n - 1})
-	s.Topics.Retained.Add("d/e/f", packets.Packet{Created: n, Expiry: n - 2})
-	s.Topics.Retained.Add("g/h/i", packets.Packet{Created: n - 3}) // within bounds
-	s.Topics.Retained.Add("j/k/l", packets.Packet{Created: n - 5}) // over max server expiry limit
-	s.Topics.Retained.Add("m/n/o", packets.Packet{Created: n})
+	s.Topics.Retained.Add("a/b/c", packets.Packet{ProtocolVersion: 5, Created: n, Expiry: n - 1})
+	s.Topics.Retained.Add("d/e/f", packets.Packet{ProtocolVersion: 5, Created: n, Expiry: n - 2})
+	s.Topics.Retained.Add("g/h/i", packets.Packet{ProtocolVersion: 5, Created: n - 3}) // within bounds
+	s.Topics.Retained.Add("j/k/l", packets.Packet{ProtocolVersion: 5, Created: n - 5}) // over max server expiry limit
+	s.Topics.Retained.Add("m/n/o", packets.Packet{ProtocolVersion: 5, Created: n})
 
 	require.Len(t, s.Topics.Retained.GetAll(), 5)
 	s.clearExpiredRetainedMessages(n)
 	require.Len(t, s.Topics.Retained.GetAll(), 2)
+
+	s.Topics.Retained.Add("p/q/r", packets.Packet{Created: n, Expiry: n - 1})
+	s.Topics.Retained.Add("s/t/u", packets.Packet{Created: n, Expiry: n - 2}) // expiry is ineffective for v3.
+	s.Topics.Retained.Add("v/w/x", packets.Packet{Created: n - 3})            // within bounds for v3
+	s.Topics.Retained.Add("y/z/1", packets.Packet{Created: n - 5})            // over max server expiry limit
+	require.Len(t, s.Topics.Retained.GetAll(), 6)
+	s.clearExpiredRetainedMessages(n)
+	require.Len(t, s.Topics.Retained.GetAll(), 5)
+
+	s.Options.Capabilities.MaximumMessageExpiryInterval = 0
+	s.Topics.Retained.Add("2/3/4", packets.Packet{Created: n - 8})
+	s.clearExpiredRetainedMessages(n)
+	require.Len(t, s.Topics.Retained.GetAll(), 6)
 }
 
 func TestServerClearExpiredClients(t *testing.T) {
@@ -3351,10 +3604,9 @@ func TestLoadServerInfoRestoreOnRestart(t *testing.T) {
 	require.Equal(t, int64(60), s.Info.BytesReceived)
 }
 
-func TestAtomicItoa(t *testing.T) {
+func TestItoa(t *testing.T) {
 	i := int64(22)
-	ip := &i
-	require.Equal(t, "22", AtomicItoa(ip))
+	require.Equal(t, "22", Int64toa(i))
 }
 
 func TestServerSubscribe(t *testing.T) {

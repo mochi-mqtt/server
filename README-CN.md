@@ -10,7 +10,7 @@
 
 </p>
 
-[English](README.md) | [简体中文](README-CN.md) | [招募翻译者!](https://github.com/orgs/mochi-mqtt/discussions/310)
+[English](README.md) | [简体中文](README-CN.md) | [日本語](README-JP.md) | [招募翻译者!](https://github.com/orgs/mochi-mqtt/discussions/310)
 
 
 🎆 **mochi-co/mqtt 现在已经是新的 mochi-mqtt 组织的一部分。** 详细信息请[阅读公告.](https://github.com/orgs/mochi-mqtt/discussions/271)
@@ -45,7 +45,7 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
     - 通过所有 [Paho互操作性测试](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability)（MQTT v5 和 MQTT v3）。
     - 超过一千多个经过仔细考虑的单元测试场景。
 - 支持 TCP、Websocket（包括 SSL/TLS）和$SYS 服务状态监控。
-- 内置 基于Redis、Badger 和 Bolt 的持久化（使用Hook钩子，你也可以自己创建）。
+- 内置 基于Redis、Badger、Pebble 和 Bolt 的持久化（使用Hook钩子，你也可以自己创建）。
 - 内置基于规则的认证和 ACL 权限管理（使用Hook钩子，你也可以自己创建）。
 
 ### 兼容性说明(Compatibility Notes)
@@ -60,7 +60,6 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
 - 请[提出问题](https://github.com/mochi-mqtt/server/issues)来请求新功能或新的hook钩子接口！
 - 集群支持。
 - 统计度量支持。
-- 配置文件支持（支持 Docker）。
 
 ## 快速开始(Quick Start)
 ### 使用 Go 运行服务端
@@ -77,17 +76,48 @@ go build -o mqtt && ./mqtt
 ```sh
 docker pull mochimqtt/server
 或者
-docker run mochimqtt/server
+docker run -v $(pwd)/config.yaml:/config.yaml mochimqtt/server
 ```
 
-我们还在积极完善这部分的工作，现在正在实现使用[配置文件的启动](https://github.com/orgs/mochi-mqtt/projects/2)方式。更多关于 Docker 的支持正在[这里](https://github.com/orgs/mochi-mqtt/discussions/281#discussion-5544545)和[这里](https://github.com/orgs/mochi-mqtt/discussions/209)进行讨论。如果你有在这个场景下使用 Mochi-MQTT，也可以参与到讨论中来。
-
-我们提供了一个简单的 Dockerfile，用于运行 cmd/main.go 中的 Websocket(:1882)、TCP(:1883) 和服务端状态信息(:8080)这三个服务监听：
+一般情况下，您可以使用基于文件的方式来配置服务端，只需指定一个有效的 yaml 或 json 配置文件。
+我们提供了一个简单的 Dockerfile，用于运行 [cmd/main.go](cmd/main.go)  中的 Websocket(:1882)、TCP(:1883) 和服务端状态信息(:8080)这三个网络服务，它使用了一个 allow-all 的鉴权策略(Hook)。
 
 ```sh
 docker build -t mochi:latest .
-docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 mochi:latest
+docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 -v $(pwd)/config.yaml:/config.yaml mochi:latest
 ```
+
+### 基于文件的配置
+你可以使用基于文件的配置与 Docker 镜像（上节所述）一起使用，或者通过运行编译好的可执行文件并使用 `--config=config.yaml` 或 `--config=config.json` 指定配置文件。
+
+配置文件使得服务端更易于管理和维护。你可以启用和配置内置的钩子(hooks)和监听器(listeners)，并指定服务器的一些选项(options)和能力(compatibilities)：
+
+```yaml
+listeners:
+  - type: "tcp"
+    id: "tcp12"
+    address: ":1883"
+  - type: "ws"
+    id: "ws1"
+    address: ":1882"
+  - type: "sysinfo"
+    id: "stats"
+    address: ":1880"
+hooks:
+  auth:
+    allow_all: true
+options:
+  inline_client: true
+```
+
+你可以参考请 [examples/config](examples/config) 中的示例，以了解所有可用的配置。
+有一些需要注意的地方：
+
+1. 如果你使用基于文件的配置，现在支持配置的hook类型只有auth、storage、debug这三种，每种类型的钩子只能有一个。
+2. 你只能在基于文件的配置中使用内置钩子(mochi-mqtt里面默认已经存在的hook，你自己创建的不算)，因为钩子的配置需要先跟conf.toml的结构匹配。
+3. 你只能使用内置监听器(listeners)，原因同上。
+
+如果你需要实现自定义的钩子(Hooks)或监听器(listeners)，请使用 [cmd/main.go](cmd/main.go) 中那样的传统方式来实现。
 
 
 ## 使用 Mochi MQTT 进行开发
@@ -183,7 +213,7 @@ server := mqtt.New(&mqtt.Options{
 
 关于决定默认配置的值，在这里进行一些说明：
 
-- 默认情况下，server.Options.Capabilities.MaximumMessageExpiryInterval 的值被设置为 86400（24小时），以防止在使用默认配置时网络上暴露服务器而受到恶意DOS攻击（如果不配置到期时间将允许无限数量的保留retained/待发送inflight消息累积）。如果您在一个受信任的环境中运行，或者您有更大的保留期容量，您可以选择覆盖此设置（设置为 0 或 math.MaxInt 以取消到期限制）。
+- 默认情况下，server.Options.Capabilities.MaximumMessageExpiryInterval 的值被设置为 86400（24小时），以防止在使用默认配置时网络上暴露服务器而受到恶意DOS攻击（如果不配置到期时间将允许无限数量的保留retained/待发送inflight消息累积）。如果您在一个受信任的环境中运行，或者您有更大的保留期容量，您可以选择覆盖此设置（设置为0 以取消到期限制）。
 
 ## 事件钩子(Event Hooks)
 
@@ -197,10 +227,11 @@ server := mqtt.New(&mqtt.Options{
 | 访问控制 | [mochi-mqtt/server/hooks/auth . Auth](hooks/auth/auth.go)                | 基于规则的访问权限控制。  | 
 | 数据持久性    | [mochi-mqtt/server/hooks/storage/bolt](hooks/storage/bolt/bolt.go)       | 使用 [BoltDB](https://dbdb.io/db/boltdb) 进行持久性存储（已弃用）。 | 
 | 数据持久性    | [mochi-mqtt/server/hooks/storage/badger](hooks/storage/badger/badger.go) | 使用 [BadgerDB](https://github.com/dgraph-io/badger) 进行持久性存储。   | 
+| 数据持久性    | [mochi-mqtt/server/hooks/storage/pebble](hooks/storage/pebble/pebble.go) | 使用 [PebbleDB](https://github.com/cockroachdb/pebble) 进行持久性存储。   | 
 | 数据持久性    | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)    | 使用 [Redis](https://redis.io) 进行持久性存储。                         | 
 | 调试跟踪      | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go)                    | 调试输出以查看数据包在服务端的链路追踪。   |
 
-许多内部函数都已开放给开发者，你可以参考上述示例创建自己的Hook钩子。如果你有更好的关于Hook钩子方面的建议或者疑问，你可以[提交问题](https://github.com/mochi-mqtt/server/issues)给我们。                  | 
+许多内部函数都已开放给开发者，你可以参考上述示例创建自己的Hook钩子。如果你有更好的关于Hook钩子方面的建议或者疑问，你可以[提交问题](https://github.com/mochi-mqtt/server/issues)给我们。
 
 ### 访问控制(Access Control)
 
@@ -299,9 +330,25 @@ if err != nil {
 ```
 有关 Redis 钩子的工作原理或如何使用它的更多信息，请参阅  [examples/persistence/redis/main.go](examples/persistence/redis/main.go) 或 [hooks/storage/redis](hooks/storage/redis) 。
 
+#### Pebble DB
+
+如果您更喜欢基于文件的存储，还有一个 PebbleDB 存储钩子(Hook)可用。它可以以与其他钩子大致相同的方式添加和配置（具有较少的选项）。
+
+```go
+err := server.AddHook(new(pebble.Hook), &pebble.Options{
+  Path: pebblePath,
+  Mode: pebble.NoSync,
+})
+if err != nil {
+  log.Fatal(err)
+}
+```
+
+有关 pebble 钩子(Hook)的工作原理或如何使用它的更多信息，请参阅 [examples/persistence/pebble/main.go](examples/persistence/pebble/main.go) 或 [hooks/storage/pebble](hooks/storage/pebble)。
+
 #### Badger DB
 
-如果您更喜欢基于文件的存储，还有一个 BadgerDB 存储钩子(Hook)可用。它可以以与其他钩子大致相同的方式添加和配置（具有较少的选项）。
+同样是基于文件的存储，还有一个 BadgerDB 存储钩子(Hook)可用。它可以以与其他钩子大致相同的方式添加和配置。
 
 ```go
 err := server.AddHook(new(badger.Hook), &badger.Options{

@@ -16,9 +16,10 @@ import (
 
 // Options contains configuration settings for the debug output.
 type Options struct {
-	ShowPacketData bool // include decoded packet data (default false)
-	ShowPings      bool // show ping requests and responses (default false)
-	ShowPasswords  bool // show connecting user passwords (default false)
+	Enable         bool `yaml:"enable" json:"enable"`                     // non-zero field for enabling hook using file-based config
+	ShowPacketData bool `yaml:"show_packet_data" json:"show_packet_data"` // include decoded packet data (default false)
+	ShowPings      bool `yaml:"show_pings" json:"show_pings"`             // show ping requests and responses (default false)
+	ShowPasswords  bool `yaml:"show_passwords" json:"show_passwords"`     // show connecting user passwords (default false)
 }
 
 // Hook is a debugging hook which logs additional low-level information from the server.

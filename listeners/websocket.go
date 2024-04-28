@@ -19,6 +19,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const TypeWS = "ws"
+
 var (
 	// ErrInvalidMessage indicates that a message payload was not valid.
 	ErrInvalidMessage = errors.New("message type not binary")
@@ -29,7 +31,7 @@ type Websocket struct { // [MQTT-4.2.0-1]
 	sync.RWMutex
 	id        string              // the internal id of the listener
 	address   string              // the network address to bind to
-	config    *Config             // configuration values for the listener
+	config    Config              // configuration values for the listener
 	listen    *http.Server        // a http server for serving websocket connections
 	log       *slog.Logger        // server logger
 	establish EstablishFn         // the server's establish connection handler
@@ -37,15 +39,11 @@ type Websocket struct { // [MQTT-4.2.0-1]
 	end       uint32              // ensure the close methods are only called once
 }
 
-// NewWebsocket initialises and returns a new Websocket listener, listening on an address.
-func NewWebsocket(id, address string, config *Config) *Websocket {
-	if config == nil {
-		config = new(Config)
-	}
-
+// NewWebsocket initializes and returns a new Websocket listener, listening on an address.
+func NewWebsocket(config Config) *Websocket {
 	return &Websocket{
-		id:      id,
-		address: address,
+		id:      config.ID,
+		address: config.Address,
 		config:  config,
 		upgrader: &websocket.Upgrader{
 			Subprotocols: []string{"mqtt"},

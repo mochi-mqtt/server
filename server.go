@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -26,91 +27,108 @@ import (
 )
 
 const (
-	Version                       = "2.4.1" // the current server version.
+	Version                       = "2.6.2" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 	LocalListener                 = "local"
 	InlineClientId                = "inline"
 )
 
 var (
-	// DefaultServerCapabilities defines the default features and capabilities provided by the server.
-	DefaultServerCapabilities = &Capabilities{
-		MaximumSessionExpiryInterval: math.MaxUint32, // maximum number of seconds to keep disconnected sessions
-		MaximumMessageExpiryInterval: 60 * 60 * 24,   // maximum message expiry if message expiry is 0 or over
-		ReceiveMaximum:               1024,           // maximum number of concurrent qos messages per client
-		MaximumQos:                   2,              // maximum qos value available to clients
-		RetainAvailable:              1,              // retain messages is available
-		MaximumPacketSize:            0,              // no maximum packet size
-		TopicAliasMaximum:            math.MaxUint16, // maximum topic alias value
-		WildcardSubAvailable:         1,              // wildcard subscriptions are available
-		SubIDAvailable:               1,              // subscription identifiers are available
-		SharedSubAvailable:           1,              // shared subscriptions are available
-		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
-		MaximumClientWritesPending:   1024 * 8,       // maximum number of pending message writes for a client
-	}
+	// Deprecated: Use NewDefaultServerCapabilities to avoid data race issue.
+	DefaultServerCapabilities = NewDefaultServerCapabilities()
 
 	ErrListenerIDExists       = errors.New("listener id already exists")                               // a listener with the same id already exists
 	ErrConnectionClosed       = errors.New("connection not open")                                      // connection is closed
 	ErrInlineClientNotEnabled = errors.New("please set Options.InlineClient=true to use this feature") // inline client is not enabled by default
+	ErrOptionsUnreadable      = errors.New("unable to read options from bytes")
 )
 
 // Capabilities indicates the capabilities and features provided by the server.
 type Capabilities struct {
-	MaximumMessageExpiryInterval int64
-	MaximumClientWritesPending   int32
-	MaximumSessionExpiryInterval uint32
-	MaximumPacketSize            uint32
-	maximumPacketID              uint32 // unexported, used for testing only
-	ReceiveMaximum               uint16
-	TopicAliasMaximum            uint16
-	SharedSubAvailable           byte
-	MinimumProtocolVersion       byte
-	Compatibilities              Compatibilities
-	MaximumQos                   byte
-	RetainAvailable              byte
-	WildcardSubAvailable         byte
-	SubIDAvailable               byte
+	MaximumClients               int64           `yaml:"maximum_clients" json:"maximum_clients"`                                 // maximum number of connected clients
+	MaximumMessageExpiryInterval int64           `yaml:"maximum_message_expiry_interval" json:"maximum_message_expiry_interval"` // maximum message expiry if message expiry is 0 or over
+	MaximumClientWritesPending   int32           `yaml:"maximum_client_writes_pending" json:"maximum_client_writes_pending"`     // maximum number of pending message writes for a client
+	MaximumSessionExpiryInterval uint32          `yaml:"maximum_session_expiry_interval" json:"maximum_session_expiry_interval"` // maximum number of seconds to keep disconnected sessions
+	MaximumPacketSize            uint32          `yaml:"maximum_packet_size" json:"maximum_packet_size"`                         // maximum packet size, no limit if 0
+	maximumPacketID              uint32          // unexported, used for testing only
+	ReceiveMaximum               uint16          `yaml:"receive_maximum" json:"receive_maximum"`                   // maximum number of concurrent qos messages per client
+	MaximumInflight              uint16          `yaml:"maximum_inflight" json:"maximum_inflight"`                 // maximum number of qos > 0 messages can be stored, 0(=8192)-65535
+	TopicAliasMaximum            uint16          `yaml:"topic_alias_maximum" json:"topic_alias_maximum"`           // maximum topic alias value
+	SharedSubAvailable           byte            `yaml:"shared_sub_available" json:"shared_sub_available"`         // support of shared subscriptions
+	MinimumProtocolVersion       byte            `yaml:"minimum_protocol_version" json:"minimum_protocol_version"` // minimum supported mqtt version
+	Compatibilities              Compatibilities `yaml:"compatibilities" json:"compatibilities"`                   // version compatibilities the server provides
+	MaximumQos                   byte            `yaml:"maximum_qos" json:"maximum_qos"`                           // maximum qos value available to clients
+	RetainAvailable              byte            `yaml:"retain_available" json:"retain_available"`                 // support of retain messages
+	WildcardSubAvailable         byte            `yaml:"wildcard_sub_available" json:"wildcard_sub_available"`     // support of wildcard subscriptions
+	SubIDAvailable               byte            `yaml:"sub_id_available" json:"sub_id_available"`                 // support of subscription identifiers
+}
+
+// NewDefaultServerCapabilities defines the default features and capabilities provided by the server.
+func NewDefaultServerCapabilities() *Capabilities {
+	return &Capabilities{
+		MaximumClients:               math.MaxInt64,  // maximum number of connected clients
+		MaximumMessageExpiryInterval: 60 * 60 * 24,   // maximum message expiry if message expiry is 0 or over
+		MaximumClientWritesPending:   1024 * 8,       // maximum number of pending message writes for a client
+		MaximumSessionExpiryInterval: math.MaxUint32, // maximum number of seconds to keep disconnected sessions
+		MaximumPacketSize:            0,              // no maximum packet size
+		maximumPacketID:              math.MaxUint16,
+		ReceiveMaximum:               1024,           // maximum number of concurrent qos messages per client
+		MaximumInflight:              1024 * 8,       // maximum number of qos > 0 messages can be stored
+		TopicAliasMaximum:            math.MaxUint16, // maximum topic alias value
+		SharedSubAvailable:           1,              // shared subscriptions are available
+		MinimumProtocolVersion:       3,              // minimum supported mqtt version (3.0.0)
+		MaximumQos:                   2,              // maximum qos value available to clients
+		RetainAvailable:              1,              // retain messages is available
+		WildcardSubAvailable:         1,              // wildcard subscriptions are available
+		SubIDAvailable:               1,              // subscription identifiers are available
+	}
 }
 
 // Compatibilities provides flags for using compatibility modes.
 type Compatibilities struct {
-	ObscureNotAuthorized       bool // return unspecified errors instead of not authorized
-	PassiveClientDisconnect    bool // don't disconnect the client forcefully after sending disconnect packet (paho - spec violation)
-	AlwaysReturnResponseInfo   bool // always return response info (useful for testing)
-	RestoreSysInfoOnRestart    bool // restore system info from store as if server never stopped
-	NoInheritedPropertiesOnAck bool // don't allow inherited user properties on ack (paho - spec violation)
+	ObscureNotAuthorized       bool `yaml:"obscure_not_authorized" json:"obscure_not_authorized"`                 // return unspecified errors instead of not authorized
+	PassiveClientDisconnect    bool `yaml:"passive_client_disconnect" json:"passive_client_disconnect"`           // don't disconnect the client forcefully after sending disconnect packet (paho - spec violation)
+	AlwaysReturnResponseInfo   bool `yaml:"always_return_response_info" json:"always_return_response_info"`       // always return response info (useful for testing)
+	RestoreSysInfoOnRestart    bool `yaml:"restore_sys_info_on_restart" json:"restore_sys_info_on_restart"`       // restore system info from store as if server never stopped
+	NoInheritedPropertiesOnAck bool `yaml:"no_inherited_properties_on_ack" json:"no_inherited_properties_on_ack"` // don't allow inherited user properties on ack (paho - spec violation)
 }
 
 // Options contains configurable options for the server.
 type Options struct {
+	// Listeners specifies any listeners which should be dynamically added on serve. Used when setting listeners by config.
+	Listeners []listeners.Config `yaml:"listeners" json:"listeners"`
+
+	// Hooks specifies any hooks which should be dynamically added on serve. Used when setting hooks by config.
+	Hooks []HookLoadConfig `yaml:"hooks" json:"hooks"`
+
 	// Capabilities defines the server features and behaviour. If you only wish to modify
 	// several of these values, set them explicitly - e.g.
 	// 	server.Options.Capabilities.MaximumClientWritesPending = 16 * 1024
-	Capabilities *Capabilities
+	Capabilities *Capabilities `yaml:"capabilities" json:"capabilities"`
 
 	// ClientNetWriteBufferSize specifies the size of the client *bufio.Writer write buffer.
-	ClientNetWriteBufferSize int
+	ClientNetWriteBufferSize int `yaml:"client_net_write_buffer_size" json:"client_net_write_buffer_size"`
 
 	// ClientNetReadBufferSize specifies the size of the client *bufio.Reader read buffer.
-	ClientNetReadBufferSize int
+	ClientNetReadBufferSize int `yaml:"client_net_read_buffer_size" json:"client_net_read_buffer_size"`
 
 	// Logger specifies a custom configured implementation of zerolog to override
 	// the servers default logger configuration. If you wish to change the log level,
-	// of the default logger, you can do so by setting
-	// 	server := mqtt.New(nil)
+	// of the default logger, you can do so by setting:
+	// server := mqtt.New(nil)
 	// level := new(slog.LevelVar)
 	// server.Slog = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 	// 	Level: level,
 	// }))
 	// level.Set(slog.LevelDebug)
-	Logger *slog.Logger
+	Logger *slog.Logger `yaml:"-" json:"-"`
 
 	// SysTopicResendInterval specifies the interval between $SYS topic updates in seconds.
-	SysTopicResendInterval int64
+	SysTopicResendInterval int64 `yaml:"sys_topic_resend_interval" json:"sys_topic_resend_interval"`
 
 	// Enable Inline client to allow direct subscribing and publishing from the parent codebase,
 	// with negligible performance difference (disabled by default to prevent confusion in statistics).
-	InlineClient bool
+	InlineClient bool `yaml:"inline_client" json:"inline_client"`
 }
 
 // Server is an MQTT broker server. It should be created with server.New()
@@ -190,10 +208,14 @@ func New(opts *Options) *Server {
 // ensureDefaults ensures that the server starts with sane default values, if none are provided.
 func (o *Options) ensureDefaults() {
 	if o.Capabilities == nil {
-		o.Capabilities = DefaultServerCapabilities
+		o.Capabilities = NewDefaultServerCapabilities()
 	}
 
 	o.Capabilities.maximumPacketID = math.MaxUint16 // spec maximum is 65535
+
+	if o.Capabilities.MaximumInflight == 0 {
+		o.Capabilities.MaximumInflight = 1024 * 8
+	}
 
 	if o.SysTopicResendInterval == 0 {
 		o.SysTopicResendInterval = defaultSysTopicInterval
@@ -233,8 +255,6 @@ func (s *Server) NewClient(c net.Conn, listener string, id string, inline bool) 
 		// By default, we don't want to restrict developer publishes,
 		// but if you do, reset this after creating inline client.
 		cl.State.Inflight.ResetReceiveQuota(math.MaxInt32)
-	} else {
-		go cl.WriteLoop() // can only write to real clients
 	}
 
 	return cl
@@ -250,6 +270,17 @@ func (s *Server) AddHook(hook Hook, config any) error {
 
 	s.Log.Info("added hook", "hook", hook.ID())
 	return s.hooks.Add(hook, config)
+}
+
+// AddHooksFromConfig adds hooks to the server which were specified in the hooks config (usually from a config file).
+// New built-in hooks should be added to this list.
+func (s *Server) AddHooksFromConfig(hooks []HookLoadConfig) error {
+	for _, h := range hooks {
+		if err := s.AddHook(h.Hook, h.Config); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // AddListener adds a new network listener to the server, for receiving incoming client connections.
@@ -270,11 +301,54 @@ func (s *Server) AddListener(l listeners.Listener) error {
 	return nil
 }
 
+// AddListenersFromConfig adds listeners to the server which were specified in the listeners config (usually from a config file).
+// New built-in listeners should be added to this list.
+func (s *Server) AddListenersFromConfig(configs []listeners.Config) error {
+	for _, conf := range configs {
+		var l listeners.Listener
+		switch strings.ToLower(conf.Type) {
+		case listeners.TypeTCP:
+			l = listeners.NewTCP(conf)
+		case listeners.TypeWS:
+			l = listeners.NewWebsocket(conf)
+		case listeners.TypeUnix:
+			l = listeners.NewUnixSock(conf)
+		case listeners.TypeHealthCheck:
+			l = listeners.NewHTTPHealthCheck(conf)
+		case listeners.TypeSysInfo:
+			l = listeners.NewHTTPStats(conf, s.Info)
+		case listeners.TypeMock:
+			l = listeners.NewMockListener(conf.ID, conf.Address)
+		default:
+			s.Log.Error("listener type unavailable by config", "listener", conf.Type)
+			continue
+		}
+		if err := s.AddListener(l); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Serve starts the event loops responsible for establishing client connections
 // on all attached listeners, publishing the system topics, and starting all hooks.
 func (s *Server) Serve() error {
 	s.Log.Info("mochi mqtt starting", "version", Version)
 	defer s.Log.Info("mochi mqtt server started")
+
+	if len(s.Options.Listeners) > 0 {
+		err := s.AddListenersFromConfig(s.Options.Listeners)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(s.Options.Hooks) > 0 {
+		err := s.AddHooksFromConfig(s.Options.Hooks)
+		if err != nil {
+			return err
+		}
+	}
 
 	if s.hooks.Provides(
 		StoredClients,
@@ -332,6 +406,8 @@ func (s *Server) EstablishConnection(listener string, c net.Conn) error {
 func (s *Server) attachClient(cl *Client, listener string) error {
 	defer s.Listeners.ClientsWg.Done()
 	s.Listeners.ClientsWg.Add(1)
+
+	go cl.WriteLoop()
 	defer cl.Stop(nil)
 
 	pk, err := s.readConnectionPacket(cl)
@@ -340,6 +416,16 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	}
 
 	cl.ParseConnect(listener, pk)
+	if atomic.LoadInt64(&s.Info.ClientsConnected) >= s.Options.Capabilities.MaximumClients {
+		if cl.Properties.ProtocolVersion < 5 {
+			s.SendConnack(cl, packets.ErrServerUnavailable, false, nil)
+		} else {
+			s.SendConnack(cl, packets.ErrServerBusy, false, nil)
+		}
+
+		return packets.ErrServerBusy
+	}
+
 	code := s.validateConnect(cl, pk) // [MQTT-3.1.4-1] [MQTT-3.1.4-2]
 	if code != packets.CodeSuccess {
 		if err := s.SendConnack(cl, code, false, nil); err != nil {
@@ -400,7 +486,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	s.hooks.OnDisconnect(cl, err, expire)
 
 	if expire && atomic.LoadUint32(&cl.State.isTakenOver) == 0 {
-		cl.ClearInflights(math.MaxInt64, 0)
+		cl.ClearInflights()
 		s.UnsubscribeClient(cl)
 		s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
 	}
@@ -478,7 +564,7 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 		_ = s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                   // [MQTT-3.1.4-3]
 		if pk.Connect.Clean || (existing.Properties.Clean && existing.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
-			existing.ClearInflights(math.MaxInt64, 0)
+			existing.ClearInflights()
 			atomic.StoreUint32(&existing.State.isTakenOver, 1) // only set isTakenOver after unsubscribe has occurred
 			return false                                       // [MQTT-3.2.2-3]
 		}
@@ -503,7 +589,7 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 		// Clean the state of the existing client to prevent sequential take-overs
 		// from increasing memory usage by inflights + subs * client-id.
 		s.UnsubscribeClient(existing)
-		existing.ClearInflights(math.MaxInt64, 0)
+		existing.ClearInflights()
 
 		s.Log.Debug("session taken over", "client", cl.ID, "old_remote", existing.Net.Remote, "new_remote", cl.Net.Remote)
 
@@ -969,9 +1055,17 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	}
 
 	if out.FixedHeader.Qos > 0 {
+		if cl.State.Inflight.Len() >= int(s.Options.Capabilities.MaximumInflight) {
+			// add hook?
+			atomic.AddInt64(&s.Info.InflightDropped, 1)
+			s.Log.Warn("client store quota reached", "client", cl.ID, "listener", cl.Net.Listener)
+			return out, packets.ErrQuotaExceeded
+		}
+
 		i, err := cl.NextPacketID() // [MQTT-4.3.2-1] [MQTT-4.3.3-1]
 		if err != nil {
 			s.hooks.OnPacketIDExhausted(cl, pk)
+			atomic.AddInt64(&s.Info.InflightDropped, 1)
 			s.Log.Warn("packet ids exhausted", "error", err, "client", cl.ID, "listener", cl.Net.Listener)
 			return out, packets.ErrQuotaExceeded
 		}
@@ -1002,8 +1096,10 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	default:
 		atomic.AddInt64(&s.Info.MessagesDropped, 1)
 		cl.ops.hooks.OnPublishDropped(cl, pk)
-		cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
-		cl.State.Inflight.IncreaseSendQuota()
+		if out.FixedHeader.Qos > 0 {
+			cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
+			cl.State.Inflight.IncreaseSendQuota()
+		}
 		return out, packets.ErrPendingClientWritesExceeded
 	}
 
@@ -1355,27 +1451,28 @@ func (s *Server) publishSysTopics() {
 	atomic.StoreInt64(&s.Info.ClientsTotal, int64(s.Clients.Len()))
 	atomic.StoreInt64(&s.Info.ClientsDisconnected, atomic.LoadInt64(&s.Info.ClientsTotal)-atomic.LoadInt64(&s.Info.ClientsConnected))
 
+	info := s.Info.Clone()
 	topics := map[string]string{
 		SysPrefix + "/broker/version":              s.Info.Version,
-		SysPrefix + "/broker/time":                 AtomicItoa(&s.Info.Time),
-		SysPrefix + "/broker/uptime":               AtomicItoa(&s.Info.Uptime),
-		SysPrefix + "/broker/started":              AtomicItoa(&s.Info.Started),
-		SysPrefix + "/broker/load/bytes/received":  AtomicItoa(&s.Info.BytesReceived),
-		SysPrefix + "/broker/load/bytes/sent":      AtomicItoa(&s.Info.BytesSent),
-		SysPrefix + "/broker/clients/connected":    AtomicItoa(&s.Info.ClientsConnected),
-		SysPrefix + "/broker/clients/disconnected": AtomicItoa(&s.Info.ClientsDisconnected),
-		SysPrefix + "/broker/clients/maximum":      AtomicItoa(&s.Info.ClientsMaximum),
-		SysPrefix + "/broker/clients/total":        AtomicItoa(&s.Info.ClientsTotal),
-		SysPrefix + "/broker/packets/received":     AtomicItoa(&s.Info.PacketsReceived),
-		SysPrefix + "/broker/packets/sent":         AtomicItoa(&s.Info.PacketsSent),
-		SysPrefix + "/broker/messages/received":    AtomicItoa(&s.Info.MessagesReceived),
-		SysPrefix + "/broker/messages/sent":        AtomicItoa(&s.Info.MessagesSent),
-		SysPrefix + "/broker/messages/dropped":     AtomicItoa(&s.Info.MessagesDropped),
-		SysPrefix + "/broker/messages/inflight":    AtomicItoa(&s.Info.Inflight),
-		SysPrefix + "/broker/retained":             AtomicItoa(&s.Info.Retained),
-		SysPrefix + "/broker/subscriptions":        AtomicItoa(&s.Info.Subscriptions),
-		SysPrefix + "/broker/system/memory":        AtomicItoa(&s.Info.MemoryAlloc),
-		SysPrefix + "/broker/system/threads":       AtomicItoa(&s.Info.Threads),
+		SysPrefix + "/broker/time":                 Int64toa(info.Time),
+		SysPrefix + "/broker/uptime":               Int64toa(info.Uptime),
+		SysPrefix + "/broker/started":              Int64toa(info.Started),
+		SysPrefix + "/broker/load/bytes/received":  Int64toa(info.BytesReceived),
+		SysPrefix + "/broker/load/bytes/sent":      Int64toa(info.BytesSent),
+		SysPrefix + "/broker/clients/connected":    Int64toa(info.ClientsConnected),
+		SysPrefix + "/broker/clients/disconnected": Int64toa(info.ClientsDisconnected),
+		SysPrefix + "/broker/clients/maximum":      Int64toa(info.ClientsMaximum),
+		SysPrefix + "/broker/clients/total":        Int64toa(info.ClientsTotal),
+		SysPrefix + "/broker/packets/received":     Int64toa(info.PacketsReceived),
+		SysPrefix + "/broker/packets/sent":         Int64toa(info.PacketsSent),
+		SysPrefix + "/broker/messages/received":    Int64toa(info.MessagesReceived),
+		SysPrefix + "/broker/messages/sent":        Int64toa(info.MessagesSent),
+		SysPrefix + "/broker/messages/dropped":     Int64toa(info.MessagesDropped),
+		SysPrefix + "/broker/messages/inflight":    Int64toa(info.Inflight),
+		SysPrefix + "/broker/retained":             Int64toa(info.Retained),
+		SysPrefix + "/broker/subscriptions":        Int64toa(info.Subscriptions),
+		SysPrefix + "/broker/system/memory":        Int64toa(info.MemoryAlloc),
+		SysPrefix + "/broker/system/threads":       Int64toa(info.Threads),
 	}
 
 	for topic, payload := range topics {
@@ -1385,7 +1482,7 @@ func (s *Server) publishSysTopics() {
 		s.publishToSubscribers(pk)
 	}
 
-	s.hooks.OnSysInfoTick(s.Info)
+	s.hooks.OnSysInfoTick(info)
 }
 
 // Close attempts to gracefully shut down the server, all listeners, clients, and stores.
@@ -1557,7 +1654,18 @@ func (s *Server) loadClients(v []storage.Client) {
 			MaximumPacketSize:         c.Properties.MaximumPacketSize,
 		}
 		cl.Properties.Will = Will(c.Will)
-		s.Clients.Add(cl)
+
+		// cancel the context, update cl.State such as disconnected time and stopCause.
+		cl.Stop(packets.ErrServerShuttingDown)
+
+		expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
+		s.hooks.OnDisconnect(cl, packets.ErrServerShuttingDown, expire)
+		if expire {
+			cl.ClearInflights()
+			s.UnsubscribeClient(cl)
+		} else {
+			s.Clients.Add(cl)
+		}
 	}
 }
 
@@ -1601,7 +1709,14 @@ func (s *Server) clearExpiredClients(dt int64) {
 // clearExpiredRetainedMessage deletes retained messages from topics if they have expired.
 func (s *Server) clearExpiredRetainedMessages(now int64) {
 	for filter, pk := range s.Topics.Retained.GetAll() {
-		if (pk.Expiry > 0 && pk.Expiry < now) || pk.Created+s.Options.Capabilities.MaximumMessageExpiryInterval < now {
+		expired := pk.ProtocolVersion == 5 && pk.Expiry > 0 && pk.Expiry < now // [MQTT-3.3.2-5]
+
+		// If the maximum message expiry interval is set (greater than 0), and the message
+		// retention period exceeds the maximum expiry, the message will be forcibly removed.
+		enforced := s.Options.Capabilities.MaximumMessageExpiryInterval > 0 &&
+			now-pk.Created > s.Options.Capabilities.MaximumMessageExpiryInterval
+
+		if expired || enforced {
 			s.Topics.Retained.Delete(filter)
 			s.hooks.OnRetainedExpired(filter)
 		}
@@ -1611,7 +1726,7 @@ func (s *Server) clearExpiredRetainedMessages(now int64) {
 // clearExpiredInflights deletes any inflight messages which have expired.
 func (s *Server) clearExpiredInflights(now int64) {
 	for _, client := range s.Clients.GetAll() {
-		if deleted := client.ClearInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); len(deleted) > 0 {
+		if deleted := client.ClearExpiredInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); len(deleted) > 0 {
 			for _, id := range deleted {
 				s.hooks.OnQosDropped(client, packets.Packet{PacketID: id})
 			}
@@ -1636,7 +1751,7 @@ func (s *Server) sendDelayedLWT(dt int64) {
 	}
 }
 
-// AtomicItoa converts an int64 point to a string.
-func AtomicItoa(ptr *int64) string {
-	return strconv.FormatInt(atomic.LoadInt64(ptr), 10)
+// Int64toa converts an int64 to a string.
+func Int64toa(v int64) string {
+	return strconv.FormatInt(v, 10)
 }

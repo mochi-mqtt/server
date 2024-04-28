@@ -56,7 +56,7 @@ func sysInfoKey() string {
 // Options contains configuration settings for the bolt instance.
 type Options struct {
 	Options *bbolt.Options
-	Path    string
+	Path    string `yaml:"path" json:"path"`
 }
 
 // Hook is a persistent storage hook based using boltdb file store as a backend.

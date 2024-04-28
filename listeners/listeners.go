@@ -14,8 +14,10 @@ import (
 
 // Config contains configuration values for a listener.
 type Config struct {
-	// TLSConfig is a tls.Config configuration to be used with the listener.
-	// See examples folder for basic and mutual-tls use.
+	Type    string
+	ID      string
+	Address string
+	// TLSConfig is a tls.Config configuration to be used with the listener. See examples folder for basic and mutual-tls use.
 	TLSConfig *tls.Config
 }
 

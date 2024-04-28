@@ -79,7 +79,9 @@ func main() {
 	server := mqtt.New(nil)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
-	tcp := listeners.NewTCP("t1", ":1883", &listeners.Config{
+	tcp := listeners.NewTCP(listeners.Config{
+		ID:        "t1",
+		Address:   ":1883",
 		TLSConfig: tlsConfig,
 	})
 	err = server.AddListener(tcp)
@@ -87,7 +89,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ws := listeners.NewWebsocket("ws1", ":1882", &listeners.Config{
+	ws := listeners.NewWebsocket(listeners.Config{
+		ID:        "ws1",
+		Address:   ":1882",
 		TLSConfig: tlsConfig,
 	})
 	err = server.AddListener(ws)
@@ -95,9 +99,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	stats := listeners.NewHTTPStats("stats", ":8080", &listeners.Config{
-		TLSConfig: tlsConfig,
-	}, server.Info)
+	stats := listeners.NewHTTPStats(
+		listeners.Config{
+			ID:        "stats",
+			Address:   ":8080",
+			TLSConfig: tlsConfig,
+		}, server.Info,
+	)
 	err = server.AddListener(stats)
 	if err != nil {
 		log.Fatal(err)
