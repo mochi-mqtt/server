@@ -112,7 +112,7 @@ type Options struct {
 	// ClientNetReadBufferSize specifies the size of the client *bufio.Reader read buffer.
 	ClientNetReadBufferSize int `yaml:"client_net_read_buffer_size" json:"client_net_read_buffer_size"`
 
-	// Logger specifies a custom configured implementation of zerolog to override
+	// Logger specifies a custom configured implementation of log/slog to override
 	// the servers default logger configuration. If you wish to change the log level,
 	// of the default logger, you can do so by setting:
 	// server := mqtt.New(nil)
