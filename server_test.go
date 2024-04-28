@@ -2258,7 +2258,7 @@ func TestPublishToSubscribersExhaustedSendQuota(t *testing.T) {
 	require.True(t, subbed)
 
 	// coverage: subscriber publish errors are non-returnable
-	// can we hook into zerolog ?
+	// can we hook into log/slog ?
 	_ = r.Close()
 	pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 	pkx.PacketID = 0
@@ -2279,7 +2279,7 @@ func TestPublishToSubscribersExhaustedPacketIDs(t *testing.T) {
 	require.True(t, subbed)
 
 	// coverage: subscriber publish errors are non-returnable
-	// can we hook into zerolog ?
+	// can we hook into log/slog ?
 	_ = r.Close()
 	pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 	pkx.PacketID = 0
@@ -2296,7 +2296,7 @@ func TestPublishToSubscribersNoConnection(t *testing.T) {
 	require.True(t, subbed)
 
 	// coverage: subscriber publish errors are non-returnable
-	// can we hook into zerolog ?
+	// can we hook into log/slog ?
 	_ = r.Close()
 	s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 	time.Sleep(time.Millisecond)
