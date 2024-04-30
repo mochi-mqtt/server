@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
-// SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: mochi-co, werbenhu
 
 package main
 
@@ -19,6 +19,9 @@ import (
 )
 
 func main() {
+	boltPath := ".bolt"
+	defer os.RemoveAll(boltPath) // remove the example db files at the end
+
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -31,7 +34,7 @@ func main() {
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
 	err := server.AddHook(new(bolt.Hook), &bolt.Options{
-		Path: "bolt.db",
+		Path: boltPath,
 		Options: &bbolt.Options{
 			Timeout: 500 * time.Millisecond,
 		},

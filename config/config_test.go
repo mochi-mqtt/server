@@ -180,7 +180,8 @@ func TestToHooksStorageBolt(t *testing.T) {
 	hc := HookConfigs{
 		Storage: &HookStorageConfig{
 			Bolt: &bolt.Options{
-				Path: "bolt",
+				Path:   "bolt",
+				Bucket: "mochi",
 			},
 		},
 	}

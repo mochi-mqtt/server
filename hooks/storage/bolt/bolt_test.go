@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
-// SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: mochi-co, werbenhu
 
 package bolt
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"testing"
@@ -15,7 +16,6 @@ import (
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/mochi-mqtt/server/v2/system"
 
-	"github.com/asdine/storm/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,7 +45,7 @@ func teardown(t *testing.T, path string, h *Hook) {
 
 func TestClientKey(t *testing.T) {
 	k := clientKey(&mqtt.Client{ID: "cl1"})
-	require.Equal(t, "cl1", k)
+	require.Equal(t, "CL_cl1", k)
 }
 
 func TestSubscriptionKey(t *testing.T) {
@@ -130,7 +130,7 @@ func TestOnSessionEstablishedThenOnDisconnect(t *testing.T) {
 	h.OnSessionEstablished(client, packets.Packet{})
 
 	r := new(storage.Client)
-	err = h.db.One("ID", clientKey(client), r)
+	err = h.getKv(clientKey(client), r)
 	require.NoError(t, err)
 	require.Equal(t, client.ID, r.ID)
 	require.Equal(t, client.Net.Remote, r.Remote)
@@ -141,15 +141,15 @@ func TestOnSessionEstablishedThenOnDisconnect(t *testing.T) {
 
 	h.OnDisconnect(client, nil, false)
 	r2 := new(storage.Client)
-	err = h.db.One("ID", clientKey(client), r2)
+	err = h.getKv(clientKey(client), r2)
 	require.NoError(t, err)
 	require.Equal(t, client.ID, r.ID)
 
 	h.OnDisconnect(client, nil, true)
 	r3 := new(storage.Client)
-	err = h.db.One("ID", clientKey(client), r3)
+	err = h.getKv(clientKey(client), r3)
 	require.Error(t, err)
-	require.ErrorIs(t, storm.ErrNotFound, err)
+	require.ErrorIs(t, ErrKeyNotFound, err)
 	require.Empty(t, r3.ID)
 }
 
@@ -180,7 +180,7 @@ func TestOnWillSent(t *testing.T) {
 	h.OnWillSent(c1, packets.Packet{})
 
 	r := new(storage.Client)
-	err = h.db.One("ID", clientKey(client), r)
+	err = h.getKv(clientKey(client), r)
 	require.NoError(t, err)
 
 	require.Equal(t, uint32(1), r.Will.Flag)
@@ -197,18 +197,18 @@ func TestOnClientExpired(t *testing.T) {
 	cl := &mqtt.Client{ID: "cl1"}
 	clientKey := clientKey(cl)
 
-	err = h.db.Save(&storage.Client{ID: cl.ID})
+	err = h.setKv(clientKey, &storage.Client{ID: cl.ID})
 	require.NoError(t, err)
 
 	r := new(storage.Client)
-	err = h.db.One("ID", clientKey, r)
+	err = h.getKv(clientKey, r)
 	require.NoError(t, err)
 	require.Equal(t, cl.ID, r.ID)
 
 	h.OnClientExpired(cl)
-	err = h.db.One("ID", clientKey, r)
+	err = h.getKv(clientKey, r)
 	require.Error(t, err)
-	require.ErrorIs(t, storm.ErrNotFound, err)
+	require.ErrorIs(t, ErrKeyNotFound, err)
 }
 
 func TestOnClientExpiredClosedDB(t *testing.T) {
@@ -274,16 +274,16 @@ func TestOnSubscribedThenOnUnsubscribed(t *testing.T) {
 	h.OnSubscribed(client, pkf, []byte{0})
 	r := new(storage.Subscription)
 
-	err = h.db.One("ID", subscriptionKey(client, pkf.Filters[0].Filter), r)
+	err = h.getKv(subscriptionKey(client, pkf.Filters[0].Filter), r)
 	require.NoError(t, err)
 	require.Equal(t, client.ID, r.Client)
 	require.Equal(t, pkf.Filters[0].Filter, r.Filter)
 	require.Equal(t, byte(0), r.Qos)
 
 	h.OnUnsubscribed(client, pkf)
-	err = h.db.One("ID", subscriptionKey(client, pkf.Filters[0].Filter), r)
+	err = h.getKv(subscriptionKey(client, pkf.Filters[0].Filter), r)
 	require.Error(t, err)
-	require.Equal(t, storm.ErrNotFound, err)
+	require.Equal(t, ErrKeyNotFound, err)
 }
 
 func TestOnSubscribedNoDB(t *testing.T) {
@@ -334,21 +334,21 @@ func TestOnRetainMessageThenUnset(t *testing.T) {
 	h.OnRetainMessage(client, pk, 1)
 
 	r := new(storage.Message)
-	err = h.db.One("ID", retainedKey(pk.TopicName), r)
+	err = h.getKv(retainedKey(pk.TopicName), r)
 	require.NoError(t, err)
 	require.Equal(t, pk.TopicName, r.TopicName)
 	require.Equal(t, pk.Payload, r.Payload)
 
 	h.OnRetainMessage(client, pk, -1)
-	err = h.db.One("ID", retainedKey(pk.TopicName), r)
+	err = h.getKv(retainedKey(pk.TopicName), r)
 	require.Error(t, err)
-	require.Equal(t, storm.ErrNotFound, err)
+	require.Equal(t, ErrKeyNotFound, err)
 
 	// coverage: delete deleted
 	h.OnRetainMessage(client, pk, -1)
-	err = h.db.One("ID", retainedKey(pk.TopicName), r)
+	err = h.getKv(retainedKey(pk.TopicName), r)
 	require.Error(t, err)
-	require.Equal(t, storm.ErrNotFound, err)
+	require.Equal(t, ErrKeyNotFound, err)
 }
 
 func TestOnRetainedExpired(t *testing.T) {
@@ -364,18 +364,18 @@ func TestOnRetainedExpired(t *testing.T) {
 		TopicName: "a/b/c",
 	}
 
-	err = h.db.Save(m)
+	err = h.setKv(m.ID, m)
 	require.NoError(t, err)
 
 	r := new(storage.Message)
-	err = h.db.One("ID", m.ID, r)
+	err = h.getKv(m.ID, r)
 	require.NoError(t, err)
 	require.Equal(t, m.TopicName, r.TopicName)
 
 	h.OnRetainedExpired(m.TopicName)
-	err = h.db.One("ID", m.ID, r)
+	err = h.getKv(m.ID, r)
 	require.Error(t, err)
-	require.Equal(t, storm.ErrNotFound, err)
+	require.Equal(t, ErrKeyNotFound, err)
 }
 
 func TestOnRetainedExpiredClosedDB(t *testing.T) {
@@ -427,7 +427,7 @@ func TestOnQosPublishThenQOSComplete(t *testing.T) {
 	h.OnQosPublish(client, pk, time.Now().Unix(), 0)
 
 	r := new(storage.Message)
-	err = h.db.One("ID", inflightKey(client, pk), r)
+	err = h.getKv(inflightKey(client, pk), r)
 	require.NoError(t, err)
 	require.Equal(t, pk.TopicName, r.TopicName)
 	require.Equal(t, pk.Payload, r.Payload)
@@ -438,9 +438,9 @@ func TestOnQosPublishThenQOSComplete(t *testing.T) {
 
 	// OnQosDropped is a passthrough to OnQosComplete here
 	h.OnQosDropped(client, pk)
-	err = h.db.One("ID", inflightKey(client, pk), r)
+	err = h.getKv(inflightKey(client, pk), r)
 	require.Error(t, err)
-	require.Equal(t, storm.ErrNotFound, err)
+	require.Equal(t, ErrKeyNotFound, err)
 }
 
 func TestOnQosPublishNoDB(t *testing.T) {
@@ -494,7 +494,7 @@ func TestOnSysInfoTick(t *testing.T) {
 	h.OnSysInfoTick(info)
 
 	r := new(storage.SystemInfo)
-	err = h.db.One("ID", storage.SysInfoKey, r)
+	err = h.getKv(storage.SysInfoKey, r)
 	require.NoError(t, err)
 	require.Equal(t, info.Version, r.Version)
 	require.Equal(t, info.BytesReceived, r.BytesReceived)
@@ -524,13 +524,13 @@ func TestStoredClients(t *testing.T) {
 	defer teardown(t, h.config.Path, h)
 
 	// populate with clients
-	err = h.db.Save(&storage.Client{ID: "cl1", T: storage.ClientKey})
+	err = h.setKv(storage.ClientKey+"_"+"cl1", &storage.Client{ID: "cl1"})
 	require.NoError(t, err)
 
-	err = h.db.Save(&storage.Client{ID: "cl2", T: storage.ClientKey})
+	err = h.setKv(storage.ClientKey+"_"+"cl2", &storage.Client{ID: "cl2"})
 	require.NoError(t, err)
 
-	err = h.db.Save(&storage.Client{ID: "cl3", T: storage.ClientKey})
+	err = h.setKv(storage.ClientKey+"_"+"cl3", &storage.Client{ID: "cl3"})
 	require.NoError(t, err)
 
 	r, err := h.StoredClients()
@@ -546,7 +546,7 @@ func TestStoredClientsNoDB(t *testing.T) {
 	h.SetOpts(logger, nil)
 	v, err := h.StoredClients()
 	require.Empty(t, v)
-	require.NoError(t, err)
+	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredClientsClosedDB(t *testing.T) {
@@ -557,7 +557,7 @@ func TestStoredClientsClosedDB(t *testing.T) {
 	teardown(t, h.config.Path, h)
 	v, err := h.StoredClients()
 	require.Empty(t, v)
-	require.Error(t, err)
+	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredSubscriptions(t *testing.T) {
@@ -568,13 +568,13 @@ func TestStoredSubscriptions(t *testing.T) {
 	defer teardown(t, h.config.Path, h)
 
 	// populate with subscriptions
-	err = h.db.Save(&storage.Subscription{ID: "sub1", T: storage.SubscriptionKey})
+	err = h.setKv(storage.SubscriptionKey+"_"+"sub1", &storage.Subscription{ID: "sub1"})
 	require.NoError(t, err)
 
-	err = h.db.Save(&storage.Subscription{ID: "sub2", T: storage.SubscriptionKey})
+	err = h.setKv(storage.SubscriptionKey+"_"+"sub2", &storage.Subscription{ID: "sub2"})
 	require.NoError(t, err)
 
-	err = h.db.Save(&storage.Subscription{ID: "sub3", T: storage.SubscriptionKey})
+	err = h.setKv(storage.SubscriptionKey+"_"+"sub3", &storage.Subscription{ID: "sub3"})
 	require.NoError(t, err)
 
 	r, err := h.StoredSubscriptions()
@@ -590,7 +590,7 @@ func TestStoredSubscriptionsNoDB(t *testing.T) {
 	h.SetOpts(logger, nil)
 	v, err := h.StoredSubscriptions()
 	require.Empty(t, v)
-	require.NoError(t, err)
+	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredSubscriptionsClosedDB(t *testing.T) {
@@ -601,7 +601,7 @@ func TestStoredSubscriptionsClosedDB(t *testing.T) {
 	teardown(t, h.config.Path, h)
 	v, err := h.StoredSubscriptions()
 	require.Empty(t, v)
-	require.Error(t, err)
+	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredRetainedMessages(t *testing.T) {
@@ -612,16 +612,16 @@ func TestStoredRetainedMessages(t *testing.T) {
 	defer teardown(t, h.config.Path, h)
 
 	// populate with messages
-	err = h.db.Save(&storage.Message{ID: "m1", T: storage.RetainedKey})
+	err = h.setKv(storage.RetainedKey+"_"+"m1", &storage.Message{ID: "m1"})
 	require.NoError(t, err)
 
-	err = h.db.Save(&storage.Message{ID: "m2", T: storage.RetainedKey})
+	err = h.setKv(storage.RetainedKey+"_"+"m2", &storage.Message{ID: "m2"})
 	require.NoError(t, err)
 
-	err = h.db.Save(&storage.Message{ID: "m3", T: storage.RetainedKey})
+	err = h.setKv(storage.RetainedKey+"_"+"m3", &storage.Message{ID: "m3"})
 	require.NoError(t, err)
 
-	err = h.db.Save(&storage.Message{ID: "i3", T: storage.InflightKey})
+	err = h.setKv(storage.InflightKey+"_"+"i3", &storage.Message{ID: "i3"})
 	require.NoError(t, err)
 
 	r, err := h.StoredRetainedMessages()
@@ -637,7 +637,7 @@ func TestStoredRetainedMessagesNoDB(t *testing.T) {
 	h.SetOpts(logger, nil)
 	v, err := h.StoredRetainedMessages()
 	require.Empty(t, v)
-	require.NoError(t, err)
+	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredRetainedMessagesClosedDB(t *testing.T) {
@@ -659,16 +659,16 @@ func TestStoredInflightMessages(t *testing.T) {
 	defer teardown(t, h.config.Path, h)
 
 	// populate with messages
-	err = h.db.Save(&storage.Message{ID: "i1", T: storage.InflightKey})
+	err = h.setKv(storage.InflightKey+"_"+"i1", &storage.Message{ID: "i1"})
 	require.NoError(t, err)
 
-	err = h.db.Save(&storage.Message{ID: "i2", T: storage.InflightKey})
+	err = h.setKv(storage.InflightKey+"_"+"i2", &storage.Message{ID: "i2"})
 	require.NoError(t, err)
 
-	err = h.db.Save(&storage.Message{ID: "i3", T: storage.InflightKey})
+	err = h.setKv(storage.InflightKey+"_"+"i3", &storage.Message{ID: "i3"})
 	require.NoError(t, err)
 
-	err = h.db.Save(&storage.Message{ID: "m1", T: storage.RetainedKey})
+	err = h.setKv(storage.RetainedKey+"_"+"m1", &storage.Message{ID: "m1"})
 	require.NoError(t, err)
 
 	r, err := h.StoredInflightMessages()
@@ -684,7 +684,7 @@ func TestStoredInflightMessagesNoDB(t *testing.T) {
 	h.SetOpts(logger, nil)
 	v, err := h.StoredInflightMessages()
 	require.Empty(t, v)
-	require.NoError(t, err)
+	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredInflightMessagesClosedDB(t *testing.T) {
@@ -695,7 +695,7 @@ func TestStoredInflightMessagesClosedDB(t *testing.T) {
 	teardown(t, h.config.Path, h)
 	v, err := h.StoredInflightMessages()
 	require.Empty(t, v)
-	require.Error(t, err)
+	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredSysInfo(t *testing.T) {
@@ -706,7 +706,7 @@ func TestStoredSysInfo(t *testing.T) {
 	defer teardown(t, h.config.Path, h)
 
 	// populate with sys info
-	err = h.db.Save(&storage.SystemInfo{
+	err = h.setKv(storage.SysInfoKey, &storage.SystemInfo{
 		ID: storage.SysInfoKey,
 		Info: system.Info{
 			Version: "2.0.0",
@@ -725,7 +725,7 @@ func TestStoredSysInfoNoDB(t *testing.T) {
 	h.SetOpts(logger, nil)
 	v, err := h.StoredSysInfo()
 	require.Empty(t, v)
-	require.NoError(t, err)
+	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredSysInfoClosedDB(t *testing.T) {
@@ -737,4 +737,55 @@ func TestStoredSysInfoClosedDB(t *testing.T) {
 	v, err := h.StoredSysInfo()
 	require.Empty(t, v)
 	require.Error(t, err)
+}
+
+func TestGetSetDelKv(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(logger, nil)
+	err := h.Init(nil)
+	defer teardown(t, h.config.Path, h)
+	require.NoError(t, err)
+
+	err = h.setKv("testId", &storage.Client{ID: "testId"})
+	require.NoError(t, err)
+
+	var obj storage.Client
+	err = h.getKv("testId", &obj)
+	require.NoError(t, err)
+
+	err = h.delKv("testId")
+	require.NoError(t, err)
+
+	err = h.getKv("testId", &obj)
+	require.Error(t, err)
+	require.ErrorIs(t, ErrKeyNotFound, err)
+}
+
+func TestIterKv(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(logger, nil)
+
+	err := h.Init(nil)
+	defer teardown(t, h.config.Path, h)
+	require.NoError(t, err)
+
+	h.setKv("prefix_a_1", &storage.Client{ID: "1"})
+	h.setKv("prefix_a_2", &storage.Client{ID: "2"})
+	h.setKv("prefix_b_2", &storage.Client{ID: "3"})
+
+	var clients []storage.Client
+	err = h.iterKv("prefix_a", func(data []byte) error {
+		var item storage.Client
+		item.UnmarshalBinary(data)
+		clients = append(clients, item)
+		return nil
+	})
+	require.Equal(t, 2, len(clients))
+	require.NoError(t, err)
+
+	visitErr := errors.New("iter visit error")
+	err = h.iterKv("prefix_b", func(data []byte) error {
+		return visitErr
+	})
+	require.ErrorIs(t, visitErr, err)
 }

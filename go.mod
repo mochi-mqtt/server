@@ -4,8 +4,6 @@ go 1.21
 
 require (
 	github.com/alicebob/miniredis/v2 v2.23.0
-	github.com/asdine/storm v2.1.2+incompatible
-	github.com/asdine/storm/v3 v3.2.1
 	github.com/cockroachdb/pebble v1.1.0
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/go-redis/redis/v8 v8.11.5

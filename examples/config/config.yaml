@@ -21,6 +21,7 @@ hooks:
       mode: "NoSync"
     bolt:
       path: bolt.db
+      bucket: "mochi"
     redis:
       h_prefix: "mc"
       username: "mochi"

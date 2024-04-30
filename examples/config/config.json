@@ -31,7 +31,8 @@
         "gc_discard_ratio": 0.5
       },
       "bolt": {
-        "path": "bolt.db"
+        "path": "bolt.db",
+        "bucket": "mochi"
       },
       "redis": {
         "h_prefix": "mc",
