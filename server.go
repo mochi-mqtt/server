@@ -112,7 +112,7 @@ type Options struct {
 	// ClientNetReadBufferSize specifies the size of the client *bufio.Reader read buffer.
 	ClientNetReadBufferSize int `yaml:"client_net_read_buffer_size" json:"client_net_read_buffer_size"`
 
-	// Logger specifies a custom configured implementation of zerolog to override
+	// Logger specifies a custom configured implementation of log/slog to override
 	// the servers default logger configuration. If you wish to change the log level,
 	// of the default logger, you can do so by setting:
 	// server := mqtt.New(nil)
@@ -1391,6 +1391,10 @@ func (s *Server) processDisconnect(cl *Client, pk packets.Packet) error {
 
 		cl.Properties.Props.SessionExpiryInterval = pk.Properties.SessionExpiryInterval
 		cl.Properties.Props.SessionExpiryIntervalFlag = true
+	}
+
+	if pk.ReasonCode == packets.CodeDisconnectWillMessage.Code { // [MQTT-3.1.2.5] Non-normative comment
+		return packets.CodeDisconnectWillMessage
 	}
 
 	s.loop.willDelayed.Delete(cl.ID) // [MQTT-3.1.3-9] [MQTT-3.1.2-8]
