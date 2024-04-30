@@ -201,6 +201,7 @@ const (
 	TDisconnect
 	TDisconnectTakeover
 	TDisconnectMqtt5
+	TDisconnectMqtt5DisconnectWithWillMessage
 	TDisconnectSecondConnect
 	TDisconnectReceiveMaximum
 	TDisconnectDropProperties
@@ -3776,6 +3777,31 @@ var TPacketData = map[byte]TPacketCases{
 				ReasonCode: CodeDisconnect.Code,
 				Properties: Properties{
 					ReasonString:              CodeDisconnect.Reason,
+					SessionExpiryInterval:     120,
+					SessionExpiryIntervalFlag: true,
+				},
+			},
+		},
+		{
+			Case:    TDisconnectMqtt5DisconnectWithWillMessage,
+			Desc:    "mqtt5 disconnect with will message",
+			Primary: true,
+			RawBytes: append([]byte{
+				Disconnect << 4, 38, // fixed header
+				CodeDisconnectWillMessage.Code, // Reason Code
+				36,                             // Properties Length
+				17, 0, 0, 0, 120,               // Session Expiry Interval (17)
+				31, 0, 28, // Reason String (31)
+			}, []byte(CodeDisconnectWillMessage.Reason)...),
+			Packet: &Packet{
+				ProtocolVersion: 5,
+				FixedHeader: FixedHeader{
+					Type:      Disconnect,
+					Remaining: 22,
+				},
+				ReasonCode: CodeDisconnectWillMessage.Code,
+				Properties: Properties{
+					ReasonString:              CodeDisconnectWillMessage.Reason,
 					SessionExpiryInterval:     120,
 					SessionExpiryIntervalFlag: true,
 				},
