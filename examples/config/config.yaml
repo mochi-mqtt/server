@@ -66,3 +66,5 @@ options:
       always_return_response_info: false
       restore_sys_info_on_restart: false
       no_inherited_properties_on_ack: false
+logging:
+  level: INFO

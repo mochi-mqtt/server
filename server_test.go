@@ -2258,7 +2258,7 @@ func TestPublishToSubscribersExhaustedSendQuota(t *testing.T) {
 	require.True(t, subbed)
 
 	// coverage: subscriber publish errors are non-returnable
-	// can we hook into zerolog ?
+	// can we hook into log/slog ?
 	_ = r.Close()
 	pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 	pkx.PacketID = 0
@@ -2279,7 +2279,7 @@ func TestPublishToSubscribersExhaustedPacketIDs(t *testing.T) {
 	require.True(t, subbed)
 
 	// coverage: subscriber publish errors are non-returnable
-	// can we hook into zerolog ?
+	// can we hook into log/slog ?
 	_ = r.Close()
 	pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 	pkx.PacketID = 0
@@ -2296,7 +2296,7 @@ func TestPublishToSubscribersNoConnection(t *testing.T) {
 	require.True(t, subbed)
 
 	// coverage: subscriber publish errors are non-returnable
-	// can we hook into zerolog ?
+	// can we hook into log/slog ?
 	_ = r.Close()
 	s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 	time.Sleep(time.Millisecond)
@@ -3136,6 +3136,22 @@ func TestServerProcessPacketDisconnectNonZeroExpiryViolation(t *testing.T) {
 	err := s.processPacket(cl, *packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectMqtt5).Packet)
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrProtocolViolationZeroNonZeroExpiry)
+}
+
+func TestServerProcessPacketDisconnectDisconnectWithWillMessage(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	cl.Properties.Props.SessionExpiryInterval = 30
+	cl.Properties.ProtocolVersion = 5
+
+	s.loop.willDelayed.Add(cl.ID, packets.Packet{TopicName: "a/b/c", Payload: []byte("hello")})
+	require.Equal(t, 1, s.loop.willDelayed.Len())
+
+	err := s.processPacket(cl, *packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectMqtt5DisconnectWithWillMessage).Packet)
+	require.Error(t, err)
+
+	require.Equal(t, 1, s.loop.willDelayed.Len())
+	require.False(t, cl.Closed())
 }
 
 func TestServerProcessPacketAuth(t *testing.T) {

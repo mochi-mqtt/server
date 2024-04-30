@@ -6,6 +6,8 @@ package config
 
 import (
 	"encoding/json"
+	"log/slog"
+	"os"
 
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/hooks/debug"
@@ -21,9 +23,27 @@ import (
 
 // config defines the structure of configuration data to be parsed from a config source.
 type config struct {
-	Options     mqtt.Options
-	Listeners   []listeners.Config `yaml:"listeners" json:"listeners"`
-	HookConfigs HookConfigs        `yaml:"hooks" json:"hooks"`
+	Options       mqtt.Options
+	Listeners     []listeners.Config `yaml:"listeners" json:"listeners"`
+	HookConfigs   HookConfigs        `yaml:"hooks" json:"hooks"`
+	LoggingConfig LoggingConfig      `yaml:"logging" json:"logging"`
+}
+
+type LoggingConfig struct {
+	Level string
+}
+
+func (lc LoggingConfig) ToLogger() *slog.Logger {
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(lc.Level)); err != nil {
+		level = slog.LevelInfo
+	}
+
+	leveler := new(slog.LevelVar)
+	leveler.Set(level)
+	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: leveler,
+	}))
 }
 
 // HookConfigs contains configurations to enable individual hooks.
@@ -149,6 +169,7 @@ func FromBytes(b []byte) (*mqtt.Options, error) {
 	o = c.Options
 	o.Hooks = c.HookConfigs.ToHooks()
 	o.Listeners = c.Listeners
+	o.Logger = c.LoggingConfig.ToLogger()
 
 	return &o, nil
 }

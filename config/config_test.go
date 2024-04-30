@@ -5,6 +5,8 @@
 package config
 
 import (
+	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -60,7 +62,6 @@ options:
    }
 }
 `)
-
 	parsedOptions = mqtt.Options{
 		Listeners: []listeners.Config{
 			{
@@ -81,6 +82,9 @@ options:
 				RestoreSysInfoOnRestart: true,
 			},
 		},
+		Logger: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: new(slog.LevelVar),
+		})),
 	}
 )
 

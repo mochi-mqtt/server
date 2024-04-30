@@ -149,7 +149,7 @@ func main() {
   _ = server.AddHook(new(auth.AllowHook), nil)
   
   // 在标1883端口上创建一个 TCP 服务端。
-  tcp := listeners.NewTCP("t1", ":1883", nil)
+  tcp := listeners.NewTCP(listeners.Config{ID: "t1", Address: ":1883"})
   err := server.AddListener(tcp)
   if err != nil {
     log.Fatal(err)
