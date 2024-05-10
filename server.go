@@ -485,6 +485,11 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	expire := (cl.Properties.ProtocolVersion == 5 && cl.Properties.Props.SessionExpiryInterval == 0) || (cl.Properties.ProtocolVersion < 5 && cl.Properties.Clean)
 	s.hooks.OnDisconnect(cl, err, expire)
 
+	if s.hooks.Provides(StoredClientByID) {
+		// Hooks are capable of reloading a persistent client session, so I can forget it
+		expire = true
+	}
+
 	if expire && atomic.LoadUint32(&cl.State.isTakenOver) == 0 {
 		cl.ClearInflights()
 		s.UnsubscribeClient(cl)
@@ -594,6 +599,42 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 		s.Log.Debug("session taken over", "client", cl.ID, "old_remote", existing.Net.Remote, "new_remote", cl.Net.Remote)
 
 		return true // [MQTT-3.2.2-3]
+	}
+
+	// Look up a stored client that's not in memory yet:
+	if s.hooks.Provides(StoredClientByID) {
+		oldRemote, subs, msgs, err := s.hooks.StoredClientByID(cl.ID, cl.Properties.Username)
+		if err == nil && oldRemote != "" {
+			// Instantiate in-flight messages to deliver:
+			if len(msgs) > 0 {
+				inf := NewInflights()
+				for _, msg := range msgs {
+					inf.Set(msg.ToPacket())
+				}
+				cl.State.Inflight = inf
+			}
+
+			// Instantiate stored subscriptions:
+			for _, sub := range subs {
+				sb := packets.Subscription{
+					Filter:            sub.Filter,
+					RetainHandling:    sub.RetainHandling,
+					Qos:               sub.Qos,
+					RetainAsPublished: sub.RetainAsPublished,
+					NoLocal:           sub.NoLocal,
+					Identifier:        sub.Identifier,
+				}
+				existed := !s.Topics.Subscribe(cl.ID, sb) // [MQTT-3.8.4-3]
+				if !existed {
+					atomic.AddInt64(&s.Info.Subscriptions, 1)
+				}
+				cl.State.Subscriptions.Add(sb.Filter, sb)
+			}
+
+			s.Log.Debug("session taken over (persistent)", "client", cl.ID, "old_remote", oldRemote, "new_remote", cl.Net.Remote)
+
+			return true
+		}
 	}
 
 	if atomic.LoadInt64(&s.Info.ClientsConnected) > atomic.LoadInt64(&s.Info.ClientsMaximum) {
@@ -1014,6 +1055,7 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 	}
 }
 
+// publishToClient delivers a published message to a single subscriber client.
 func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packets.Packet) (packets.Packet, error) {
 	if sub.NoLocal && pk.Origin == cl.ID {
 		return pk, nil // [MQTT-3.8.3-3]
@@ -1636,24 +1678,7 @@ func (s *Server) loadSubscriptions(v []storage.Subscription) {
 // loadClients restores clients from the datastore.
 func (s *Server) loadClients(v []storage.Client) {
 	for _, c := range v {
-		cl := s.NewClient(nil, c.Listener, c.ID, false)
-		cl.Properties.Username = c.Username
-		cl.Properties.Clean = c.Clean
-		cl.Properties.ProtocolVersion = c.ProtocolVersion
-		cl.Properties.Props = packets.Properties{
-			SessionExpiryInterval:     c.Properties.SessionExpiryInterval,
-			SessionExpiryIntervalFlag: c.Properties.SessionExpiryIntervalFlag,
-			AuthenticationMethod:      c.Properties.AuthenticationMethod,
-			AuthenticationData:        c.Properties.AuthenticationData,
-			RequestProblemInfoFlag:    c.Properties.RequestProblemInfoFlag,
-			RequestProblemInfo:        c.Properties.RequestProblemInfo,
-			RequestResponseInfo:       c.Properties.RequestResponseInfo,
-			ReceiveMaximum:            c.Properties.ReceiveMaximum,
-			TopicAliasMaximum:         c.Properties.TopicAliasMaximum,
-			User:                      c.Properties.User,
-			MaximumPacketSize:         c.Properties.MaximumPacketSize,
-		}
-		cl.Properties.Will = Will(c.Will)
+		cl := s.newClientFromStorage(&c)
 
 		// cancel the context, update cl.State such as disconnected time and stopCause.
 		cl.Stop(packets.ErrServerShuttingDown)
@@ -1667,6 +1692,29 @@ func (s *Server) loadClients(v []storage.Client) {
 			s.Clients.Add(cl)
 		}
 	}
+}
+
+// newClientFromStorage creates a Client from a storage.Client.
+func (s *Server) newClientFromStorage(c *storage.Client) *Client {
+	cl := s.NewClient(nil, c.Listener, c.ID, false)
+	cl.Properties.Username = c.Username
+	cl.Properties.Clean = c.Clean
+	cl.Properties.ProtocolVersion = c.ProtocolVersion
+	cl.Properties.Props = packets.Properties{
+		SessionExpiryInterval:     c.Properties.SessionExpiryInterval,
+		SessionExpiryIntervalFlag: c.Properties.SessionExpiryIntervalFlag,
+		AuthenticationMethod:      c.Properties.AuthenticationMethod,
+		AuthenticationData:        c.Properties.AuthenticationData,
+		RequestProblemInfoFlag:    c.Properties.RequestProblemInfoFlag,
+		RequestProblemInfo:        c.Properties.RequestProblemInfo,
+		RequestResponseInfo:       c.Properties.RequestResponseInfo,
+		ReceiveMaximum:            c.Properties.ReceiveMaximum,
+		TopicAliasMaximum:         c.Properties.TopicAliasMaximum,
+		User:                      c.Properties.User,
+		MaximumPacketSize:         c.Properties.MaximumPacketSize,
+	}
+	cl.Properties.Will = Will(c.Will)
+	return cl
 }
 
 // loadInflight restores inflight messages from the datastore.
