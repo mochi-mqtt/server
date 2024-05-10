@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -560,7 +561,8 @@ func (s *Server) validateConnect(cl *Client, pk packets.Packet) packets.Code {
 // connection ID. If clean is true, the state of any previously existing client
 // session is abandoned.
 func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
-	if existing, ok := s.Clients.Get(pk.Connect.ClientIdentifier); ok {
+	existing, _ := s.Clients.Get(pk.Connect.ClientIdentifier)
+	if existing != nil && slices.Equal(existing.Properties.Username, cl.Properties.Username) { // [MQTT-5.4.2]
 		_ = s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                   // [MQTT-3.1.4-3]
 		if pk.Connect.Clean || (existing.Properties.Clean && existing.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
