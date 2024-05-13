@@ -610,7 +610,6 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 
 	cl, r0, _ := newTestClient()
 	cl.Properties.ProtocolVersion = 5
-	cl.Properties.Username = []byte("mochi")
 	cl.ID = packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier
 	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
 	cl.State.Inflight.Set(*packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
@@ -682,16 +681,18 @@ func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 
 	// Clean session, 0 session expiry interval
 	cl1RawBytes := []byte{
-		packets.Connect << 4, 21, // Fixed header
+		packets.Connect << 4, 28, // Fixed header
 		0, 4, // Protocol Name - MSB+LSB
 		'M', 'Q', 'T', 'T', // Protocol Name
-		5,      // Protocol Version
-		1 << 1, // Packet Flags
-		0, 30,  // Keepalive
-		5,              // Properties length
-		17, 0, 0, 0, 0, // Session Expiry Interval (17)
+		4,               // Protocol Version
+		0 | 1<<6 | 1<<7, // Packet Flags
+		0, 20,           // Keepalive
 		0, 3, // Client ID - MSB+LSB
 		'z', 'e', 'n', // Client ID "zen"
+		0, 5, // Username MSB+LSB
+		'm', 'o', 'c', 'h', 'i',
+		0, 4, // Password MSB+LSB
+		',', '.', '/', ';',
 	}
 
 	// Make first connection
@@ -729,8 +730,6 @@ func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 		o2 <- err
 	}()
 	go func() {
-		x := packets.TPacketData[packets.Connect].Get(packets.TConnectUserPass).RawBytes[:]
-		x[19] = '.' // differentiate username bytes in debugging
 		_, _ = w2.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectUserPass).RawBytes)
 	}()
 
@@ -745,7 +744,7 @@ func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 	// Capture first Client pointer
 	clp1, ok := s.Clients.Get("zen")
 	require.True(t, ok)
-	require.Empty(t, clp1.Properties.Username)
+	require.Equal(t, []byte("mochi"), clp1.Properties.Username)
 	require.NotEmpty(t, clp1.State.Subscriptions.GetAll())
 
 	err1 := <-o1
@@ -755,7 +754,7 @@ func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 	// Capture second Client pointer
 	clp2, ok := s.Clients.Get("zen")
 	require.True(t, ok)
-	require.Equal(t, []byte(".ochi"), clp2.Properties.Username)
+	require.Equal(t, []byte("mochi"), clp2.Properties.Username)
 	require.NotEmpty(t, clp2.State.Subscriptions.GetAll())
 	require.Empty(t, clp1.State.Subscriptions.GetAll())
 
