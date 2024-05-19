@@ -46,28 +46,28 @@ type Client struct {
 
 // ClientProperties contains a limited set of the mqtt v5 properties specific to a client connection.
 type ClientProperties struct {
-	AuthenticationData        []byte                 `json:"authenticationData"`
-	User                      []packets.UserProperty `json:"user"`
-	AuthenticationMethod      string                 `json:"authenticationMethod"`
-	SessionExpiryInterval     uint32                 `json:"sessionExpiryInterval"`
-	MaximumPacketSize         uint32                 `json:"maximumPacketSize"`
-	ReceiveMaximum            uint16                 `json:"receiveMaximum"`
-	TopicAliasMaximum         uint16                 `json:"topicAliasMaximum"`
-	SessionExpiryIntervalFlag bool                   `json:"sessionExpiryIntervalFlag"`
-	RequestProblemInfo        byte                   `json:"requestProblemInfo"`
-	RequestProblemInfoFlag    bool                   `json:"requestProblemInfoFlag"`
-	RequestResponseInfo       byte                   `json:"requestResponseInfo"`
+	AuthenticationData        []byte                 `json:"authenticationData,omitempty"`
+	User                      []packets.UserProperty `json:"user,omitempty"`
+	AuthenticationMethod      string                 `json:"authenticationMethod,omitempty"`
+	SessionExpiryInterval     uint32                 `json:"sessionExpiryInterval,omitempty"`
+	MaximumPacketSize         uint32                 `json:"maximumPacketSize,omitempty"`
+	ReceiveMaximum            uint16                 `json:"receiveMaximum,omitempty"`
+	TopicAliasMaximum         uint16                 `json:"topicAliasMaximum,omitempty"`
+	SessionExpiryIntervalFlag bool                   `json:"sessionExpiryIntervalFlag,omitempty"`
+	RequestProblemInfo        byte                   `json:"requestProblemInfo,omitempty"`
+	RequestProblemInfoFlag    bool                   `json:"requestProblemInfoFlag,omitempty"`
+	RequestResponseInfo       byte                   `json:"requestResponseInfo,omitempty"`
 }
 
 // ClientWill contains a will message for a client, and limited mqtt v5 properties.
 type ClientWill struct {
-	Payload           []byte                 `json:"payload"`
-	User              []packets.UserProperty `json:"user"`
-	TopicName         string                 `json:"topicName"`
-	Flag              uint32                 `json:"flag"`
-	WillDelayInterval uint32                 `json:"willDelayInterval"`
-	Qos               byte                   `json:"qos"`
-	Retain            bool                   `json:"retain"`
+	Payload           []byte                 `json:"payload,omitempty"`
+	User              []packets.UserProperty `json:"user,omitempty"`
+	TopicName         string                 `json:"topicName,omitempty"`
+	Flag              uint32                 `json:"flag,omitempty"`
+	WillDelayInterval uint32                 `json:"willDelayInterval,omitempty"`
+	Qos               byte                   `json:"qos,omitempty"`
+	Retain            bool                   `json:"retain,omitempty"`
 }
 
 // MarshalBinary encodes the values into a json string.
@@ -85,29 +85,29 @@ func (d *Client) UnmarshalBinary(data []byte) error {
 
 // Message is a storable representation of an MQTT message (specifically publish).
 type Message struct {
-	Properties  MessageProperties   `json:"properties"`    // -
-	Payload     []byte              `json:"payload"`       // the message payload (if retained)
-	T           string              `json:"t"`             // the data type
-	ID          string              `json:"id" storm:"id"` // the storage key
-	Origin      string              `json:"origin"`        // the id of the client who sent the message
-	TopicName   string              `json:"topic_name"`    // the topic the message was sent to (if retained)
-	FixedHeader packets.FixedHeader `json:"fixedheader"`   // the header properties of the message
-	Created     int64               `json:"created"`       // the time the message was created in unixtime
-	Sent        int64               `json:"sent"`          // the last time the message was sent (for retries) in unixtime (if inflight)
-	PacketID    uint16              `json:"packet_id"`     // the unique id of the packet (if inflight)
+	Properties  MessageProperties   `json:"properties"`              // -
+	Payload     []byte              `json:"payload"`                 // the message payload (if retained)
+	T           string              `json:"t,omitempty"`             // the data type
+	ID          string              `json:"id,omitempty" storm:"id"` // the storage key
+	Origin      string              `json:"origin,omitempty"`        // the id of the client who sent the message
+	TopicName   string              `json:"topic_name,omitempty"`    // the topic the message was sent to (if retained)
+	FixedHeader packets.FixedHeader `json:"fixedheader"`             // the header properties of the message
+	Created     int64               `json:"created,omitempty"`       // the time the message was created in unixtime
+	Sent        int64               `json:"sent,omitempty"`          // the last time the message was sent (for retries) in unixtime (if inflight)
+	PacketID    uint16              `json:"packet_id,omitempty"`     // the unique id of the packet (if inflight)
 }
 
 // MessageProperties contains a limited subset of mqtt v5 properties specific to publish messages.
 type MessageProperties struct {
-	CorrelationData        []byte                 `json:"correlationData"`
-	SubscriptionIdentifier []int                  `json:"subscriptionIdentifier"`
-	User                   []packets.UserProperty `json:"user"`
-	ContentType            string                 `json:"contentType"`
-	ResponseTopic          string                 `json:"responseTopic"`
-	MessageExpiryInterval  uint32                 `json:"messageExpiry"`
-	TopicAlias             uint16                 `json:"topicAlias"`
-	PayloadFormat          byte                   `json:"payloadFormat"`
-	PayloadFormatFlag      bool                   `json:"payloadFormatFlag"`
+	CorrelationData        []byte                 `json:"correlationData,omitempty"`
+	SubscriptionIdentifier []int                  `json:"subscriptionIdentifier,omitempty"`
+	User                   []packets.UserProperty `json:"user,omitempty"`
+	ContentType            string                 `json:"contentType,omitempty"`
+	ResponseTopic          string                 `json:"responseTopic,omitempty"`
+	MessageExpiryInterval  uint32                 `json:"messageExpiry,omitempty"`
+	TopicAlias             uint16                 `json:"topicAlias,omitempty"`
+	PayloadFormat          byte                   `json:"payloadFormat,omitempty"`
+	PayloadFormatFlag      bool                   `json:"payloadFormatFlag,omitempty"`
 }
 
 // MarshalBinary encodes the values into a json string.
@@ -155,15 +155,15 @@ func (d *Message) ToPacket() packets.Packet {
 
 // Subscription is a storable representation of an MQTT subscription.
 type Subscription struct {
-	T                 string `json:"t"`
-	ID                string `json:"id" storm:"id"`
-	Client            string `json:"client"`
+	T                 string `json:"t,omitempty"`
+	ID                string `json:"id,omitempty" storm:"id"`
+	Client            string `json:"client,omitempty"`
 	Filter            string `json:"filter"`
-	Identifier        int    `json:"identifier"`
-	RetainHandling    byte   `json:"retain_handling"`
+	Identifier        int    `json:"identifier,omitempty"`
+	RetainHandling    byte   `json:"retain_handling,omitempty"`
 	Qos               byte   `json:"qos"`
-	RetainAsPublished bool   `json:"retain_as_pub"`
-	NoLocal           bool   `json:"no_local"`
+	RetainAsPublished bool   `json:"retain_as_pub,omitempty"`
+	NoLocal           bool   `json:"no_local,omitempty"`
 }
 
 // MarshalBinary encodes the values into a json string.

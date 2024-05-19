@@ -89,7 +89,7 @@ var (
 		Filter: "a/b/c",
 		Qos:    1,
 	}
-	subscriptionJSON = []byte(`{"t":"subscription","id":"id","client":"mochi","filter":"a/b/c","identifier":0,"retain_handling":0,"qos":1,"retain_as_pub":false,"no_local":false}`)
+	subscriptionJSON = []byte(`{"t":"subscription","id":"id","client":"mochi","filter":"a/b/c","qos":1}`)
 
 	sysInfoStruct = SystemInfo{
 		T:  "info",
