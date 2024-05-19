@@ -417,6 +417,11 @@ func (cl *Client) StopCause() error {
 	return cl.State.stopCause.Load().(error)
 }
 
+// StopTime returns the the time the client disconnected in unix time, else zero.
+func (cl *Client) StopTime() int64 {
+	return atomic.LoadInt64(&cl.State.disconnected)
+}
+
 // Closed returns true if client connection is closed.
 func (cl *Client) Closed() bool {
 	return cl.State.open == nil || cl.State.open.Err() != nil

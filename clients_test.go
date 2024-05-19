@@ -583,9 +583,11 @@ func TestClientReadDone(t *testing.T) {
 
 func TestClientStop(t *testing.T) {
 	cl, _, _ := newTestClient()
+	require.Equal(t, int64(0), cl.StopTime())
 	cl.Stop(nil)
 	require.Equal(t, nil, cl.State.stopCause.Load())
-	require.Equal(t, time.Now().Unix(), cl.State.disconnected)
+	require.InDelta(t, time.Now().Unix(), cl.State.disconnected, 1.0)
+	require.Equal(t, cl.State.disconnected, cl.StopTime())
 	require.True(t, cl.Closed())
 	require.Equal(t, nil, cl.StopCause())
 }
