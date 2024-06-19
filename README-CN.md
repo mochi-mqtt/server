@@ -197,6 +197,7 @@ func main() {
 server := mqtt.New(&mqtt.Options{
   Capabilities: mqtt.Capabilities{
     MaximumSessionExpiryInterval: 3600,
+    MaximumClientWritesPending: 3,
     Compatibilities: mqtt.Compatibilities{
       ObscureNotAuthorized: true,
     },
@@ -207,7 +208,7 @@ server := mqtt.New(&mqtt.Options{
   InlineClient: false,
 })
 ```
-请参考 mqtt.Options、mqtt.Capabilities 和 mqtt.Compatibilities 结构体，以查看完整的所有服务端选项。ClientNetWriteBufferSize 和 ClientNetReadBufferSize 可以根据你的需求配置调整每个客户端的内存使用状况。
+请参考 mqtt.Options、mqtt.Capabilities 和 mqtt.Compatibilities 结构体，以查看完整的所有服务端选项。 ClientNetWriteBufferSize 和 ClientNetReadBufferSize 可以根据你的需求配置调整每个客户端的内存使用状况。其中 Capabilities.MaximumClientWritesPending 的大小会影响服务器运行内存占用，如果 IoT 设备同时在线的数量比较多，设置的值很大，尽管没有收发数据，服务器运行内存占用也会增加很多，默认该数值为 1024*8 ,可以根据实际情况调整该参数。
 
 ### 默认配置说明(Default Configuration Notes)
 

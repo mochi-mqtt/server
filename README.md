@@ -198,6 +198,7 @@ A number of configurable options are available which can be used to alter the be
 server := mqtt.New(&mqtt.Options{
   Capabilities: mqtt.Capabilities{
     MaximumSessionExpiryInterval: 3600,
+    MaximumClientWritesPending: 3,
     Compatibilities: mqtt.Compatibilities{
       ObscureNotAuthorized: true,
     },
@@ -209,7 +210,7 @@ server := mqtt.New(&mqtt.Options{
 })
 ```
 
-Review the mqtt.Options, mqtt.Capabilities, and mqtt.Compatibilities structs for a comprehensive list of options. `ClientNetWriteBufferSize` and `ClientNetReadBufferSize` can be configured to adjust memory usage per client, based on your needs.
+Review the mqtt.Options, mqtt.Capabilities, and mqtt.Compatibilities structs for a comprehensive list of options. `ClientNetWriteBufferSize` and `ClientNetReadBufferSize` can be configured to adjust memory usage per client, based on your needs. The size of `Capabilities.MaximumClientWritesPending` will affect the memory usage of the server. If the number of IoT devices online at the same time is large, and the set value is very large, even if there is no data transmission, the memory usage of the server will increase a lot. The default value is 1024*8, and this parameter can be adjusted according to the actual situation.
 
 ### Default Configuration Notes
 
