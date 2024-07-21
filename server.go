@@ -560,13 +560,7 @@ func (s *Server) validateConnect(cl *Client, pk packets.Packet) packets.Code {
 // connection ID. If clean is true, the state of any previously existing client
 // session is abandoned.
 func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
-
-	clientID := pk.Connect.ClientIdentifier
-	if cl.Properties.Props.AssignedClientID != "" {
-		clientID = cl.Properties.Props.AssignedClientID
-	}
-
-	if existing, ok := s.Clients.Get(clientID); ok {
+	if existing, ok := s.Clients.Get(cl.ID); ok {
 		_ = s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                   // [MQTT-3.1.4-3]
 		if pk.Connect.Clean || (existing.Properties.Clean && existing.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
