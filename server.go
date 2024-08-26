@@ -1672,7 +1672,7 @@ func (s *Server) loadClients(v []storage.Client) {
 // loadInflight restores inflight messages from the datastore.
 func (s *Server) loadInflight(v []storage.Message) {
 	for _, msg := range v {
-		if client, ok := s.Clients.Get(msg.Origin); ok {
+		if client, ok := s.Clients.Get(msg.Client); ok {
 			client.State.Inflight.Set(msg.ToPacket())
 		}
 	}
