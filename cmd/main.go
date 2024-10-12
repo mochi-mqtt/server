@@ -5,6 +5,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"log"
 	"os"
@@ -20,6 +21,8 @@ func main() {
 	tcpAddr := flag.String("tcp", ":1883", "network address for TCP listener")
 	wsAddr := flag.String("ws", ":1882", "network address for Websocket listener")
 	infoAddr := flag.String("info", ":8080", "network address for web info dashboard listener")
+	tlsCertFile := flag.String("tls-cert-file", "", "TLS certificate file")
+	tlsKeyFile := flag.String("tls-key-file", "", "TLS key file")
 	flag.Parse()
 
 	sigs := make(chan os.Signal, 1)
@@ -30,12 +33,25 @@ func main() {
 		done <- true
 	}()
 
+	var tlsConfig *tls.Config
+
+	if tlsCertFile != nil && tlsKeyFile != nil && *tlsCertFile != "" && *tlsKeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(*tlsCertFile, *tlsKeyFile)
+		if err != nil {
+			return
+		}
+		tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		}
+	}
+
 	server := mqtt.New(nil)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
 	tcp := listeners.NewTCP(listeners.Config{
-		ID:      "t1",
-		Address: *tcpAddr,
+		ID:        "t1",
+		Address:   *tcpAddr,
+		TLSConfig: tlsConfig,
 	})
 	err := server.AddListener(tcp)
 	if err != nil {
