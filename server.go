@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	Version                       = "2.6.4" // the current server version.
+	Version                       = "2.6.5" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
 	LocalListener                 = "local"
 	InlineClientId                = "inline"
@@ -560,7 +560,7 @@ func (s *Server) validateConnect(cl *Client, pk packets.Packet) packets.Code {
 // connection ID. If clean is true, the state of any previously existing client
 // session is abandoned.
 func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
-	if existing, ok := s.Clients.Get(pk.Connect.ClientIdentifier); ok {
+	if existing, ok := s.Clients.Get(cl.ID); ok {
 		_ = s.DisconnectClient(existing, packets.ErrSessionTakenOver)                                   // [MQTT-3.1.4-3]
 		if pk.Connect.Clean || (existing.Properties.Clean && existing.Properties.ProtocolVersion < 5) { // [MQTT-3.1.2-4] [MQTT-3.1.4-4]
 			s.UnsubscribeClient(existing)
@@ -1672,7 +1672,7 @@ func (s *Server) loadClients(v []storage.Client) {
 // loadInflight restores inflight messages from the datastore.
 func (s *Server) loadInflight(v []storage.Message) {
 	for _, msg := range v {
-		if client, ok := s.Clients.Get(msg.Origin); ok {
+		if client, ok := s.Clients.Get(msg.Client); ok {
 			client.State.Inflight.Set(msg.ToPacket())
 		}
 	}

@@ -3416,10 +3416,10 @@ func TestServerLoadInflightMessages(t *testing.T) {
 	require.Equal(t, 3, s.Clients.Len())
 
 	v := []storage.Message{
-		{Origin: "mochi", PacketID: 1, Payload: []byte("hello world"), TopicName: "a/b/c"},
-		{Origin: "mochi", PacketID: 2, Payload: []byte("yes"), TopicName: "a/b/c"},
-		{Origin: "zen", PacketID: 3, Payload: []byte("hello world"), TopicName: "a/b/c"},
-		{Origin: "mochi-co", PacketID: 4, Payload: []byte("hello world"), TopicName: "a/b/c"},
+		{Client: "mochi", Origin: "mochi", PacketID: 1, Payload: []byte("hello world"), TopicName: "a/b/c"},
+		{Client: "mochi", Origin: "mochi", PacketID: 2, Payload: []byte("yes"), TopicName: "a/b/c"},
+		{Client: "zen", Origin: "zen", PacketID: 3, Payload: []byte("hello world"), TopicName: "a/b/c"},
+		{Client: "mochi-co", Origin: "mochi-co", PacketID: 4, Payload: []byte("hello world"), TopicName: "a/b/c"},
 	}
 	s.loadInflight(v)
 

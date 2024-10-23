@@ -260,6 +260,7 @@ func (h *Hook) OnRetainMessage(cl *mqtt.Client, pk packets.Packet, r int64) {
 		TopicName:   pk.TopicName,
 		Payload:     pk.Payload,
 		Created:     pk.Created,
+		Client:      cl.ID,
 		Origin:      pk.Origin,
 		Properties: storage.MessageProperties{
 			PayloadFormat:          props.PayloadFormat,
@@ -287,6 +288,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 	in := &storage.Message{
 		ID:          inflightKey(cl, pk),
 		T:           storage.InflightKey,
+		Client:      cl.ID,
 		Origin:      pk.Origin,
 		FixedHeader: pk.FixedHeader,
 		TopicName:   pk.TopicName,
