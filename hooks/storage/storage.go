@@ -89,6 +89,7 @@ type Message struct {
 	Payload     []byte              `json:"payload"`                 // the message payload (if retained)
 	T           string              `json:"t,omitempty"`             // the data type
 	ID          string              `json:"id,omitempty" storm:"id"` // the storage key
+	Client      string              `json:"client,omitempty"`        // the client id the message is for
 	Origin      string              `json:"origin,omitempty"`        // the id of the client who sent the message
 	TopicName   string              `json:"topic_name,omitempty"`    // the topic the message was sent to (if retained)
 	FixedHeader packets.FixedHeader `json:"fixedheader"`             // the header properties of the message

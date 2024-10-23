@@ -168,6 +168,7 @@ TLSを設定するには`*listeners.Config`を渡すことができます。
 server := mqtt.New(&mqtt.Options{
   Capabilities: mqtt.Capabilities{
     MaximumSessionExpiryInterval: 3600,
+    MaximumClientWritesPending: 3,
     Compatibilities: mqtt.Compatibilities{
       ObscureNotAuthorized: true,
     },
@@ -181,6 +182,7 @@ server := mqtt.New(&mqtt.Options{
 
 mqtt.Options、mqtt.Capabilities、mqtt.Compatibilitiesの構造体はオプションの理解に役立ちます。
 必要に応じて`ClientNetWriteBufferSize`と`ClientNetReadBufferSize`はクライアントの使用するメモリに合わせて設定できます。
+`Capabilities.MaximumClientWritesPending`のサイズは、サーバーのメモリ使用量に影響を与えます。IoTデバイスが同時にオンラインで多数存在する場合、また設定値が非常に大きい場合、データの送受信がなくても、サーバーのメモリ使用量は大幅に増加します。デフォルト値は1024*8で、実際の状況に応じてこのパラメータを調整することができます。
 
 ### デフォルト設定に関する注意事項
 
