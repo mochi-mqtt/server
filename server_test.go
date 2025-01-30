@@ -667,6 +667,7 @@ func TestEstablishConnectionInheritExisting(t *testing.T) {
 	clw, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier)
 	require.True(t, ok)
 	require.NotEmpty(t, clw.State.Subscriptions)
+	require.True(t, cl.IsTakenOver())
 
 	// Prevent sequential takeover memory-bloom.
 	require.Empty(t, cl.State.Subscriptions.GetAll())
@@ -761,6 +762,9 @@ func TestEstablishConnectionInheritExistingTrueTakeover(t *testing.T) {
 
 	_, _ = w2.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	require.NoError(t, <-o2)
+
+	require.True(t, clp1.IsTakenOver())
+	require.False(t, clp2.IsTakenOver())
 }
 
 func TestEstablishConnectionResentPendingInflightsError(t *testing.T) {
@@ -848,12 +852,15 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes, <-recv)
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes, <-takeover)
 
+	require.True(t, cl.IsTakenOver())
+
 	_ = w.Close()
 	_ = r.Close()
 
 	clw, ok := s.Clients.Get(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier)
 	require.True(t, ok)
 	require.Equal(t, 0, clw.State.Subscriptions.Len())
+
 }
 
 func TestEstablishConnectionBadAuthentication(t *testing.T) {
@@ -3416,10 +3423,10 @@ func TestServerLoadInflightMessages(t *testing.T) {
 	require.Equal(t, 3, s.Clients.Len())
 
 	v := []storage.Message{
-		{Origin: "mochi", PacketID: 1, Payload: []byte("hello world"), TopicName: "a/b/c"},
-		{Origin: "mochi", PacketID: 2, Payload: []byte("yes"), TopicName: "a/b/c"},
-		{Origin: "zen", PacketID: 3, Payload: []byte("hello world"), TopicName: "a/b/c"},
-		{Origin: "mochi-co", PacketID: 4, Payload: []byte("hello world"), TopicName: "a/b/c"},
+		{Client: "mochi", Origin: "mochi", PacketID: 1, Payload: []byte("hello world"), TopicName: "a/b/c"},
+		{Client: "mochi", Origin: "mochi", PacketID: 2, Payload: []byte("yes"), TopicName: "a/b/c"},
+		{Client: "zen", Origin: "zen", PacketID: 3, Payload: []byte("hello world"), TopicName: "a/b/c"},
+		{Client: "mochi-co", Origin: "mochi-co", PacketID: 4, Payload: []byte("hello world"), TopicName: "a/b/c"},
 	}
 	s.loadInflight(v)
 

@@ -150,7 +150,7 @@ type ClientState struct {
 	disconnected    int64                // the time the client disconnected in unix time, for calculating expiry
 	outbound        chan *packets.Packet // queue for pending outbound packets
 	endOnce         sync.Once            // only end once
-	isTakenOver     uint32               // used to identify orphaned clients
+	isTakenOver     atomic.Bool          // used to identify orphaned clients
 	packetID        uint32               // the current highest packetID
 	open            context.Context      // indicate that the client is open for packet exchange
 	cancelOpen      context.CancelFunc   // cancel function for open context
@@ -425,6 +425,10 @@ func (cl *Client) StopTime() int64 {
 // Closed returns true if client connection is closed.
 func (cl *Client) Closed() bool {
 	return cl.State.open == nil || cl.State.open.Err() != nil
+}
+
+func (cl *Client) IsTakenOver() bool {
+	return cl.State.isTakenOver.Load()
 }
 
 // ReadFixedHeader reads in the values of the next packet's fixed header.

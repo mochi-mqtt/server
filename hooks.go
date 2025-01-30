@@ -405,6 +405,8 @@ func (h *Hooks) OnPublish(cl *Client, pk packets.Packet) (pkx packets.Packet, er
 						"hook", hook.ID(),
 						"packet", pkx)
 					return pk, err
+				} else if errors.Is(err, packets.CodeSuccessIgnore) {
+					return pk, err
 				}
 				h.Log.Error("publish packet error",
 					"error", err,

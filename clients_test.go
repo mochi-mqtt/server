@@ -599,6 +599,13 @@ func TestClientClosed(t *testing.T) {
 	require.True(t, cl.Closed())
 }
 
+func TestClientIsTakenOver(t *testing.T) {
+	cl, _, _ := newTestClient()
+	require.False(t, cl.IsTakenOver())
+	cl.State.isTakenOver.Store(true)
+	require.True(t, cl.IsTakenOver())
+}
+
 func TestClientReadFixedHeaderError(t *testing.T) {
 	cl, r, _ := newTestClient()
 	defer cl.Stop(errClientStop)
