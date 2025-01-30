@@ -57,7 +57,10 @@ func main() {
 		done <- true
 	}()
 
-	cert, err := tls.X509KeyPair(testCertificate, testPrivateKey)
+	// Load tls cert from your cert file
+	cert, err := tls.LoadX509KeyPair("replace_your_cert.pem", "replace_your_cert.key")
+
+	//cert, err := tls.X509KeyPair(testCertificate, testPrivateKey)
 	if err != nil {
 		log.Fatal(err)
 	}
