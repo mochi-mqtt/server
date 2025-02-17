@@ -1,6 +1,8 @@
 module github.com/mochi-mqtt/server/v2
 
-go 1.21
+go 1.21.0
+
+toolchain go1.22.2
 
 require (
 	github.com/alicebob/miniredis/v2 v2.23.0
@@ -11,6 +13,7 @@ require (
 	github.com/jinzhu/copier v0.3.5
 	github.com/rs/xid v1.4.0
 	github.com/stretchr/testify v1.8.1
+	github.com/xlango/npipe v1.0.0
 	go.etcd.io/bbolt v1.3.5
 	gopkg.in/yaml.v3 v3.0.1
 )
