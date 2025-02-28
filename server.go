@@ -885,6 +885,11 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	pk.Origin = cl.ID
 	pk.Created = time.Now().Unix()
 
+	pk.Expiry = pk.Created + s.Options.Capabilities.MaximumMessageExpiryInterval
+	if pk.Properties.MessageExpiryInterval > 0 {
+		pk.Expiry = pk.Created + int64(pk.Properties.MessageExpiryInterval)
+	}
+
 	if !cl.Net.Inline {
 		if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok {
 			if pki.FixedHeader.Type == packets.Pubrec { // [MQTT-4.3.3-10]
@@ -986,9 +991,11 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 		pk.Created = time.Now().Unix()
 	}
 
-	pk.Expiry = pk.Created + s.Options.Capabilities.MaximumMessageExpiryInterval
-	if pk.Properties.MessageExpiryInterval > 0 {
-		pk.Expiry = pk.Created + int64(pk.Properties.MessageExpiryInterval)
+	if pk.Expiry == 0 {
+		pk.Expiry = pk.Created + s.Options.Capabilities.MaximumMessageExpiryInterval
+		if pk.Properties.MessageExpiryInterval > 0 {
+			pk.Expiry = pk.Created + int64(pk.Properties.MessageExpiryInterval)
+		}
 	}
 
 	subscribers := s.Topics.Subscribers(pk.TopicName)
