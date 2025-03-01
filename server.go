@@ -885,6 +885,11 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	pk.Origin = cl.ID
 	pk.Created = time.Now().Unix()
 
+	if expiry := minimum(s.Options.Capabilities.MaximumMessageExpiryInterval,
+		int64(pk.Properties.MessageExpiryInterval)); expiry > 0 {
+		pk.Expiry = pk.Created + expiry
+	}
+
 	if !cl.Net.Inline {
 		if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok {
 			if pki.FixedHeader.Type == packets.Pubrec { // [MQTT-4.3.3-10]
@@ -986,9 +991,11 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 		pk.Created = time.Now().Unix()
 	}
 
-	pk.Expiry = pk.Created + s.Options.Capabilities.MaximumMessageExpiryInterval
-	if pk.Properties.MessageExpiryInterval > 0 {
-		pk.Expiry = pk.Created + int64(pk.Properties.MessageExpiryInterval)
+	if pk.Expiry == 0 {
+		if expiry := minimum(s.Options.Capabilities.MaximumMessageExpiryInterval,
+			int64(pk.Properties.MessageExpiryInterval)); expiry > 0 {
+			pk.Expiry = pk.Created + expiry
+		}
 	}
 
 	subscribers := s.Topics.Subscribers(pk.TopicName)
@@ -1754,4 +1761,21 @@ func (s *Server) sendDelayedLWT(dt int64) {
 // Int64toa converts an int64 to a string.
 func Int64toa(v int64) string {
 	return strconv.FormatInt(v, 10)
+}
+
+// minimum differs from built-in min, it returns minimum of the non-zero value a and b.
+// If both a and b are zero value, it reutrns 0.
+func minimum(a, b int64) (m int64) {
+	if a != 0 {
+		m = a
+		if b != 0 && b < a {
+			m = b
+		}
+		return
+	}
+
+	if b != 0 {
+		m = b
+	}
+	return
 }

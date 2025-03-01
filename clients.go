@@ -533,7 +533,11 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 	}
 
 	if pk.Expiry > 0 {
-		pk.Properties.MessageExpiryInterval = uint32(pk.Expiry - time.Now().Unix()) // [MQTT-3.3.2-6]
+		expiry := pk.Expiry - time.Now().Unix()
+		if expiry < 1 {
+			expiry = 1
+		}
+		pk.Properties.MessageExpiryInterval = uint32(expiry) // [MQTT-3.3.2-6]
 	}
 
 	pk.ProtocolVersion = cl.Properties.ProtocolVersion

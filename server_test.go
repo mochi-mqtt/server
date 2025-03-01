@@ -3920,3 +3920,14 @@ func TestServerSubscribeWithRetainDifferentIdentifier(t *testing.T) {
 		require.Equal(t, true, <-finishCh)
 	}
 }
+
+func TestMinimum(t *testing.T) {
+	require.EqualValues(t, 0, minimum(0, 0))
+	require.EqualValues(t, 1, minimum(0, 1))
+	require.EqualValues(t, 1, minimum(1, 0))
+	require.EqualValues(t, 10, minimum(10, 20))
+	require.EqualValues(t, 20, minimum(30, 20))
+	require.EqualValues(t, -1, minimum(-1, 0)) // negative values are not used, but included here for completeness
+	require.EqualValues(t, -1, minimum(-1, 20))
+	require.EqualValues(t, -2, minimum(-1, -2))
+}
