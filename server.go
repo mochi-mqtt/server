@@ -68,7 +68,7 @@ func NewDefaultServerCapabilities() *Capabilities {
 	return &Capabilities{
 		MaximumClients:               math.MaxInt64,  // maximum number of connected clients
 		MaximumMessageExpiryInterval: 60 * 60 * 24,   // maximum message expiry if message expiry is 0 or over
-		MaximumClientWritesPending:   1024 * 8,       // maximum number of pending message writes for a client
+		MaximumClientWritesPending:   64,             // maximum number of pending message writes for a client
 		MaximumSessionExpiryInterval: math.MaxUint32, // maximum number of seconds to keep disconnected sessions
 		MaximumPacketSize:            0,              // no maximum packet size
 		maximumPacketID:              math.MaxUint16,
