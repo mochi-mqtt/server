@@ -283,6 +283,11 @@ func (s *Server) AddHooksFromConfig(hooks []HookLoadConfig) error {
 	return nil
 }
 
+// RemoveHook removes a hook from the server by its ID.
+func (s *Server) RemoveHook(id string) error {
+	return errors.New("not implemented")
+}
+
 // AddListener adds a new network listener to the server, for receiving incoming client connections.
 func (s *Server) AddListener(l listeners.Listener) error {
 	if _, ok := s.Listeners.Get(l.ID()); ok {
