@@ -258,7 +258,7 @@ Auth rules have 4 optional criteria and an assertion flag:
 | Remote | the remote address or ip of the client |
 | Allow | true (allow this user) or false (deny this user) | 
 
-ACL rules have 3 optional criteria and an filter match:
+ACL rules have 3 optional criteria and a filter match:
 | Criteria | Usage | 
 | -- | -- |
 | Client | client id of the connecting client |
@@ -381,8 +381,8 @@ The function signatures for all the hooks and `mqtt.Hook` interface can be found
 | OnPublish              | Called when a client publishes a message. Allows packet modification.                                                                                                                                                                                                                                      | 
 | OnPublished            | Called when a client has published a message to subscribers.                                                                                                                                                                                                                                               | 
 | OnPublishDropped       | Called when a message to a client is dropped before delivery, such as if the client is taking too long to respond.                                                                                                                                                                                         | 
-| OnRetainMessage        | Called then a published message is retained.                                                                                                                                                                                                                                                               | 
-| OnRetainPublished      | Called then a retained message is published to a client.                                                                                                                                                                                                                                                   | 
+| OnRetainMessage        | Called when a published message is retained.                                                                                                                                                                                                                                                               | 
+| OnRetainPublished      | Called when a retained message is published to a client.                                                                                                                                                                                                                                                   | 
 | OnQosPublish           | Called when a publish packet with Qos >= 1 is issued to a subscriber.                                                                                                                                                                                                                                      | 
 | OnQosComplete          | Called when the Qos flow for a message has been completed.                                                                                                                                                                                                                                                 | 
 | OnQosDropped           | Called when an inflight message expires before completion.                                                                                                                                                                                                                                                 | 
