@@ -1,8 +1,8 @@
 # Mochi-MQTT Server
 
 <p align="center">
-    
-![build status](https://github.com/mochi-mqtt/server/actions/workflows/build.yml/badge.svg) 
+
+![build status](https://github.com/mochi-mqtt/server/actions/workflows/build.yml/badge.svg)
 [![Coverage Status](https://coveralls.io/repos/github/mochi-mqtt/server/badge.svg?branch=master&v2)](https://coveralls.io/github/mochi-mqtt/server?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mochi-mqtt/server)](https://goreportcard.com/report/github.com/mochi-mqtt/server/v2)
 [![Go Reference](https://pkg.go.dev/badge/github.com/mochi-mqtt/server.svg)](https://pkg.go.dev/github.com/mochi-mqtt/server/v2)
@@ -17,7 +17,7 @@
 
 ### Mochi-MQTT is a fully compliant, embeddable high-performance Go MQTT v5 (and v3.1.1) broker/server
 
-Mochi MQTT is an embeddable [fully compliant](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) MQTT v5 broker server written in Go, designed for the development of telemetry and internet-of-things projects. The server can be used either as a standalone binary or embedded as a library in your own applications, and has been designed to be as lightweight and fast as possible, with great care taken to ensure the quality and maintainability of the project. 
+Mochi MQTT is an embeddable [fully compliant](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) MQTT v5 broker server written in Go, designed for the development of telemetry and internet-of-things projects. The server can be used either as a standalone binary or embedded as a library in your own applications, and has been designed to be as lightweight and fast as possible, with great care taken to ensure the quality and maintainability of the project.
 
 #### What is MQTT?
 MQTT stands for [MQ Telemetry Transport](https://en.wikipedia.org/wiki/MQTT). It is a publish/subscribe, extremely simple and lightweight messaging protocol, designed for constrained devices and low-bandwidth, high-latency or unreliable networks ([Learn more](https://mqtt.org/faq)). Mochi MQTT fully implements version 5.0.0 of the MQTT protocol.
@@ -34,7 +34,7 @@ MQTT stands for [MQ Telemetry Transport](https://en.wikipedia.org/wiki/MQTT). It
     - Send and Receive QoS Flow Control Quotas
     - Server-side Disconnect and Auth Packets
     - Will Delay Intervals
-    - Plus all the original MQTT features of Mochi MQTT v1, such as Full QoS(0,1,2), $SYS topics, retained messages, etc. 
+    - Plus all the original MQTT features of Mochi MQTT v1, such as Full QoS(0,1,2), $SYS topics, retained messages, etc.
 - Developer-centric:
     - Most core broker code is now exported and accessible, for total developer control.
     - Full-featured and flexible Hook-based interfacing system to provide easy 'plugin' development.
@@ -54,7 +54,7 @@ Because of the overlap between the v5 specification and previous versions of mqt
 Support for MQTT v3.0.0 and v3.1.1 is considered hybrid-compatibility. Where not specifically restricted in the v3 specification, more modern and safety-first v5 behaviours are used instead - such as expiry for inflight and retained messages, and clients - and quality-of-service flow control limits.
 
 #### When is this repo updated?
-Unless it's a critical issue, new releases typically go out over the weekend. 
+Unless it's a critical issue, new releases typically go out over the weekend.
 
 ## Roadmap
 - Please [open an issue](https://github.com/mochi-mqtt/server/issues) to request new features or event hooks!
@@ -76,12 +76,12 @@ You can now pull and run the [official Mochi MQTT image](https://hub.docker.com/
 ```sh
 docker pull mochimqtt/server
 or
-docker run -v $(pwd)/config.yaml:/config.yaml mochimqtt/server 
+docker run -v $(pwd)/config.yaml:/config.yaml mochimqtt/server
 ```
 
 For most use cases, you can use File Based Configuration to configure the server, by specifying a valid `yaml` or `json` config file.
 
-A simple Dockerfile is provided for running the [cmd/main.go](cmd/main.go) Websocket, TCP, and Stats server, using the `allow-all` auth hook. 
+A simple Dockerfile is provided for running the [cmd/main.go](cmd/main.go) Websocket, TCP, and Stats server, using the `allow-all` auth hook.
 
 ```sh
 docker build -t mochi:latest .
@@ -144,17 +144,17 @@ func main() {
 
   // Create the new MQTT Server.
   server := mqtt.New(nil)
-  
+
   // Allow all connections.
   _ = server.AddHook(new(auth.AllowHook), nil)
-  
+
   // Create a TCP listener on a standard port.
   tcp := listeners.NewTCP(listeners.Config{ID: "t1", Address: ":1883"})
   err := server.AddListener(tcp)
   if err != nil {
     log.Fatal(err)
   }
-  
+
 
   go func() {
     err := server.Serve()
@@ -170,7 +170,7 @@ func main() {
 }
 ```
 
-Examples of running the broker with various configurations can be found in the [examples](examples) folder. 
+Examples of running the broker with various configurations can be found in the [examples](examples) folder.
 
 #### Network Listeners
 The server comes with a variety of pre-packaged network listeners which allow the broker to accept connections on different protocols. The current listeners are:
@@ -186,7 +186,7 @@ The server comes with a variety of pre-packaged network listeners which allow th
 
 > Use the `listeners.Listener` interface to develop new listeners. If you do, please let us know!
 
-A `*listeners.Config` may be passed to configure TLS. 
+A `*listeners.Config` may be passed to configure TLS.
 
 Examples of usage can be found in the [examples](examples) folder or [cmd/main.go](cmd/main.go).
 
@@ -218,24 +218,24 @@ Some choices were made when deciding the default configuration that need to be m
 
 - By default, the value of `server.Options.Capabilities.MaximumMessageExpiryInterval` is set to 86400 (24 hours), in order to prevent exposing the broker to DOS attacks on hostile networks when using the out-of-the-box configuration (as an infinite expiry would allow an infinite number of retained/inflight messages to accumulate). If you are operating in a trusted environment, or you have capacity for a larger retention period, you may wish to override this (set to `0` for no expiry).
 
-## Event Hooks 
+## Event Hooks
 A universal event hooks system allows developers to hook into various parts of the server and client life cycle to add and modify functionality of the broker. These universal hooks are used to provide everything from authentication, persistent storage, to debugging tools.
 
 Hooks are stackable - you can add multiple hooks to a server, and they will be run in the order they were added. Some hooks modify values, and these modified values will be passed to the subsequent hooks before being returned to the runtime code.
 
 | Type           | Import                                                                   | Info                                                                       |
 |----------------|--------------------------------------------------------------------------|----------------------------------------------------------------------------|
-| Access Control | [mochi-mqtt/server/hooks/auth . AllowHook](hooks/auth/allow_all.go)      | Allow access to all connecting clients and read/write to  all topics.      | 
-| Access Control | [mochi-mqtt/server/hooks/auth . Auth](hooks/auth/auth.go)                | Rule-based access control ledger.                                          | 
-| Persistence    | [mochi-mqtt/server/hooks/storage/bolt](hooks/storage/bolt/bolt.go)       | Persistent storage using [BoltDB](https://dbdb.io/db/boltdb) (deprecated). | 
-| Persistence    | [mochi-mqtt/server/hooks/storage/badger](hooks/storage/badger/badger.go) | Persistent storage using [BadgerDB](https://github.com/dgraph-io/badger).  | 
-| Persistence    | [mochi-mqtt/server/hooks/storage/pebble](hooks/storage/pebble/pebble.go) | Persistent storage using [PebbleDB](https://github.com/cockroachdb/pebble).  | 
-| Persistence    | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)    | Persistent storage using [Redis](https://redis.io).                        | 
-| Debugging      | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go)                    | Additional debugging output to visualise packet flow.                      | 
+| Access Control | [mochi-mqtt/server/hooks/auth . AllowHook](hooks/auth/allow_all.go)      | Allow access to all connecting clients and read/write to  all topics.      |
+| Access Control | [mochi-mqtt/server/hooks/auth . Auth](hooks/auth/auth.go)                | Rule-based access control ledger.                                          |
+| Persistence    | [mochi-mqtt/server/hooks/storage/bolt](hooks/storage/bolt/bolt.go)       | Persistent storage using [BoltDB](https://dbdb.io/db/boltdb) (deprecated). |
+| Persistence    | [mochi-mqtt/server/hooks/storage/badger](hooks/storage/badger/badger.go) | Persistent storage using [BadgerDB](https://github.com/dgraph-io/badger).  |
+| Persistence    | [mochi-mqtt/server/hooks/storage/pebble](hooks/storage/pebble/pebble.go) | Persistent storage using [PebbleDB](https://github.com/cockroachdb/pebble).  |
+| Persistence    | [mochi-mqtt/server/hooks/storage/redis](hooks/storage/redis/redis.go)    | Persistent storage using [Redis](https://redis.io).                        |
+| Debugging      | [mochi-mqtt/server/hooks/debug](hooks/debug/debug.go)                    | Additional debugging output to visualise packet flow.                      |
 
 Many of the internal server functions are now exposed to developers, so you can make your own Hooks by using the above as examples. If you do, please [Open an issue](https://github.com/mochi-mqtt/server/issues) and let everyone know!
 
-### Access Control 
+### Access Control
 #### Allow Hook
 By default, Mochi MQTT uses a DENY-ALL access control rule. To allow connections, this must overwritten using an Access Control hook. The simplest of these hooks is the `auth.AllowAll` hook, which provides ALLOW-ALL rules to all connections, subscriptions, and publishing. It's also the simplest hook to use:
 
@@ -247,19 +247,19 @@ _ = server.AddHook(new(auth.AllowHook), nil)
 > Don't do this if you are exposing your server to the internet or untrusted networks - it should really be used for development, testing, and debugging only.
 
 #### Auth Ledger
-The Auth Ledger hook provides a sophisticated mechanism for defining access rules in a struct format. Auth ledger rules come in two forms: Auth rules (connection), and ACL rules (publish subscribe). 
+The Auth Ledger hook provides a sophisticated mechanism for defining access rules in a struct format. Auth ledger rules come in two forms: Auth rules (connection), and ACL rules (publish subscribe).
 
 Auth rules have 4 optional criteria and an assertion flag:
-| Criteria | Usage | 
+| Criteria | Usage |
 | -- | -- |
 | Client | client id of the connecting client |
 | Username | username of the connecting client |
 | Password | password of the connecting client |
 | Remote | the remote address or ip of the client |
-| Allow | true (allow this user) or false (deny this user) | 
+| Allow | true (allow this user) or false (deny this user) |
 
 ACL rules have 3 optional criteria and an filter match:
-| Criteria | Usage | 
+| Criteria | Usage |
 | -- | -- |
 | Client | client id of the connecting client |
 | Username | username of the connecting client |
@@ -307,9 +307,9 @@ err := server.AddHook(new(auth.Hook), &auth.Options{
 ```
 See [examples/auth/encoded/main.go](examples/auth/encoded/main.go) for more information.
 
-### Persistent Storage 
+### Persistent Storage
 #### Redis
-A basic Redis storage hook is available which provides persistence for the broker. It can be added to the server in the same fashion as any other hook, with several options. It uses github.com/go-redis/redis/v8 under the hook, and is completely configurable through the Options value. 
+A basic Redis storage hook is available which provides persistence for the broker. It can be added to the server in the same fashion as any other hook, with several options. It uses github.com/go-redis/redis/v8 under the hook, and is completely configurable through the Options value.
 ```go
 err := server.AddHook(new(redis.Hook), &redis.Options{
   Options: &rv8.Options{
@@ -352,50 +352,50 @@ For more information on how the badger hook works, or how to use it, see the [ex
 There is also a BoltDB hook which has been deprecated in favour of Badger, but if you need it, check [examples/persistence/bolt/main.go](examples/persistence/bolt/main.go).
 
 ## Developing with Event Hooks
-Many hooks are available for interacting with the broker and client lifecycle. 
+Many hooks are available for interacting with the broker and client lifecycle.
 The function signatures for all the hooks and `mqtt.Hook` interface can be found in [hooks.go](hooks.go).
 
 > The most flexible event hooks are OnPacketRead, OnPacketEncode, and OnPacketSent - these hooks be used to control and modify all incoming and outgoing packets.
 
-| Function               | Usage                                                                                                                                                                                                                                                                                                      | 
+| Function               | Usage                                                                                                                                                                                                                                                                                                      |
 |------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | OnStarted              | Called when the server has successfully started.                                                                                                                                                                                                                                                           |
-| OnStopped              | Called when the server has successfully stopped.                                                                                                                                                                                                                                                           | 
+| OnStopped              | Called when the server has successfully stopped.                                                                                                                                                                                                                                                           |
 | OnConnectAuthenticate  | Called when a user attempts to authenticate with the server. An implementation of this method MUST be used to allow or deny access to the server (see hooks/auth/allow_all or basic). It can be used in custom hooks to check connecting users against an existing user database. Returns true if allowed. |
 | OnACLCheck             | Called when a user attempts to publish or subscribe to a topic filter. As above.                                                                                                                                                                                                                           |
 | OnSysInfoTick          | Called when the $SYS topic values are published out.                                                                                                                                                                                                                                                       |
-| OnConnect              | Called when a new client connects, may return an error or packet code to halt the client connection process.                                                                                                                                                                                               | 
+| OnConnect              | Called when a new client connects, may return an error or packet code to halt the client connection process.                                                                                                                                                                                               |
 | OnSessionEstablish     | Called immediately after a new client connects and authenticates and immediately before the session is established and CONNACK is sent.                                                                                                                                                                    |
-| OnSessionEstablished   | Called when a new client successfully establishes a session (after OnConnect)                                                                                                                                                                                                                              | 
-| OnDisconnect           | Called when a client is disconnected for any reason.                                                                                                                                                                                                                                                       | 
-| OnAuthPacket           | Called when an auth packet is received. It is intended to allow developers to create their own mqtt v5 Auth Packet handling mechanisms. Allows packet modification.                                                                                                                                        | 
-| OnPacketRead           | Called when a packet is received from a client. Allows packet modification.                                                                                                                                                                                                                                | 
-| OnPacketEncode         | Called immediately before a packet is encoded to be sent to a client. Allows packet modification.                                                                                                                                                                                                          | 
-| OnPacketSent           | Called when a packet has been sent to a client.                                                                                                                                                                                                                                                            | 
-| OnPacketProcessed      | Called when a packet has been received and successfully handled by the broker.                                                                                                                                                                                                                             | 
-| OnSubscribe            | Called when a client subscribes to one or more filters. Allows packet modification.                                                                                                                                                                                                                        | 
-| OnSubscribed           | Called when a client successfully subscribes to one or more filters.                                                                                                                                                                                                                                       | 
-| OnSelectSubscribers    | Called when subscribers have been collected for a topic, but before shared subscription subscribers have been selected. Allows receipient modification.                                                                                                                                                    | 
-| OnUnsubscribe          | Called when a client unsubscribes from one or more filters. Allows packet modification.                                                                                                                                                                                                                    | 
-| OnUnsubscribed         | Called when a client successfully unsubscribes from one or more filters.                                                                                                                                                                                                                                   | 
-| OnPublish              | Called when a client publishes a message. Allows packet modification.                                                                                                                                                                                                                                      | 
-| OnPublished            | Called when a client has published a message to subscribers.                                                                                                                                                                                                                                               | 
-| OnPublishDropped       | Called when a message to a client is dropped before delivery, such as if the client is taking too long to respond.                                                                                                                                                                                         | 
-| OnRetainMessage        | Called then a published message is retained.                                                                                                                                                                                                                                                               | 
-| OnRetainPublished      | Called then a retained message is published to a client.                                                                                                                                                                                                                                                   | 
-| OnQosPublish           | Called when a publish packet with Qos >= 1 is issued to a subscriber.                                                                                                                                                                                                                                      | 
-| OnQosComplete          | Called when the Qos flow for a message has been completed.                                                                                                                                                                                                                                                 | 
-| OnQosDropped           | Called when an inflight message expires before completion.                                                                                                                                                                                                                                                 | 
-| OnPacketIDExhausted    | Called when a client runs out of unused packet ids to assign.                                                                                                                                                                                                                                              | 
-| OnWill                 | Called when a client disconnects and intends to issue a will message. Allows packet modification.                                                                                                                                                                                                          | 
-| OnWillSent             | Called when an LWT message has been issued from a disconnecting client.                                                                                                                                                                                                                                    | 
-| OnClientExpired        | Called when a client session has expired and should be deleted.                                                                                                                                                                                                                                            | 
-| OnRetainedExpired      | Called when a retained message has expired and should be deleted.                                                                                                                                                                                                                                          | 
-| StoredClients          | Returns clients, eg. from a persistent store.                                                                                                                                                                                                                                                              | 
-| StoredSubscriptions    | Returns client subscriptions, eg. from a persistent store.                                                                                                                                                                                                                                                 | 
-| StoredInflightMessages | Returns inflight messages, eg. from a persistent store.                                                                                                                                                                                                                                                    | 
-| StoredRetainedMessages | Returns retained messages, eg. from a persistent store.                                                                                                                                                                                                                                                    | 
-| StoredSysInfo          | Returns stored system info values, eg. from a persistent store.                                                                                                                                                                                                                                            | 
+| OnSessionEstablished   | Called when a new client successfully establishes a session (after OnConnect)                                                                                                                                                                                                                              |
+| OnDisconnect           | Called when a client is disconnected for any reason.                                                                                                                                                                                                                                                       |
+| OnAuthPacket           | Called when an auth packet is received. It is intended to allow developers to create their own mqtt v5 Auth Packet handling mechanisms. Allows packet modification.                                                                                                                                        |
+| OnPacketRead           | Called when a packet is received from a client. Allows packet modification.                                                                                                                                                                                                                                |
+| OnPacketEncode         | Called immediately before a packet is encoded to be sent to a client. Allows packet modification.                                                                                                                                                                                                          |
+| OnPacketSent           | Called when a packet has been sent to a client.                                                                                                                                                                                                                                                            |
+| OnPacketProcessed      | Called when a packet has been received and successfully handled by the broker.                                                                                                                                                                                                                             |
+| OnSubscribe            | Called when a client subscribes to one or more filters. Allows packet modification.                                                                                                                                                                                                                        |
+| OnSubscribed           | Called when a client successfully subscribes to one or more filters.                                                                                                                                                                                                                                       |
+| OnSelectSubscribers    | Called when subscribers have been collected for a topic, but before shared subscription subscribers have been selected. Allows receipient modification.                                                                                                                                                    |
+| OnUnsubscribe          | Called when a client unsubscribes from one or more filters. Allows packet modification.                                                                                                                                                                                                                    |
+| OnUnsubscribed         | Called when a client successfully unsubscribes from one or more filters.                                                                                                                                                                                                                                   |
+| OnPublish              | Called when a client publishes a message. Allows packet modification.                                                                                                                                                                                                                                      |
+| OnPublished            | Called when a client has published a message to subscribers.                                                                                                                                                                                                                                               |
+| OnPublishDropped       | Called when a message to a client is dropped before delivery, such as if the client is taking too long to respond.                                                                                                                                                                                         |
+| OnRetainMessage        | Called then a published message is retained.                                                                                                                                                                                                                                                               |
+| OnRetainPublished      | Called then a retained message is published to a client.                                                                                                                                                                                                                                                   |
+| OnQosPublish           | Called when a publish packet with Qos >= 1 is issued to a subscriber.                                                                                                                                                                                                                                      |
+| OnQosComplete          | Called when the Qos flow for a message has been completed.                                                                                                                                                                                                                                                 |
+| OnQosDropped           | Called when an inflight message expires before completion.                                                                                                                                                                                                                                                 |
+| OnPacketIDExhausted    | Called when a client runs out of unused packet ids to assign.                                                                                                                                                                                                                                              |
+| OnWill                 | Called when a client disconnects and intends to issue a will message. Allows packet modification.                                                                                                                                                                                                          |
+| OnWillSent             | Called when an LWT message has been issued from a disconnecting client.                                                                                                                                                                                                                                    |
+| OnClientExpired        | Called when a client session has expired and should be deleted.                                                                                                                                                                                                                                            |
+| OnRetainedExpired      | Called when a retained message has expired and should be deleted.                                                                                                                                                                                                                                          |
+| StoredClients          | Returns clients, eg. from a persistent store.                                                                                                                                                                                                                                                              |
+| StoredSubscriptions    | Returns client subscriptions, eg. from a persistent store.                                                                                                                                                                                                                                                 |
+| StoredInflightMessages | Returns inflight messages, eg. from a persistent store.                                                                                                                                                                                                                                                    |
+| StoredRetainedMessages | Returns retained messages, eg. from a persistent store.                                                                                                                                                                                                                                                    |
+| StoredSysInfo          | Returns stored system info values, eg. from a persistent store.                                                                                                                                                                                                                                            |
 
 If you are building a persistent storage hook, see the existing persistent hooks for inspiration and patterns. If you are building an auth hook, you will need `OnACLCheck` and `OnConnectAuthenticate`.
 
@@ -436,7 +436,7 @@ server.Unsubscribe("direct/#", 1)
 ```
 
 ### Packet Injection
-If you want more control, or want to set specific MQTT v5 properties and other values you can create your own publish packets from a client of your choice. This method allows you to inject MQTT packets (no just publish) directly into the runtime as though they had been received by a specific client. 
+If you want more control, or want to set specific MQTT v5 properties and other values you can create your own publish packets from a client of your choice. This method allows you to inject MQTT packets (no just publish) directly into the runtime as though they had been received by a specific client.
 
 Packet injection can be used for any MQTT packet, including ping requests, subscriptions, etc. And because the Clients structs and methods are now exported, you can even inject packets on behalf of a connected client (if you have a very custom requirements).
 
@@ -466,7 +466,7 @@ go run --cover ./...
 ```
 
 #### Paho Interoperability Test
-You can check the broker against the [Paho Interoperability Test](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) by starting the broker using `examples/paho/main.go`, and then running the mqtt v5 and v3 tests with `python3 client_test5.py` from the _interoperability_ folder. 
+You can check the broker against the [Paho Interoperability Test](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) by starting the broker using `examples/paho/main.go`, and then running the mqtt v5 and v3 tests with `python3 client_test5.py` from the _interoperability_ folder.
 
 > Note that there are currently a number of outstanding issues regarding false negatives in the paho suite, and as such, certain compatibility modes are enabled in the `paho/main.go` example.
 
@@ -480,7 +480,7 @@ Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inov
 > Benchmarks are provided as a general performance expectation guideline only. Comparisons are performed using out-of-the-box default configurations.
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=2 -num-messages=10000`
-| Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
+| Broker            | publish fastest | median | slowest | receive fastest | median | slowest |
 | --                | --             | --   | --   | --             | --   | --   |
 | Mochi v2.2.10      | 124,772 | 125,456 | 124,614 | 314,461 | 313,186 | 311,910 |
 | [Mosquitto v2.0.15](https://github.com/eclipse/mosquitto) | 155,920 | 155,919 | 155,918 | 185,485 | 185,097 | 184,709 |
@@ -488,7 +488,7 @@ Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inov
 | [Rumqtt v0.21.0](https://github.com/bytebeamio/rumqtt) | 112,208 | 108,480 | 104,753 | 135,784 | 126,446 | 117,108 |
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=10 -num-messages=10000`
-| Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
+| Broker            | publish fastest | median | slowest | receive fastest | median | slowest |
 | --                | --             | --   | --   | --             | --   | --   |
 | Mochi v2.2.10      | 41,825 | 31,663| 23,008 | 144,058 | 65,903 | 37,618 |
 | Mosquitto v2.0.15 | 42,729 | 38,633 | 29,879 | 23,241 | 19,714 | 18,806 |
@@ -498,7 +498,7 @@ Performance benchmarks were tested using [MQTT-Stresser](https://github.com/inov
 Million Message Challenge (hit the server with 1 million messages immediately):
 
 `mqtt-stresser -broker tcp://localhost:1883 -num-clients=100 -num-messages=10000`
-| Broker            | publish fastest | median | slowest | receive fastest | median | slowest | 
+| Broker            | publish fastest | median | slowest | receive fastest | median | slowest |
 | --                | --             | --   | --   | --             | --   | --   |
 | Mochi v2.2.10     | 13,532 | 4,425 | 2,344 | 52,120 | 7,274 | 2,701 |
 | Mosquitto v2.0.15 | 3,826 | 3,395 | 3,032 | 1,200 | 1,150 | 1,118 |
@@ -506,6 +506,19 @@ Million Message Challenge (hit the server with 1 million messages immediately):
 | Rumqtt v0.21.0    | 78,972 | 5,047 | 3,804 | 4,286 | 3,249 | 2,027 |
 
 > Not sure what's going on with EMQX here, perhaps the docker out-of-the-box settings are not optimal, so take it with a pinch of salt as we know for a fact it's a solid piece of software.
+
+## Public Broker
+You can test Mochi MQTT currently running as a public broker:
+
+| Connection Type | Property |
+|--------------------|---------|
+| HOST | broker.public.upperz.org |
+| TCP | 1883 |
+| Websocket | 8000 |
+| TCP TLS | 8883 |
+| Websocket TLS | 8884 |
+
+Dashboard link [here](https://public.upperz.org/dashboard)
 
 ## Contribution Guidelines
 Contributions and feedback are both welcomed and encouraged! [Open an issue](https://github.com/mochi-mqtt/server/issues) to report a bug, ask a question, or make a feature request. If you open a pull request, please try to follow the following guidelines:
@@ -522,9 +535,8 @@ Contributions and feedback are both welcomed and encouraged! [Open an issue](htt
 package name
 ```
 
-Please ensure to add a new `SPDX-FileContributor` line for each contributor to the file. Refer to other files for examples. Please remember to do this, your contributions to this project are valuable and appreciated - it's important to receive credit! 
+Please ensure to add a new `SPDX-FileContributor` line for each contributor to the file. Refer to other files for examples. Please remember to do this, your contributions to this project are valuable and appreciated - it's important to receive credit!
 
 ## Stargazers over time 🥰
 [![Stargazers over time](https://starchart.cc/mochi-mqtt/server.svg)](https://starchart.cc/mochi-mqtt/server)
 Are you using Mochi MQTT in a project? [Let us know!](https://github.com/mochi-mqtt/server/issues)
-
