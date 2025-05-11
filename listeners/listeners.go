@@ -17,8 +17,15 @@ type Config struct {
 	Type    string
 	ID      string
 	Address string
+	TLSCert *TlsCertConfig `yaml:"tls_cert" json:"tls_cert"`
 	// TLSConfig is a tls.Config configuration to be used with the listener. See examples folder for basic and mutual-tls use.
 	TLSConfig *tls.Config
+}
+
+// TlsCertConfig contains file paths for TLS certificate and key files.
+type TlsCertConfig struct {
+	CertFile *string `yaml:"cert_file" json:"cert_file"`
+	KeyFile  *string `yaml:"key_file" json:"key_file"`
 }
 
 // EstablishFn is a callback function for establishing new clients.

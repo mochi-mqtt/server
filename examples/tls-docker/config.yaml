@@ -1,0 +1,85 @@
+listeners:
+  - type: "tcp"
+    id: "file-tcp1"
+    address: ":1883"
+    tls_cert:
+      cert_file: "certs/cert.pem"
+      key_file: "certs/cert.key"
+  - type: "ws"
+    id: "file-websocket"
+    address: ":1882"
+    tls_cert:
+      cert_file: "certs/cert.pem"
+      key_file: "certs/cert.key"
+  - type: "healthcheck"
+    id: "file-healthcheck"
+    address: ":1880"
+    tls_cert:
+      cert_file: "certs/cert.pem"
+      key_file: "certs/cert.key"
+  - type: "sysinfo"
+    id: "stats"
+    address: ":1881"
+    tls_cert:
+      cert_file: "certs/cert.pem"
+      key_file: "certs/cert.key"
+hooks:
+  debug:
+    enable: true
+  storage:
+    badger:
+      path: badger.db
+      gc_interval: 3
+      gc_discard_ratio: 0.5
+    pebble:
+      path: pebble.db
+      mode: "NoSync"
+    bolt:
+      path: bolt.db
+      bucket: "mochi"
+    redis:
+      h_prefix: "mc"
+      username: "mochi"
+      password: "melon"
+      address: "localhost:6379"
+      database: 1
+  auth:
+    allow_all: false
+    ledger:
+      auth:
+        - username: peach
+          password: password1
+          allow: true
+      acl:
+        - remote: 127.0.0.1:*
+        - username: melon
+          filters:
+          melon/#: 3
+          updates/#: 2
+options:
+  client_net_write_buffer_size: 2048
+  client_net_read_buffer_size: 2048
+  sys_topic_resend_interval: 10
+  inline_client: true
+  capabilities:
+    maximum_message_expiry_interval: 100
+    maximum_client_writes_pending: 8192
+    maximum_session_expiry_interval: 86400
+    maximum_packet_size: 0
+    receive_maximum: 1024
+    maximum_inflight: 8192
+    topic_alias_maximum: 65535
+    shared_sub_available: 1
+    minimum_protocol_version: 3
+    maximum_qos: 2
+    retain_available: 1
+    wildcard_sub_available: 1
+    sub_id_available: 1
+    compatibilities:
+      obscure_not_authorized: true
+      passive_client_disconnect: false
+      always_return_response_info: false
+      restore_sys_info_on_restart: false
+      no_inherited_properties_on_ack: false
+logging:
+  level: INFO
