@@ -913,16 +913,30 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	pkx, err := s.hooks.OnPublish(cl, pk)
 	if err == nil {
 		pk = pkx
-	} else if errors.Is(err, packets.ErrRejectPacket) {
-		return nil
 	} else if errors.Is(err, packets.CodeSuccessIgnore) {
 		pk.Ignore = true
-	} else if cl.Properties.ProtocolVersion == 5 && pk.FixedHeader.Qos > 0 && errors.As(err, new(packets.Code)) {
-		err = cl.WritePacket(s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, err.(packets.Code)))
-		if err != nil {
-			return err
+	} else if errors.As(err, new(packets.Code)) {
+		// No ack, do not publish to subscribers. Swallow the error.
+		if pk.FixedHeader.Qos == 0 {
+			return nil
+
+			// qos1&2, client version 5. Send puback or pubrec. Do not publish to subscribers.
+		} else if cl.Properties.ProtocolVersion == 5 {
+			ackType := packets.Puback
+			if pk.FixedHeader.Qos == 2 {
+				ackType = packets.Pubrec
+			}
+			err = cl.WritePacket(s.buildAck(pk.PacketID, ackType, 0, pk.Properties, err.(packets.Code)))
+			if err != nil {
+				return err
+			}
+			return nil
 		}
-		return nil
+		// qos 1&2, client version < 5
+		return s.DisconnectClient(cl, err.(packets.Code)) //  [MQTT-3.3.5-2] https://github.com/mochi-mqtt/server/issues/290#issuecomment-1709193269
+	} else {
+		// error was not a packets.Code, so we return it as is.
+		return err
 	}
 
 	if pk.FixedHeader.Retain { // [MQTT-3.3.1-5] ![MQTT-3.3.1-8]

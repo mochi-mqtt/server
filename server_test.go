@@ -1739,7 +1739,8 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 	}
 }
 
-func TestServerProcessPublishOnMessageRecvRejected(t *testing.T) {
+func TestServerProcessPublishOnMessageRecvRejectedQos0(t *testing.T) {
+	// Test that QoS 0 rejections are silently ignored (return nil)
 	s := newServer()
 	require.NotNil(t, s)
 	hook := new(modifiedHookBase)
@@ -1752,8 +1753,86 @@ func TestServerProcessPublishOnMessageRecvRejected(t *testing.T) {
 	_ = s.Serve()
 	defer s.Close()
 	cl, _, _ := newTestClient()
+	
+	// QoS 0 rejections should be silently ignored (return nil)
 	err = s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
-	require.NoError(t, err) // packets rejected silently
+	require.NoError(t, err)
+}
+
+func TestServerProcessPublishOnMessageRecvRejectedQos1(t *testing.T) {
+	s := newServer()
+	require.NotNil(t, s)
+	hook := new(modifiedHookBase)
+	hook.fail = true
+	hook.err = packets.ErrRejectPacket
+
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
+
+	_ = s.Serve()
+	defer s.Close()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+
+	go func() {
+		err := s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	// Should receive PUBACK with reject reason code 0x83 and reason string
+	expected := []byte{
+		byte(packets.Puback << 4), // packet type
+		22,                        // remaining length
+		0, 7,                      // packet id
+		packets.ErrRejectPacket.Code, // reason code 0x83
+		18,                           // properties length
+		31,                           // reason string property ID
+		0, 15,                        // reason string length
+		'p', 'a', 'c', 'k', 'e', 't', ' ', 'r', 'e', 'j', 'e', 'c', 't', 'e', 'd', // "packet rejected"
+	}
+	require.Equal(t, expected, buf)
+}
+
+func TestServerProcessPublishOnMessageRecvRejectedQos2(t *testing.T) {
+	s := newServer()
+	require.NotNil(t, s)
+	hook := new(modifiedHookBase)
+	hook.fail = true
+	hook.err = packets.ErrRejectPacket
+
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
+
+	_ = s.Serve()
+	defer s.Close()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+
+	go func() {
+		err := s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	// Should receive PUBREC with reject reason code 0x83 and reason string
+	expected := []byte{
+		byte(packets.Pubrec << 4), // packet type
+		22,                        // remaining length
+		0, 7,                      // packet id
+		packets.ErrRejectPacket.Code, // reason code 0x83
+		18,                           // properties length
+		31,                           // reason string property ID
+		0, 15,                        // reason string length
+		'p', 'a', 'c', 'k', 'e', 't', ' ', 'r', 'e', 'j', 'e', 'c', 't', 'e', 'd', // "packet rejected"
+	}
+	require.Equal(t, expected, buf)
 }
 
 func TestServerProcessPacketPublishQos0(t *testing.T) {
