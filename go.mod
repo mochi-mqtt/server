@@ -1,4 +1,4 @@
-module github.com/mochi-mqtt/server/v2
+module github.com/FaceChainTeam/mqtt-mochi-server/v2
 
 go 1.21
 
@@ -9,6 +9,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gorilla/websocket v1.5.0
 	github.com/jinzhu/copier v0.3.5
+	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/rs/xid v1.4.0
 	github.com/stretchr/testify v1.8.1
 	go.etcd.io/bbolt v1.3.5
