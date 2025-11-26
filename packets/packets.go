@@ -442,13 +442,10 @@ func (pk *Packet) ConnectDecode(buf []byte) error {
 
 // ConnectValidate ensures the connect packet is compliant.
 func (pk *Packet) ConnectValidate() Code {
-	if !bytes.Equal(pk.Connect.ProtocolName, []byte{'M', 'Q', 'I', 's', 'd', 'p'}) && !bytes.Equal(pk.Connect.ProtocolName, []byte{'M', 'Q', 'T', 'T'}) {
-		return ErrProtocolViolationProtocolName // [MQTT-3.1.2-1]
-	}
 
-	if (bytes.Equal(pk.Connect.ProtocolName, []byte{'M', 'Q', 'I', 's', 'd', 'p'}) && pk.ProtocolVersion != 3) ||
-		(bytes.Equal(pk.Connect.ProtocolName, []byte{'M', 'Q', 'T', 'T'}) && pk.ProtocolVersion != 4 && pk.ProtocolVersion != 5) {
-		return ErrProtocolViolationProtocolVersion // [MQTT-3.1.2-2]
+	if !bytes.Equal(pk.Connect.ProtocolName, []byte{'M', 'Q', 'I', 's', 'd', 'p'}) &&
+		!bytes.Equal(pk.Connect.ProtocolName, []byte{'M', 'Q', 'T', 'T'}) {
+		return ErrProtocolViolationProtocolName
 	}
 
 	if pk.ReservedBit != 0 {
