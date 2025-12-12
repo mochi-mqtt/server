@@ -44,7 +44,8 @@ MQTT 代表 MQ Telemetry Transport。它是一种发布/订阅、非常简单和
     - 客户端特定的写入缓冲区，避免因读取速度慢或客户端不规范行为而产生的问题。
     - 通过所有 [Paho互操作性测试](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability)（MQTT v5 和 MQTT v3）。
     - 超过一千多个经过仔细考虑的单元测试场景。
-- 支持 TCP、Websocket（包括 SSL/TLS）和$SYS 服务状态监控。
+- 支持 TCP、Websocket（包括 SSL/TLS）、QUIC 和 $SYS 服务状态监控。
+- MQTT over QUIC 支持，提供低延迟、多路复用连接（兼容 NanoSDK 和 paho.mqtt.golang 客户端）。
 - 内置 基于Redis、Badger、Pebble 和 Bolt 的持久化（使用Hook钩子，你也可以自己创建）。
 - 内置基于规则的认证和 ACL 权限管理（使用Hook钩子，你也可以自己创建）。
 

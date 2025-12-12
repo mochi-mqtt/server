@@ -44,7 +44,8 @@ MQTT stands for [MQ Telemetry Transport](https://en.wikipedia.org/wiki/MQTT). It
     - Client-specific write buffers to avoid issues with slow-reading or irregular client behaviour.
     - Passes all [Paho Interoperability Tests](https://github.com/eclipse/paho.mqtt.testing/tree/master/interoperability) for MQTT v5 and MQTT v3.
     - Over a thousand carefully considered unit test scenarios.
-- TCP, Websocket (including SSL/TLS), and $SYS Dashboard listeners.
+- TCP, Websocket (including SSL/TLS), QUIC, and $SYS Dashboard listeners.
+- MQTT over QUIC support for low-latency, multiplexed connections (compatible with NanoSDK and paho.mqtt.golang clients).
 - Built-in Redis, Badger, Pebble and Bolt Persistence using Hooks (but you can also make your own).
 - Built-in Rule-based Authentication and ACL Ledger using Hooks (also make your own).
 
