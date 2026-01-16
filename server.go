@@ -612,7 +612,11 @@ func (s *Server) SendConnack(cl *Client, reason packets.Code, present bool, prop
 	}
 
 	properties.ReceiveMaximum = s.Options.Capabilities.ReceiveMaximum // 3.2.2.3.3 Receive Maximum
-	if cl.State.ServerKeepalive {                                     // You can set this dynamically using the OnConnect hook.
+	if s.Options.Capabilities.MaximumPacketSize > 0 {
+		properties.MaximumPacketSize = s.Options.Capabilities.MaximumPacketSize
+	}
+
+	if cl.State.ServerKeepalive { // You can set this dynamically using the OnConnect hook.
 		properties.ServerKeepAlive = cl.State.Keepalive // [MQTT-3.1.2-21]
 		properties.ServerKeepAliveFlag = true
 	}
