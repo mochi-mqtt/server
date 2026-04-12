@@ -1489,6 +1489,34 @@ func TestServerBuildAckPahoCompatibility(t *testing.T) {
 	require.Equal(t, packets.Properties{}, ack.Properties)
 }
 
+func TestServerQoS1PubackReasonCode(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+
+	bufCh := make(chan []byte, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		buf, err := io.ReadAll(r)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		bufCh <- buf
+	}()
+
+	pk := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
+	err := s.processPublish(cl, pk)
+	require.NoError(t, err)
+	_ = w.Close()
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case buf := <-bufCh:
+		require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPuback).RawBytes, buf)
+	}
+}
+
 func TestServerProcessPacketAndNextImmediate(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
@@ -1718,11 +1746,11 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 			s.Clients.Add(cl)
 
 			wg := sync.WaitGroup{}
+			errCh := make(chan error, 1)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				err := s.processPublish(cl, tx.pk)
-				require.ErrorIs(t, err, tx.expectErr)
+				errCh <- s.processPublish(cl, tx.pk)
 				_ = w.Close()
 			}()
 
@@ -1733,8 +1761,9 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 				require.Equal(t, tx.expectReponse, buf)
 			}
 
-			require.Equal(t, tx.expectDisconnect, cl.Closed())
 			wg.Wait()
+			require.ErrorIs(t, <-errCh, tx.expectErr)
+			require.Equal(t, tx.expectDisconnect, cl.Closed())
 		})
 	}
 }

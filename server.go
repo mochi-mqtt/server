@@ -939,7 +939,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	cl.State.Inflight.DecreaseReceiveQuota()
-	ack := s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, packets.QosCodes[pk.FixedHeader.Qos]) // [MQTT-4.3.2-4]
+	ack := s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, packets.CodeSuccess) // [MQTT-4.3.2-4]
 	if pk.FixedHeader.Qos == 2 {
 		ack = s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.CodeSuccess) // [MQTT-3.3.4-1] [MQTT-4.3.3-8]
 	}
