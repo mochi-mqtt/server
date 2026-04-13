@@ -6,6 +6,7 @@ package listeners
 
 import (
 	"crypto/tls"
+	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -83,7 +84,7 @@ func (l *TCP) Serve(establish EstablishFn) {
 		if atomic.LoadUint32(&l.end) == 0 {
 			go func() {
 				err = establish(l.id, conn)
-				if err != nil {
+				if err != nil && errors.Is(err, io.EOF) {
 					l.log.Warn("", "error", err)
 				}
 			}()
