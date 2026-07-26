@@ -633,7 +633,8 @@ func BenchmarkSubscribers(b *testing.B) {
 	index.Subscribe("cl3", packets.Subscription{Filter: "#"})
 
 	for n := 0; n < b.N; n++ {
-		index.Subscribers("a/b/c")
+		subs := index.Subscribers("a/b/c")
+		subs.Release()
 	}
 }
 
