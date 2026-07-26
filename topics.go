@@ -186,6 +186,19 @@ func (s *SharedSubscriptions) GetAll() map[string]map[string]packets.Subscriptio
 	return m
 }
 
+// Range iterates over all shared subscriptions and calls the function f.
+func (s *SharedSubscriptions) Range(f func(group, id string, sub packets.Subscription) bool) {
+	s.RLock()
+	defer s.RUnlock()
+	for group, subs := range s.internal {
+		for id, sub := range subs {
+			if !f(group, id, sub) {
+				return
+			}
+		}
+	}
+}
+
 // InlineSubFn is the signature for a callback function which will be called
 // when an inline client receives a message on a topic it is subscribed to.
 // The sub argument contains information about the subscription that was matched for any filters.
@@ -220,6 +233,17 @@ func (s *InlineSubscriptions) GetAll() map[int]InlineSubscription {
 		m[k] = v
 	}
 	return m
+}
+
+// Range iterates over all internal subscriptions and calls the function f.
+func (s *InlineSubscriptions) Range(f func(id int, sub InlineSubscription) bool) {
+	s.RLock()
+	defer s.RUnlock()
+	for k, v := range s.internal {
+		if !f(k, v) {
+			return
+		}
+	}
 }
 
 // Get returns an internal subscription for a client id.
@@ -277,6 +301,17 @@ func (s *Subscriptions) GetAll() map[string]packets.Subscription {
 	return m
 }
 
+// Range iterates over all subscriptions and calls the function f.
+func (s *Subscriptions) Range(f func(id string, sub packets.Subscription) bool) {
+	s.RLock()
+	defer s.RUnlock()
+	for k, v := range s.internal {
+		if !f(k, v) {
+			return
+		}
+	}
+}
+
 // Get returns a subscriptions for a specific client or filter id.
 func (s *Subscriptions) Get(id string) (val packets.Subscription, ok bool) {
 	s.RLock()
@@ -314,6 +349,27 @@ type Subscribers struct {
 	SharedSelected      map[string]packets.Subscription
 	Subscriptions       map[string]packets.Subscription
 	InlineSubscriptions map[int]InlineSubscription
+}
+
+var subscribersPool = sync.Pool{
+	New: func() any {
+		return &Subscribers{
+			Shared:              make(map[string]map[string]packets.Subscription),
+			SharedSelected:      make(map[string]packets.Subscription),
+			Subscriptions:       make(map[string]packets.Subscription),
+			InlineSubscriptions: make(map[int]InlineSubscription),
+		}
+	},
+}
+
+// Release clears the maps and puts the Subscribers object back into the pool.
+// This leverages Go 1.21's clear() builtin for zero-allocation memory resets.
+func (s *Subscribers) Release() {
+	clear(s.Shared)
+	clear(s.SharedSelected)
+	clear(s.Subscriptions)
+	clear(s.InlineSubscriptions)
+	subscribersPool.Put(s)
 }
 
 // SelectShared returns one subscriber for each shared subscription group.
@@ -581,12 +637,8 @@ func (x *TopicsIndex) scanMessages(filter string, d int, n *particle, pks []pack
 // Subscribers returns a map of clients who are subscribed to matching filters,
 // their subscription ids and highest qos.
 func (x *TopicsIndex) Subscribers(topic string) *Subscribers {
-	return x.scanSubscribers(topic, 0, nil, &Subscribers{
-		Shared:              map[string]map[string]packets.Subscription{},
-		SharedSelected:      map[string]packets.Subscription{},
-		Subscriptions:       map[string]packets.Subscription{},
-		InlineSubscriptions: map[int]InlineSubscription{},
-	})
+	subs := subscribersPool.Get().(*Subscribers)
+	return x.scanSubscribers(topic, 0, nil, subs)
 }
 
 // scanSubscribers returns a list of client subscriptions matching an indexed topic address.
@@ -633,9 +685,9 @@ func (x *TopicsIndex) gatherSubscriptions(topic string, particle *particle, subs
 		subs.Subscriptions = map[string]packets.Subscription{}
 	}
 
-	for client, sub := range particle.subscriptions.GetAll() {
+	particle.subscriptions.Range(func(client string, sub packets.Subscription) bool {
 		if len(sub.Filter) > 0 && topic[0] == '$' && (sub.Filter[0] == '+' || sub.Filter[0] == '#') { // don't match $ topics with top level wildcards [MQTT-4.7.1-1] [MQTT-4.7.1-2]
-			continue
+			return true
 		}
 
 		cls, ok := subs.Subscriptions[client]
@@ -644,7 +696,8 @@ func (x *TopicsIndex) gatherSubscriptions(topic string, particle *particle, subs
 		}
 
 		subs.Subscriptions[client] = cls.Merge(sub)
-	}
+		return true
+	})
 }
 
 // gatherSharedSubscriptions gathers all shared subscriptions for a particle.
@@ -653,15 +706,14 @@ func (x *TopicsIndex) gatherSharedSubscriptions(particle *particle, subs *Subscr
 		subs.Shared = map[string]map[string]packets.Subscription{}
 	}
 
-	for _, shares := range particle.shared.GetAll() {
-		for client, sub := range shares {
-			if _, ok := subs.Shared[sub.Filter]; !ok {
-				subs.Shared[sub.Filter] = map[string]packets.Subscription{}
-			}
-
-			subs.Shared[sub.Filter][client] = sub
+	particle.shared.Range(func(group, client string, sub packets.Subscription) bool {
+		if _, ok := subs.Shared[sub.Filter]; !ok {
+			subs.Shared[sub.Filter] = map[string]packets.Subscription{}
 		}
-	}
+
+		subs.Shared[sub.Filter][client] = sub
+		return true
+	})
 }
 
 // gatherSharedSubscriptions gathers all inline subscriptions for a particle.
@@ -670,9 +722,10 @@ func (x *TopicsIndex) gatherInlineSubscriptions(particle *particle, subs *Subscr
 		subs.InlineSubscriptions = map[int]InlineSubscription{}
 	}
 
-	for id, inline := range particle.inlineSubscriptions.GetAll() {
+	particle.inlineSubscriptions.Range(func(id int, inline InlineSubscription) bool {
 		subs.InlineSubscriptions[id] = inline
-	}
+		return true
+	})
 }
 
 // isolateParticle extracts a particle between d / and d+1 / without allocations.
