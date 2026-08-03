@@ -89,10 +89,24 @@ func (cl *Clients) Delete(id string) {
 }
 
 // GetByListener returns clients matching a listener id.
+//
+// MAESTROHUB PATCH (deadlock): the capacity hint read cl.Len(), which takes
+// RLock a second time while this function already holds it. sync.RWMutex
+// documents that as prohibited — "if a goroutine holds a RWMutex for reading
+// and another goroutine might call Lock, no goroutine should expect to be
+// able to acquire a read lock until the initial read lock is released. In
+// particular, this prohibits recursive read locking."
+//
+// A client connecting while a listener closes is exactly that interleaving:
+// attachClient -> Clients.Delete -> Lock() queues a writer, RWMutex stops
+// admitting new readers, and this nested RLock blocks forever behind the
+// writer that is itself waiting on the RLock we still hold.
+//
+// The map is already guarded by the RLock held here, so read len directly.
 func (cl *Clients) GetByListener(id string) []*Client {
 	cl.RLock()
 	defer cl.RUnlock()
-	clients := make([]*Client, 0, cl.Len())
+	clients := make([]*Client, 0, len(cl.internal))
 	for _, client := range cl.internal {
 		if client.Net.Listener == id && !client.Closed() {
 			clients = append(clients, client)
