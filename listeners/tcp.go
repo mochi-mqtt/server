@@ -18,12 +18,13 @@ const TypeTCP = "tcp"
 // TCP is a listener for establishing client connections on basic TCP protocol.
 type TCP struct { // [MQTT-4.2.0-1]
 	sync.RWMutex
-	id      string       // the internal id of the listener
-	address string       // the network address to bind to
-	listen  net.Listener // a net.Listener which will listen for new clients
-	config  Config       // configuration values for the listener
-	log     *slog.Logger // server logger
-	end     uint32       // ensure the close methods are only called once
+	id        string          // the internal id of the listener
+	address   string          // the network address to bind to
+	listen    net.Listener    // a net.Listener which will listen for new clients
+	config    Config          // configuration values for the listener
+	log       *slog.Logger    // server logger
+	end       uint32          // ensure the close methods are only called once
+	clientsWg *sync.WaitGroup // MAESTROHUB: see clientCounter in listeners.go
 }
 
 // NewTCP initializes and returns a new TCP listener, listening on an address.
@@ -81,7 +82,16 @@ func (l *TCP) Serve(establish EstablishFn) {
 		}
 
 		if atomic.LoadUint32(&l.end) == 0 {
+			// MAESTROHUB: Add on THIS goroutine, before the worker exists,
+			// so CloseAll's Wait() can never observe a zero counter with an
+			// Add in flight. See clientCounter in listeners.go.
+			if l.clientsWg != nil {
+				l.clientsWg.Add(1)
+			}
 			go func() {
+				if l.clientsWg != nil {
+					defer l.clientsWg.Done()
+				}
 				err = establish(l.id, conn)
 				if err != nil {
 					l.log.Warn("", "error", err)
@@ -106,4 +116,9 @@ func (l *TCP) Close(closeClients CloseFn) {
 			return
 		}
 	}
+}
+
+// setClientsWg implements clientCounter. See listeners.go.
+func (l *TCP) setClientsWg(wg *sync.WaitGroup) {
+	l.clientsWg = wg
 }

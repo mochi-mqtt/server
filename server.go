@@ -404,8 +404,12 @@ func (s *Server) EstablishConnection(listener string, c net.Conn) error {
 // attachClient validates an incoming client connection and if viable, attaches the client
 // to the server, performs session housekeeping, and reads incoming packets.
 func (s *Server) attachClient(cl *Client, listener string) error {
-	defer s.Listeners.ClientsWg.Done()
-	s.Listeners.ClientsWg.Add(1)
+	// MAESTROHUB: the ClientsWg Add/Done that used to live here moved to the
+	// acceptors (see clientCounter in listeners/listeners.go). Incrementing on
+	// the per-connection goroutine let CloseAll reach Wait() at zero with an
+	// Add in flight — sync.WaitGroup misuse, whose documented failure mode is a
+	// panic on shutdown. The acceptor knows a connection exists strictly
+	// earlier, so it is the correct owner.
 
 	go cl.WriteLoop()
 	defer cl.Stop(nil)

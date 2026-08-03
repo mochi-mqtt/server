@@ -52,11 +52,33 @@ func New() *Listeners {
 	}
 }
 
+// clientCounter is implemented by listeners that account for their own
+// in-flight connections.
+//
+// MAESTROHUB PATCH (WaitGroup misuse): ClientsWg used to be incremented deep
+// inside Server.attachClient, which runs on the per-connection goroutine the
+// acceptor spawns. CloseAll could therefore reach Wait() while the counter was
+// still zero and an Add(1) was in flight — which sync.WaitGroup permits only
+// when the counter is already positive, and whose documented failure mode is a
+// panic ("WaitGroup misuse: Add called concurrently with Wait").
+//
+// The acceptor is what knows a connection exists, so the acceptor owns the
+// counter. This interface hands it the WaitGroup at registration time. It is
+// deliberately optional and unexported: a listener that does not implement it
+// keeps working, it simply is not waited on — which is the pre-patch behaviour
+// for anything Server.attachClient never saw.
+type clientCounter interface {
+	setClientsWg(wg *sync.WaitGroup)
+}
+
 // Add adds a new listener to the listeners map, keyed on id.
 func (l *Listeners) Add(val Listener) {
 	l.Lock()
 	defer l.Unlock()
 	l.internal[val.ID()] = val
+	if c, ok := val.(clientCounter); ok {
+		c.setClientsWg(&l.ClientsWg)
+	}
 }
 
 // Get returns the value of a listener if it exists.

@@ -37,6 +37,7 @@ type Websocket struct { // [MQTT-4.2.0-1]
 	establish EstablishFn         // the server's establish connection handler
 	upgrader  *websocket.Upgrader //  upgrade the incoming http/tcp connection to a websocket compliant connection.
 	end       uint32              // ensure the close methods are only called once
+	clientsWg *sync.WaitGroup     // MAESTROHUB: see clientCounter in listeners.go
 }
 
 // NewWebsocket initializes and returns a new Websocket listener, listening on an address.
@@ -97,6 +98,15 @@ func (l *Websocket) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer c.Close()
+
+	// MAESTROHUB: unlike the raw acceptors this runs synchronously on the
+	// http.Server's own goroutine, so the Add is already off the accept path.
+	// It still must exist, or CloseAll stops waiting for websocket clients
+	// once attachClient no longer counts them.
+	if l.clientsWg != nil {
+		l.clientsWg.Add(1)
+		defer l.clientsWg.Done()
+	}
 
 	err = l.establish(l.id, &wsConn{Conn: c.UnderlyingConn(), c: c})
 	if err != nil {
@@ -196,4 +206,9 @@ func (ws *wsConn) Write(p []byte) (int, error) {
 // Close signals the underlying websocket conn to close.
 func (ws *wsConn) Close() error {
 	return ws.Conn.Close()
+}
+
+// setClientsWg implements clientCounter. See listeners.go.
+func (l *Websocket) setClientsWg(wg *sync.WaitGroup) {
+	l.clientsWg = wg
 }
