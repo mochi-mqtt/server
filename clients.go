@@ -545,8 +545,14 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		pk.Mods.MaxSize = cl.Properties.Props.MaximumPacketSize
 	}
 
-	if cl.Properties.Props.RequestProblemInfoFlag && cl.Properties.Props.RequestProblemInfo == 0x0 {
-		pk.Mods.DisallowProblemInfo = true // [MQTT-3.1.2-29] strict, no problem info on any packet if set
+	if cl.Properties.Props.RequestProblemInfoFlag && cl.Properties.Props.RequestProblemInfo == 0x0 &&
+		pk.FixedHeader.Type != packets.Publish {
+		// [MQTT-3.1.2-29] the server must not send a Reason String or User
+		// Properties on any packet other than PUBLISH, CONNACK or
+		// DISCONNECT. PUBLISH is exempt: its User Properties are
+		// application data forwarded from the publisher, not problem
+		// information about a failure.
+		pk.Mods.DisallowProblemInfo = true
 	}
 
 	if pk.FixedHeader.Type != packets.Connack || cl.Properties.Props.RequestResponseInfo == 0x1 || cl.ops.options.Capabilities.Compatibilities.AlwaysReturnResponseInfo {

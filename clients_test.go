@@ -935,3 +935,65 @@ var (
 		packets.TPacketData[packets.Auth].Get(packets.TAuth),
 	}
 )
+
+// [MQTT-3.1.2-29] names PUBLISH among the packets a Reason String or User
+// Properties may still be sent on when a client sets Request Problem
+// Information to 0. A PUBLISH's User Properties are application data
+// forwarded from the publisher, not problem information about a failure,
+// so suppressing them silently drops data the subscriber was sent.
+func TestClientWritePacketRequestProblemInfoExemptsPublish(t *testing.T) {
+	tt := []struct {
+		name string
+		pk   packets.Packet
+		want bool
+	}{
+		{
+			name: "publish keeps its user properties",
+			pk: packets.Packet{
+				FixedHeader: packets.FixedHeader{Type: packets.Publish},
+				TopicName:   "a/b/c",
+				Payload:     []byte("hello"),
+				Properties: packets.Properties{
+					User: []packets.UserProperty{{Key: "prop-key", Val: "prop-val"}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "puback does not",
+			pk: packets.Packet{
+				FixedHeader: packets.FixedHeader{Type: packets.Puback},
+				PacketID:    1,
+				Properties: packets.Properties{
+					User: []packets.UserProperty{{Key: "prop-key", Val: "prop-val"}},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tx := range tt {
+		t.Run(tx.name, func(t *testing.T) {
+			cl, r, _ := newTestClient()
+			defer cl.Stop(errClientStop)
+			cl.Properties.ProtocolVersion = 5
+			cl.Properties.Props.RequestProblemInfoFlag = true
+			cl.Properties.Props.RequestProblemInfo = 0x0
+
+			o := make(chan []byte)
+			go func() {
+				buf, err := io.ReadAll(r)
+				require.NoError(t, err)
+				o <- buf
+			}()
+
+			tx.pk.ProtocolVersion = 5
+			require.NoError(t, cl.WritePacket(tx.pk))
+
+			time.Sleep(2 * time.Millisecond)
+			_ = cl.Net.Conn.Close()
+
+			require.Equal(t, tx.want, bytes.Contains(<-o, []byte("prop-key")))
+		})
+	}
+}
