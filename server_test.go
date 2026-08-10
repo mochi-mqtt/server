@@ -1570,6 +1570,48 @@ func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPubackUnexpectedError).RawBytes, buf)
 }
 
+// TestServerProcessPublishOnPublishAckErrorQoS2GetsPubrec ensures a QoS 2
+// publish rejected by an OnPublish hook is answered with a PUBREC, not a
+// PUBACK — PUBREC is the spec-defined response to a QoS 2 PUBLISH, and a
+// PUBACK here previously left a compliant sender's QoS 2 state machine
+// with an ack type it never expects for that packet ID.
+func TestServerProcessPublishOnPublishAckErrorQoS2GetsPubrec(t *testing.T) {
+	s := newServer()
+	hook := new(modifiedHookBase)
+	hook.fail = true
+	hook.err = packets.ErrPayloadFormatInvalid
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
+	_ = s.Serve()
+	defer s.Close()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	expected := &packets.Packet{
+		FixedHeader:     packets.FixedHeader{Type: packets.Pubrec},
+		ProtocolVersion: 5,
+		PacketID:        packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet.PacketID,
+		ReasonCode:      packets.ErrPayloadFormatInvalid.Code,
+		Properties: packets.Properties{
+			ReasonString: packets.ErrPayloadFormatInvalid.Reason,
+		},
+	}
+	var expectedBuf bytes.Buffer
+	require.NoError(t, expected.PubrecEncode(&expectedBuf))
+	require.Equal(t, expectedBuf.Bytes(), buf)
+}
+
 func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
