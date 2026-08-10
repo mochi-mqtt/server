@@ -1251,6 +1251,12 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 		if code != packets.CodeSuccess {
 			reasonCodes[i] = code.Code // NB 3.9.3 Non-normative 0x91
 			continue
+		} else if len(pk.ReasonCodes) == len(pk.Filters) && pk.ReasonCodes[i] >= packets.ErrUnspecifiedError.Code {
+			// An OnSubscribe hook refused this filter and said why. The
+			// authorization check below can only answer 0x87, so without
+			// this a hook refusing a filter for any other reason has to
+			// either mislabel it or disconnect the client. [MQTT-3.9.3-1]
+			reasonCodes[i] = pk.ReasonCodes[i]
 		} else if !IsValidFilter(sub.Filter, false) {
 			reasonCodes[i] = packets.ErrTopicFilterInvalid.Code
 		} else if sub.NoLocal && IsSharedFilter(sub.Filter) {

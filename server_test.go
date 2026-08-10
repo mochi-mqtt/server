@@ -3931,3 +3931,69 @@ func TestMinimum(t *testing.T) {
 	require.EqualValues(t, -1, minimum(-1, 20))
 	require.EqualValues(t, -2, minimum(-1, -2))
 }
+
+// refuseFilterHook refuses one filter of a SUBSCRIBE by setting its reason
+// code, and leaves the rest of the packet alone.
+type refuseFilterHook struct {
+	HookBase
+	filter string
+	code   byte
+}
+
+func (h *refuseFilterHook) ID() string { return "refuse-filter" }
+
+func (h *refuseFilterHook) Provides(b byte) bool {
+	return bytes.Contains([]byte{OnSubscribe}, []byte{b})
+}
+
+func (h *refuseFilterHook) OnSubscribe(cl *Client, pk packets.Packet) packets.Packet {
+	pk.ReasonCodes = make([]byte, len(pk.Filters))
+	for i, sub := range pk.Filters {
+		if sub.Filter == h.filter {
+			pk.ReasonCodes[i] = h.code
+		}
+	}
+	return pk
+}
+
+// An OnSubscribe hook may refuse a single filter and say why. Without it
+// the only hook-driven refusal is OnACLCheck, which can answer 0x87 and
+// nothing else, so a hook rejecting a filter for any other reason has to
+// mislabel it as an authorization failure or disconnect the client.
+func TestServerProcessSubscribeHookReasonCodes(t *testing.T) {
+	s := newServer()
+	require.NoError(t, s.AddHook(&refuseFilterHook{
+		filter: "d/e/f/g/h/i",
+		code:   packets.ErrTopicFilterInvalid.Code,
+	}, nil))
+	_ = s.Serve()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	go func() {
+		err := s.processSubscribe(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeMany).Packet)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	// The reason codes are the SUBACK payload, so they are the last byte
+	// per filter. The refused one carries the hook's code; the others are
+	// the granted QoS, untouched.
+	require.Equal(t,
+		[]byte{0, packets.ErrTopicFilterInvalid.Code, 2},
+		buf[len(buf)-3:])
+
+	// A refused filter is not subscribed, or the client would receive
+	// messages for a subscription the SUBACK told it it did not have.
+	require.Empty(t, s.Topics.Subscribers("d/e/f/g/h/i").Subscriptions)
+	require.Contains(t, s.Topics.Subscribers("a/b").Subscriptions, cl.ID)
+	require.Contains(t, s.Topics.Subscribers("x/y/z").Subscriptions, cl.ID)
+
+	_, ok := cl.State.Subscriptions.Get("d/e/f/g/h/i")
+	require.False(t, ok)
+}
