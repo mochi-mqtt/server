@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: Italo Nesi
 
 package mqtt
 
@@ -2797,25 +2798,6 @@ func TestServerProcessPacketSubscribe(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackMqtt5).RawBytes, buf)
 }
 
-func TestServerProcessPacketSubscribePacketIDInUse(t *testing.T) {
-	s := newServer()
-	cl, r, w := newTestClient()
-	cl.Properties.ProtocolVersion = 5
-	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Publish}})
-
-	pkx := *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeMqtt5).Packet
-	pkx.PacketID = 15
-	go func() {
-		err := s.processPacket(cl, pkx)
-		require.NoError(t, err)
-		_ = w.Close()
-	}()
-
-	buf, err := io.ReadAll(r)
-	require.NoError(t, err)
-	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackPacketIDInUse).RawBytes, buf)
-}
-
 func TestServerProcessPacketSubscribeInvalid(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -2856,6 +2838,113 @@ func TestServerProcessPacketSubscribeInvalidSharedNoLocal(t *testing.T) {
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
 	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackInvalidSharedNoLocal).RawBytes, buf)
+}
+
+// A Pubrec entry is the client's OWN QoS 2 publish still in its
+// PUBREL exchange, so that identifier really is in use by the client
+// and 0x91 is correct. A Publish entry is the server's outbound
+// message, whose identifiers are a separate space — see
+// TestServerProcessSubscribeWithServerInflightPacketID.
+func TestServerProcessPacketSubscribePacketIDInUse(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}})
+
+	pkx := *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeMqtt5).Packet
+	pkx.PacketID = 15
+	go func() {
+		err := s.processPacket(cl, pkx)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackPacketIDInUse).RawBytes, buf)
+}
+
+// A Pubrec entry is the client's OWN QoS 2 publish still in its
+// PUBREL exchange, so that identifier really is in use by the client
+// and 0x91 is correct. A Publish entry is the server's outbound
+// message, whose identifiers are a separate space — see
+// TestServerProcessSubscribeWithServerInflightPacketID.
+func TestServerProcessPacketUnsubscribePackedIDInUse(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}})
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribeMqtt5).Packet)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Unsuback].Get(packets.TUnsubackPacketIDInUse).RawBytes, buf)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Subscriptions))
+}
+
+// Packet Identifiers assigned by the Client and by the Server are
+// independent: MQTT 3.1.1 2.3.1 and MQTT 5.0 2.2.1 both say so, and both
+// give the same example — a Client can send a packet with identifier
+// 0x1234 while receiving a different one carrying 0x1234 from its Server.
+//
+// The server's own outbound QoS 1 and 2 messages live in cl.State.Inflight,
+// so checking a client-assigned SUBSCRIBE identifier against that store
+// refuses a packet the specification permits. It happens whenever a
+// persistent session has a queued message and the client subscribes on
+// connect, which is what every client library's on-connect callback does.
+func TestServerProcessSubscribeWithServerInflightPacketID(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+
+	// A message the server sent and is waiting to have acknowledged, using
+	// the same identifier the client is about to choose for its SUBSCRIBE.
+	cl.State.Inflight.Set(packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+		PacketID:    15,
+		TopicName:   "x/y/z",
+	})
+
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribe).Packet)
+		require.NoError(t, err)
+
+		time.Sleep(time.Millisecond)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSuback).RawBytes, buf)
+}
+
+// The same for UNSUBSCRIBE, which carries the identical check.
+func TestServerProcessUnsubscribeWithServerInflightPacketID(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	s.Topics.Subscribe(cl.ID, packets.Subscription{Filter: "a/b/c"})
+	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Qos: 0})
+
+	cl.State.Inflight.Set(packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+		PacketID:    15,
+		TopicName:   "x/y/z",
+	})
+
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribe).Packet)
+		require.NoError(t, err)
+
+		time.Sleep(time.Millisecond)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Unsuback].Get(packets.TUnsuback).RawBytes, buf)
 }
 
 func TestServerProcessSubscribeWithRetain(t *testing.T) {
@@ -3046,23 +3135,6 @@ func TestServerProcessPacketUnsubscribe(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, packets.TPacketData[packets.Unsuback].Get(packets.TUnsubackMqtt5).RawBytes, buf)
 	require.Equal(t, int64(-1), atomic.LoadInt64(&s.Info.Subscriptions))
-}
-
-func TestServerProcessPacketUnsubscribePackedIDInUse(t *testing.T) {
-	s := newServer()
-	cl, r, w := newTestClient()
-	cl.Properties.ProtocolVersion = 5
-	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Publish}})
-	go func() {
-		err := s.processPacket(cl, *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribeMqtt5).Packet)
-		require.NoError(t, err)
-		_ = w.Close()
-	}()
-
-	buf, err := io.ReadAll(r)
-	require.NoError(t, err)
-	require.Equal(t, packets.TPacketData[packets.Unsuback].Get(packets.TUnsubackPacketIDInUse).RawBytes, buf)
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Subscriptions))
 }
 
 func TestServerProcessPacketUnsubscribeInvalid(t *testing.T) {
