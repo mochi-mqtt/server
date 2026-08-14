@@ -3931,3 +3931,36 @@ func TestMinimum(t *testing.T) {
 	require.EqualValues(t, -1, minimum(-1, 20))
 	require.EqualValues(t, -2, minimum(-1, -2))
 }
+
+// A successful PUBACK must carry a PUBACK reason code. 0x01 is Granted QoS
+// 1, a SUBACK code, and [MQTT-3.4.2-1] requires one of the codes §3.4.2.1
+// lists — 0x00, 0x10, and the 0x80-and-above refusals.
+//
+// It is invisible until the publish carries a property the acknowledgement
+// keeps, because with none the encoder may omit the reason byte and its
+// absence reads as 0x00. A User Property is enough: the byte is then written
+// and the wrong value appears.
+func TestServerProcessPacketPublishQos1AckReasonCode(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	pk := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1Mqtt5).Packet
+	pk.Properties.User = []packets.UserProperty{{Key: "mine", Val: "ok"}}
+
+	go func() {
+		require.NoError(t, s.processPacket(cl, pk))
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NotEmpty(t, buf)
+	require.Equal(t, packets.Puback, buf[0]>>4)
+
+	// Fixed header, then the two packet-identifier bytes, then the reason.
+	require.Greater(t, len(buf), 4, "the reason byte is written once there are properties")
+	require.Equal(t, packets.CodeSuccess.Code, buf[4],
+		"a successful PUBACK must carry a PUBACK reason code, not a granted-QoS one")
+}
