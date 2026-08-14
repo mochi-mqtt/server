@@ -857,7 +857,34 @@ func (s *Server) InjectPacket(cl *Client, pk packets.Packet) error {
 // processPublish processes a Publish packet.
 func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	if !cl.Net.Inline && !IsValidFilter(pk.TopicName, true) {
-		return nil
+		// A $SYS topic is the only thing that reaches here: every other way
+		// IsValidFilter can refuse a publish is a wildcard or an absent
+		// topic name, and PublishValidate has already answered those with a
+		// DISCONNECT before this runs.
+		//
+		// Refusing the publish is right - 4.7.2 says the server should stop
+		// clients exchanging messages over $SYS - but a QoS 1 or 2 client
+		// must still be answered [MQTT-4.3.2-4] [MQTT-4.3.3-8]. Returning
+		// here without one leaves it waiting for an acknowledgement that
+		// will never arrive, holding a slot of its send quota for as long as
+		// the session lasts.
+		//
+		// This is what a publish an ACL denies already gets, a few lines
+		// below, and for the same reason: the client may not write there.
+		if pk.FixedHeader.Qos == 0 {
+			return nil
+		}
+
+		if cl.Properties.ProtocolVersion != 5 {
+			return s.DisconnectClient(cl, packets.ErrNotAuthorized)
+		}
+
+		ackType := packets.Puback
+		if pk.FixedHeader.Qos == 2 {
+			ackType = packets.Pubrec
+		}
+
+		return cl.WritePacket(s.buildAck(pk.PacketID, ackType, 0, pk.Properties, packets.ErrNotAuthorized))
 	}
 
 	if atomic.LoadInt32(&cl.State.Inflight.receiveQuota) == 0 {

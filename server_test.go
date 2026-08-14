@@ -1634,13 +1634,105 @@ func TestServerProcessPacketPublishMaximumReceive(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectReceiveMaximum).RawBytes, buf)
 }
 
+// A publish to a $SYS topic is refused, and a client that asked for an
+// acknowledgement gets one. Dropping the packet silently leaves a QoS 1 or
+// 2 client waiting for a reply that never comes and holding a slot of its
+// send quota for the life of the session.
+//
+// The answers are the same ones a publish an ACL denies receives, because
+// it is the same refusal: the client may not write there.
 func TestServerProcessPublishInvalidTopic(t *testing.T) {
-	s := newServer()
-	_ = s.Serve()
-	defer s.Close()
-	cl, _, _ := newTestClient()
-	err := s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishSpecDenySysTopic).Packet)
-	require.NoError(t, err) // $SYS Topics should be ignored?
+	sysTopic := func(c byte) packets.Packet {
+		pk := *packets.TPacketData[packets.Publish].Get(c).Packet
+		pk.TopicName = "$SYS/any"
+		return pk
+	}
+
+	tt := []struct {
+		name             string
+		protocolVersion  byte
+		pk               packets.Packet
+		expectErr        error
+		expectResponse   []byte
+		expectDisconnect bool
+	}{
+		{
+			name:            "v4_QOS0",
+			protocolVersion: 4,
+			pk:              sysTopic(packets.TPublishBasic),
+		},
+		{
+			// MQTT 3.1.1 has no reason code to put in a PUBACK, so the
+			// refusal is a disconnect, exactly as it is for an ACL denial.
+			name:             "v4_QOS1",
+			protocolVersion:  4,
+			pk:               sysTopic(packets.TPublishQos1),
+			expectErr:        packets.ErrNotAuthorized,
+			expectResponse:   []byte{packets.Disconnect << 4, 0},
+			expectDisconnect: true,
+		},
+		{
+			name:             "v4_QOS2",
+			protocolVersion:  4,
+			pk:               sysTopic(packets.TPublishQos2),
+			expectErr:        packets.ErrNotAuthorized,
+			expectResponse:   []byte{packets.Disconnect << 4, 0},
+			expectDisconnect: true,
+		},
+		{
+			name:            "v5_QOS0",
+			protocolVersion: 5,
+			pk:              sysTopic(packets.TPublishBasicMqtt5),
+		},
+		{
+			name:            "v5_QOS1",
+			protocolVersion: 5,
+			pk:              sysTopic(packets.TPublishQos1Mqtt5),
+			expectResponse:  packets.TPacketData[packets.Puback].Get(packets.TPubackMqtt5NotAuthorized).RawBytes,
+		},
+		{
+			name:            "v5_QOS2",
+			protocolVersion: 5,
+			pk:              sysTopic(packets.TPublishQos2Mqtt5),
+			expectResponse:  packets.TPacketData[packets.Pubrec].Get(packets.TPubrecMqtt5NotAuthorized).RawBytes,
+		},
+	}
+
+	for _, tx := range tt {
+		t.Run(tx.name, func(t *testing.T) {
+			s := newServer()
+			_ = s.Serve()
+			defer s.Close()
+
+			cl, r, w := newTestClient()
+			cl.Properties.ProtocolVersion = tx.protocolVersion
+			s.Clients.Add(cl)
+
+			// The published error is captured rather than asserted inside
+			// the goroutine: require calls Goexit on failure, which would
+			// skip the Close below and leave the read blocking for ever.
+			var publishErr error
+			wg := sync.WaitGroup{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() { _ = w.Close() }()
+				publishErr = s.processPublish(cl, tx.pk)
+			}()
+
+			buf, err := io.ReadAll(r)
+			require.NoError(t, err)
+			wg.Wait()
+
+			require.ErrorIs(t, publishErr, tx.expectErr)
+			if tx.expectResponse != nil {
+				require.Equal(t, tx.expectResponse, buf)
+			} else {
+				require.Empty(t, buf)
+			}
+			require.Equal(t, tx.expectDisconnect, cl.Closed())
+		})
+	}
 }
 
 func TestServerProcessPublishACLCheckDeny(t *testing.T) {
