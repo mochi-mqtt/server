@@ -5,7 +5,9 @@
 package mqtt
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -356,6 +358,33 @@ func TestHooksOnPublish(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrRejectPacket)
 	require.Equal(t, uint16(10), pk.PacketID)
+}
+
+func TestHooksOnPublishLogsAReasonCodeAtDebug(t *testing.T) {
+	var buf bytes.Buffer
+	h := new(Hooks)
+	h.Log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	hook := new(modifiedHookBase)
+	err := h.Add(hook, nil)
+	require.NoError(t, err)
+
+	// A reason code is a decision the server answers with, not a fault.
+	hook.fail = true
+	hook.err = packets.ErrQuotaExceeded
+	_, err = h.OnPublish(new(Client), packets.Packet{PacketID: 10})
+	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
+	require.NotContains(t, buf.String(), "level=ERROR")
+	require.Contains(t, buf.String(), "level=DEBUG")
+	require.Contains(t, buf.String(), "reason=\"quota exceeded\"")
+
+	// Anything that is not a reason code the server can answer with is
+	// still an error.
+	buf.Reset()
+	hook.err = nil
+	_, err = h.OnPublish(new(Client), packets.Packet{PacketID: 10})
+	require.ErrorIs(t, err, errTestHook)
+	require.Contains(t, buf.String(), "level=ERROR")
 }
 
 func TestHooksOnPacketRead(t *testing.T) {

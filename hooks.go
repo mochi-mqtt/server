@@ -408,6 +408,21 @@ func (h *Hooks) OnPublish(cl *Client, pk packets.Packet) (pkx packets.Packet, er
 				} else if errors.Is(err, packets.CodeSuccessIgnore) {
 					return pk, err
 				}
+				// A hook answering with a reason code has made a decision,
+				// not hit a fault: processPublish turns it into the PUBACK
+				// the client receives. Reporting an ordinary refusal - a
+				// quota exceeded, an invalid topic name - at error level
+				// tells an operator the server failed when it worked, and
+				// formats the whole packet, payload included, to say so.
+				var code packets.Code
+				if errors.As(err, &code) {
+					h.Log.Debug("publish packet refused by hook",
+						"code", code.Code,
+						"reason", code.Reason,
+						"hook", hook.ID(),
+						"packet", pkx)
+					return pk, err
+				}
 				h.Log.Error("publish packet error",
 					"error", err,
 					"hook", hook.ID(),
