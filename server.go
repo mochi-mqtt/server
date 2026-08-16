@@ -520,10 +520,34 @@ func (s *Server) readConnectionPacket(cl *Client) (pk packets.Packet, err error)
 func (s *Server) receivePacket(cl *Client, pk packets.Packet) error {
 	err := s.processPacket(cl, pk)
 	if err != nil {
-		if code, ok := err.(packets.Code); ok &&
+		code, refused := err.(packets.Code)
+		if refused &&
 			cl.Properties.ProtocolVersion == 5 &&
 			code.Code >= packets.ErrUnspecifiedError.Code {
 			_ = s.DisconnectClient(cl, code)
+		}
+
+		// A reason code is a decision, not a fault: the client has just
+		// been told precisely what was wrong with its packet, and the
+		// server did what the specification asks of it. Reporting that at
+		// Warn tells an operator watching for problems that the server
+		// failed when it worked -- and formatting the packet to say so
+		// writes the client's own payload into the log, at a level that is
+		// on by default, at whatever rate a client can reconnect and
+		// repeat itself. One 100KiB publish carrying a topic alias its new
+		// connection had never registered produced a single line of over
+		// 300KB here.
+		//
+		// This is the same distinction #516 drew for a hook's reason code,
+		// in the same tree, and the same treatment: debug, and the fields
+		// that identify the case rather than the packet that carries it.
+		// An error that is not a Code is a genuine fault and keeps both.
+		if refused {
+			s.Log.Debug("packet refused",
+				"code", code.Code, "reason", code.Reason, "client", cl.ID,
+				"listener", cl.Net.Listener, "type", pk.FixedHeader.Type)
+
+			return err
 		}
 
 		s.Log.Warn("error processing packet", "error", err, "client", cl.ID, "listener", cl.Net.Listener, "pk", pk)

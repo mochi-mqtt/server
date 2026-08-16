@@ -2255,6 +2255,68 @@ func TestProcessPublishWithTopicAlias(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, buf)
 }
 
+func TestReceivePacketLogsARefusalAtDebugWithoutThePacket(t *testing.T) {
+	s := newServer()
+
+	// This server's own logger, replacing the discarding one after New has
+	// taken it, so the buffer below is provably the handler in use rather
+	// than one something else has since swapped out. Debug level, because
+	// the whole claim is that the refusal is reported there.
+	var buf bytes.Buffer
+	s.Log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	_ = s.Serve()
+	defer s.Close()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	payload := []byte("SENTINEL-PAYLOAD-DO-NOT-LOG")
+
+	// Waited on before the buffer is read. DisconnectClient stops the
+	// client, so the ReadAll below can return while receivePacket has yet
+	// to write its log line -- and a buffer read at that moment reports an
+	// empty log about a server that logged.
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		defer func() { _ = w.Close() }()
+
+		// An ordinary refusal carrying a payload: a wildcard in a topic
+		// name, which [MQTT-3.3.2-2] forbids. The client is answered with a
+		// DISCONNECT, which is the server working rather than failing.
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishMqtt5).Packet
+		pkx.Properties.SubscriptionIdentifier = []int{}
+		pkx.TopicName = "a/b/+"
+		pkx.Payload = payload
+
+		err := s.receivePacket(cl, pkx)
+		require.Error(t, err)
+	}()
+
+	_, err := io.ReadAll(r)
+	require.NoError(t, err)
+	wg.Wait()
+
+	out := buf.String()
+
+	// The instrument first: if nothing was logged at all, everything below
+	// passes for the wrong reason.
+	require.Contains(t, out, "packet refused",
+		"no debug line for the refusal reached this test's logger; if nothing was "+
+			"logged at all, the assertions below pass for the wrong reason")
+
+	require.NotContains(t, out, "level=WARN",
+		"an ordinary refusal was reported to the operator as a problem")
+	require.NotContains(t, out, string(payload),
+		"the client's payload was written into the log")
+	require.NotContains(t, out, "Payload:",
+		"the whole packet was formatted into the log")
+}
+
 func TestPublishToSubscribersExhaustedSendQuota(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
