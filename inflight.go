@@ -93,9 +93,11 @@ func (i *Inflight) GetAll(immediate bool) []packets.Packet {
 // This typically occurs when the quota has been exhausted, and we need to wait until new quota
 // is free to continue sending.
 func (i *Inflight) NextImmediate() (packets.Packet, bool) {
-	i.RLock()
-	defer i.RUnlock()
-
+	// No lock is taken here: GetAll takes the read lock itself, and
+	// sync.RWMutex is not reentrant for readers. Holding it across that call
+	// deadlocks whenever a writer arrives between the two acquisitions — the
+	// second RLock waits for the queued writer, and the writer waits for the
+	// first RLock.
 	m := i.GetAll(true)
 	if len(m) > 0 {
 		return m[0], true

@@ -5,8 +5,10 @@
 package mqtt
 
 import (
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/stretchr/testify/require"
@@ -196,4 +198,59 @@ func TestNextImmediate(t *testing.T) {
 
 	_, ok = cl.State.Inflight.NextImmediate()
 	require.False(t, ok)
+}
+
+// NextImmediate must not hold the read lock across GetAll, which takes it
+// again. sync.RWMutex is not reentrant for readers — "if a goroutine holds
+// a RWMutex for reading and another goroutine might call Lock, no goroutine
+// should expect to be able to acquire a read lock until the initial read
+// lock is released" — so a writer arriving between the two acquisitions
+// blocks the second one, and is itself waiting on the first.
+//
+// Against the recursive version this deadlocks and the test times out; a
+// deadlock cannot be failed politely from inside the goroutines it stops,
+// so the assertion is that the workers finish at all.
+func TestNextImmediateDoesNotDeadlockAgainstAWriter(t *testing.T) {
+	cl, _, _ := newTestClient()
+	cl.State.Inflight.Set(packets.Packet{PacketID: 1, Created: 1, Expiry: -1})
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for n := 0; n < 4; n++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					cl.State.Inflight.NextImmediate()
+				}
+			}
+		}()
+		go func(id uint16) {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					cl.State.Inflight.Set(packets.Packet{PacketID: id})
+					cl.State.Inflight.Delete(id)
+				}
+			}
+		}(uint16(n + 2))
+	}
+
+	time.Sleep(time.Second)
+	close(stop)
+
+	finished := make(chan struct{})
+	go func() { wg.Wait(); close(finished) }()
+	select {
+	case <-finished:
+	case <-time.After(10 * time.Second):
+		t.Fatal("NextImmediate and a concurrent Set deadlocked on the in-flight lock")
+	}
 }
