@@ -2255,6 +2255,49 @@ func TestProcessPublishWithTopicAlias(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, buf)
 }
 
+func TestProcessPublishWithUnregisteredTopicAlias(t *testing.T) {
+	s := newServer()
+	_ = s.Serve()
+	defer s.Close()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	go func() {
+		// Closed however this goroutine ends. A failed require calls
+		// Goexit, so a plain call at the bottom is skipped on failure and
+		// the ReadAll below then blocks until the whole run times out --
+		// a test that cannot report its own failure.
+		defer func() { _ = w.Close() }()
+
+		// A publish carrying an alias but no topic name, on a connection
+		// that never registered that alias -- which is every reconnect by a
+		// client that aliases, since [MQTT-3.3.2-7] drops the mappings with
+		// the connection. Section 3.3.2.3.4 case 3a: a Protocol Error.
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishMqtt5).Packet
+		pkx.Properties.SubscriptionIdentifier = []int{} // must not contain from client to server
+		pkx.TopicName = ""
+		pkx.Properties.TopicAliasFlag = true
+		pkx.Properties.TopicAlias = 1
+
+		err := s.processPacket(cl, pkx)
+		require.Error(t, err)
+		require.ErrorIs(t, err, packets.ErrProtocolViolationNoTopic)
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NotEmpty(t, buf)
+	require.Equal(t, byte(packets.Disconnect<<4), buf[0])
+	require.Equal(t, packets.ErrProtocolViolationNoTopic.Code, buf[2])
+
+	// The alias must not have been registered against the empty topic on
+	// the way through, and nothing may have been published to it.
+	require.NotContains(t, cl.State.TopicAliases.Inbound.internal, uint16(1))
+	require.Equal(t, 0, len(s.Topics.Messages("")))
+}
+
 func TestPublishToSubscribersExhaustedSendQuota(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()

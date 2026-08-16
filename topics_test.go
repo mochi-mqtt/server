@@ -800,6 +800,23 @@ func TestInboundAliasesSet(t *testing.T) {
 	require.Equal(t, topic, a.Set(id, ""))
 }
 
+func TestInboundAliasesSetUnregistered(t *testing.T) {
+	id := uint16(1)
+	a := NewInboundTopicAliases(5)
+
+	// Nothing has been registered under this alias on this connection, so
+	// there is no topic to hand back and the empty string says so. Asking
+	// must not register the empty string as the alias's topic either: an
+	// alias standing for no topic is a Protocol Error every time it is
+	// used, not a mapping that quietly starts succeeding.
+	require.Equal(t, "", a.Set(id, ""))
+	require.NotContains(t, a.internal, id)
+
+	// And a registration afterwards still works.
+	require.Equal(t, "a/b/c", a.Set(id, "a/b/c"))
+	require.Equal(t, "a/b/c", a.Set(id, ""))
+}
+
 func TestInboundAliasesSetMaxZero(t *testing.T) {
 	topic := "test"
 	id := uint16(1)

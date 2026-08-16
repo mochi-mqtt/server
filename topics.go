@@ -47,6 +47,14 @@ type InboundTopicAliases struct {
 }
 
 // Set sets a new alias for a specific topic.
+//
+// A zero length topic is not a registration, it is a request for the topic
+// this alias already stands for. That mapping exists only if it was made on
+// this same network connection, because [MQTT-3.3.2-7] forbids carrying one
+// across connections, so a client that reconnects and goes on using its
+// aliases arrives here with nothing to resolve. Set returns the empty string
+// to say so, and never stores it: an alias bound to no topic is what section
+// 3.3.2.3.4 case 3a calls a Protocol Error, and the caller is what raises it.
 func (a *InboundTopicAliases) Set(id uint16, topic string) string {
 	a.Lock()
 	defer a.Unlock()
@@ -55,8 +63,8 @@ func (a *InboundTopicAliases) Set(id uint16, topic string) string {
 		return topic // ?
 	}
 
-	if existing, ok := a.internal[id]; ok && topic == "" {
-		return existing
+	if topic == "" {
+		return a.internal[id] // empty when this connection never registered one
 	}
 
 	a.internal[id] = topic

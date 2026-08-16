@@ -904,6 +904,26 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 
 	if pk.Properties.TopicAliasFlag && pk.Properties.TopicAlias > 0 { // [MQTT-3.3.2-11]
 		pk.TopicName = cl.State.TopicAliases.Inbound.Set(pk.Properties.TopicAlias, pk.TopicName)
+
+		// Section 3.3.2.3.4 case 3a: an alias this connection never
+		// registered, carrying no topic name of its own, is a Protocol
+		// Error and the answer is a DISCONNECT.
+		//
+		// PublishValidate cannot catch it. It refuses an absent topic only
+		// when there is no alias either, and it runs against the decoded
+		// packet, which is the one place that does not know which aliases
+		// this connection has registered.
+		//
+		// Reaching this is ordinary rather than hostile: [MQTT-3.3.2-7]
+		// discards every mapping when the network connection goes, so any
+		// client that reconnects and keeps using an alias lands here. It
+		// has to be told. Falling through publishes to the empty string,
+		// which reaches no subscriber and which [MQTT-4.7.3-1] says is not
+		// a topic name at all - and a QoS 1 or 2 client is then sent an
+		// acknowledgement saying the message was delivered.
+		if pk.TopicName == "" {
+			return s.DisconnectClient(cl, packets.ErrProtocolViolationNoTopic)
+		}
 	}
 
 	if pk.FixedHeader.Qos > s.Options.Capabilities.MaximumQos {
