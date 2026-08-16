@@ -891,14 +891,16 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	if !cl.Net.Inline {
-		if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok {
-			if pki.FixedHeader.Type == packets.Pubrec { // [MQTT-4.3.3-10]
-				ack := s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.ErrPacketIdentifierInUse)
-				return cl.WritePacket(ack)
-			}
-			if ok := cl.State.Inflight.Delete(pk.PacketID); ok { // [MQTT-4.3.2-5]
-				atomic.AddInt64(&s.Info.Inflight, -1)
-			}
+		// A Pubrec entry is this client's own QoS 2 publish, mid-PUBREL
+		// exchange, stored under the identifier the client chose — the one
+		// kind of entry here that shares an identifier space with an inbound
+		// PUBLISH. Anything else is a message the server sent, under an
+		// identifier the server assigned, and the two spaces are independent
+		// (MQTT-2.2.1). Deleting one of those discards a delivery the server
+		// is still waiting to have acknowledged.
+		if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok && pki.FixedHeader.Type == packets.Pubrec {
+			ack := s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.ErrPacketIdentifierInUse)
+			return cl.WritePacket(ack) // [MQTT-4.3.3-10]
 		}
 	}
 
@@ -944,9 +946,18 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		ack = s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.CodeSuccess) // [MQTT-3.3.4-1] [MQTT-4.3.3-8]
 	}
 
-	if ok := cl.State.Inflight.Set(ack); ok {
-		atomic.AddInt64(&s.Info.Inflight, 1)
-		s.hooks.OnQosPublish(cl, ack, ack.Created, 0)
+	// A PUBREC waits for a PUBREL, so it is held here under the client's own
+	// identifier, which is the space the rest of that exchange uses. A PUBACK
+	// waits for nothing: it is written below and the flow is over, and the
+	// Set and Delete around that write cancelled out. What they did not
+	// cancel out was the entry they overwrote — the identifier is the
+	// client's and this map is keyed by the server's, so a colliding number
+	// cost the server the delivery it had outstanding there.
+	if pk.FixedHeader.Qos == 2 {
+		if ok := cl.State.Inflight.Set(ack); ok {
+			atomic.AddInt64(&s.Info.Inflight, 1)
+			s.hooks.OnQosPublish(cl, ack, ack.Created, 0)
+		}
 	}
 
 	err = cl.WritePacket(ack)
@@ -955,9 +966,6 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	if pk.FixedHeader.Qos == 1 {
-		if ok := cl.State.Inflight.Delete(ack.PacketID); ok {
-			atomic.AddInt64(&s.Info.Inflight, -1)
-		}
 		cl.State.Inflight.IncreaseReceiveQuota()
 		s.hooks.OnQosComplete(cl, ack)
 	}

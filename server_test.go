@@ -1786,7 +1786,47 @@ func TestServerProcessPacketPublishQos1PacketIDInUse(t *testing.T) {
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
 	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPuback).RawBytes, buf)
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Inflight))
+
+	// A Publish entry is a message the SERVER sent, under an identifier the
+	// server assigned, so it is not in use by this exchange and is left
+	// alone. The Pubrec case below is the one that is.
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Inflight))
+}
+
+// Packet Identifiers assigned by the Client and by the Server are
+// independent (MQTT-2.2.1), and the specification's own comment there
+// describes this case: a client publishing under an identifier the server is
+// concurrently using for one of its own deliveries. The delivery has to
+// survive it — discarding it ends the QoS 1 flow, so it is never
+// acknowledged, never resent, and its send quota is never returned.
+func TestServerProcessPacketPublishDoesNotDiscardServerDelivery(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+
+	delivery := packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+		PacketID:    7,
+		TopicName:   "server/delivery",
+		Payload:     []byte("out"),
+	}
+	cl.State.Inflight.Set(delivery)
+	atomic.StoreInt64(&s.Info.Inflight, 1)
+
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPuback).RawBytes, buf)
+
+	kept, ok := cl.State.Inflight.Get(7)
+	require.True(t, ok, "the server's own QoS 1 delivery was discarded by an inbound PUBLISH carrying the same packet identifier")
+	require.Equal(t, packets.Publish, kept.FixedHeader.Type)
+	require.Equal(t, "server/delivery", kept.TopicName)
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Inflight))
 }
 
 func TestServerProcessPacketPublishQos2PacketIDInUse(t *testing.T) {
