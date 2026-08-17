@@ -2023,6 +2023,158 @@ func TestPublishToSubscribersPkIgnore(t *testing.T) {
 	require.Equal(t, []byte{}, <-receiverBuf)
 }
 
+// selectSubscribersHook records every call and removes one client from the
+// delivery, which is the first thing OnSelectSubscribers is documented to
+// be for: "programmatically remove or add clients to a publish to
+// subscribers process".
+type selectSubscribersHook struct {
+	HookBase
+	calls  int
+	remove string
+}
+
+func (h *selectSubscribersHook) ID() string { return "select-subscribers" }
+
+func (h *selectSubscribersHook) Provides(b byte) bool {
+	return b == OnSelectSubscribers
+}
+
+func (h *selectSubscribersHook) OnSelectSubscribers(subs *Subscribers, pk packets.Packet) *Subscribers {
+	h.calls++
+	delete(subs.Subscriptions, h.remove)
+	return subs
+}
+
+// OnSelectSubscribers is documented as being called "when subscribers have
+// been collected for a topic", and as being usable to "programmatically
+// remove or add clients to a publish to subscribers process". It was called
+// only when the collected set held a shared subscription, so on a topic
+// with none — which is most topics on most brokers — the hook never ran and
+// that first purpose could not be reached at all.
+//
+// A hook that withholds a message from a client therefore did nothing, with
+// no error and no log line, which reads as a hook that was never installed.
+func TestPublishToSubscribersCallsOnSelectSubscribersWithoutSharedSubscriptions(t *testing.T) {
+	s := newServer()
+	hook := &selectSubscribersHook{remove: "removed"}
+	require.NoError(t, s.AddHook(hook, nil))
+
+	kept, r, w := newTestClient()
+	kept.ID = "kept"
+	s.Clients.Add(kept)
+	require.True(t, s.Topics.Subscribe(kept.ID, packets.Subscription{Filter: "#"}))
+
+	removed, r2, w2 := newTestClient()
+	removed.ID = "removed"
+	s.Clients.Add(removed)
+	require.True(t, s.Topics.Subscribe(removed.ID, packets.Subscription{Filter: "#"}))
+
+	go func() {
+		s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
+		time.Sleep(time.Millisecond)
+		_ = w.Close()
+		_ = w2.Close()
+	}()
+
+	keptBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r)
+		require.NoError(t, err)
+		keptBuf <- buf
+	}()
+	removedBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r2)
+		require.NoError(t, err)
+		removedBuf <- buf
+	}()
+
+	require.Equal(t,
+		packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-keptBuf)
+	// The one the hook removed receives nothing, which is the whole point
+	// of the documented behaviour.
+	require.Equal(t, []byte{}, <-removedBuf)
+	require.Equal(t, 1, hook.calls)
+}
+
+// sharedSelectingHook chooses one member of a shared group and empties the
+// group while doing it, which the documentation invites: a hook selecting
+// "the subscriber for a shared group in a custom manner" says which by
+// filling SharedSelected, and what it leaves in Shared is its own business.
+type sharedSelectingHook struct {
+	HookBase
+	choose string
+}
+
+func (h *sharedSelectingHook) ID() string { return "shared-selecting" }
+
+func (h *sharedSelectingHook) Provides(b byte) bool {
+	return b == OnSelectSubscribers
+}
+
+func (h *sharedSelectingHook) OnSelectSubscribers(subs *Subscribers, pk packets.Packet) *Subscribers {
+	var chosen packets.Subscription
+	for _, group := range subs.Shared {
+		for id, sub := range group {
+			if id == h.choose {
+				chosen = sub
+			}
+		}
+	}
+	subs.Shared = map[string]map[string]packets.Subscription{}
+	subs.SharedSelected = map[string]packets.Subscription{h.choose: chosen}
+	return subs
+}
+
+// A hook that selects for a shared group by emptying Shared must still have
+// its choice delivered.
+//
+// Whether there were shared subscriptions has to be decided before the hook
+// runs. Gating the merge on what the hook left behind reads as no shared
+// subscriptions at all, so SharedSelected is never merged into
+// Subscriptions and the message reaches nobody — a queue whose workers
+// simply stop being given work, with nothing anywhere reporting a fault.
+func TestPublishToSubscribersMergesASharedChoiceThatEmptiedTheGroup(t *testing.T) {
+	s := newServer()
+	require.NoError(t, s.AddHook(&sharedSelectingHook{choose: "worker-b"}, nil))
+
+	a, ra, wa := newTestClient()
+	a.ID = "worker-a"
+	s.Clients.Add(a)
+	require.True(t, s.Topics.Subscribe(a.ID, packets.Subscription{
+		Filter: "$share/group/a/b/c", Identifier: 1}))
+
+	b, rb, wb := newTestClient()
+	b.ID = "worker-b"
+	s.Clients.Add(b)
+	require.True(t, s.Topics.Subscribe(b.ID, packets.Subscription{
+		Filter: "$share/group/a/b/c", Identifier: 1}))
+
+	go func() {
+		s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
+		time.Sleep(time.Millisecond)
+		_ = wa.Close()
+		_ = wb.Close()
+	}()
+
+	bufA := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(ra)
+		require.NoError(t, err)
+		bufA <- buf
+	}()
+	bufB := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(rb)
+		require.NoError(t, err)
+		bufB <- buf
+	}()
+
+	// The chosen worker receives it, and the other does not.
+	require.Equal(t, []byte{}, <-bufA)
+	require.NotEmpty(t, <-bufB)
+}
+
 func TestPublishToClientServerDowngradeQos(t *testing.T) {
 	s := newServer()
 	s.Options.Capabilities.MaximumQos = 1

@@ -999,8 +999,17 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 	}
 
 	subscribers := s.Topics.Subscribers(pk.TopicName)
-	if len(subscribers.Shared) > 0 {
-		subscribers = s.hooks.OnSelectSubscribers(subscribers, pk)
+
+	// Whether there were shared subscriptions is decided before the hook
+	// runs, and the shared selection below is gated on that rather than on
+	// what the hook left behind. A hook selecting for a shared group says
+	// which subscriber it chose by filling SharedSelected, and is free to
+	// empty Shared while doing it -- testing Shared afterwards would then
+	// skip the merge and deliver the message to nobody.
+	hadShared := len(subscribers.Shared) > 0
+
+	subscribers = s.hooks.OnSelectSubscribers(subscribers, pk)
+	if hadShared {
 		if len(subscribers.SharedSelected) == 0 {
 			subscribers.SelectShared()
 		}
