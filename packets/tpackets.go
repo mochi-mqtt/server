@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: ChrisJr404
 
 package packets
 
@@ -162,6 +163,7 @@ const (
 	TSubscribeMalPacketID
 	TSubscribeMalTopic
 	TSubscribeMalQos
+	TSubscribeMalQosV5
 	TSubscribeMalQosRange
 	TSubscribeMalProperties
 	TSubscribeInvalidQosMustPacketID
@@ -3015,6 +3017,22 @@ var TPacketData = map[byte]TPacketCases{
 				0, 3, // Topic Name - LSB+MSB
 				'j', '/', 'b', // Topic Name
 
+			},
+		},
+		{
+			Case:      TSubscribeMalQosV5,
+			Desc:      "malformed subscribe - mqtt5 missing subscription options byte",
+			Group:     "decode",
+			FailFirst: ErrMalformedQos,
+			RawBytes: []byte{
+				Subscribe<<4 | 1<<1, 8, // Fixed header
+				0, 22, // Packet ID - LSB+MSB
+				0,    // Properties Length
+				0, 3, // Topic Name - LSB+MSB
+				'j', '/', 'b', // Topic Name (no trailing subscription options byte)
+			},
+			Packet: &Packet{
+				ProtocolVersion: 5,
 			},
 		},
 		{

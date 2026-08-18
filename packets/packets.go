@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: ChrisJr404
 
 package packets
 
@@ -955,14 +956,13 @@ func (pk *Packet) SubscribeDecode(buf []byte) error {
 			Filter: filter,
 		}
 
+		option, offset, err = decodeByte(buf, offset)
+		if err != nil {
+			return ErrMalformedQos
+		}
 		if pk.ProtocolVersion == 5 {
-			sub.decode(buf[offset])
-			offset += 1
+			sub.decode(option)
 		} else {
-			option, offset, err = decodeByte(buf, offset)
-			if err != nil {
-				return ErrMalformedQos
-			}
 			sub.Qos = option
 		}
 
