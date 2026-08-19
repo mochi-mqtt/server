@@ -9,10 +9,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -129,6 +131,78 @@ func TestClientsGetByListener(t *testing.T) {
 	require.NotEmpty(t, clients)
 	require.Equal(t, 1, len(clients))
 	require.Equal(t, "tcp1", clients[0].Net.Listener)
+}
+
+// GetByListener must not hold the read lock across Len, which takes it
+// again. sync.RWMutex is not reentrant for readers — "if a goroutine holds
+// a RWMutex for reading and another goroutine might call Lock, no goroutine
+// should expect to be able to acquire a read lock until the initial read
+// lock is released" — so a writer arriving between the two acquisitions
+// blocks the second one, and is itself waiting on the first.
+//
+// It is reached on every shutdown: Server.Close calls CloseAll, which calls
+// closeListenerClients, which calls this, while attachClient calls Delete
+// for any client still connecting. A server that deadlocks there never
+// finishes closing, so whatever the application does after Close never
+// runs.
+//
+// Against the recursive version this deadlocks and the test times out; a
+// deadlock cannot be failed politely from inside the goroutines it stops,
+// so the assertion is that the workers finish at all.
+func TestGetByListenerDoesNotDeadlockAgainstAWriter(t *testing.T) {
+	cl := NewClients()
+	for i := 0; i < 8; i++ {
+		cl.Add(&Client{
+			ID:    fmt.Sprintf("t%d", i),
+			State: ClientState{open: context.Background()},
+			Net:   ClientConnection{Listener: "tcp1"},
+		})
+	}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for n := 0; n < 4; n++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					cl.GetByListener("tcp1")
+				}
+			}
+		}()
+		go func(n int) {
+			defer wg.Done()
+			id := fmt.Sprintf("w%d", n)
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					cl.Add(&Client{
+						ID:    id,
+						State: ClientState{open: context.Background()},
+						Net:   ClientConnection{Listener: "tcp1"},
+					})
+					cl.Delete(id)
+				}
+			}
+		}(n)
+	}
+
+	time.Sleep(time.Second)
+	close(stop)
+
+	done := make(chan struct{})
+	go func() { defer close(done); wg.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("GetByListener deadlocked against a writer")
+	}
 }
 
 func TestNewClient(t *testing.T) {
