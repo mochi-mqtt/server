@@ -475,6 +475,27 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 
 	err = cl.Read(s.receivePacket)
 	if err != nil {
+		// A client that exceeded the Maximum Packet Size in this server's
+		// own CONNACK is owed the reason. ErrPacketTooLarge is raised in
+		// ReadFixedHeader, so it leaves cl.Read directly and never reaches
+		// receivePacket, which is the only place a reason code becomes a
+		// DISCONNECT — so without this the client gets a bare TCP reset for
+		// breaking a limit it was told about. [MQTT-3.2.2-15]
+		//
+		// This code by name rather than any code from the read loop. A
+		// malformed packet arrives here too, and 4.13 makes the DISCONNECT
+		// optional for one, so widening this is a decision to take on its
+		// own — not a side effect of which errors happen to be wrapped,
+		// which is what decides it if the test is on the type.
+		//
+		// !cl.Closed() keeps the processPacket path out: receivePacket
+		// answers the codes it raises and stops the client doing it, so a
+		// client still open here was refused before the handler ran.
+		if errors.Is(err, packets.ErrPacketTooLarge) &&
+			!cl.Closed() &&
+			cl.Properties.ProtocolVersion == 5 {
+			_ = s.DisconnectClient(cl, packets.ErrPacketTooLarge)
+		}
 		s.sendLWT(cl)
 		cl.Stop(err)
 	} else {

@@ -951,6 +951,67 @@ func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
 	_ = r.Close()
 }
 
+func TestServerAnswersAnOversizedPacketInsteadOfResetting(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MaximumPacketSize = 100 // larger than the connect below, smaller than the publish
+	s := New(&Options{Logger: logger, Capabilities: cc})
+	_ = s.AddHook(new(AllowHook), nil)
+	defer s.Close()
+
+	// A QoS 0 publish past the bound. Built here rather than taken from a
+	// fixture because its whole point is its size.
+	body := []byte{0, 5, 'a', '/', 'b', '/', 'c', 0}
+	body = append(body, bytes.Repeat([]byte{'x'}, 110)...)
+	// One byte of remaining length, which is right up to 127 and silently
+	// wrong above it: 128 encodes as 0x80, whose continuation bit swallows
+	// the next byte, and the server then answers "malformed packet" to a
+	// test that believes it asked about size.
+	require.Less(t, len(body), 128, "the remaining length no longer fits in one byte")
+	oversized := append([]byte{packets.Publish << 4, byte(len(body))}, body...)
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r)
+	}()
+
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt5).RawBytes)
+		_, _ = w.Write(oversized)
+	}()
+
+	recv := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(w)
+		require.NoError(t, err)
+		recv <- buf
+	}()
+
+	err := <-o
+	require.Error(t, err)
+	require.ErrorIs(t, packets.ErrPacketTooLarge, err)
+
+	// The connack first, then the packet this test is about. Walking the
+	// remaining length rather than searching for the type byte, which would
+	// find one in a payload.
+	buf := <-recv
+	n, mult := 0, 1
+	for i := 1; ; i++ {
+		require.Less(t, i, len(buf), "no complete connack in %02x", buf)
+		n += int(buf[i]&127) * mult
+		mult *= 128
+		if buf[i]&128 == 0 {
+			buf = buf[i+1+n:]
+			break
+		}
+	}
+
+	require.NotEmpty(t, buf, "the client was reset with nothing after the connack, so a "+
+		"bound this server advertised itself went unexplained")
+	require.Equal(t, byte(packets.Disconnect<<4), buf[0], "want a disconnect, got %02x", buf)
+	require.Equal(t, packets.ErrPacketTooLarge.Code, buf[2], "disconnected with 0x%02X, want 0x95", buf[2])
+}
+
 func TestEstablishConnectionMaximumClientsReached(t *testing.T) {
 	cc := NewDefaultServerCapabilities()
 	cc.MaximumClients = 0
