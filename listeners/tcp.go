@@ -84,7 +84,7 @@ func (l *TCP) Serve(establish EstablishFn) {
 			go func() {
 				err = establish(l.id, conn)
 				if err != nil {
-					l.log.Warn("", "error", err)
+					l.log.Warn("connection ended with an error", "error", err)
 				}
 			}()
 		}
