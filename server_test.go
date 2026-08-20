@@ -951,6 +951,59 @@ func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
 	_ = r.Close()
 }
 
+func TestServerEstablishConnectionZeroValuedProperties(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		tCase byte
+		code  packets.Code
+	}{
+		{"receive maximum", packets.TConnectInvalidZeroReceiveMaximum, packets.ErrProtocolViolationZeroReceiveMaximum},
+		{"maximum packet size", packets.TConnectInvalidZeroMaximumPacketSize, packets.ErrProtocolViolationZeroMaximumPacketSize},
+	} {
+		tt := tt // go.mod says go 1.21, so the range variable is shared
+		t.Run(tt.name, func(t *testing.T) {
+			s := newServer()
+
+			r, w := net.Pipe()
+			o := make(chan error)
+			go func() {
+				o <- s.EstablishConnection("tcp", r)
+			}()
+
+			go func() {
+				_, _ = w.Write(packets.TPacketData[packets.Connect].Get(tt.tCase).RawBytes)
+				// A disconnect behind it so that a server which wrongly
+				// accepts the connect ends the test by returning nil,
+				// rather than by holding the connection open until the
+				// suite times out.
+				_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+			}()
+
+			// receive the connack
+			recv := make(chan []byte)
+			go func() {
+				buf, err := io.ReadAll(w)
+				require.NoError(t, err)
+				recv <- buf
+			}()
+
+			err := <-o
+			require.Error(t, err)
+			require.ErrorIs(t, tt.code, err)
+
+			// The refusal has to reach the client, not merely be returned
+			// here: a code the server never sends is one no client can act
+			// on. Byte 0 is the fixed header, 2 the session present flag,
+			// 3 the reason code.
+			buf := <-recv
+			require.Equal(t, byte(packets.Connack<<4), buf[0])
+			require.Equal(t, tt.code.Code, buf[3])
+
+			_ = r.Close()
+		})
+	}
+}
+
 func TestEstablishConnectionMaximumClientsReached(t *testing.T) {
 	cc := NewDefaultServerCapabilities()
 	cc.MaximumClients = 0

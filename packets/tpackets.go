@@ -69,6 +69,8 @@ const (
 	TConnectInvalidWillFlagNoPayload
 	TConnectInvalidWillFlagQosOutOfRange
 	TConnectInvalidWillSurplusRetain
+	TConnectInvalidZeroReceiveMaximum
+	TConnectInvalidZeroMaximumPacketSize
 	TConnectZeroByteUsername
 	TConnectSpecInvalidUTF8D800
 	TConnectSpecInvalidUTF8DFFF
@@ -170,6 +172,7 @@ const (
 	TSubscribeInvalidSharedNoLocal
 	TSubscribeInvalidFilter
 	TSubscribeInvalidIdentifierOversize
+	TSubscribeInvalidIdentifierZero
 	TSuback
 	TSubackMany
 	TSubackDeny
@@ -328,6 +331,7 @@ var TPacketData = map[byte]TPacketCases{
 					RequestProblemInfoFlag:    true,
 					RequestResponseInfo:       byte(1),
 					ReceiveMaximum:            uint16(500),
+					ReceiveMaximumFlag:        true,
 					TopicAliasMaximum:         uint16(999),
 					User: []UserProperty{
 						{
@@ -339,7 +343,8 @@ var TPacketData = map[byte]TPacketCases{
 							Val: "value2",
 						},
 					},
-					MaximumPacketSize: uint32(32000),
+					MaximumPacketSize:     uint32(32000),
+					MaximumPacketSizeFlag: true,
 				},
 			},
 		},
@@ -418,6 +423,7 @@ var TPacketData = map[byte]TPacketCases{
 					SessionExpiryInterval:     uint32(120),
 					SessionExpiryIntervalFlag: true,
 					MaximumPacketSize:         uint32(32000),
+					MaximumPacketSizeFlag:     true,
 				},
 			},
 		},
@@ -964,6 +970,64 @@ var TPacketData = map[byte]TPacketCases{
 				},
 			},
 		},
+		{
+			Case:   TConnectInvalidZeroReceiveMaximum,
+			Desc:   "receive maximum of 0",
+			Group:  "validate",
+			Expect: ErrProtocolViolationZeroReceiveMaximum,
+			RawBytes: []byte{
+				Connect << 4, 19, // Fixed header
+				0, 4, // Protocol Name - MSB+LSB
+				'M', 'Q', 'T', 'T', // Protocol Name
+				5,     // Protocol Version
+				2,     // Flags
+				0, 45, // Keepalive
+				3,        // Properties Length
+				33, 0, 0, // Receive Maximum (0)
+				0, 3, // Client ID - MSB+LSB
+				'z', 'e', 'n', // Client ID
+			},
+			Packet: &Packet{
+				FixedHeader:     FixedHeader{Type: Connect},
+				ProtocolVersion: 5,
+				Connect: ConnectParams{
+					ProtocolName: []byte("MQTT"),
+				},
+				Properties: Properties{
+					ReceiveMaximum:     0,
+					ReceiveMaximumFlag: true,
+				},
+			},
+		},
+		{
+			Case:   TConnectInvalidZeroMaximumPacketSize,
+			Desc:   "maximum packet size of 0",
+			Group:  "validate",
+			Expect: ErrProtocolViolationZeroMaximumPacketSize,
+			RawBytes: []byte{
+				Connect << 4, 21, // Fixed header
+				0, 4, // Protocol Name - MSB+LSB
+				'M', 'Q', 'T', 'T', // Protocol Name
+				5,     // Protocol Version
+				2,     // Flags
+				0, 45, // Keepalive
+				5,              // Properties Length
+				39, 0, 0, 0, 0, // Maximum Packet Size (0)
+				0, 3, // Client ID - MSB+LSB
+				'z', 'e', 'n', // Client ID
+			},
+			Packet: &Packet{
+				FixedHeader:     FixedHeader{Type: Connect},
+				ProtocolVersion: 5,
+				Connect: ConnectParams{
+					ProtocolName: []byte("MQTT"),
+				},
+				Properties: Properties{
+					MaximumPacketSize:     0,
+					MaximumPacketSizeFlag: true,
+				},
+			},
+		},
 
 		// Spec Tests
 		{
@@ -1159,6 +1223,7 @@ var TPacketData = map[byte]TPacketCases{
 					ServerReference:           "mochi-2",
 					ReasonString:              "reason",
 					ReceiveMaximum:            uint16(500),
+					ReceiveMaximumFlag:        true,
 					TopicAliasMaximum:         uint16(999),
 					MaximumQos:                byte(1),
 					MaximumQosFlag:            true,
@@ -1175,6 +1240,7 @@ var TPacketData = map[byte]TPacketCases{
 						},
 					},
 					MaximumPacketSize:        uint32(32000),
+					MaximumPacketSizeFlag:    true,
 					WildcardSubAvailable:     byte(1),
 					WildcardSubAvailableFlag: true,
 					SubIDAvailable:           byte(1),
@@ -3092,6 +3158,25 @@ var TPacketData = map[byte]TPacketCases{
 				Filters: Subscriptions{
 					{Filter: "a/b", Identifier: 5},
 					{Filter: "d/f", Identifier: 268435456},
+				},
+			},
+		},
+		{
+			Case:   TSubscribeInvalidIdentifierZero,
+			Desc:   "zero identifier",
+			Group:  "validate",
+			Expect: ErrProtocolViolationZeroSubID,
+			Packet: &Packet{
+				FixedHeader: FixedHeader{
+					Type: Subscribe,
+					Qos:  1,
+				},
+				PacketID: 2,
+				Filters: Subscriptions{
+					{Filter: "a/b"},
+				},
+				Properties: Properties{
+					SubscriptionIdentifier: []int{0},
 				},
 			},
 		},

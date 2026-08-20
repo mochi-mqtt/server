@@ -107,6 +107,8 @@ type Properties struct {
 	PayloadFormatFlag         bool           `json:"fpf"`
 	SessionExpiryIntervalFlag bool           `json:"fsei"`
 	ServerKeepAliveFlag       bool           `json:"fska"`
+	ReceiveMaximumFlag        bool           `json:"frm"`
+	MaximumPacketSizeFlag     bool           `json:"fmps"`
 	RequestProblemInfo        byte           `json:"rpi"`
 	RequestProblemInfoFlag    bool           `json:"frpi"`
 	RequestResponseInfo       byte           `json:"rri"`
@@ -145,6 +147,7 @@ func (p *Properties) Copy(allowTransfer bool) Properties {
 		ServerReference:           p.ServerReference,
 		ReasonString:              p.ReasonString,
 		ReceiveMaximum:            p.ReceiveMaximum,
+		ReceiveMaximumFlag:        p.ReceiveMaximumFlag,
 		TopicAliasMaximum:         p.TopicAliasMaximum,
 		TopicAlias:                0, // NB; do not copy topic alias [MQTT-3.3.2-7] + we do not send to clients (currently) [MQTT-3.1.2-26] [MQTT-3.1.2-27]
 		MaximumQos:                p.MaximumQos,
@@ -152,6 +155,7 @@ func (p *Properties) Copy(allowTransfer bool) Properties {
 		RetainAvailable:           p.RetainAvailable,
 		RetainAvailableFlag:       p.RetainAvailableFlag,
 		MaximumPacketSize:         p.MaximumPacketSize,
+		MaximumPacketSizeFlag:     p.MaximumPacketSizeFlag,
 		WildcardSubAvailable:      p.WildcardSubAvailable,
 		WildcardSubAvailableFlag:  p.WildcardSubAvailableFlag,
 		SubIDAvailable:            p.SubIDAvailable,
@@ -440,6 +444,7 @@ func (p *Properties) Decode(pkt byte, b *bytes.Buffer) (n int, err error) {
 			p.ReasonString, offset, err = decodeString(bt, offset)
 		case PropReceiveMaximum:
 			p.ReceiveMaximum, offset, err = decodeUint16(bt, offset)
+			p.ReceiveMaximumFlag = true
 		case PropTopicAliasMaximum:
 			p.TopicAliasMaximum, offset, err = decodeUint16(bt, offset)
 		case PropTopicAlias:
@@ -461,6 +466,7 @@ func (p *Properties) Decode(pkt byte, b *bytes.Buffer) (n int, err error) {
 			p.User = append(p.User, UserProperty{Key: k, Val: v})
 		case PropMaximumPacketSize:
 			p.MaximumPacketSize, offset, err = decodeUint32(bt, offset)
+			p.MaximumPacketSizeFlag = true
 		case PropWildcardSubAvailable:
 			p.WildcardSubAvailable, offset, err = decodeByte(bt, offset)
 			p.WildcardSubAvailableFlag = true

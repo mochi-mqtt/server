@@ -91,6 +91,9 @@ var (
 	ErrProtocolViolationDupNoQos              = Code{Code: 0x82, Reason: "protocol violation: dup true with no qos"}
 	ErrProtocolViolationUnsupportedProperty   = Code{Code: 0x82, Reason: "protocol violation: unsupported property"}
 	ErrProtocolViolationNoTopic               = Code{Code: 0x82, Reason: "protocol violation: no topic or alias"}
+	ErrProtocolViolationZeroReceiveMaximum    = Code{Code: 0x82, Reason: "protocol violation: receive maximum of 0"}
+	ErrProtocolViolationZeroMaximumPacketSize = Code{Code: 0x82, Reason: "protocol violation: maximum packet size of 0"}
+	ErrProtocolViolationZeroSubID             = Code{Code: 0x82, Reason: "protocol violation: subscription identifier of 0"}
 	ErrImplementationSpecificError            = Code{Code: 0x83, Reason: "implementation specific error"}
 	ErrRejectPacket                           = Code{Code: 0x83, Reason: "packet rejected"}
 	ErrUnsupportedProtocolVersion             = Code{Code: 0x84, Reason: "unsupported protocol version"}
