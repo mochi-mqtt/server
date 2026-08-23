@@ -1703,6 +1703,7 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 	}
 
 	for _, tx := range tt {
+		tx := tx // one variable per iteration: the goroutine below reads it
 		t.Run(tx.name, func(t *testing.T) {
 			cc := NewDefaultServerCapabilities()
 			s := New(&Options{
@@ -1727,6 +1728,7 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 			}()
 
 			buf, err := io.ReadAll(r)
+			wg.Wait()
 			require.NoError(t, err)
 
 			if tx.expectReponse != nil {
@@ -1734,7 +1736,6 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 			}
 
 			require.Equal(t, tx.expectDisconnect, cl.Closed())
-			wg.Wait()
 		})
 	}
 }
