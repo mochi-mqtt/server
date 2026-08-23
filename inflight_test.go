@@ -55,6 +55,63 @@ func TestInflightGetAllAndImmediate(t *testing.T) {
 	}, cl.State.Inflight.GetAll(true))
 }
 
+// MQTT-4.6.0-1: re-sent PUBLISH packets must go out in the order the
+// originals were sent. Created is a unix timestamp in SECONDS, so a
+// session's unacknowledged window is usually one second wide and every
+// packet in it compares equal — which leaves the order to sort.Slice, which
+// is not stable, over a map, whose iteration order Go randomises
+// deliberately.
+//
+// The case above never reached this because every packet in it is a second
+// apart.
+//
+// Repeated rather than run once: an unstable sort over eight equal keys is a
+// coin flip, and a single pass cannot tell "almost always wrong" from
+// "never wrong". Without the tie-break this fails within the first few
+// trials.
+func TestInflightGetAllOrdersPacketsCreatedInTheSameSecond(t *testing.T) {
+	const sameSecond int64 = 1700000000
+	for trial := 0; trial < 50; trial++ {
+		cl, _, _ := newTestClient()
+		for _, id := range []uint16{5, 3, 8, 1, 7, 2, 6, 4} {
+			cl.State.Inflight.Set(packets.Packet{PacketID: id, Created: sameSecond})
+		}
+
+		got := cl.State.Inflight.GetAll(false)
+		require.Len(t, got, 8)
+
+		order := make([]uint16, 0, len(got))
+		for _, pk := range got {
+			order = append(order, pk.PacketID)
+		}
+		require.Equal(t, []uint16{1, 2, 3, 4, 5, 6, 7, 8}, order,
+			"trial %d: packets created in the same second were returned out of order", trial)
+	}
+}
+
+// The comparison truncated Created to uint16 before comparing it, so two
+// packets straddling a 65536-second boundary — one every 18.2 hours — were
+// ordered by the remainder rather than by the timestamp: 1786970111 becomes
+// 65535 and 1786970113 becomes 1, so the newer packet sorted first.
+//
+// The older packet is given the HIGHER identifier here on purpose. It is
+// what makes this a test of the timestamp: an implementation that compared
+// identifiers alone, or one that kept the truncation, puts them the other
+// way round.
+func TestInflightGetAllDoesNotTruncateCreated(t *testing.T) {
+	const boundary int64 = 1786970112 // a multiple of 65536
+
+	cl, _, _ := newTestClient()
+	cl.State.Inflight.Set(packets.Packet{PacketID: 9, Created: boundary - 1})
+	cl.State.Inflight.Set(packets.Packet{PacketID: 2, Created: boundary + 1})
+
+	got := cl.State.Inflight.GetAll(false)
+	require.Len(t, got, 2)
+	require.Equal(t, uint16(9), got[0].PacketID,
+		"the packet created first was returned second: Created was compared as a uint16, "+
+			"so it wrapped between the two")
+}
+
 func TestInflightLen(t *testing.T) {
 	cl, _, _ := newTestClient()
 	cl.State.Inflight.Set(packets.Packet{PacketID: 2})
