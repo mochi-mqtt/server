@@ -145,6 +145,19 @@ type wsConn struct {
 	r io.Reader
 }
 
+// SetWriteDeadline sets the deadline on the websocket connection rather
+// than on the socket underneath it.
+//
+// The embedded net.Conn's method would be promoted here and would appear
+// to work, and does not: gorilla calls conn.SetWriteDeadline with its own
+// stored deadline immediately before every frame it writes, so a deadline
+// set on the socket is overwritten — with the zero value, meaning none —
+// before the write it was meant to bound. A caller that sets a deadline on
+// this net.Conn and expects the write to end has no way to tell.
+func (ws *wsConn) SetWriteDeadline(t time.Time) error {
+	return ws.c.SetWriteDeadline(t)
+}
+
 // Read reads the next span of bytes from the websocket connection and returns the number of bytes read.
 func (ws *wsConn) Read(p []byte) (int, error) {
 	if ws.r == nil {

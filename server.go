@@ -109,6 +109,24 @@ type Options struct {
 	// ClientNetWriteBufferSize specifies the size of the client *bufio.Writer write buffer.
 	ClientNetWriteBufferSize int `yaml:"client_net_write_buffer_size" json:"client_net_write_buffer_size"`
 
+	// ClientNetWriteTimeout bounds a single write to a client's connection.
+	// Zero, the default, leaves writes unbounded and is the behaviour of
+	// every release before this option existed.
+	//
+	// **It is not the slow client this protects.** WritePacket holds the
+	// client's lock across the write, so a client that has stopped reading
+	// its socket holds that lock for as long as it stays connected — and
+	// every other goroutine that needs it waits, including publishToClient
+	// taking a packet identifier for a QoS 1 delivery. The outbound queue
+	// and OnPublishDropped that would have shed the slow client sit behind
+	// that same lock, so at QoS 1 they are never reached.
+	//
+	// Set, a write that does not complete in time fails with
+	// os.ErrDeadlineExceeded, the lock is released, and the connection is
+	// left for the caller to close — a timed-out write has put part of a
+	// packet on the wire and that stream cannot be continued.
+	ClientNetWriteTimeout time.Duration `yaml:"client_net_write_timeout" json:"client_net_write_timeout"`
+
 	// ClientNetReadBufferSize specifies the size of the client *bufio.Reader read buffer.
 	ClientNetReadBufferSize int `yaml:"client_net_read_buffer_size" json:"client_net_read_buffer_size"`
 

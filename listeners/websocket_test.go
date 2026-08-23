@@ -5,6 +5,7 @@
 package listeners
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -170,4 +171,42 @@ func TestWebsocketConnectionReads(t *testing.T) {
 
 	s.Close()
 	_ = ws.Close()
+}
+
+func TestWebsocketWriteDeadlineEndsAWriteToAClientThatNeverReads(t *testing.T) {
+	l := NewWebsocket(basicConfig)
+	_ = l.Init(nil)
+
+	result := make(chan error, 1)
+	l.establish = func(id string, c net.Conn) error {
+		buf := make([]byte, 4096)
+		for {
+			if err := c.SetWriteDeadline(time.Now().Add(250 * time.Millisecond)); err != nil {
+				result <- err
+				return nil
+			}
+			if _, err := c.Write(buf); err != nil {
+				result <- err
+				return nil
+			}
+		}
+	}
+
+	s := httptest.NewServer(http.HandlerFunc(l.handler))
+	defer s.Close()
+
+	ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(s.URL, "http"), nil)
+	require.NoError(t, err)
+	defer ws.Close()
+	// The client never reads, so the writes above fill the socket and stop.
+
+	select {
+	case err := <-result:
+		var ne net.Error
+		require.True(t, errors.As(err, &ne) && ne.Timeout(), "want a timeout, got %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("a write to a websocket client that never reads did not end: a deadline " +
+			"set on this net.Conn has to reach the write, and gorilla overwrites one set " +
+			"on the socket underneath it")
+	}
 }
