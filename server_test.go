@@ -1984,18 +1984,22 @@ func TestPublishToSubscribersIdentifiers(t *testing.T) {
 
 	go func() {
 		s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
-		time.Sleep(time.Millisecond)
-		_ = w.Close()
 	}()
 
+	want := packets.TPacketData[packets.Publish].Get(packets.TPublishSubscriberIdentifier).RawBytes
 	receiverBuf := make(chan []byte)
 	go func() {
-		buf, err := io.ReadAll(r)
+		buf := make([]byte, len(want))
+		_, err := io.ReadFull(r, buf)
 		require.NoError(t, err)
 		receiverBuf <- buf
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishSubscriberIdentifier).RawBytes, <-receiverBuf)
+	require.Equal(t, want, <-receiverBuf)
+	_ = w.Close()
+	rest, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Empty(t, rest, "the server wrote more than the packet asserted on")
 }
 
 func TestPublishToSubscribersPkIgnore(t *testing.T) {
@@ -2038,18 +2042,29 @@ func TestPublishToClientServerDowngradeQos(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 		pkx.FixedHeader.Qos = 2
 		_, _ = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, pkx)
-		time.Sleep(time.Microsecond * 100)
-		_ = w.Close()
 	}()
 
+	// publishToClient queues the packet; WriteLoop writes it. Reading the
+	// bytes the assertion is about is what waits for that write — closing
+	// the pipe on a timer instead let ReadAll return early and short, and
+	// the failure it produced named the payload rather than the race.
+	want := packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes
 	receiverBuf := make(chan []byte)
 	go func() {
-		buf, err := io.ReadAll(r)
+		buf := make([]byte, len(want))
+		_, err := io.ReadFull(r, buf)
 		require.NoError(t, err)
 		receiverBuf <- buf
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes, <-receiverBuf)
+	require.Equal(t, want, <-receiverBuf)
+
+	// And nothing beyond it: reading a fixed length would otherwise pass on
+	// a prefix of a longer write, which the ReadAll this replaced caught.
+	_ = w.Close()
+	rest, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Empty(t, rest, "the server wrote more than the packet asserted on")
 }
 
 func TestPublishToClientSubscriptionDowngradeQos(t *testing.T) {
@@ -2067,18 +2082,29 @@ func TestPublishToClientSubscriptionDowngradeQos(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 		pkx.FixedHeader.Qos = 2
 		_, _ = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, pkx)
-		time.Sleep(time.Microsecond * 100)
-		_ = w.Close()
 	}()
 
+	// publishToClient queues the packet; WriteLoop writes it. Reading the
+	// bytes the assertion is about is what waits for that write — closing
+	// the pipe on a timer instead let ReadAll return early and short, and
+	// the failure it produced named the payload rather than the race.
+	want := packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes
 	receiverBuf := make(chan []byte)
 	go func() {
-		buf, err := io.ReadAll(r)
+		buf := make([]byte, len(want))
+		_, err := io.ReadFull(r, buf)
 		require.NoError(t, err)
 		receiverBuf <- buf
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes, <-receiverBuf)
+	require.Equal(t, want, <-receiverBuf)
+
+	// And nothing beyond it: reading a fixed length would otherwise pass on
+	// a prefix of a longer write, which the ReadAll this replaced caught.
+	_ = w.Close()
+	rest, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Empty(t, rest, "the server wrote more than the packet asserted on")
 }
 
 func TestPublishToClientExceedClientWritesPending(t *testing.T) {
@@ -2134,23 +2160,32 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).Packet
 		_, _ = s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
 		_, _ = s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
-		time.Sleep(time.Millisecond)
-		_ = w.Close()
 	}()
 
+	// The second publish carries the alias instead of the topic, so it is
+	// five bytes shorter. Reading exactly that many is what waits for both
+	// writes — the sleep this replaced could return with nothing read, and
+	// then the slicing below panicked rather than failed.
+	first := len(packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).RawBytes)
 	receiverBuf := make(chan []byte)
 	go func() {
-		buf, err := io.ReadAll(r)
+		buf := make([]byte, first+first-5)
+		_, err := io.ReadFull(r, buf)
 		require.NoError(t, err)
 		receiverBuf <- buf
 	}()
 
 	ret := <-receiverBuf
-	pk1 := make([]byte, len(packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).RawBytes))
-	pk2 := make([]byte, len(packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).RawBytes)-5)
-	copy(pk1, ret[:len(packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).RawBytes)])
-	copy(pk2, ret[len(packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).RawBytes):])
+	pk1 := make([]byte, first)
+	pk2 := make([]byte, first-5)
+	copy(pk1, ret[:first])
+	copy(pk2, ret[first:])
 	require.Equal(t, append(pk1, pk2...), ret)
+
+	_ = w.Close()
+	rest, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Empty(t, rest, "the server wrote more than the two packets asserted on")
 }
 
 func TestPublishToClientMqtt3RetainFalseLeverageNoConn(t *testing.T) {
@@ -2751,9 +2786,21 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 			time.Sleep(time.Millisecond)
 			cl.Net.Conn = w
 
+			// Reading exactly what this step expects is what waits for
+			// the write loop; the sleep it replaces was a guess about a
+			// goroutine, and a short read failed naming the payload rather
+			// than the race. Step 2 expects nothing, so there is nothing
+			// to wait for and the close is what ends the read.
 			recv := make(chan []byte)
 			go func() { // receive the ack
-				buf, err := io.ReadAll(r)
+				if i == 2 {
+					buf, err := io.ReadAll(r)
+					require.NoError(t, err)
+					recv <- buf
+					return
+				}
+				buf := make([]byte, len(tx.out.RawBytes))
+				_, err := io.ReadFull(r, buf)
 				require.NoError(t, err)
 				recv <- buf
 			}()
@@ -2765,11 +2812,12 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			time.Sleep(time.Millisecond)
-			_ = w.Close()
-
 			if i != 2 {
 				require.Equal(t, tx.out.RawBytes, <-recv)
+			}
+			_ = w.Close()
+			if i == 2 {
+				require.Empty(t, <-recv, "step 2 expects no packet")
 			}
 
 			require.Equal(t, tx.data["inflight"].(int64), atomic.LoadInt64(&s.Info.Inflight))
