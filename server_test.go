@@ -3931,3 +3931,80 @@ func TestMinimum(t *testing.T) {
 	require.EqualValues(t, -1, minimum(-1, 20))
 	require.EqualValues(t, -2, minimum(-1, -2))
 }
+
+func TestServerUnsubscribeCountsAndAnswersOnlyWhatItRemoved(t *testing.T) {
+	s := newServer()
+
+	// Two clients on one filter, so the filter node outlives the first
+	// client's subscription on it.
+	a, ar, _ := newTestClient()
+	a.ID = "cl-a"
+	a.Properties.ProtocolVersion = 5
+	b, br, _ := newTestClient()
+	b.ID = "cl-b"
+	b.Properties.ProtocolVersion = 5
+
+	// **Each packet arrives on a channel rather than in a buffer.**
+	// net.Pipe hands the write back as soon as the bytes are copied, so a
+	// reader appending them to a slice can still be behind when the next
+	// assertion runs — the first version of this test read the previous
+	// acknowledgement and reported the fix broken.
+	acks := make(chan []byte, 8)
+	drain := func(c net.Conn) {
+		buf := make([]byte, 256)
+		for {
+			n, err := c.Read(buf)
+			if n > 0 {
+				acks <- append([]byte(nil), buf[:n]...)
+			}
+			if err != nil {
+				return
+			}
+		}
+	}
+	go drain(ar)
+	go drain(br)
+	reasonCode := func() byte {
+		select {
+		case pk := <-acks:
+			require.NotEmpty(t, pk)
+			return pk[len(pk)-1]
+		case <-time.After(2 * time.Second):
+			t.Fatal("no acknowledgement arrived")
+			return 0
+		}
+	}
+
+	subscribe := func(cl *Client) {
+		require.NoError(t, s.processSubscribe(cl, packets.Packet{
+			FixedHeader: packets.FixedHeader{Type: packets.Subscribe},
+			PacketID:    1,
+			Filters:     packets.Subscriptions{{Filter: "a/b", Qos: 0}},
+		}))
+		<-acks // the SUBACK, which this test is not about
+	}
+	unsubscribe := func(cl *Client) byte {
+		require.NoError(t, s.processUnsubscribe(cl, packets.Packet{
+			FixedHeader: packets.FixedHeader{Type: packets.Unsubscribe},
+			PacketID:    2,
+			Filters:     packets.Subscriptions{{Filter: "a/b"}},
+		}))
+		return reasonCode()
+	}
+
+	subscribe(a)
+	subscribe(b)
+	require.Equal(t, int64(2), atomic.LoadInt64(&s.Info.Subscriptions))
+
+	require.Equal(t, packets.CodeSuccess.Code, unsubscribe(a))
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Subscriptions))
+
+	// cl-a has already gone and cl-b is holding the node open, so there is
+	// nothing of cl-a's to remove: no decrement, and 0x11 rather than
+	// success.
+	require.Equal(t, packets.CodeNoSubscriptionExisted.Code, unsubscribe(a))
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Subscriptions))
+
+	require.Equal(t, packets.CodeSuccess.Code, unsubscribe(b))
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Subscriptions))
+}

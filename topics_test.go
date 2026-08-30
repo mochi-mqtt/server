@@ -1066,3 +1066,33 @@ func TestInlineUnsubscribe(t *testing.T) {
 	ok = index.InlineUnsubscribe(1, "not/exist")
 	require.False(t, ok)
 }
+
+func TestUnsubscribeOnlyReportsWhatItRemoved(t *testing.T) {
+	index := NewTopicsIndex()
+	index.Subscribe("cl1", packets.Subscription{Filter: "#", Qos: 0})
+	index.Subscribe("cl2", packets.Subscription{Filter: "#", Qos: 0})
+
+	require.True(t, index.Unsubscribe("#", "cl1"))
+
+	// cl1 has already gone and cl2 is holding the node open. The filter
+	// exists; this client's subscription on it does not.
+	require.False(t, index.Unsubscribe("#", "cl1"))
+
+	// A client that never subscribed to a filter somebody else holds is the
+	// same question asked a different way.
+	require.False(t, index.Unsubscribe("#", "cl3"))
+
+	require.True(t, index.Unsubscribe("#", "cl2"))
+	require.False(t, index.Unsubscribe("#", "cl2"))
+}
+
+func TestUnsubscribeSharedOnlyReportsWhatItRemoved(t *testing.T) {
+	index := NewTopicsIndex()
+	index.Subscribe("cl1", packets.Subscription{Filter: "$share/tmp/a/b/c", Qos: 0})
+	index.Subscribe("cl2", packets.Subscription{Filter: "$share/tmp/a/b/c", Qos: 0})
+
+	require.True(t, index.Unsubscribe("$share/tmp/a/b/c", "cl1"))
+	require.False(t, index.Unsubscribe("$share/tmp/a/b/c", "cl1"))
+	require.False(t, index.Unsubscribe("$share/tmp/a/b/c", "cl3"))
+	require.True(t, index.Unsubscribe("$share/tmp/a/b/c", "cl2"))
+}

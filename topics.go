@@ -128,14 +128,17 @@ func (s *SharedSubscriptions) Add(group, id string, val packets.Subscription) {
 	s.internal[group][id] = val
 }
 
-// Delete deletes a client id from a shared subscription group.
-func (s *SharedSubscriptions) Delete(group, id string) {
+// Delete deletes a client id from a shared subscription group, and reports
+// whether it was in it.
+func (s *SharedSubscriptions) Delete(group, id string) bool {
 	s.Lock()
 	defer s.Unlock()
+	_, existed := s.internal[group][id]
 	delete(s.internal[group], id)
 	if len(s.internal[group]) == 0 {
 		delete(s.internal, group)
 	}
+	return existed
 }
 
 // Get returns the subscription properties for a client id in a share group, if one exists.
@@ -293,11 +296,14 @@ func (s *Subscriptions) Len() int {
 	return val
 }
 
-// Delete removes a subscription by client or filter id.
-func (s *Subscriptions) Delete(id string) {
+// Delete removes a subscription by client or filter id, and reports whether
+// there was one to remove.
+func (s *Subscriptions) Delete(id string) bool {
 	s.Lock()
 	defer s.Unlock()
+	_, existed := s.internal[id]
 	delete(s.internal, id)
+	return existed
 }
 
 // ClientSubscriptions is a map of aggregated subscriptions for a client.
@@ -436,15 +442,16 @@ func (x *TopicsIndex) Unsubscribe(filter, client string) bool {
 		return false
 	}
 
+	var removed bool
 	if shareSub {
 		group, _ := isolateParticle(filter, 1)
-		particle.shared.Delete(group, client)
+		removed = particle.shared.Delete(group, client)
 	} else {
-		particle.subscriptions.Delete(client)
+		removed = particle.subscriptions.Delete(client)
 	}
 
 	x.trim(particle)
-	return true
+	return removed
 }
 
 // RetainMessage saves a message payload to the end of a topic address. Returns
