@@ -810,6 +810,7 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 
 	cl, r0, _ := newTestClient()
 	cl.ID = packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier
+	cl.Properties.ProtocolVersion = 4 // the clean-session rule under test is the v3 one
 	cl.Properties.Clean = true
 	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
 	s.Clients.Add(cl)
@@ -825,7 +826,7 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 		_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
-	// receive the disconnect
+	// a v3 client is closed without a Disconnect packet, so nothing arrives here
 	takeover := make(chan []byte)
 	go func() {
 		buf, err := io.ReadAll(r0)
@@ -850,7 +851,7 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 	require.ErrorIs(t, retrievedCl.StopCause(), packets.CodeDisconnect) // true error is disconnect
 
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes, <-recv)
-	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes, <-takeover)
+	require.Empty(t, <-takeover)
 
 	require.True(t, cl.IsTakenOver())
 
@@ -3103,6 +3104,7 @@ func TestServerRecievePacketDisconnectClientZeroNonZero(t *testing.T) {
 func TestServerRecievePacketDisconnectClient(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
 
 	go func() {
 		err := s.DisconnectClient(cl, packets.CodeDisconnect)
@@ -3112,7 +3114,31 @@ func TestServerRecievePacketDisconnectClient(t *testing.T) {
 
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
-	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes, buf)
+	require.Equal(t, []byte{
+		packets.Disconnect << 4, 2, // fixed header
+		packets.CodeDisconnect.Code, // Reason Code
+		0,                           // Properties Length
+	}, buf)
+}
+
+func TestServerRecievePacketDisconnectClientV3(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 4 // MQTT v3.1.1
+
+	go func() {
+		err := s.DisconnectClient(cl, packets.CodeDisconnect)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	// The server-to-client Disconnect packet was introduced in MQTT v5. A v3
+	// client is closed without one rather than being sent a packet type its
+	// own specification only defines in the other direction.
+	require.Empty(t, buf)
 }
 
 func TestServerProcessPacketDisconnect(t *testing.T) {

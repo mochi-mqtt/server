@@ -1424,9 +1424,17 @@ func (s *Server) DisconnectClient(cl *Client, code packets.Code) error {
 		out.Properties.ReasonString = code.Reason //  // [MQTT-3.14.2-1]
 	}
 
+	// The server-to-client Disconnect packet was introduced in MQTT v5. In
+	// v3.1.1 and v3.1 it flows client to server only, so a v3 client is
+	// closed without one rather than being sent a packet type its own
+	// specification does not define in that direction.
+	//
 	// We already have a code we are using to disconnect the client, so we are not
 	// interested if the write packet fails due to a closed connection (as we are closing it).
-	err := cl.WritePacket(out)
+	var err error
+	if cl.Properties.ProtocolVersion >= 5 {
+		err = cl.WritePacket(out)
+	}
 	if !s.Options.Capabilities.Compatibilities.PassiveClientDisconnect {
 		cl.Stop(code)
 		if code.Code >= packets.ErrUnspecifiedError.Code {
