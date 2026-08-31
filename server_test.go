@@ -3931,3 +3931,107 @@ func TestMinimum(t *testing.T) {
 	require.EqualValues(t, -1, minimum(-1, 20))
 	require.EqualValues(t, -2, minimum(-1, -2))
 }
+
+// refusedHook records the CONNECT refusals a hook is told about.
+type refusedHook struct {
+	HookBase
+	mu    sync.Mutex
+	seen  []string
+	codes []packets.Code
+}
+
+func (h *refusedHook) ID() string { return "refused" }
+
+func (h *refusedHook) Provides(b byte) bool { return b == OnConnectRefused }
+
+func (h *refusedHook) OnConnectRefused(cl *Client, pk packets.Packet, code packets.Code) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.seen = append(h.seen, cl.ID)
+	h.codes = append(h.codes, code)
+}
+
+func (h *refusedHook) refusals() ([]string, []packets.Code) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.seen...), append([]packets.Code(nil), h.codes...)
+}
+
+// A CONNECT refused before any other hook runs tells a hook which client it
+// was. Without it the only record is the returned code, which says nothing
+// about who was refused.
+func TestOnConnectRefusedNamesTheClient(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MaximumClients = 0
+	s := New(&Options{Logger: logger, Capabilities: cc})
+	hook := new(refusedHook)
+	require.NoError(t, s.AddHook(hook, nil))
+	require.NoError(t, s.AddHook(new(AllowHook), nil))
+	defer s.Close()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() { o <- s.EstablishConnection("tcp", r) }()
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+	}()
+	go func() { _, _ = io.ReadAll(w) }()
+
+	require.ErrorIs(t, <-o, packets.ErrServerBusy)
+	_ = w.Close()
+
+	ids, codes := hook.refusals()
+	require.Len(t, ids, 1)
+	require.Equal(t, "zen", ids[0]) // the fixture CONNECT's client id
+	require.Equal(t, packets.ErrServerBusy, codes[0])
+}
+
+// The same for a refusal validateConnect makes — here an unacceptable
+// protocol version, which is the case an operator meets when they close the
+// door on an older fleet.
+func TestOnConnectRefusedCoversValidateConnect(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MinimumProtocolVersion = 5
+	s := New(&Options{Logger: logger, Capabilities: cc})
+	hook := new(refusedHook)
+	require.NoError(t, s.AddHook(hook, nil))
+	require.NoError(t, s.AddHook(new(AllowHook), nil))
+	defer s.Close()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() { o <- s.EstablishConnection("tcp", r) }()
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+	}()
+	go func() { _, _ = io.ReadAll(w) }()
+
+	require.ErrorIs(t, <-o, packets.ErrUnsupportedProtocolVersion)
+	_ = w.Close()
+
+	ids, codes := hook.refusals()
+	require.Len(t, ids, 1)
+	require.Equal(t, "zen", ids[0]) // the fixture CONNECT's client id
+	require.Equal(t, packets.ErrUnsupportedProtocolVersion, codes[0])
+}
+
+// A server with no such hook behaves exactly as before, which is what makes
+// this additive: HookBase's no-op means every existing hook opts out.
+func TestOnConnectRefusedIsOptional(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MaximumClients = 0
+	s := New(&Options{Logger: logger, Capabilities: cc})
+	require.NoError(t, s.AddHook(new(AllowHook), nil))
+	defer s.Close()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() { o <- s.EstablishConnection("tcp", r) }()
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+	}()
+	go func() { _, _ = io.ReadAll(w) }()
+
+	require.ErrorIs(t, <-o, packets.ErrServerBusy)
+	_ = w.Close()
+}

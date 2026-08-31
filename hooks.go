@@ -55,6 +55,10 @@ const (
 	StoredInflightMessages
 	StoredRetainedMessages
 	StoredSysInfo
+	// OnConnectRefused is appended rather than grouped with the other
+	// connection events on purpose: these are iota constants, and inserting
+	// one anywhere but the end renumbers every value after it.
+	OnConnectRefused
 )
 
 var (
@@ -86,6 +90,7 @@ type Hook interface {
 	OnSessionEstablish(cl *Client, pk packets.Packet)
 	OnSessionEstablished(cl *Client, pk packets.Packet)
 	OnDisconnect(cl *Client, err error, expire bool)
+	OnConnectRefused(cl *Client, pk packets.Packet, code packets.Code)
 	OnAuthPacket(cl *Client, pk packets.Packet) (packets.Packet, error)
 	OnPacketRead(cl *Client, pk packets.Packet) (packets.Packet, error) // triggers when a new packet is received by a client, but before packet validation
 	OnPacketEncode(cl *Client, pk packets.Packet) packets.Packet        // modify a packet before it is byte-encoded and written to the client
@@ -257,6 +262,29 @@ func (h *Hooks) OnSessionEstablished(cl *Client, pk packets.Packet) {
 }
 
 // OnDisconnect is called when a client is disconnected for any reason.
+// OnConnectRefused is called when the server refuses a CONNECT before any
+// other hook has run, so that an embedder can see which client it was.
+//
+// **Only the refusals no hook can otherwise observe**: the maximum-clients
+// bound and the checks in validateConnect — an unacceptable protocol
+// version, a Will above the maximum QoS, a Will asking to be retained where
+// retention is unavailable, and a zero-length client id on a session asked
+// to persist. An authentication refusal is not among them: the hook that
+// made that decision already knows.
+//
+// The client has been parsed by this point, so its identifier, username,
+// listener and protocol version are all set. Without this the only record
+// of a refused connection is the returned code, which carries nothing about
+// who was refused — and "which of my devices is being turned away" is the
+// first question an operator asks.
+func (h *Hooks) OnConnectRefused(cl *Client, pk packets.Packet, code packets.Code) {
+	for _, hook := range h.GetAll() {
+		if hook.Provides(OnConnectRefused) {
+			hook.OnConnectRefused(cl, pk, code)
+		}
+	}
+}
+
 func (h *Hooks) OnDisconnect(cl *Client, err error, expire bool) {
 	for _, hook := range h.GetAll() {
 		if hook.Provides(OnDisconnect) {
@@ -751,6 +779,9 @@ func (h *HookBase) OnSessionEstablished(cl *Client, pk packets.Packet) {}
 
 // OnDisconnect is called when a client is disconnected for any reason.
 func (h *HookBase) OnDisconnect(cl *Client, err error, expire bool) {}
+
+// OnConnectRefused is a no-op, so every existing hook is unaffected.
+func (h *HookBase) OnConnectRefused(cl *Client, pk packets.Packet, code packets.Code) {}
 
 // OnAuthPacket is called when an auth packet is received from the client.
 func (h *HookBase) OnAuthPacket(cl *Client, pk packets.Packet) (packets.Packet, error) {

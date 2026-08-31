@@ -239,6 +239,7 @@ func TestHooksNonReturns(t *testing.T) {
 			h.OnSessionEstablish(cl, packets.Packet{})
 			h.OnSessionEstablished(cl, packets.Packet{})
 			h.OnDisconnect(cl, nil, false)
+			h.OnConnectRefused(cl, packets.Packet{}, packets.ErrServerBusy)
 			h.OnPacketSent(cl, packets.Packet{}, []byte{})
 			h.OnPacketProcessed(cl, packets.Packet{}, nil)
 			h.OnSubscribed(cl, packets.Packet{}, []byte{1})

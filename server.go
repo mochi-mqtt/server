@@ -423,11 +423,15 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 			s.SendConnack(cl, packets.ErrServerBusy, false, nil)
 		}
 
+		s.hooks.OnConnectRefused(cl, pk, packets.ErrServerBusy)
 		return packets.ErrServerBusy
 	}
 
 	code := s.validateConnect(cl, pk) // [MQTT-3.1.4-1] [MQTT-3.1.4-2]
 	if code != packets.CodeSuccess {
+		// Told before the CONNACK is written, so that a hook still sees the
+		// refusal when the write itself fails.
+		s.hooks.OnConnectRefused(cl, pk, code)
 		if err := s.SendConnack(cl, code, false, nil); err != nil {
 			return fmt.Errorf("invalid connection send ack: %w", err)
 		}
