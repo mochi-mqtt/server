@@ -92,7 +92,15 @@ func (cl *Clients) Delete(id string) {
 func (cl *Clients) GetByListener(id string) []*Client {
 	cl.RLock()
 	defer cl.RUnlock()
-	clients := make([]*Client, 0, cl.Len())
+	// cl.internal directly, not cl.Len(): this goroutine already holds
+	// cl.RLock() above, and Len() acquires it again. That recursive
+	// read-lock deadlocks permanently whenever a concurrent Lock() (e.g.
+	// Clients.Add or Clients.Delete, called on every connect/disconnect) is
+	// pending at the moment the second RLock is attempted -- sync.RWMutex
+	// blocks new readers once a writer is waiting, specifically to prevent
+	// writer starvation, which is exactly what turns this into a deadlock
+	// instead of mere contention. See #488.
+	clients := make([]*Client, 0, len(cl.internal))
 	for _, client := range cl.internal {
 		if client.Net.Listener == id && !client.Closed() {
 			clients = append(clients, client)

@@ -24,6 +24,15 @@ type TCP struct { // [MQTT-4.2.0-1]
 	config  Config       // configuration values for the listener
 	log     *slog.Logger // server logger
 	end     uint32       // ensure the close methods are only called once
+	// connWg tracks establish() goroutines this listener has spawned but not
+	// yet finished. Close waits on it before returning, so every establish()
+	// call -- including its Server.attachClient's own internal
+	// Listeners.ClientsWg.Add/Done pairing -- is guaranteed complete before
+	// Listeners.CloseAll's later ClientsWg.Wait() runs. Without this, Serve's
+	// "go func(){ establish(...) }()" is a fire-and-forget spawn: Add(1)
+	// only happens deep inside attachClient, on a goroutine with no ordering
+	// guarantee relative to a concurrent Close/Wait -- see #424.
+	connWg sync.WaitGroup
 }
 
 // NewTCP initializes and returns a new TCP listener, listening on an address.
@@ -81,12 +90,24 @@ func (l *TCP) Serve(establish EstablishFn) {
 		}
 
 		if atomic.LoadUint32(&l.end) == 0 {
+			// Add happens here, synchronously on the accepting goroutine,
+			// before the handler goroutine is even spawned -- not inside
+			// it. That ordering is what Close (below) relies on: by the
+			// time l.connWg.Wait() can observe a zero count, every
+			// establish() this listener ever started really has finished.
+			l.connWg.Add(1)
 			go func() {
-				err = establish(l.id, conn)
+				defer l.connWg.Done()
+				err := establish(l.id, conn)
 				if err != nil {
 					l.log.Warn("", "error", err)
 				}
 			}()
+		} else {
+			// Accepted right as Close was closing this listener: nothing
+			// will ever call establish for it, so nothing will ever close
+			// the connection either unless we do it here.
+			conn.Close()
 		}
 	}
 }
@@ -94,16 +115,18 @@ func (l *TCP) Serve(establish EstablishFn) {
 // Close closes the listener and any client connections.
 func (l *TCP) Close(closeClients CloseFn) {
 	l.Lock()
-	defer l.Unlock()
-
 	if atomic.CompareAndSwapUint32(&l.end, 0, 1) {
 		closeClients(l.id)
 	}
-
 	if l.listen != nil {
-		err := l.listen.Close()
-		if err != nil {
-			return
-		}
+		_ = l.listen.Close()
 	}
+	l.Unlock()
+
+	// Outside the lock: nothing establish() reaches touches l's own mutex,
+	// so there's no reason to hold it while waiting. By the time this
+	// returns, every establish() this listener ever spawned -- and so every
+	// Listeners.ClientsWg.Add/Done pairing it made -- has fully completed;
+	// see connWg's doc comment for why that guarantee matters to the caller.
+	l.connWg.Wait()
 }

@@ -3496,6 +3496,63 @@ func TestServerClose(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectShuttingDown).RawBytes, <-recv)
 }
 
+// TestServerCloseWaitsForInFlightConnections is a regression test for #424:
+// TCP.Serve spawns each accepted connection's attachClient call as an
+// untracked goroutine, so Listeners.ClientsWg.Add(1) (inside attachClient)
+// has no ordering guarantee relative to a concurrent Close()'s
+// Listeners.ClientsWg.Wait(). On an unpatched tree this reproduces reliably
+// within a couple hundred iterations against a real TCP listener with real
+// connection churn racing Close -- either Close hangs indefinitely, or
+// (under -race) a "sync: WaitGroup is reused before previous Wait has
+// returned" panic. It's a real Edge-device-reconnect-shaped race, not a
+// test-only artifact: a client's connection can be accepted and its
+// handling goroutine scheduled at essentially any point relative to a
+// server shutdown.
+//
+// NOTE for reviewers: this same Close-vs-Serve scenario can occasionally
+// also surface a *separate*, pre-existing data race under -race, reported
+// separately -- confirmed present on unpatched v2.7.9 too, unrelated to
+// either fix in this PR, and not something this PR attempts to fix. If CI
+// flags a race here that isn't the WaitGroup misuse this test targets,
+// that's almost certainly it, not a regression in this change.
+func TestServerCloseWaitsForInFlightConnections(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		s := newServer()
+		tcp := listeners.NewTCP(listeners.Config{ID: "t1", Address: "127.0.0.1:0"})
+		require.NoError(t, s.AddListener(tcp))
+		require.NoError(t, s.Serve())
+		time.Sleep(time.Millisecond) // let the listener actually start accepting
+		addr := tcp.Address()
+
+		stop := make(chan struct{})
+		go func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				if c, err := net.Dial("tcp", addr); err == nil {
+					c.Close()
+				}
+			}
+		}()
+
+		done := make(chan struct{})
+		go func() {
+			_ = s.Close()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("iteration %d: Server.Close did not return within 3s -- likely the GetByListener/ClientsWg deadlock (see #424, #488)", i)
+		}
+		close(stop)
+	}
+}
+
 func TestServerClearExpiredInflights(t *testing.T) {
 	s := New(nil)
 	require.NotNil(t, s)
