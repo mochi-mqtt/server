@@ -33,6 +33,7 @@ type Websocket struct { // [MQTT-4.2.0-1]
 	address   string              // the network address to bind to
 	config    Config              // configuration values for the listener
 	listen    *http.Server        // a http server for serving websocket connections
+	ln        net.Listener        // the bound socket, held from Init so Address reports a real port
 	log       *slog.Logger        // server logger
 	establish EstablishFn         // the server's establish connection handler
 	upgrader  *websocket.Upgrader //  upgrade the incoming http/tcp connection to a websocket compliant connection.
@@ -59,8 +60,12 @@ func (l *Websocket) ID() string {
 	return l.id
 }
 
-// Address returns the address of the listener.
+// Address returns the address of the listener: the bound one once Init has
+// run, so a ":0" configuration reports the port the kernel actually assigned.
 func (l *Websocket) Address() string {
+	if l.ln != nil {
+		return l.ln.Addr().String()
+	}
 	return l.address
 }
 
@@ -87,7 +92,12 @@ func (l *Websocket) Init(log *slog.Logger) error {
 		WriteTimeout: 60 * time.Second,
 	}
 
-	return nil
+	// Bind here, as the TCP listener does, rather than inside Serve: the port
+	// is then held from the moment Init returns, a ":0" address is reported
+	// correctly by Address, and nothing can take the port between the two.
+	var err error
+	l.ln, err = net.Listen("tcp", l.address)
+	return err
 }
 
 // handler upgrades and handles an incoming websocket connection.
@@ -110,10 +120,16 @@ func (l *Websocket) Serve(establish EstablishFn) {
 	var err error
 	l.establish = establish
 
+	if l.ln == nil {
+		// Init failed (or was never called): there is no socket to serve.
+		// Init already returned the bind error to the caller.
+		l.log.Error("failed to serve.", "error", "listener was not bound", "listener", l.id)
+		return
+	}
 	if l.listen.TLSConfig != nil {
-		err = l.listen.ListenAndServeTLS("", "")
+		err = l.listen.ServeTLS(l.ln, "", "")
 	} else {
-		err = l.listen.ListenAndServe()
+		err = l.listen.Serve(l.ln)
 	}
 
 	// After the listener has been shutdown, no need to print the http.ErrServerClosed error.
@@ -131,6 +147,11 @@ func (l *Websocket) Close(closeClients CloseFn) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = l.listen.Shutdown(ctx)
+		if l.ln != nil {
+			// Shutdown closes only the listeners Serve registered; a socket
+			// bound at Init and never served is released here.
+			_ = l.ln.Close()
+		}
 	}
 
 	closeClients(l.id)

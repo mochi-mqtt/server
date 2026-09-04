@@ -284,7 +284,7 @@ func TestServerAddListenersFromConfig(t *testing.T) {
 	require.Equal(t, "[::]:1883", tcp.Address())
 
 	ws, _ := s.Listeners.Get("ws")
-	require.Equal(t, ":1882", ws.Address())
+	require.Equal(t, "[::]:1882", ws.Address()) // bound at Init, reported like the TCP listener
 
 	health, _ := s.Listeners.Get("health")
 	require.Equal(t, ":1881", health.Address())

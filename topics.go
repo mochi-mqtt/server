@@ -551,8 +551,13 @@ func (x *TopicsIndex) scanMessages(filter string, d int, n *particle, pks []pack
 			}
 
 			if !hasNext {
-				if adjacent.retainPath != "" {
-					if pk, ok := x.Retained.Get(adjacent.retainPath); ok {
+				// retainPath is written by RetainMessage under the particle
+				// lock; read it under the same lock (#200).
+				adjacent.Lock()
+				retainPath := adjacent.retainPath
+				adjacent.Unlock()
+				if retainPath != "" {
+					if pk, ok := x.Retained.Get(retainPath); ok {
 						pks = append(pks, pk)
 					}
 				}
@@ -570,7 +575,10 @@ func (x *TopicsIndex) scanMessages(filter string, d int, n *particle, pks []pack
 			return x.scanMessages(filter, d+1, particle, pks)
 		}
 
-		if pk, ok := x.Retained.Get(particle.retainPath); ok {
+		particle.Lock()
+		retainPath := particle.retainPath
+		particle.Unlock()
+		if pk, ok := x.Retained.Get(retainPath); ok {
 			pks = append(pks, pk)
 		}
 	}

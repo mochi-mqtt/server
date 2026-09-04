@@ -48,6 +48,7 @@ func TestWebsocketInit(t *testing.T) {
 	err := l.Init(logger)
 	require.NoError(t, err)
 	require.NotNil(t, l.listen)
+	l.Close(MockCloser) // Init binds the socket; release it for the next test
 }
 
 func TestWebsocketServeAndClose(t *testing.T) {
@@ -96,7 +97,7 @@ func TestWebsocketFailedToServe(t *testing.T) {
 	config.Address = "wrong_addr"
 	l := NewWebsocket(config)
 	err := l.Init(logger)
-	require.NoError(t, err)
+	require.Error(t, err, "an unbindable address is refused at Init, where the caller can see it")
 
 	o := make(chan bool)
 	go func(o chan bool) {
@@ -170,4 +171,21 @@ func TestWebsocketConnectionReads(t *testing.T) {
 
 	s.Close()
 	_ = ws.Close()
+}
+
+// A ":0" address is bound at Init, so Address reports the port the kernel
+// assigned and the port is held before Serve runs — nothing else in the
+// process can take it in between, and a caller told the address can dial it.
+func TestWebsocketAddressIsTheBoundPortAfterInit(t *testing.T) {
+	l := NewWebsocket(Config{ID: "t1", Address: "127.0.0.1:0"})
+	require.NoError(t, l.Init(logger))
+	defer l.Close(MockCloser)
+
+	addr := l.Address()
+	require.NotEqual(t, "127.0.0.1:0", addr)
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	require.NoError(t, err, "the door must accept from the moment Init returns")
+	_ = conn.Close()
+	_, err = net.Listen("tcp", addr)
+	require.Error(t, err, "the port must be held, not merely reserved")
 }
