@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: Italo Nesi
 
 // Package mqtt provides a high performance, fully compliant MQTT v5 broker server with v3.1.1 backward compatibility.
 package mqtt
@@ -108,6 +109,35 @@ type Options struct {
 
 	// ClientNetWriteBufferSize specifies the size of the client *bufio.Writer write buffer.
 	ClientNetWriteBufferSize int `yaml:"client_net_write_buffer_size" json:"client_net_write_buffer_size"`
+
+	// ClientNetWriteTimeout bounds a single write to a client's connection.
+	//
+	// Zero, the default, does NOT mean unbounded: the bound is then the
+	// client's keepalive expiry, which is what every release before this
+	// option existed gave a write by arming both deadlines at once. Set this
+	// for a tighter bound than 1.5x keepalive. A client connecting with
+	// keepalive 0 has no bound either way.
+	//
+	// Spelling it in configuration: YAML takes `5s`, JSON has no duration
+	// type and needs raw nanoseconds.
+	//
+	// **It is not the slow client this protects.** WritePacket holds the
+	// client's lock across the write, so a client that has stopped reading
+	// its socket holds that lock for as long as it stays connected — and
+	// every other goroutine that needs it waits, including publishToClient
+	// taking a packet identifier for a QoS 1 delivery. The outbound queue
+	// and OnPublishDropped that would have shed the slow client sit behind
+	// that same lock, so at QoS 1 they are never reached.
+	//
+	// Set, a write that does not complete in time fails with a net.Error
+	// reporting Timeout, the lock is released, and the connection is left
+	// for the caller to close — a timed-out write has put part of a packet
+	// on the wire and that stream cannot be continued. It is net.Error
+	// rather than os.ErrDeadlineExceeded because the two agree for a plain
+	// TCP write and do not for every listener: a websocket writes through
+	// gorilla, whose buffered writev path yields "writev tcp ...: i/o
+	// timeout", which is not that sentinel.
+	ClientNetWriteTimeout time.Duration `yaml:"client_net_write_timeout" json:"client_net_write_timeout"`
 
 	// ClientNetReadBufferSize specifies the size of the client *bufio.Reader read buffer.
 	ClientNetReadBufferSize int `yaml:"client_net_read_buffer_size" json:"client_net_read_buffer_size"`
@@ -395,18 +425,21 @@ func (s *Server) eventLoop() {
 	}
 }
 
-// EstablishConnection establishes a new client when a listener accepts a new connection.
+// EstablishConnection establishes a new client when a listener accepts a new
+// connection, or when a caller embedding the server hands it one directly.
+//
+// Listeners.Establish is where the connection is registered with the
+// waitgroup Close waits on, so that both of those callers are covered by it.
 func (s *Server) EstablishConnection(listener string, c net.Conn) error {
-	cl := s.NewClient(c, listener, "", false)
-	return s.attachClient(cl, listener)
+	return s.Listeners.Establish(listener, c, func(listener string, c net.Conn) error {
+		cl := s.NewClient(c, listener, "", false)
+		return s.attachClient(cl, listener)
+	})
 }
 
 // attachClient validates an incoming client connection and if viable, attaches the client
 // to the server, performs session housekeeping, and reads incoming packets.
 func (s *Server) attachClient(cl *Client, listener string) error {
-	defer s.Listeners.ClientsWg.Done()
-	s.Listeners.ClientsWg.Add(1)
-
 	go cl.WriteLoop()
 	defer cl.Stop(nil)
 
@@ -417,17 +450,25 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 
 	cl.ParseConnect(listener, pk)
 	if atomic.LoadInt64(&s.Info.ClientsConnected) >= s.Options.Capabilities.MaximumClients {
+		// The hook is told the code the client was actually sent, which
+		// differs by protocol version. A hook told one code while the
+		// client was sent another cannot answer the question it exists
+		// for -- which of my devices was turned away, and with what.
+		code := packets.ErrServerBusy
 		if cl.Properties.ProtocolVersion < 5 {
-			s.SendConnack(cl, packets.ErrServerUnavailable, false, nil)
-		} else {
-			s.SendConnack(cl, packets.ErrServerBusy, false, nil)
+			code = packets.ErrServerUnavailable
 		}
+		s.SendConnack(cl, code, false, nil)
 
+		s.hooks.OnConnectRefused(cl, pk, code)
 		return packets.ErrServerBusy
 	}
 
 	code := s.validateConnect(cl, pk) // [MQTT-3.1.4-1] [MQTT-3.1.4-2]
 	if code != packets.CodeSuccess {
+		// Told before the CONNACK is written, so that a hook still sees the
+		// refusal when the write itself fails.
+		s.hooks.OnConnectRefused(cl, pk, code)
 		if err := s.SendConnack(cl, code, false, nil); err != nil {
 			return fmt.Errorf("invalid connection send ack: %w", err)
 		}
@@ -475,6 +516,27 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 
 	err = cl.Read(s.receivePacket)
 	if err != nil {
+		// A client that exceeded the Maximum Packet Size in this server's
+		// own CONNACK is owed the reason. ErrPacketTooLarge is raised in
+		// ReadFixedHeader, so it leaves cl.Read directly and never reaches
+		// receivePacket, which is the only place a reason code becomes a
+		// DISCONNECT — so without this the client gets a bare TCP reset for
+		// breaking a limit it was told about. [MQTT-3.2.2-15]
+		//
+		// This code by name rather than any code from the read loop. A
+		// malformed packet arrives here too, and 4.13 makes the DISCONNECT
+		// optional for one, so widening this is a decision to take on its
+		// own — not a side effect of which errors happen to be wrapped,
+		// which is what decides it if the test is on the type.
+		//
+		// !cl.Closed() keeps the processPacket path out: receivePacket
+		// answers the codes it raises and stops the client doing it, so a
+		// client still open here was refused before the handler ran.
+		if errors.Is(err, packets.ErrPacketTooLarge) &&
+			!cl.Closed() &&
+			cl.Properties.ProtocolVersion == 5 {
+			_ = s.DisconnectClient(cl, packets.ErrPacketTooLarge)
+		}
 		s.sendLWT(cl)
 		cl.Stop(err)
 	} else {
@@ -520,10 +582,34 @@ func (s *Server) readConnectionPacket(cl *Client) (pk packets.Packet, err error)
 func (s *Server) receivePacket(cl *Client, pk packets.Packet) error {
 	err := s.processPacket(cl, pk)
 	if err != nil {
-		if code, ok := err.(packets.Code); ok &&
+		code, refused := err.(packets.Code)
+		if refused &&
 			cl.Properties.ProtocolVersion == 5 &&
 			code.Code >= packets.ErrUnspecifiedError.Code {
 			_ = s.DisconnectClient(cl, code)
+		}
+
+		// A reason code is a decision, not a fault: the client has just
+		// been told precisely what was wrong with its packet, and the
+		// server did what the specification asks of it. Reporting that at
+		// Warn tells an operator watching for problems that the server
+		// failed when it worked -- and formatting the packet to say so
+		// writes the client's own payload into the log, at a level that is
+		// on by default, at whatever rate a client can reconnect and
+		// repeat itself. One 100KiB publish carrying a topic alias its new
+		// connection had never registered produced a single line of over
+		// 300KB here.
+		//
+		// This is the same distinction #516 drew for a hook's reason code,
+		// in the same tree, and the same treatment: debug, and the fields
+		// that identify the case rather than the packet that carries it.
+		// An error that is not a Code is a genuine fault and keeps both.
+		if refused {
+			s.Log.Debug("packet refused",
+				"code", code.Code, "reason", code.Reason, "client", cl.ID,
+				"listener", cl.Net.Listener, "type", pk.FixedHeader.Type)
+
+			return err
 		}
 
 		s.Log.Warn("error processing packet", "error", err, "client", cl.ID, "listener", cl.Net.Listener, "pk", pk)
@@ -612,7 +698,11 @@ func (s *Server) SendConnack(cl *Client, reason packets.Code, present bool, prop
 	}
 
 	properties.ReceiveMaximum = s.Options.Capabilities.ReceiveMaximum // 3.2.2.3.3 Receive Maximum
-	if cl.State.ServerKeepalive {                                     // You can set this dynamically using the OnConnect hook.
+	if s.Options.Capabilities.MaximumPacketSize > 0 {
+		properties.MaximumPacketSize = s.Options.Capabilities.MaximumPacketSize
+	}
+
+	if cl.State.ServerKeepalive { // You can set this dynamically using the OnConnect hook.
 		properties.ServerKeepAlive = cl.State.Keepalive // [MQTT-3.1.2-21]
 		properties.ServerKeepAliveFlag = true
 	}
@@ -857,7 +947,34 @@ func (s *Server) InjectPacket(cl *Client, pk packets.Packet) error {
 // processPublish processes a Publish packet.
 func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	if !cl.Net.Inline && !IsValidFilter(pk.TopicName, true) {
-		return nil
+		// A $SYS topic is the only thing that reaches here: every other way
+		// IsValidFilter can refuse a publish is a wildcard or an absent
+		// topic name, and PublishValidate has already answered those with a
+		// DISCONNECT before this runs.
+		//
+		// Refusing the publish is right - 4.7.2 says the server should stop
+		// clients exchanging messages over $SYS - but a QoS 1 or 2 client
+		// must still be answered [MQTT-4.3.2-4] [MQTT-4.3.3-8]. Returning
+		// here without one leaves it waiting for an acknowledgement that
+		// will never arrive, holding a slot of its send quota for as long as
+		// the session lasts.
+		//
+		// This is what a publish an ACL denies already gets, a few lines
+		// below, and for the same reason: the client may not write there.
+		if pk.FixedHeader.Qos == 0 {
+			return nil
+		}
+
+		if cl.Properties.ProtocolVersion != 5 {
+			return s.DisconnectClient(cl, packets.ErrNotAuthorized)
+		}
+
+		ackType := packets.Puback
+		if pk.FixedHeader.Qos == 2 {
+			ackType = packets.Pubrec
+		}
+
+		return cl.WritePacket(s.buildAck(pk.PacketID, ackType, 0, pk.Properties, packets.ErrNotAuthorized))
 	}
 
 	if atomic.LoadInt32(&cl.State.Inflight.receiveQuota) == 0 {
@@ -891,19 +1008,41 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	if !cl.Net.Inline {
-		if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok {
-			if pki.FixedHeader.Type == packets.Pubrec { // [MQTT-4.3.3-10]
-				ack := s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.ErrPacketIdentifierInUse)
-				return cl.WritePacket(ack)
-			}
-			if ok := cl.State.Inflight.Delete(pk.PacketID); ok { // [MQTT-4.3.2-5]
-				atomic.AddInt64(&s.Info.Inflight, -1)
-			}
+		// A Pubrec entry is this client's own QoS 2 publish, mid-PUBREL
+		// exchange, stored under the identifier the client chose — the one
+		// kind of entry here that shares an identifier space with an inbound
+		// PUBLISH. Anything else is a message the server sent, under an
+		// identifier the server assigned, and the two spaces are independent
+		// (MQTT-2.2.1). Deleting one of those discards a delivery the server
+		// is still waiting to have acknowledged.
+		if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok && pki.FixedHeader.Type == packets.Pubrec {
+			ack := s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.ErrPacketIdentifierInUse)
+			return cl.WritePacket(ack) // [MQTT-4.3.3-10]
 		}
 	}
 
 	if pk.Properties.TopicAliasFlag && pk.Properties.TopicAlias > 0 { // [MQTT-3.3.2-11]
 		pk.TopicName = cl.State.TopicAliases.Inbound.Set(pk.Properties.TopicAlias, pk.TopicName)
+
+		// Section 3.3.2.3.4 case 3a: an alias this connection never
+		// registered, carrying no topic name of its own, is a Protocol
+		// Error and the answer is a DISCONNECT.
+		//
+		// PublishValidate cannot catch it. It refuses an absent topic only
+		// when there is no alias either, and it runs against the decoded
+		// packet, which is the one place that does not know which aliases
+		// this connection has registered.
+		//
+		// Reaching this is ordinary rather than hostile: [MQTT-3.3.2-7]
+		// discards every mapping when the network connection goes, so any
+		// client that reconnects and keeps using an alias lands here. It
+		// has to be told. Falling through publishes to the empty string,
+		// which reaches no subscriber and which [MQTT-4.7.3-1] says is not
+		// a topic name at all - and a QoS 1 or 2 client is then sent an
+		// acknowledgement saying the message was delivered.
+		if pk.TopicName == "" {
+			return s.DisconnectClient(cl, packets.ErrProtocolViolationNoTopic)
+		}
 	}
 
 	if pk.FixedHeader.Qos > s.Options.Capabilities.MaximumQos {
@@ -917,8 +1056,21 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		return nil
 	} else if errors.Is(err, packets.CodeSuccessIgnore) {
 		pk.Ignore = true
-	} else if cl.Properties.ProtocolVersion == 5 && pk.FixedHeader.Qos > 0 && errors.As(err, new(packets.Code)) {
-		err = cl.WritePacket(s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, err.(packets.Code)))
+	} else if refusal := (packets.Code{}); cl.Properties.ProtocolVersion == 5 && pk.FixedHeader.Qos > 0 && errors.As(err, &refusal) {
+		// The code errors.As extracted, not a type assertion on err itself.
+		// errors.As succeeds when a hook WRAPS a packets.Code - which
+		// fmt.Errorf("...: %w", code) does, and hooks do - and err is then
+		// the wrapper, so asserting on it panics and takes the broker down
+		// on an ordinary publish refusal.
+		//
+		// A QoS 2 publish rejected here must be answered with a PUBREC,
+		// not a PUBACK — same selection the ACL-deny branch above already
+		// makes for the same reason.
+		ackType := packets.Puback
+		if pk.FixedHeader.Qos == 2 {
+			ackType = packets.Pubrec
+		}
+		err = cl.WritePacket(s.buildAck(pk.PacketID, ackType, 0, pk.Properties, refusal))
 		if err != nil {
 			return err
 		}
@@ -939,14 +1091,37 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	cl.State.Inflight.DecreaseReceiveQuota()
-	ack := s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, packets.QosCodes[pk.FixedHeader.Qos]) // [MQTT-4.3.2-4]
+	ack := s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, packets.CodeSuccess) // [MQTT-4.3.2-4] [MQTT-3.4.2-1]
 	if pk.FixedHeader.Qos == 2 {
 		ack = s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.CodeSuccess) // [MQTT-3.3.4-1] [MQTT-4.3.3-8]
 	}
 
-	if ok := cl.State.Inflight.Set(ack); ok {
-		atomic.AddInt64(&s.Info.Inflight, 1)
-		s.hooks.OnQosPublish(cl, ack, ack.Created, 0)
+	// A PUBREC waits for a PUBREL, so it is held here under the client's own
+	// identifier, which is the space the rest of that exchange uses. A PUBACK
+	// waits for nothing: it is written below and the flow is over, and the
+	// Set and Delete around that write cancelled out. What they did not
+	// cancel out was the entry they overwrote — the identifier is the
+	// client's and this map is keyed by the server's, so a colliding number
+	// cost the server the delivery it had outstanding there.
+	//
+	// **The write below is still exposed to that collision and this release
+	// does not close it.** Inflight.Set overwrites unconditionally, so a
+	// client choosing an identifier the server already has outstanding
+	// replaces that delivery: it is never acknowledged, never re-sent, and
+	// its quota is never returned. Set reports false and the counter and the
+	// hook are skipped, which is why nothing observes the loss.
+	//
+	// The root of it is that one map holds two identifier spaces MQTT-2.2.1
+	// says are independent - the client's for inbound flows, the server's
+	// for outbound. Separating them is a larger change than this release
+	// should carry, and the behaviour is not a regression: it is what every
+	// earlier version does. It is written here so the next reader does not
+	// have to rediscover that the fix above covers only the read half.
+	if pk.FixedHeader.Qos == 2 {
+		if ok := cl.State.Inflight.Set(ack); ok {
+			atomic.AddInt64(&s.Info.Inflight, 1)
+			s.hooks.OnQosPublish(cl, ack, ack.Created, 0)
+		}
 	}
 
 	err = cl.WritePacket(ack)
@@ -955,9 +1130,6 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	if pk.FixedHeader.Qos == 1 {
-		if ok := cl.State.Inflight.Delete(ack.PacketID); ok {
-			atomic.AddInt64(&s.Info.Inflight, -1)
-		}
 		cl.State.Inflight.IncreaseReceiveQuota()
 		s.hooks.OnQosComplete(cl, ack)
 	}
@@ -999,8 +1171,17 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 	}
 
 	subscribers := s.Topics.Subscribers(pk.TopicName)
-	if len(subscribers.Shared) > 0 {
-		subscribers = s.hooks.OnSelectSubscribers(subscribers, pk)
+
+	// Whether there were shared subscriptions is decided before the hook
+	// runs, and the shared selection below is gated on that rather than on
+	// what the hook left behind. A hook selecting for a shared group says
+	// which subscriber it chose by filling SharedSelected, and is free to
+	// empty Shared while doing it -- testing Shared afterwards would then
+	// skip the merge and deliver the message to nobody.
+	hadShared := len(subscribers.Shared) > 0
+
+	subscribers = s.hooks.OnSelectSubscribers(subscribers, pk)
+	if hadShared {
 		if len(subscribers.SharedSelected) == 0 {
 			subscribers.SelectShared()
 		}
@@ -1241,7 +1422,7 @@ func (s *Server) processPubcomp(cl *Client, pk packets.Packet) error {
 func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 	pk = s.hooks.OnSubscribe(cl, pk)
 	code := packets.CodeSuccess
-	if _, ok := cl.State.Inflight.Get(pk.PacketID); ok {
+	if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok && pki.FixedHeader.Type == packets.Pubrec {
 		code = packets.ErrPacketIdentifierInUse
 	}
 
@@ -1251,6 +1432,12 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 		if code != packets.CodeSuccess {
 			reasonCodes[i] = code.Code // NB 3.9.3 Non-normative 0x91
 			continue
+		} else if len(pk.ReasonCodes) == len(pk.Filters) && pk.ReasonCodes[i] >= packets.ErrUnspecifiedError.Code {
+			// An OnSubscribe hook refused this filter and said why. The
+			// authorization check below can only answer 0x87, so without
+			// this a hook refusing a filter for any other reason has to
+			// either mislabel it or disconnect the client. [MQTT-3.9.3-1]
+			reasonCodes[i] = pk.ReasonCodes[i]
 		} else if !IsValidFilter(sub.Filter, false) {
 			reasonCodes[i] = packets.ErrTopicFilterInvalid.Code
 		} else if sub.NoLocal && IsSharedFilter(sub.Filter) {
@@ -1315,7 +1502,7 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 // processUnsubscribe processes an unsubscribe packet.
 func (s *Server) processUnsubscribe(cl *Client, pk packets.Packet) error {
 	code := packets.CodeSuccess
-	if _, ok := cl.State.Inflight.Get(pk.PacketID); ok {
+	if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok && pki.FixedHeader.Type == packets.Pubrec {
 		code = packets.ErrPacketIdentifierInUse
 	}
 
@@ -1424,10 +1611,26 @@ func (s *Server) DisconnectClient(cl *Client, code packets.Code) error {
 		out.Properties.ReasonString = code.Reason //  // [MQTT-3.14.2-1]
 	}
 
+	// The server-to-client Disconnect packet was introduced in MQTT v5. In
+	// v3.1.1 and v3.1 it flows client to server only, so a v3 client is
+	// closed without one rather than being sent a packet type its own
+	// specification does not define in that direction.
+	//
 	// We already have a code we are using to disconnect the client, so we are not
 	// interested if the write packet fails due to a closed connection (as we are closing it).
-	err := cl.WritePacket(out)
-	if !s.Options.Capabilities.Compatibilities.PassiveClientDisconnect {
+	var err error
+	told := cl.Properties.ProtocolVersion >= 5
+	if told {
+		err = cl.WritePacket(out)
+	}
+
+	// PassiveClientDisconnect means "the client was sent a DISCONNECT and
+	// will close the connection itself, so do not force it". A v3 client is
+	// sent nothing, because that packet does not exist in that direction, so
+	// there is nothing for it to act on: honouring the option there would
+	// make DisconnectClient do nothing at all - no packet, no close - and
+	// leave the connection open after the server decided to end it.
+	if !told || !s.Options.Capabilities.Compatibilities.PassiveClientDisconnect {
 		cl.Stop(code)
 		if code.Code >= packets.ErrUnspecifiedError.Code {
 			return code

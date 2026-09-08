@@ -91,7 +91,7 @@ func (l *HTTPStats) Serve(establish EstablishFn) {
 
 	// After the listener has been shutdown, no need to print the http.ErrServerClosed error.
 	if err != nil && atomic.LoadUint32(&l.end) == 0 {
-		l.log.Error("failed to serve.", "error", err, "listener", l.id)
+		l.log.Error("failed to serve.", "error", err)
 	}
 }
 

@@ -89,10 +89,24 @@ func (cl *Clients) Delete(id string) {
 }
 
 // GetByListener returns clients matching a listener id.
+//
+// The capacity hint used to read cl.Len(), which takes
+// RLock a second time while this function already holds it. sync.RWMutex
+// documents that as prohibited - "if a goroutine holds a RWMutex for reading
+// and another goroutine might call Lock, no goroutine should expect to be
+// able to acquire a read lock until the initial read lock is released. In
+// particular, this prohibits recursive read locking."
+//
+// A client connecting while a listener closes is exactly that interleaving:
+// attachClient -> Clients.Delete -> Lock() queues a writer, RWMutex stops
+// admitting new readers, and this nested RLock blocks forever behind the
+// writer that is itself waiting on the RLock we still hold.
+//
+// The map is already guarded by the RLock held here, so read len directly.
 func (cl *Clients) GetByListener(id string) []*Client {
 	cl.RLock()
 	defer cl.RUnlock()
-	clients := make([]*Client, 0, cl.Len())
+	clients := make([]*Client, 0, len(cl.internal))
 	for _, client := range cl.internal {
 		if client.Net.Listener == id && !client.Closed() {
 			clients = append(clients, client)
@@ -198,6 +212,20 @@ func (cl *Client) WriteLoop() {
 			if err := cl.WritePacket(*pk); err != nil {
 				// TODO : Figure out what to do with error
 				cl.ops.log.Debug("failed publishing packet", "error", err, "client", cl.ID, "packet", pk)
+
+				// A write that ran out of time under
+				// ClientNetWriteTimeout has put part of a packet on the
+				// wire, and there is no way to continue that stream: the
+				// next packet written would land in the middle of the last
+				// one. Continuing also leaves this loop taking the client
+				// lock for every remaining queued packet, a timeout at a
+				// time, while every other goroutine that needs that lock —
+				// publishToClient taking a packet identifier — waits.
+				if isTimeout(err) {
+					atomic.AddInt32(&cl.State.outboundQty, -1)
+					cl.Stop(err)
+					return
+				}
 			}
 			atomic.AddInt32(&cl.State.outboundQty, -1)
 		case <-cl.State.open.Done():
@@ -258,7 +286,17 @@ func (cl *Client) ParseConnect(lid string, pk packets.Packet) {
 	}
 }
 
-// refreshDeadline refreshes the read/write deadline for the net.Conn connection.
+// refreshDeadline refreshes the read deadline for the net.Conn connection.
+//
+// The read deadline and not both: [MQTT-3.1.2-22] is a rule about packets
+// the client sends, and SetDeadline would apply it to writes as well. That
+// was harmless while nothing else set a write deadline, and became a way
+// for a client to switch one off the moment ClientNetWriteTimeout existed:
+// this runs at the top of every pass of the read loop, so any packet
+// needing no reply — a QoS 0 PUBLISH, a PUBACK, an UNSUBSCRIBE — cleared
+// the deadline a queued write had armed. With keepalive 0 it cleared it
+// outright; with keepalive 60 it pushed it 90 seconds out, and the next
+// packet pushed it again.
 func (cl *Client) refreshDeadline(keepalive uint16) {
 	var expiry time.Time // nil time can be used to disable deadline if keepalive = 0
 	if keepalive > 0 {
@@ -266,8 +304,24 @@ func (cl *Client) refreshDeadline(keepalive uint16) {
 	}
 
 	if cl.Net.Conn != nil {
-		_ = cl.Net.Conn.SetDeadline(expiry) // [MQTT-3.1.2-22]
+		_ = cl.Net.Conn.SetReadDeadline(expiry) // [MQTT-3.1.2-22]
 	}
+}
+
+// writeDeadline is when a single write to this client must have completed.
+//
+// ClientNetWriteTimeout when it is set, and otherwise the same keepalive
+// expiry refreshDeadline uses for reads - because that is the bound every
+// release before this one gave a write, by arming both deadlines at once.
+// Zero means no bound, which happens only when neither is configured.
+func (cl *Client) writeDeadline() time.Time {
+	if d := cl.ops.options.ClientNetWriteTimeout; d > 0 {
+		return time.Now().Add(d)
+	}
+	if k := cl.State.Keepalive; k > 0 {
+		return time.Now().Add(time.Duration(k+(k/2)) * time.Second) // [MQTT-3.1.2-22]
+	}
+	return time.Time{}
 }
 
 // NextPacketID returns the next available (unused) packet id for the client.
@@ -545,8 +599,14 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 		pk.Mods.MaxSize = cl.Properties.Props.MaximumPacketSize
 	}
 
-	if cl.Properties.Props.RequestProblemInfoFlag && cl.Properties.Props.RequestProblemInfo == 0x0 {
-		pk.Mods.DisallowProblemInfo = true // [MQTT-3.1.2-29] strict, no problem info on any packet if set
+	if cl.Properties.Props.RequestProblemInfoFlag && cl.Properties.Props.RequestProblemInfo == 0x0 &&
+		pk.FixedHeader.Type != packets.Publish {
+		// [MQTT-3.1.2-29] the server must not send a Reason String or User
+		// Properties on any packet other than PUBLISH, CONNACK or
+		// DISCONNECT. PUBLISH is exempt: its User Properties are
+		// application data forwarded from the publisher, not problem
+		// information about a failure.
+		pk.Mods.DisallowProblemInfo = true
 	}
 
 	if pk.FixedHeader.Type != packets.Connack || cl.Properties.Props.RequestResponseInfo == 0x1 || cl.ops.options.Capabilities.Compatibilities.AlwaysReturnResponseInfo {
@@ -602,6 +662,42 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 	n, err := func() (int64, error) {
 		cl.Lock()
 		defer cl.Unlock()
+
+		// Armed inside the lock and cleared before it is released, so that
+		// the deadline belongs to this write and to no other. A connection
+		// deadline is a property of the connection rather than of a write,
+		// so arming it outside would let one goroutine clear the deadline
+		// another is relying on.
+		//
+		// The lock is the reason this matters at all: every write below
+		// happens while it is held, so a write that never completes holds
+		// the client's lock for as long as the client stays connected, and
+		// publishToClient blocks on that same lock before it can reach the
+		// outbound queue that would have shed the client.
+		// The connection is read once and held, so that the deadline is
+		// cleared on the connection it was armed on rather than on
+		// whatever cl.Net.Conn names by the time the write returns.
+		// **Unset does not mean unbounded**, and this is the half that is
+		// easy to get wrong. refreshDeadline used to arm SetDeadline, which
+		// set the read AND write deadlines, so every release before this one
+		// bounded a write to a stalled client at the keepalive expiry.
+		// Arming only the read deadline there - which is what stops the read
+		// loop clearing a write deadline a queued write is relying on - takes
+		// that bound away, and a broker upgrading with this option unset
+		// would be worse off than before: a write could block forever holding
+		// the lock, which is the deadlock this option exists to prevent.
+		//
+		// So the option is an override, and its absence falls back to what
+		// the keepalive already promised. A client with no keepalive gets no
+		// bound, which is also what it got before.
+		if d := cl.writeDeadline(); !d.IsZero() {
+			if conn := cl.Net.Conn; conn != nil {
+				if err := conn.SetWriteDeadline(d); err == nil {
+					defer conn.SetWriteDeadline(time.Time{})
+				}
+			}
+		}
+
 		if len(cl.State.outbound) == 0 {
 			if cl.Net.outbuf == nil {
 				return buf.WriteTo(cl.Net.Conn)
@@ -654,4 +750,18 @@ func (cl *Client) flushOutbuf() (err error) {
 		cl.Net.outbuf = nil
 	}
 	return
+}
+
+// isTimeout reports whether an error is a network timeout, which is what a
+// write that ran out of time under ClientNetWriteTimeout produces.
+//
+// net.Error's Timeout rather than errors.Is against os.ErrDeadlineExceeded:
+// the two agree for a plain TCP write, and do not for every listener. A
+// websocket connection writes through gorilla, whose buffered writev path
+// yields "writev tcp …: i/o timeout" — a timeout by every definition that
+// matters, and not that sentinel. Checking the sentinel silently covered
+// one transport and not another.
+func isTimeout(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }

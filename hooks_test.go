@@ -5,7 +5,9 @@
 package mqtt
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -239,6 +241,7 @@ func TestHooksNonReturns(t *testing.T) {
 			h.OnSessionEstablish(cl, packets.Packet{})
 			h.OnSessionEstablished(cl, packets.Packet{})
 			h.OnDisconnect(cl, nil, false)
+			h.OnConnectRefused(cl, packets.Packet{}, packets.ErrServerBusy)
 			h.OnPacketSent(cl, packets.Packet{}, []byte{})
 			h.OnPacketProcessed(cl, packets.Packet{}, nil)
 			h.OnSubscribed(cl, packets.Packet{}, []byte{1})
@@ -356,6 +359,33 @@ func TestHooksOnPublish(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, packets.ErrRejectPacket)
 	require.Equal(t, uint16(10), pk.PacketID)
+}
+
+func TestHooksOnPublishLogsAReasonCodeAtDebug(t *testing.T) {
+	var buf bytes.Buffer
+	h := new(Hooks)
+	h.Log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	hook := new(modifiedHookBase)
+	err := h.Add(hook, nil)
+	require.NoError(t, err)
+
+	// A reason code is a decision the server answers with, not a fault.
+	hook.fail = true
+	hook.err = packets.ErrQuotaExceeded
+	_, err = h.OnPublish(new(Client), packets.Packet{PacketID: 10})
+	require.ErrorIs(t, err, packets.ErrQuotaExceeded)
+	require.NotContains(t, buf.String(), "level=ERROR")
+	require.Contains(t, buf.String(), "level=DEBUG")
+	require.Contains(t, buf.String(), "reason=\"quota exceeded\"")
+
+	// Anything that is not a reason code the server can answer with is
+	// still an error.
+	buf.Reset()
+	hook.err = nil
+	_, err = h.OnPublish(new(Client), packets.Packet{PacketID: 10})
+	require.ErrorIs(t, err, errTestHook)
+	require.Contains(t, buf.String(), "level=ERROR")
 }
 
 func TestHooksOnPacketRead(t *testing.T) {
@@ -664,4 +694,84 @@ func TestHookBaseStoreSysInfo(t *testing.T) {
 	v, err := h.StoredSysInfo()
 	require.NoError(t, err)
 	require.Equal(t, "", v.Version)
+}
+
+// legacyHook implements the Hook interface the way an embedder did before
+// this release: WITHOUT embedding HookBase, and knowing nothing of
+// OnConnectRefused.
+//
+// Its method set is exactly the interface's. If a later change adds a method
+// to Hook, this file stops compiling - which is the point. A minor release
+// must not break an embedder's build, and nothing else in the tree would
+// notice if one did.
+type legacyHook struct{}
+
+func (h *legacyHook) ID() string                                               { return "" }
+func (h *legacyHook) Provides(b byte) bool                                     { return false }
+func (h *legacyHook) Init(config any) error                                    { return nil }
+func (h *legacyHook) Stop() error                                              { return nil }
+func (h *legacyHook) SetOpts(l *slog.Logger, o *HookOptions)                   {}
+func (h *legacyHook) OnStarted()                                               {}
+func (h *legacyHook) OnStopped()                                               {}
+func (h *legacyHook) OnConnectAuthenticate(cl *Client, pk packets.Packet) bool { return false }
+func (h *legacyHook) OnACLCheck(cl *Client, topic string, write bool) bool     { return false }
+func (h *legacyHook) OnSysInfoTick(*system.Info)                               {}
+func (h *legacyHook) OnConnect(cl *Client, pk packets.Packet) error            { return nil }
+func (h *legacyHook) OnSessionEstablish(cl *Client, pk packets.Packet)         {}
+func (h *legacyHook) OnSessionEstablished(cl *Client, pk packets.Packet)       {}
+func (h *legacyHook) OnDisconnect(cl *Client, err error, expire bool)          {}
+func (h *legacyHook) OnAuthPacket(cl *Client, pk packets.Packet) (packets.Packet, error) {
+	return packets.Packet{}, nil
+}
+func (h *legacyHook) OnPacketRead(cl *Client, pk packets.Packet) (packets.Packet, error) {
+	return packets.Packet{}, nil
+}
+func (h *legacyHook) OnPacketEncode(cl *Client, pk packets.Packet) packets.Packet {
+	return packets.Packet{}
+}
+func (h *legacyHook) OnPacketSent(cl *Client, pk packets.Packet, b []byte)       {}
+func (h *legacyHook) OnPacketProcessed(cl *Client, pk packets.Packet, err error) {}
+func (h *legacyHook) OnSubscribe(cl *Client, pk packets.Packet) packets.Packet {
+	return packets.Packet{}
+}
+func (h *legacyHook) OnSubscribed(cl *Client, pk packets.Packet, reasonCodes []byte) {}
+func (h *legacyHook) OnSelectSubscribers(subs *Subscribers, pk packets.Packet) *Subscribers {
+	return nil
+}
+func (h *legacyHook) OnUnsubscribe(cl *Client, pk packets.Packet) packets.Packet {
+	return packets.Packet{}
+}
+func (h *legacyHook) OnUnsubscribed(cl *Client, pk packets.Packet) {}
+func (h *legacyHook) OnPublish(cl *Client, pk packets.Packet) (packets.Packet, error) {
+	return packets.Packet{}, nil
+}
+func (h *legacyHook) OnPublished(cl *Client, pk packets.Packet)                           {}
+func (h *legacyHook) OnPublishDropped(cl *Client, pk packets.Packet)                      {}
+func (h *legacyHook) OnRetainMessage(cl *Client, pk packets.Packet, r int64)              {}
+func (h *legacyHook) OnRetainPublished(cl *Client, pk packets.Packet)                     {}
+func (h *legacyHook) OnQosPublish(cl *Client, pk packets.Packet, sent int64, resends int) {}
+func (h *legacyHook) OnQosComplete(cl *Client, pk packets.Packet)                         {}
+func (h *legacyHook) OnQosDropped(cl *Client, pk packets.Packet)                          {}
+func (h *legacyHook) OnPacketIDExhausted(cl *Client, pk packets.Packet)                   {}
+func (h *legacyHook) OnWill(cl *Client, will Will) (Will, error)                          { return Will{}, nil }
+func (h *legacyHook) OnWillSent(cl *Client, pk packets.Packet)                            {}
+func (h *legacyHook) OnClientExpired(cl *Client)                                          {}
+func (h *legacyHook) OnRetainedExpired(filter string)                                     {}
+func (h *legacyHook) StoredClients() ([]storage.Client, error)                            { return nil, nil }
+func (h *legacyHook) StoredSubscriptions() ([]storage.Subscription, error)                { return nil, nil }
+func (h *legacyHook) StoredInflightMessages() ([]storage.Message, error)                  { return nil, nil }
+func (h *legacyHook) StoredRetainedMessages() ([]storage.Message, error)                  { return nil, nil }
+func (h *legacyHook) StoredSysInfo() (storage.SystemInfo, error)                          { return storage.SystemInfo{}, nil }
+
+// A hook written before OnConnectRefused existed still satisfies Hook, so an
+// embedder who never embedded HookBase keeps compiling across this release.
+func TestAHookWithoutHookBaseStillSatisfiesTheInterface(t *testing.T) {
+	var h Hook = new(legacyHook)
+	require.Equal(t, "", h.ID())
+
+	// And the dispatcher steps over it rather than reaching for a method it
+	// does not have.
+	hooks := new(Hooks)
+	require.NoError(t, hooks.Add(new(legacyHook), nil))
+	hooks.OnConnectRefused(new(Client), packets.Packet{}, packets.ErrServerBusy)
 }

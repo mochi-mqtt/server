@@ -204,17 +204,22 @@ server := mqtt.New(&mqtt.Options{
   },
   ClientNetWriteBufferSize: 4096,
   ClientNetReadBufferSize: 4096,
+  ClientNetWriteTimeout: 5 * time.Second,
   SysTopicResendInterval: 10,
   InlineClient: false,
 })
 ```
 请参考 mqtt.Options、mqtt.Capabilities 和 mqtt.Compatibilities 结构体，以查看完整的所有服务端选项。 ClientNetWriteBufferSize 和 ClientNetReadBufferSize 可以根据你的需求配置调整每个客户端的内存使用状况。其中 Capabilities.MaximumClientWritesPending 的大小会影响服务器运行内存占用，如果 IoT 设备同时在线的数量比较多，设置的值很大，尽管没有收发数据，服务器运行内存占用也会增加很多，默认该数值为 1024*8 ,可以根据实际情况调整该参数。
 
+
+`ClientNetWriteTimeout` 用于限制单次向客户端连接写入的时长。尽管它默认关闭，仍然建议设置。`WritePacket` 在写入期间持有客户端的锁，因此一个已经停止读取自己套接字的客户端，只要还连着就会一直持有这把锁，所有需要它的其他协程都要等待，其中就包括为向该客户端投递 QoS 1 消息而获取报文标识符的那个。本应丢弃慢客户端的发送队列上限和 `OnPublishDropped` 也在同一把锁之后，所以在 QoS 1 下永远不会被触发。设置该超时之后，未能在规定时间内完成的写入会失败，锁被释放，该客户端会被停止，因为超时的写入已经把半个报文放到了链路上，这个流无法继续。
 ### 默认配置说明(Default Configuration Notes)
 
 关于决定默认配置的值，在这里进行一些说明：
 
 - 默认情况下，server.Options.Capabilities.MaximumMessageExpiryInterval 的值被设置为 86400（24小时），以防止在使用默认配置时网络上暴露服务器而受到恶意DOS攻击（如果不配置到期时间将允许无限数量的保留retained/待发送inflight消息累积）。如果您在一个受信任的环境中运行，或者您有更大的保留期容量，您可以选择覆盖此设置（设置为0 以取消到期限制）。
+
+- 默认情况下，server.Options.ClientNetWriteTimeout 的值为 0，这会让向客户端的写入不受限制，也是该选项出现之前每个版本的行为。保持关闭是为了让升级本身不改变任何行为，但如果你的部署中可能存在停止读取的客户端，就应该设置它：它决定了这样一个客户端能持有自己写锁的时间上限，超过该时间的写入会使该客户端被停止。
 
 ## 事件钩子(Event Hooks)
 
@@ -379,6 +384,7 @@ if err != nil {
 | OnACLCheck             | 当用户尝试发布或订阅主题时调用，用来检测ACL规则。                                                                                                                                                                                                                          |
 | OnSysInfoTick          | 当 $SYS 主题相关的消息被发布时调用。                                                                                                                                                                                                                                                      |
 | OnConnect              |  当新客户端连接时调用，可能返回一个错误或错误码以中断客户端的连接。                                                                                                                                                                                        | 
+| OnConnectRefused       | 当服务端在任何其他钩子运行之前拒绝 CONNECT 时调用，例如协议版本不被接受、遗嘱消息不合法，或者已达到最大客户端数量。它报告被拒绝的是哪个客户端、使用的是哪个错误码，但不能改变这个结果。                                                                                                       |
 | OnSessionEstablish     | 在新客户端连接并进行身份验证后，会立即调用此方法，并在会话建立和发送CONNACK之前立即调用。                                                                                                                                                                 |
 | OnSessionEstablished   | 在新客户端成功建立会话（在OnConnect之后）时调用。                                                                                                                                                                                                                            | 
 | OnDisconnect           | 当客户端因任何原因断开连接时调用。                                                                                                                                                                                                                                                      | 
@@ -389,7 +395,7 @@ if err != nil {
 | OnPacketProcessed      | 在数据包已接收并成功由服务端处理后调用。                                                                                                                                                                                                                             | 
 | OnSubscribe            | 当客户端订阅一个或多个主题时调用。允许修改数据包。                                                                                                                                                                                                                       | 
 | OnSubscribed           | 当客户端成功订阅一个或多个主题时调用。                                                                                                                                                                                                                                       | 
-| OnSelectSubscribers    |  当订阅者已被关联到一个主题中，在选择共享订阅的订阅者之前调用。允许接收者修改。                                                                                                                                                  | 
+| OnSelectSubscribers    | 每一次发布，在订阅者已被关联到一个主题之后、在选择共享订阅的订阅者之前调用。允许接收者修改。                                                                                                                                                         |
 | OnUnsubscribe          | 当客户端取消订阅一个或多个主题时调用。允许包修改。                                                                                                                                                                                                                   | 
 | OnUnsubscribed         | 当客户端成功取消订阅一个或多个主题时调用。                                                                                                                                                                                                                                   | 
 | OnPublish              | 当客户端发布消息时调用。允许修改数据包。                                                                                                                                                                                                                                     | 

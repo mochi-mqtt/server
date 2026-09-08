@@ -47,6 +47,14 @@ type InboundTopicAliases struct {
 }
 
 // Set sets a new alias for a specific topic.
+//
+// A zero length topic is not a registration, it is a request for the topic
+// this alias already stands for. That mapping exists only if it was made on
+// this same network connection, because [MQTT-3.3.2-7] forbids carrying one
+// across connections, so a client that reconnects and goes on using its
+// aliases arrives here with nothing to resolve. Set returns the empty string
+// to say so, and never stores it: an alias bound to no topic is what section
+// 3.3.2.3.4 case 3a calls a Protocol Error, and the caller is what raises it.
 func (a *InboundTopicAliases) Set(id uint16, topic string) string {
 	a.Lock()
 	defer a.Unlock()
@@ -55,8 +63,8 @@ func (a *InboundTopicAliases) Set(id uint16, topic string) string {
 		return topic // ?
 	}
 
-	if existing, ok := a.internal[id]; ok && topic == "" {
-		return existing
+	if topic == "" {
+		return a.internal[id] // empty when this connection never registered one
 	}
 
 	a.internal[id] = topic
@@ -128,14 +136,17 @@ func (s *SharedSubscriptions) Add(group, id string, val packets.Subscription) {
 	s.internal[group][id] = val
 }
 
-// Delete deletes a client id from a shared subscription group.
-func (s *SharedSubscriptions) Delete(group, id string) {
+// Delete deletes a client id from a shared subscription group, and reports
+// whether it was in it.
+func (s *SharedSubscriptions) Delete(group, id string) bool {
 	s.Lock()
 	defer s.Unlock()
+	_, existed := s.internal[group][id]
 	delete(s.internal[group], id)
 	if len(s.internal[group]) == 0 {
 		delete(s.internal, group)
 	}
+	return existed
 }
 
 // Get returns the subscription properties for a client id in a share group, if one exists.
@@ -293,11 +304,14 @@ func (s *Subscriptions) Len() int {
 	return val
 }
 
-// Delete removes a subscription by client or filter id.
-func (s *Subscriptions) Delete(id string) {
+// Delete removes a subscription by client or filter id, and reports whether
+// there was one to remove.
+func (s *Subscriptions) Delete(id string) bool {
 	s.Lock()
 	defer s.Unlock()
+	_, existed := s.internal[id]
 	delete(s.internal, id)
+	return existed
 }
 
 // ClientSubscriptions is a map of aggregated subscriptions for a client.
@@ -436,15 +450,16 @@ func (x *TopicsIndex) Unsubscribe(filter, client string) bool {
 		return false
 	}
 
+	var removed bool
 	if shareSub {
 		group, _ := isolateParticle(filter, 1)
-		particle.shared.Delete(group, client)
+		removed = particle.shared.Delete(group, client)
 	} else {
-		particle.subscriptions.Delete(client)
+		removed = particle.subscriptions.Delete(client)
 	}
 
 	x.trim(particle)
-	return true
+	return removed
 }
 
 // RetainMessage saves a message payload to the end of a topic address. Returns
@@ -551,8 +566,13 @@ func (x *TopicsIndex) scanMessages(filter string, d int, n *particle, pks []pack
 			}
 
 			if !hasNext {
-				if adjacent.retainPath != "" {
-					if pk, ok := x.Retained.Get(adjacent.retainPath); ok {
+				// retainPath is written by RetainMessage under the particle
+				// lock; read it under the same lock (#200).
+				adjacent.Lock()
+				retainPath := adjacent.retainPath
+				adjacent.Unlock()
+				if retainPath != "" {
+					if pk, ok := x.Retained.Get(retainPath); ok {
 						pks = append(pks, pk)
 					}
 				}
@@ -570,7 +590,10 @@ func (x *TopicsIndex) scanMessages(filter string, d int, n *particle, pks []pack
 			return x.scanMessages(filter, d+1, particle, pks)
 		}
 
-		if pk, ok := x.Retained.Get(particle.retainPath); ok {
+		particle.Lock()
+		retainPath := particle.retainPath
+		particle.Unlock()
+		if pk, ok := x.Retained.Get(retainPath); ok {
 			pks = append(pks, pk)
 		}
 	}

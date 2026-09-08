@@ -5,8 +5,10 @@
 package mqtt
 
 import (
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/stretchr/testify/require"
@@ -53,6 +55,63 @@ func TestInflightGetAllAndImmediate(t *testing.T) {
 		{PacketID: 3, Created: 3, Expiry: -1},
 		{PacketID: 4, Created: 4, Expiry: -1},
 	}, cl.State.Inflight.GetAll(true))
+}
+
+// MQTT-4.6.0-1: re-sent PUBLISH packets must go out in the order the
+// originals were sent. Created is a unix timestamp in SECONDS, so a
+// session's unacknowledged window is usually one second wide and every
+// packet in it compares equal — which leaves the order to sort.Slice, which
+// is not stable, over a map, whose iteration order Go randomises
+// deliberately.
+//
+// The case above never reached this because every packet in it is a second
+// apart.
+//
+// Repeated rather than run once: an unstable sort over eight equal keys is a
+// coin flip, and a single pass cannot tell "almost always wrong" from
+// "never wrong". Without the tie-break this fails within the first few
+// trials.
+func TestInflightGetAllOrdersPacketsCreatedInTheSameSecond(t *testing.T) {
+	const sameSecond int64 = 1700000000
+	for trial := 0; trial < 50; trial++ {
+		cl, _, _ := newTestClient()
+		for _, id := range []uint16{5, 3, 8, 1, 7, 2, 6, 4} {
+			cl.State.Inflight.Set(packets.Packet{PacketID: id, Created: sameSecond})
+		}
+
+		got := cl.State.Inflight.GetAll(false)
+		require.Len(t, got, 8)
+
+		order := make([]uint16, 0, len(got))
+		for _, pk := range got {
+			order = append(order, pk.PacketID)
+		}
+		require.Equal(t, []uint16{1, 2, 3, 4, 5, 6, 7, 8}, order,
+			"trial %d: packets created in the same second were returned out of order", trial)
+	}
+}
+
+// The comparison truncated Created to uint16 before comparing it, so two
+// packets straddling a 65536-second boundary — one every 18.2 hours — were
+// ordered by the remainder rather than by the timestamp: 1786970111 becomes
+// 65535 and 1786970113 becomes 1, so the newer packet sorted first.
+//
+// The older packet is given the HIGHER identifier here on purpose. It is
+// what makes this a test of the timestamp: an implementation that compared
+// identifiers alone, or one that kept the truncation, puts them the other
+// way round.
+func TestInflightGetAllDoesNotTruncateCreated(t *testing.T) {
+	const boundary int64 = 1786970112 // a multiple of 65536
+
+	cl, _, _ := newTestClient()
+	cl.State.Inflight.Set(packets.Packet{PacketID: 9, Created: boundary - 1})
+	cl.State.Inflight.Set(packets.Packet{PacketID: 2, Created: boundary + 1})
+
+	got := cl.State.Inflight.GetAll(false)
+	require.Len(t, got, 2)
+	require.Equal(t, uint16(9), got[0].PacketID,
+		"the packet created first was returned second: Created was compared as a uint16, "+
+			"so it wrapped between the two")
 }
 
 func TestInflightLen(t *testing.T) {
@@ -196,4 +255,59 @@ func TestNextImmediate(t *testing.T) {
 
 	_, ok = cl.State.Inflight.NextImmediate()
 	require.False(t, ok)
+}
+
+// NextImmediate must not hold the read lock across GetAll, which takes it
+// again. sync.RWMutex is not reentrant for readers — "if a goroutine holds
+// a RWMutex for reading and another goroutine might call Lock, no goroutine
+// should expect to be able to acquire a read lock until the initial read
+// lock is released" — so a writer arriving between the two acquisitions
+// blocks the second one, and is itself waiting on the first.
+//
+// Against the recursive version this deadlocks and the test times out; a
+// deadlock cannot be failed politely from inside the goroutines it stops,
+// so the assertion is that the workers finish at all.
+func TestNextImmediateDoesNotDeadlockAgainstAWriter(t *testing.T) {
+	cl, _, _ := newTestClient()
+	cl.State.Inflight.Set(packets.Packet{PacketID: 1, Created: 1, Expiry: -1})
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for n := 0; n < 4; n++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					cl.State.Inflight.NextImmediate()
+				}
+			}
+		}()
+		go func(id uint16) {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					cl.State.Inflight.Set(packets.Packet{PacketID: id})
+					cl.State.Inflight.Delete(id)
+				}
+			}
+		}(uint16(n + 2))
+	}
+
+	time.Sleep(time.Second)
+	close(stop)
+
+	finished := make(chan struct{})
+	go func() { wg.Wait(); close(finished) }()
+	select {
+	case <-finished:
+	case <-time.After(10 * time.Second):
+		t.Fatal("NextImmediate and a concurrent Set deadlocked on the in-flight lock")
+	}
 }

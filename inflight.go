@@ -82,8 +82,21 @@ func (i *Inflight) GetAll(immediate bool) []packets.Packet {
 		}
 	}
 
+	// MQTT-4.6.0-1 requires that re-sent PUBLISH packets go out in the order
+	// the originals were sent, so this comparison has to be a total order.
+	// Created alone is not one: it is a unix timestamp in seconds, so every
+	// packet made in the same second compares equal, and sort.Slice is not
+	// stable — a tie is broken by map iteration order, which Go randomises.
+	// Under any real publish rate most of a session's window is one second
+	// wide.
+	//
+	// The packet identifier breaks the tie. It is allocated in increasing
+	// order, so within a second it is the order the packets were sent.
 	sort.Slice(m, func(i, j int) bool {
-		return uint16(m[i].Created) < uint16(m[j].Created)
+		if m[i].Created != m[j].Created {
+			return m[i].Created < m[j].Created
+		}
+		return m[i].PacketID < m[j].PacketID
 	})
 
 	return m
@@ -93,9 +106,11 @@ func (i *Inflight) GetAll(immediate bool) []packets.Packet {
 // This typically occurs when the quota has been exhausted, and we need to wait until new quota
 // is free to continue sending.
 func (i *Inflight) NextImmediate() (packets.Packet, bool) {
-	i.RLock()
-	defer i.RUnlock()
-
+	// No lock is taken here: GetAll takes the read lock itself, and
+	// sync.RWMutex is not reentrant for readers. Holding it across that call
+	// deadlocks whenever a writer arrives between the two acquisitions — the
+	// second RLock waits for the queued writer, and the writer waits for the
+	// first RLock.
 	m := i.GetAll(true)
 	if len(m) > 0 {
 		return m[0], true

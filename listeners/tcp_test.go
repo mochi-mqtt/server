@@ -36,7 +36,8 @@ func TestTCPProtocol(t *testing.T) {
 
 func TestTCPProtocolTLS(t *testing.T) {
 	l := NewTCP(tlsConfig)
-	_ = l.Init(logger)
+	require.NoError(t, l.Init(logger))
+	defer l.Close(MockCloser)
 	defer l.listen.Close()
 	require.Equal(t, "tcp", l.Protocol())
 }

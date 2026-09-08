@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2022 mochi-mqtt, mochi-co
 // SPDX-FileContributor: mochi-co
+// SPDX-FileContributor: Italo Nesi
 
 package mqtt
 
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -280,11 +282,20 @@ func TestServerAddListenersFromConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 6, s.Listeners.Len())
 
+	// The port, not the whole address: a wildcard bind reports "[::]:1883"
+	// where IPv6 is available and "0.0.0.0:1883" where it is not, and which
+	// of those the kernel chose is not what this test is about.
+	port := func(addr string) string {
+		_, p, err := net.SplitHostPort(addr)
+		require.NoError(t, err)
+		return p
+	}
+
 	tcp, _ := s.Listeners.Get("tcp")
-	require.Equal(t, "[::]:1883", tcp.Address())
+	require.Equal(t, "1883", port(tcp.Address()))
 
 	ws, _ := s.Listeners.Get("ws")
-	require.Equal(t, ":1882", ws.Address())
+	require.Equal(t, "1882", port(ws.Address())) // bound at Init, reported like the TCP listener
 
 	health, _ := s.Listeners.Get("health")
 	require.Equal(t, ":1881", health.Address())
@@ -810,6 +821,7 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 
 	cl, r0, _ := newTestClient()
 	cl.ID = packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt311).Packet.Connect.ClientIdentifier
+	cl.Properties.ProtocolVersion = 4 // the clean-session rule under test is the v3 one
 	cl.Properties.Clean = true
 	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Filter: "a/b/c", Qos: 1})
 	s.Clients.Add(cl)
@@ -825,7 +837,7 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 		_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
 	}()
 
-	// receive the disconnect
+	// a v3 client is closed without a Disconnect packet, so nothing arrives here
 	takeover := make(chan []byte)
 	go func() {
 		buf, err := io.ReadAll(r0)
@@ -850,7 +862,7 @@ func TestEstablishConnectionInheritExistingClean(t *testing.T) {
 	require.ErrorIs(t, retrievedCl.StopCause(), packets.CodeDisconnect) // true error is disconnect
 
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackAcceptedNoSession).RawBytes, <-recv)
-	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes, <-takeover)
+	require.Empty(t, <-takeover)
 
 	require.True(t, cl.IsTakenOver())
 
@@ -949,6 +961,120 @@ func TestServerEstablishConnectionInvalidConnect(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Connack].Get(packets.TConnackProtocolViolationNoSession).RawBytes, <-recv)
 
 	_ = r.Close()
+}
+
+func TestServerEstablishConnectionZeroValuedProperties(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		tCase byte
+		code  packets.Code
+	}{
+		{"receive maximum", packets.TConnectInvalidZeroReceiveMaximum, packets.ErrProtocolViolationZeroReceiveMaximum},
+		{"maximum packet size", packets.TConnectInvalidZeroMaximumPacketSize, packets.ErrProtocolViolationZeroMaximumPacketSize},
+	} {
+		tt := tt // go.mod says go 1.21, so the range variable is shared
+		t.Run(tt.name, func(t *testing.T) {
+			s := newServer()
+
+			r, w := net.Pipe()
+			o := make(chan error)
+			go func() {
+				o <- s.EstablishConnection("tcp", r)
+			}()
+
+			go func() {
+				_, _ = w.Write(packets.TPacketData[packets.Connect].Get(tt.tCase).RawBytes)
+				// A disconnect behind it so that a server which wrongly
+				// accepts the connect ends the test by returning nil,
+				// rather than by holding the connection open until the
+				// suite times out.
+				_, _ = w.Write(packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes)
+			}()
+
+			// receive the connack
+			recv := make(chan []byte)
+			go func() {
+				buf, err := io.ReadAll(w)
+				require.NoError(t, err)
+				recv <- buf
+			}()
+
+			err := <-o
+			require.Error(t, err)
+			require.ErrorIs(t, tt.code, err)
+
+			// The refusal has to reach the client, not merely be returned
+			// here: a code the server never sends is one no client can act
+			// on. Byte 0 is the fixed header, 2 the session present flag,
+			// 3 the reason code.
+			buf := <-recv
+			require.Equal(t, byte(packets.Connack<<4), buf[0])
+			require.Equal(t, tt.code.Code, buf[3])
+
+			_ = r.Close()
+		})
+	}
+}
+
+func TestServerAnswersAnOversizedPacketInsteadOfResetting(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MaximumPacketSize = 100 // larger than the connect below, smaller than the publish
+	s := New(&Options{Logger: logger, Capabilities: cc})
+	_ = s.AddHook(new(AllowHook), nil)
+	defer s.Close()
+
+	// A QoS 0 publish past the bound. Built here rather than taken from a
+	// fixture because its whole point is its size.
+	body := []byte{0, 5, 'a', '/', 'b', '/', 'c', 0}
+	body = append(body, bytes.Repeat([]byte{'x'}, 110)...)
+	// One byte of remaining length, which is right up to 127 and silently
+	// wrong above it: 128 encodes as 0x80, whose continuation bit swallows
+	// the next byte, and the server then answers "malformed packet" to a
+	// test that believes it asked about size.
+	require.Less(t, len(body), 128, "the remaining length no longer fits in one byte")
+	oversized := append([]byte{packets.Publish << 4, byte(len(body))}, body...)
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() {
+		o <- s.EstablishConnection("tcp", r)
+	}()
+
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt5).RawBytes)
+		_, _ = w.Write(oversized)
+	}()
+
+	recv := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(w)
+		require.NoError(t, err)
+		recv <- buf
+	}()
+
+	err := <-o
+	require.Error(t, err)
+	require.ErrorIs(t, packets.ErrPacketTooLarge, err)
+
+	// The connack first, then the packet this test is about. Walking the
+	// remaining length rather than searching for the type byte, which would
+	// find one in a payload.
+	buf := <-recv
+	n, mult := 0, 1
+	for i := 1; ; i++ {
+		require.Less(t, i, len(buf), "no complete connack in %02x", buf)
+		n += int(buf[i]&127) * mult
+		mult *= 128
+		if buf[i]&128 == 0 {
+			buf = buf[i+1+n:]
+			break
+		}
+	}
+
+	require.NotEmpty(t, buf, "the client was reset with nothing after the connack, so a "+
+		"bound this server advertised itself went unexplained")
+	require.Equal(t, byte(packets.Disconnect<<4), buf[0], "want a disconnect, got %02x", buf)
+	require.Equal(t, packets.ErrPacketTooLarge.Code, buf[2], "disconnected with 0x%02X, want 0x95", buf[2])
 }
 
 func TestEstablishConnectionMaximumClientsReached(t *testing.T) {
@@ -1489,6 +1615,34 @@ func TestServerBuildAckPahoCompatibility(t *testing.T) {
 	require.Equal(t, packets.Properties{}, ack.Properties)
 }
 
+func TestServerQoS1PubackReasonCode(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+
+	bufCh := make(chan []byte, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		buf, err := io.ReadAll(r)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		bufCh <- buf
+	}()
+
+	pk := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
+	err := s.processPublish(cl, pk)
+	require.NoError(t, err)
+	_ = w.Close()
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case buf := <-bufCh:
+		require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPuback).RawBytes, buf)
+	}
+}
+
 func TestServerProcessPacketAndNextImmediate(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
@@ -1570,6 +1724,48 @@ func TestServerProcessPublishOnPublishAckErrorContinue(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPubackUnexpectedError).RawBytes, buf)
 }
 
+// TestServerProcessPublishOnPublishAckErrorQoS2GetsPubrec ensures a QoS 2
+// publish rejected by an OnPublish hook is answered with a PUBREC, not a
+// PUBACK — PUBREC is the spec-defined response to a QoS 2 PUBLISH, and a
+// PUBACK here previously left a compliant sender's QoS 2 state machine
+// with an ack type it never expects for that packet ID.
+func TestServerProcessPublishOnPublishAckErrorQoS2GetsPubrec(t *testing.T) {
+	s := newServer()
+	hook := new(modifiedHookBase)
+	hook.fail = true
+	hook.err = packets.ErrPayloadFormatInvalid
+	err := s.AddHook(hook, nil)
+	require.NoError(t, err)
+	_ = s.Serve()
+	defer s.Close()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	expected := &packets.Packet{
+		FixedHeader:     packets.FixedHeader{Type: packets.Pubrec},
+		ProtocolVersion: 5,
+		PacketID:        packets.TPacketData[packets.Publish].Get(packets.TPublishQos2).Packet.PacketID,
+		ReasonCode:      packets.ErrPayloadFormatInvalid.Code,
+		Properties: packets.Properties{
+			ReasonString: packets.ErrPayloadFormatInvalid.Reason,
+		},
+	}
+	var expectedBuf bytes.Buffer
+	require.NoError(t, expected.PubrecEncode(&expectedBuf))
+	require.Equal(t, expectedBuf.Bytes(), buf)
+}
+
 func TestServerProcessPublishOnPublishPkIgnore(t *testing.T) {
 	s := newServer()
 	hook := new(modifiedHookBase)
@@ -1634,13 +1830,105 @@ func TestServerProcessPacketPublishMaximumReceive(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectReceiveMaximum).RawBytes, buf)
 }
 
+// A publish to a $SYS topic is refused, and a client that asked for an
+// acknowledgement gets one. Dropping the packet silently leaves a QoS 1 or
+// 2 client waiting for a reply that never comes and holding a slot of its
+// send quota for the life of the session.
+//
+// The answers are the same ones a publish an ACL denies receives, because
+// it is the same refusal: the client may not write there.
 func TestServerProcessPublishInvalidTopic(t *testing.T) {
-	s := newServer()
-	_ = s.Serve()
-	defer s.Close()
-	cl, _, _ := newTestClient()
-	err := s.processPublish(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishSpecDenySysTopic).Packet)
-	require.NoError(t, err) // $SYS Topics should be ignored?
+	sysTopic := func(c byte) packets.Packet {
+		pk := *packets.TPacketData[packets.Publish].Get(c).Packet
+		pk.TopicName = "$SYS/any"
+		return pk
+	}
+
+	tt := []struct {
+		name             string
+		protocolVersion  byte
+		pk               packets.Packet
+		expectErr        error
+		expectResponse   []byte
+		expectDisconnect bool
+	}{
+		{
+			name:            "v4_QOS0",
+			protocolVersion: 4,
+			pk:              sysTopic(packets.TPublishBasic),
+		},
+		{
+			// MQTT 3.1.1 has no reason code to put in a PUBACK, so the
+			// refusal is a disconnect, exactly as it is for an ACL denial.
+			// It is a silent one: v3 has no server-to-client Disconnect
+			// packet, so the connection closes and nothing is sent.
+			name:             "v4_QOS1",
+			protocolVersion:  4,
+			pk:               sysTopic(packets.TPublishQos1),
+			expectErr:        packets.ErrNotAuthorized,
+			expectDisconnect: true,
+		},
+		{
+			name:             "v4_QOS2",
+			protocolVersion:  4,
+			pk:               sysTopic(packets.TPublishQos2),
+			expectErr:        packets.ErrNotAuthorized,
+			expectDisconnect: true,
+		},
+		{
+			name:            "v5_QOS0",
+			protocolVersion: 5,
+			pk:              sysTopic(packets.TPublishBasicMqtt5),
+		},
+		{
+			name:            "v5_QOS1",
+			protocolVersion: 5,
+			pk:              sysTopic(packets.TPublishQos1Mqtt5),
+			expectResponse:  packets.TPacketData[packets.Puback].Get(packets.TPubackMqtt5NotAuthorized).RawBytes,
+		},
+		{
+			name:            "v5_QOS2",
+			protocolVersion: 5,
+			pk:              sysTopic(packets.TPublishQos2Mqtt5),
+			expectResponse:  packets.TPacketData[packets.Pubrec].Get(packets.TPubrecMqtt5NotAuthorized).RawBytes,
+		},
+	}
+
+	for _, tx := range tt {
+		t.Run(tx.name, func(t *testing.T) {
+			s := newServer()
+			_ = s.Serve()
+			defer s.Close()
+
+			cl, r, w := newTestClient()
+			cl.Properties.ProtocolVersion = tx.protocolVersion
+			s.Clients.Add(cl)
+
+			// The published error is captured rather than asserted inside
+			// the goroutine: require calls Goexit on failure, which would
+			// skip the Close below and leave the read blocking for ever.
+			var publishErr error
+			wg := sync.WaitGroup{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() { _ = w.Close() }()
+				publishErr = s.processPublish(cl, tx.pk)
+			}()
+
+			buf, err := io.ReadAll(r)
+			require.NoError(t, err)
+			wg.Wait()
+
+			require.ErrorIs(t, publishErr, tx.expectErr)
+			if tx.expectResponse != nil {
+				require.Equal(t, tx.expectResponse, buf)
+			} else {
+				require.Empty(t, buf)
+			}
+			require.Equal(t, tx.expectDisconnect, cl.Closed())
+		})
+	}
 }
 
 func TestServerProcessPublishACLCheckDeny(t *testing.T) {
@@ -1703,6 +1991,7 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 	}
 
 	for _, tx := range tt {
+		tx := tx // one variable per iteration: the goroutine below reads it
 		t.Run(tx.name, func(t *testing.T) {
 			cc := NewDefaultServerCapabilities()
 			s := New(&Options{
@@ -1718,23 +2007,24 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 			s.Clients.Add(cl)
 
 			wg := sync.WaitGroup{}
+			errCh := make(chan error, 1)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				err := s.processPublish(cl, tx.pk)
-				require.ErrorIs(t, err, tx.expectErr)
+				errCh <- s.processPublish(cl, tx.pk)
 				_ = w.Close()
 			}()
 
 			buf, err := io.ReadAll(r)
+			wg.Wait()
 			require.NoError(t, err)
 
 			if tx.expectReponse != nil {
 				require.Equal(t, tx.expectReponse, buf)
 			}
 
+			require.ErrorIs(t, <-errCh, tx.expectErr)
 			require.Equal(t, tx.expectDisconnect, cl.Closed())
-			wg.Wait()
 		})
 	}
 }
@@ -1786,7 +2076,47 @@ func TestServerProcessPacketPublishQos1PacketIDInUse(t *testing.T) {
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
 	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPuback).RawBytes, buf)
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Inflight))
+
+	// A Publish entry is a message the SERVER sent, under an identifier the
+	// server assigned, so it is not in use by this exchange and is left
+	// alone. The Pubrec case below is the one that is.
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Inflight))
+}
+
+// Packet Identifiers assigned by the Client and by the Server are
+// independent (MQTT-2.2.1), and the specification's own comment there
+// describes this case: a client publishing under an identifier the server is
+// concurrently using for one of its own deliveries. The delivery has to
+// survive it — discarding it ends the QoS 1 flow, so it is never
+// acknowledged, never resent, and its send quota is never returned.
+func TestServerProcessPacketPublishDoesNotDiscardServerDelivery(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+
+	delivery := packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+		PacketID:    7,
+		TopicName:   "server/delivery",
+		Payload:     []byte("out"),
+	}
+	cl.State.Inflight.Set(delivery)
+	atomic.StoreInt64(&s.Info.Inflight, 1)
+
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Puback].Get(packets.TPuback).RawBytes, buf)
+
+	kept, ok := cl.State.Inflight.Get(7)
+	require.True(t, ok, "the server's own QoS 1 delivery was discarded by an inbound PUBLISH carrying the same packet identifier")
+	require.Equal(t, packets.Publish, kept.FixedHeader.Type)
+	require.Equal(t, "server/delivery", kept.TopicName)
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Inflight))
 }
 
 func TestServerProcessPacketPublishQos2PacketIDInUse(t *testing.T) {
@@ -1984,18 +2314,22 @@ func TestPublishToSubscribersIdentifiers(t *testing.T) {
 
 	go func() {
 		s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
-		time.Sleep(time.Millisecond)
-		_ = w.Close()
 	}()
 
+	want := packets.TPacketData[packets.Publish].Get(packets.TPublishSubscriberIdentifier).RawBytes
 	receiverBuf := make(chan []byte)
 	go func() {
-		buf, err := io.ReadAll(r)
+		buf := make([]byte, len(want))
+		_, err := io.ReadFull(r, buf)
 		require.NoError(t, err)
 		receiverBuf <- buf
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishSubscriberIdentifier).RawBytes, <-receiverBuf)
+	require.Equal(t, want, <-receiverBuf)
+	_ = w.Close()
+	rest, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Empty(t, rest, "the server wrote more than the packet asserted on")
 }
 
 func TestPublishToSubscribersPkIgnore(t *testing.T) {
@@ -2023,6 +2357,158 @@ func TestPublishToSubscribersPkIgnore(t *testing.T) {
 	require.Equal(t, []byte{}, <-receiverBuf)
 }
 
+// selectSubscribersHook records every call and removes one client from the
+// delivery, which is the first thing OnSelectSubscribers is documented to
+// be for: "programmatically remove or add clients to a publish to
+// subscribers process".
+type selectSubscribersHook struct {
+	HookBase
+	calls  int
+	remove string
+}
+
+func (h *selectSubscribersHook) ID() string { return "select-subscribers" }
+
+func (h *selectSubscribersHook) Provides(b byte) bool {
+	return b == OnSelectSubscribers
+}
+
+func (h *selectSubscribersHook) OnSelectSubscribers(subs *Subscribers, pk packets.Packet) *Subscribers {
+	h.calls++
+	delete(subs.Subscriptions, h.remove)
+	return subs
+}
+
+// OnSelectSubscribers is documented as being called "when subscribers have
+// been collected for a topic", and as being usable to "programmatically
+// remove or add clients to a publish to subscribers process". It was called
+// only when the collected set held a shared subscription, so on a topic
+// with none — which is most topics on most brokers — the hook never ran and
+// that first purpose could not be reached at all.
+//
+// A hook that withholds a message from a client therefore did nothing, with
+// no error and no log line, which reads as a hook that was never installed.
+func TestPublishToSubscribersCallsOnSelectSubscribersWithoutSharedSubscriptions(t *testing.T) {
+	s := newServer()
+	hook := &selectSubscribersHook{remove: "removed"}
+	require.NoError(t, s.AddHook(hook, nil))
+
+	kept, r, w := newTestClient()
+	kept.ID = "kept"
+	s.Clients.Add(kept)
+	require.True(t, s.Topics.Subscribe(kept.ID, packets.Subscription{Filter: "#"}))
+
+	removed, r2, w2 := newTestClient()
+	removed.ID = "removed"
+	s.Clients.Add(removed)
+	require.True(t, s.Topics.Subscribe(removed.ID, packets.Subscription{Filter: "#"}))
+
+	go func() {
+		s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
+		time.Sleep(time.Millisecond)
+		_ = w.Close()
+		_ = w2.Close()
+	}()
+
+	keptBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r)
+		require.NoError(t, err)
+		keptBuf <- buf
+	}()
+	removedBuf := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(r2)
+		require.NoError(t, err)
+		removedBuf <- buf
+	}()
+
+	require.Equal(t,
+		packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, <-keptBuf)
+	// The one the hook removed receives nothing, which is the whole point
+	// of the documented behaviour.
+	require.Equal(t, []byte{}, <-removedBuf)
+	require.Equal(t, 1, hook.calls)
+}
+
+// sharedSelectingHook chooses one member of a shared group and empties the
+// group while doing it, which the documentation invites: a hook selecting
+// "the subscriber for a shared group in a custom manner" says which by
+// filling SharedSelected, and what it leaves in Shared is its own business.
+type sharedSelectingHook struct {
+	HookBase
+	choose string
+}
+
+func (h *sharedSelectingHook) ID() string { return "shared-selecting" }
+
+func (h *sharedSelectingHook) Provides(b byte) bool {
+	return b == OnSelectSubscribers
+}
+
+func (h *sharedSelectingHook) OnSelectSubscribers(subs *Subscribers, pk packets.Packet) *Subscribers {
+	var chosen packets.Subscription
+	for _, group := range subs.Shared {
+		for id, sub := range group {
+			if id == h.choose {
+				chosen = sub
+			}
+		}
+	}
+	subs.Shared = map[string]map[string]packets.Subscription{}
+	subs.SharedSelected = map[string]packets.Subscription{h.choose: chosen}
+	return subs
+}
+
+// A hook that selects for a shared group by emptying Shared must still have
+// its choice delivered.
+//
+// Whether there were shared subscriptions has to be decided before the hook
+// runs. Gating the merge on what the hook left behind reads as no shared
+// subscriptions at all, so SharedSelected is never merged into
+// Subscriptions and the message reaches nobody — a queue whose workers
+// simply stop being given work, with nothing anywhere reporting a fault.
+func TestPublishToSubscribersMergesASharedChoiceThatEmptiedTheGroup(t *testing.T) {
+	s := newServer()
+	require.NoError(t, s.AddHook(&sharedSelectingHook{choose: "worker-b"}, nil))
+
+	a, ra, wa := newTestClient()
+	a.ID = "worker-a"
+	s.Clients.Add(a)
+	require.True(t, s.Topics.Subscribe(a.ID, packets.Subscription{
+		Filter: "$share/group/a/b/c", Identifier: 1}))
+
+	b, rb, wb := newTestClient()
+	b.ID = "worker-b"
+	s.Clients.Add(b)
+	require.True(t, s.Topics.Subscribe(b.ID, packets.Subscription{
+		Filter: "$share/group/a/b/c", Identifier: 1}))
+
+	go func() {
+		s.publishToSubscribers(*packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
+		time.Sleep(time.Millisecond)
+		_ = wa.Close()
+		_ = wb.Close()
+	}()
+
+	bufA := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(ra)
+		require.NoError(t, err)
+		bufA <- buf
+	}()
+	bufB := make(chan []byte)
+	go func() {
+		buf, err := io.ReadAll(rb)
+		require.NoError(t, err)
+		bufB <- buf
+	}()
+
+	// The chosen worker receives it, and the other does not.
+	require.Equal(t, []byte{}, <-bufA)
+	require.NotEmpty(t, <-bufB)
+}
+
 func TestPublishToClientServerDowngradeQos(t *testing.T) {
 	s := newServer()
 	s.Options.Capabilities.MaximumQos = 1
@@ -2038,18 +2524,29 @@ func TestPublishToClientServerDowngradeQos(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 		pkx.FixedHeader.Qos = 2
 		_, _ = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, pkx)
-		time.Sleep(time.Microsecond * 100)
-		_ = w.Close()
 	}()
 
+	// publishToClient queues the packet; WriteLoop writes it. Reading the
+	// bytes the assertion is about is what waits for that write — closing
+	// the pipe on a timer instead let ReadAll return early and short, and
+	// the failure it produced named the payload rather than the race.
+	want := packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes
 	receiverBuf := make(chan []byte)
 	go func() {
-		buf, err := io.ReadAll(r)
+		buf := make([]byte, len(want))
+		_, err := io.ReadFull(r, buf)
 		require.NoError(t, err)
 		receiverBuf <- buf
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes, <-receiverBuf)
+	require.Equal(t, want, <-receiverBuf)
+
+	// And nothing beyond it: reading a fixed length would otherwise pass on
+	// a prefix of a longer write, which the ReadAll this replaced caught.
+	_ = w.Close()
+	rest, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Empty(t, rest, "the server wrote more than the packet asserted on")
 }
 
 func TestPublishToClientSubscriptionDowngradeQos(t *testing.T) {
@@ -2067,18 +2564,29 @@ func TestPublishToClientSubscriptionDowngradeQos(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
 		pkx.FixedHeader.Qos = 2
 		_, _ = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 1}, pkx)
-		time.Sleep(time.Microsecond * 100)
-		_ = w.Close()
 	}()
 
+	// publishToClient queues the packet; WriteLoop writes it. Reading the
+	// bytes the assertion is about is what waits for that write — closing
+	// the pipe on a timer instead let ReadAll return early and short, and
+	// the failure it produced named the payload rather than the race.
+	want := packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes
 	receiverBuf := make(chan []byte)
 	go func() {
-		buf, err := io.ReadAll(r)
+		buf := make([]byte, len(want))
+		_, err := io.ReadFull(r, buf)
 		require.NoError(t, err)
 		receiverBuf <- buf
 	}()
 
-	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes, <-receiverBuf)
+	require.Equal(t, want, <-receiverBuf)
+
+	// And nothing beyond it: reading a fixed length would otherwise pass on
+	// a prefix of a longer write, which the ReadAll this replaced caught.
+	_ = w.Close()
+	rest, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Empty(t, rest, "the server wrote more than the packet asserted on")
 }
 
 func TestPublishToClientExceedClientWritesPending(t *testing.T) {
@@ -2134,23 +2642,32 @@ func TestPublishToClientServerTopicAlias(t *testing.T) {
 		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).Packet
 		_, _ = s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
 		_, _ = s.publishToClient(cl, packets.Subscription{Filter: pkx.TopicName}, pkx)
-		time.Sleep(time.Millisecond)
-		_ = w.Close()
 	}()
 
+	// The second publish carries the alias instead of the topic, so it is
+	// five bytes shorter. Reading exactly that many is what waits for both
+	// writes — the sleep this replaced could return with nothing read, and
+	// then the slicing below panicked rather than failed.
+	first := len(packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).RawBytes)
 	receiverBuf := make(chan []byte)
 	go func() {
-		buf, err := io.ReadAll(r)
+		buf := make([]byte, first+first-5)
+		_, err := io.ReadFull(r, buf)
 		require.NoError(t, err)
 		receiverBuf <- buf
 	}()
 
 	ret := <-receiverBuf
-	pk1 := make([]byte, len(packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).RawBytes))
-	pk2 := make([]byte, len(packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).RawBytes)-5)
-	copy(pk1, ret[:len(packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).RawBytes)])
-	copy(pk2, ret[len(packets.TPacketData[packets.Publish].Get(packets.TPublishBasicMqtt5).RawBytes):])
+	pk1 := make([]byte, first)
+	pk2 := make([]byte, first-5)
+	copy(pk1, ret[:first])
+	copy(pk2, ret[first:])
 	require.Equal(t, append(pk1, pk2...), ret)
+
+	_ = w.Close()
+	rest, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Empty(t, rest, "the server wrote more than the two packets asserted on")
 }
 
 func TestPublishToClientMqtt3RetainFalseLeverageNoConn(t *testing.T) {
@@ -2253,6 +2770,111 @@ func TestProcessPublishWithTopicAlias(t *testing.T) {
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).RawBytes, buf)
+}
+
+func TestProcessPublishWithUnregisteredTopicAlias(t *testing.T) {
+	s := newServer()
+	_ = s.Serve()
+	defer s.Close()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	go func() {
+		// Closed however this goroutine ends. A failed require calls
+		// Goexit, so a plain call at the bottom is skipped on failure and
+		// the ReadAll below then blocks until the whole run times out --
+		// a test that cannot report its own failure.
+		defer func() { _ = w.Close() }()
+
+		// A publish carrying an alias but no topic name, on a connection
+		// that never registered that alias -- which is every reconnect by a
+		// client that aliases, since [MQTT-3.3.2-7] drops the mappings with
+		// the connection. Section 3.3.2.3.4 case 3a: a Protocol Error.
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishMqtt5).Packet
+		pkx.Properties.SubscriptionIdentifier = []int{} // must not contain from client to server
+		pkx.TopicName = ""
+		pkx.Properties.TopicAliasFlag = true
+		pkx.Properties.TopicAlias = 1
+
+		err := s.processPacket(cl, pkx)
+		require.Error(t, err)
+		require.ErrorIs(t, err, packets.ErrProtocolViolationNoTopic)
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NotEmpty(t, buf)
+	require.Equal(t, byte(packets.Disconnect<<4), buf[0])
+	require.Equal(t, packets.ErrProtocolViolationNoTopic.Code, buf[2])
+
+	// The alias must not have been registered against the empty topic on
+	// the way through, and nothing may have been published to it.
+	require.NotContains(t, cl.State.TopicAliases.Inbound.internal, uint16(1))
+	require.Equal(t, 0, len(s.Topics.Messages("")))
+}
+
+func TestReceivePacketLogsARefusalAtDebugWithoutThePacket(t *testing.T) {
+	s := newServer()
+
+	// This server's own logger, replacing the discarding one after New has
+	// taken it, so the buffer below is provably the handler in use rather
+	// than one something else has since swapped out. Debug level, because
+	// the whole claim is that the refusal is reported there.
+	var buf bytes.Buffer
+	s.Log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	_ = s.Serve()
+	defer s.Close()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	payload := []byte("SENTINEL-PAYLOAD-DO-NOT-LOG")
+
+	// Waited on before the buffer is read. DisconnectClient stops the
+	// client, so the ReadAll below can return while receivePacket has yet
+	// to write its log line -- and a buffer read at that moment reports an
+	// empty log about a server that logged.
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		defer func() { _ = w.Close() }()
+
+		// An ordinary refusal carrying a payload: a wildcard in a topic
+		// name, which [MQTT-3.3.2-2] forbids. The client is answered with a
+		// DISCONNECT, which is the server working rather than failing.
+		pkx := *packets.TPacketData[packets.Publish].Get(packets.TPublishMqtt5).Packet
+		pkx.Properties.SubscriptionIdentifier = []int{}
+		pkx.TopicName = "a/b/+"
+		pkx.Payload = payload
+
+		err := s.receivePacket(cl, pkx)
+		require.Error(t, err)
+	}()
+
+	_, err := io.ReadAll(r)
+	require.NoError(t, err)
+	wg.Wait()
+
+	out := buf.String()
+
+	// The instrument first: if nothing was logged at all, everything below
+	// passes for the wrong reason.
+	require.Contains(t, out, "packet refused",
+		"no debug line for the refusal reached this test's logger; if nothing was "+
+			"logged at all, the assertions below pass for the wrong reason")
+
+	require.NotContains(t, out, "level=WARN",
+		"an ordinary refusal was reported to the operator as a problem")
+	require.NotContains(t, out, string(payload),
+		"the client's payload was written into the log")
+	require.NotContains(t, out, "Payload:",
+		"the whole packet was formatted into the log")
 }
 
 func TestPublishToSubscribersExhaustedSendQuota(t *testing.T) {
@@ -2751,9 +3373,21 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 			time.Sleep(time.Millisecond)
 			cl.Net.Conn = w
 
+			// Reading exactly what this step expects is what waits for
+			// the write loop; the sleep it replaces was a guess about a
+			// goroutine, and a short read failed naming the payload rather
+			// than the race. Step 2 expects nothing, so there is nothing
+			// to wait for and the close is what ends the read.
 			recv := make(chan []byte)
 			go func() { // receive the ack
-				buf, err := io.ReadAll(r)
+				if i == 2 {
+					buf, err := io.ReadAll(r)
+					require.NoError(t, err)
+					recv <- buf
+					return
+				}
+				buf := make([]byte, len(tx.out.RawBytes))
+				_, err := io.ReadFull(r, buf)
 				require.NoError(t, err)
 				recv <- buf
 			}()
@@ -2765,11 +3399,12 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			time.Sleep(time.Millisecond)
-			_ = w.Close()
-
 			if i != 2 {
 				require.Equal(t, tx.out.RawBytes, <-recv)
+			}
+			_ = w.Close()
+			if i == 2 {
+				require.Empty(t, <-recv, "step 2 expects no packet")
 			}
 
 			require.Equal(t, tx.data["inflight"].(int64), atomic.LoadInt64(&s.Info.Inflight))
@@ -2795,25 +3430,6 @@ func TestServerProcessPacketSubscribe(t *testing.T) {
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
 	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackMqtt5).RawBytes, buf)
-}
-
-func TestServerProcessPacketSubscribePacketIDInUse(t *testing.T) {
-	s := newServer()
-	cl, r, w := newTestClient()
-	cl.Properties.ProtocolVersion = 5
-	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Publish}})
-
-	pkx := *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeMqtt5).Packet
-	pkx.PacketID = 15
-	go func() {
-		err := s.processPacket(cl, pkx)
-		require.NoError(t, err)
-		_ = w.Close()
-	}()
-
-	buf, err := io.ReadAll(r)
-	require.NoError(t, err)
-	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackPacketIDInUse).RawBytes, buf)
 }
 
 func TestServerProcessPacketSubscribeInvalid(t *testing.T) {
@@ -2856,6 +3472,113 @@ func TestServerProcessPacketSubscribeInvalidSharedNoLocal(t *testing.T) {
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
 	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackInvalidSharedNoLocal).RawBytes, buf)
+}
+
+// A Pubrec entry is the client's OWN QoS 2 publish still in its
+// PUBREL exchange, so that identifier really is in use by the client
+// and 0x91 is correct. A Publish entry is the server's outbound
+// message, whose identifiers are a separate space — see
+// TestServerProcessSubscribeWithServerInflightPacketID.
+func TestServerProcessPacketSubscribePacketIDInUse(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}})
+
+	pkx := *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeMqtt5).Packet
+	pkx.PacketID = 15
+	go func() {
+		err := s.processPacket(cl, pkx)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackPacketIDInUse).RawBytes, buf)
+}
+
+// A Pubrec entry is the client's OWN QoS 2 publish still in its
+// PUBREL exchange, so that identifier really is in use by the client
+// and 0x91 is correct. A Publish entry is the server's outbound
+// message, whose identifiers are a separate space — see
+// TestServerProcessSubscribeWithServerInflightPacketID.
+func TestServerProcessPacketUnsubscribePackedIDInUse(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}})
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribeMqtt5).Packet)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Unsuback].Get(packets.TUnsubackPacketIDInUse).RawBytes, buf)
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Subscriptions))
+}
+
+// Packet Identifiers assigned by the Client and by the Server are
+// independent: MQTT 3.1.1 2.3.1 and MQTT 5.0 2.2.1 both say so, and both
+// give the same example — a Client can send a packet with identifier
+// 0x1234 while receiving a different one carrying 0x1234 from its Server.
+//
+// The server's own outbound QoS 1 and 2 messages live in cl.State.Inflight,
+// so checking a client-assigned SUBSCRIBE identifier against that store
+// refuses a packet the specification permits. It happens whenever a
+// persistent session has a queued message and the client subscribes on
+// connect, which is what every client library's on-connect callback does.
+func TestServerProcessSubscribeWithServerInflightPacketID(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+
+	// A message the server sent and is waiting to have acknowledged, using
+	// the same identifier the client is about to choose for its SUBSCRIBE.
+	cl.State.Inflight.Set(packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+		PacketID:    15,
+		TopicName:   "x/y/z",
+	})
+
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribe).Packet)
+		require.NoError(t, err)
+
+		time.Sleep(time.Millisecond)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSuback).RawBytes, buf)
+}
+
+// The same for UNSUBSCRIBE, which carries the identical check.
+func TestServerProcessUnsubscribeWithServerInflightPacketID(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	s.Topics.Subscribe(cl.ID, packets.Subscription{Filter: "a/b/c"})
+	cl.State.Subscriptions.Add("a/b/c", packets.Subscription{Qos: 0})
+
+	cl.State.Inflight.Set(packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+		PacketID:    15,
+		TopicName:   "x/y/z",
+	})
+
+	go func() {
+		err := s.processPacket(cl, *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribe).Packet)
+		require.NoError(t, err)
+
+		time.Sleep(time.Millisecond)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.Equal(t, packets.TPacketData[packets.Unsuback].Get(packets.TUnsuback).RawBytes, buf)
 }
 
 func TestServerProcessSubscribeWithRetain(t *testing.T) {
@@ -3048,23 +3771,6 @@ func TestServerProcessPacketUnsubscribe(t *testing.T) {
 	require.Equal(t, int64(-1), atomic.LoadInt64(&s.Info.Subscriptions))
 }
 
-func TestServerProcessPacketUnsubscribePackedIDInUse(t *testing.T) {
-	s := newServer()
-	cl, r, w := newTestClient()
-	cl.Properties.ProtocolVersion = 5
-	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Publish}})
-	go func() {
-		err := s.processPacket(cl, *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribeMqtt5).Packet)
-		require.NoError(t, err)
-		_ = w.Close()
-	}()
-
-	buf, err := io.ReadAll(r)
-	require.NoError(t, err)
-	require.Equal(t, packets.TPacketData[packets.Unsuback].Get(packets.TUnsubackPacketIDInUse).RawBytes, buf)
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Subscriptions))
-}
-
 func TestServerProcessPacketUnsubscribeInvalid(t *testing.T) {
 	s := newServer()
 	cl, _, _ := newTestClient()
@@ -3103,6 +3809,7 @@ func TestServerRecievePacketDisconnectClientZeroNonZero(t *testing.T) {
 func TestServerRecievePacketDisconnectClient(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
 
 	go func() {
 		err := s.DisconnectClient(cl, packets.CodeDisconnect)
@@ -3112,7 +3819,31 @@ func TestServerRecievePacketDisconnectClient(t *testing.T) {
 
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
-	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnect).RawBytes, buf)
+	require.Equal(t, []byte{
+		packets.Disconnect << 4, 2, // fixed header
+		packets.CodeDisconnect.Code, // Reason Code
+		0,                           // Properties Length
+	}, buf)
+}
+
+func TestServerRecievePacketDisconnectClientV3(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 4 // MQTT v3.1.1
+
+	go func() {
+		err := s.DisconnectClient(cl, packets.CodeDisconnect)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	// The server-to-client Disconnect packet was introduced in MQTT v5. A v3
+	// client is closed without one rather than being sent a packet type its
+	// own specification only defines in the other direction.
+	require.Empty(t, buf)
 }
 
 func TestServerProcessPacketDisconnect(t *testing.T) {
@@ -3494,6 +4225,96 @@ func TestServerClose(t *testing.T) {
 	time.Sleep(time.Millisecond)
 	require.Equal(t, false, listener.(*listeners.MockListener).IsServing())
 	require.Equal(t, packets.TPacketData[packets.Disconnect].Get(packets.TDisconnectShuttingDown).RawBytes, <-recv)
+}
+
+// blockingConnectHook holds attachClient inside OnConnect until it is
+// released, so that Close is called while a client is demonstrably still
+// being attached rather than at a moment the test had to guess.
+type blockingConnectHook struct {
+	HookBase
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (h *blockingConnectHook) ID() string { return "blocking-connect" }
+
+func (h *blockingConnectHook) Provides(b byte) bool { return b == OnConnect }
+
+func (h *blockingConnectHook) OnConnect(cl *Client, pk packets.Packet) error {
+	close(h.entered)
+	<-h.release
+	return nil
+}
+
+// Close does not return while a client is still being attached, including a
+// client handed to EstablishConnection directly rather than accepted by a
+// listener. Registering only inside the listener's establisher covered the
+// second and not the first, so Close returned early for an embedder feeding
+// the server its own connections and for every test in this file.
+func TestServerCloseWaitsForDirectEstablishConnection(t *testing.T) {
+	h := &blockingConnectHook{entered: make(chan struct{}), release: make(chan struct{})}
+
+	s := newServer()
+	require.NoError(t, s.AddHook(h, nil))
+
+	r, w := net.Pipe()
+	attached := make(chan error, 1)
+	go func() {
+		attached <- s.EstablishConnection("tcp", r)
+	}()
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+	}()
+	go func() { _, _ = io.ReadAll(w) }()
+
+	<-h.entered // the client is inside attachClient and cannot leave
+
+	closed := make(chan struct{})
+	go func() {
+		_ = s.Close()
+		close(closed)
+	}()
+
+	select {
+	case <-closed:
+		t.Fatal("Close returned while a client was still being attached")
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	// Hang the connection up from this side before waiting, because Close
+	// now genuinely waits for it: the client is attached under a listener
+	// id no listener owns, so closeListenerClients never reaches it and it
+	// would otherwise sit until its keepalive expired.
+	close(h.release)
+	_ = w.Close()
+	<-closed
+	<-attached
+}
+
+// A connection arriving after shutdown has latched is refused rather than
+// attached, whichever way it arrives.
+func TestServerEstablishConnectionRefusedAfterClose(t *testing.T) {
+	s := newServer()
+	require.NoError(t, s.Close())
+
+	r, w := net.Pipe()
+	defer w.Close()
+
+	// Nothing is written to the pipe: a refused connection is closed
+	// without its CONNECT being read, so this returns without waiting for
+	// one. Unlatched it blocks in readConnectionPacket instead, which is
+	// what the deadline below catches.
+	done := make(chan error, 1)
+	go func() { done <- s.EstablishConnection("tcp", r) }()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("a connection arriving after shutdown was attached rather than refused")
+	}
+
+	require.Equal(t, 0, s.Clients.Len())
 }
 
 func TestServerClearExpiredInflights(t *testing.T) {
@@ -3930,4 +4751,387 @@ func TestMinimum(t *testing.T) {
 	require.EqualValues(t, -1, minimum(-1, 0)) // negative values are not used, but included here for completeness
 	require.EqualValues(t, -1, minimum(-1, 20))
 	require.EqualValues(t, -2, minimum(-1, -2))
+}
+
+// refuseFilterHook refuses one filter of a SUBSCRIBE by setting its reason
+// code, and leaves the rest of the packet alone.
+type refuseFilterHook struct {
+	HookBase
+	filter string
+	code   byte
+}
+
+func (h *refuseFilterHook) ID() string { return "refuse-filter" }
+
+func (h *refuseFilterHook) Provides(b byte) bool {
+	return bytes.Contains([]byte{OnSubscribe}, []byte{b})
+}
+
+func (h *refuseFilterHook) OnSubscribe(cl *Client, pk packets.Packet) packets.Packet {
+	pk.ReasonCodes = make([]byte, len(pk.Filters))
+	for i, sub := range pk.Filters {
+		if sub.Filter == h.filter {
+			pk.ReasonCodes[i] = h.code
+		}
+	}
+	return pk
+}
+
+// An OnSubscribe hook may refuse a single filter and say why. Without it
+// the only hook-driven refusal is OnACLCheck, which can answer 0x87 and
+// nothing else, so a hook rejecting a filter for any other reason has to
+// mislabel it as an authorization failure or disconnect the client.
+func TestServerProcessSubscribeHookReasonCodes(t *testing.T) {
+	s := newServer()
+	require.NoError(t, s.AddHook(&refuseFilterHook{
+		filter: "d/e/f/g/h/i",
+		code:   packets.ErrTopicFilterInvalid.Code,
+	}, nil))
+	_ = s.Serve()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	go func() {
+		err := s.processSubscribe(cl, *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeMany).Packet)
+		require.NoError(t, err)
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	// The reason codes are the SUBACK payload, so they are the last byte
+	// per filter. The refused one carries the hook's code; the others are
+	// the granted QoS, untouched.
+	require.Equal(t,
+		[]byte{0, packets.ErrTopicFilterInvalid.Code, 2},
+		buf[len(buf)-3:])
+
+	// A refused filter is not subscribed, or the client would receive
+	// messages for a subscription the SUBACK told it it did not have.
+	require.Empty(t, s.Topics.Subscribers("d/e/f/g/h/i").Subscriptions)
+	require.Contains(t, s.Topics.Subscribers("a/b").Subscriptions, cl.ID)
+	require.Contains(t, s.Topics.Subscribers("x/y/z").Subscriptions, cl.ID)
+
+	_, ok := cl.State.Subscriptions.Get("d/e/f/g/h/i")
+	require.False(t, ok)
+}
+
+// A successful PUBACK must carry a PUBACK reason code. 0x01 is Granted QoS
+// 1, a SUBACK code, and [MQTT-3.4.2-1] requires one of the codes §3.4.2.1
+// lists — 0x00, 0x10, and the 0x80-and-above refusals.
+//
+// It is invisible until the publish carries a property the acknowledgement
+// keeps, because with none the encoder may omit the reason byte and its
+// absence reads as 0x00. A User Property is enough: the byte is then written
+// and the wrong value appears.
+func TestServerProcessPacketPublishQos1AckReasonCode(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+
+	pk := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1Mqtt5).Packet
+	pk.Properties.User = []packets.UserProperty{{Key: "mine", Val: "ok"}}
+
+	go func() {
+		require.NoError(t, s.processPacket(cl, pk))
+		_ = w.Close()
+	}()
+
+	buf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NotEmpty(t, buf)
+	require.Equal(t, packets.Puback, buf[0]>>4)
+
+	// Fixed header, then the two packet-identifier bytes, then the reason.
+	require.Greater(t, len(buf), 4, "the reason byte is written once there are properties")
+	require.Equal(t, packets.CodeSuccess.Code, buf[4],
+		"a successful PUBACK must carry a PUBACK reason code, not a granted-QoS one")
+}
+
+func TestServerUnsubscribeCountsAndAnswersOnlyWhatItRemoved(t *testing.T) {
+	s := newServer()
+
+	// Two clients on one filter, so the filter node outlives the first
+	// client's subscription on it.
+	a, ar, _ := newTestClient()
+	a.ID = "cl-a"
+	a.Properties.ProtocolVersion = 5
+	b, br, _ := newTestClient()
+	b.ID = "cl-b"
+	b.Properties.ProtocolVersion = 5
+
+	// **Each packet arrives on a channel rather than in a buffer.**
+	// net.Pipe hands the write back as soon as the bytes are copied, so a
+	// reader appending them to a slice can still be behind when the next
+	// assertion runs — the first version of this test read the previous
+	// acknowledgement and reported the fix broken.
+	acks := make(chan []byte, 8)
+	drain := func(c net.Conn) {
+		buf := make([]byte, 256)
+		for {
+			n, err := c.Read(buf)
+			if n > 0 {
+				acks <- append([]byte(nil), buf[:n]...)
+			}
+			if err != nil {
+				return
+			}
+		}
+	}
+	go drain(ar)
+	go drain(br)
+	reasonCode := func() byte {
+		select {
+		case pk := <-acks:
+			require.NotEmpty(t, pk)
+			return pk[len(pk)-1]
+		case <-time.After(2 * time.Second):
+			t.Fatal("no acknowledgement arrived")
+			return 0
+		}
+	}
+
+	subscribe := func(cl *Client) {
+		require.NoError(t, s.processSubscribe(cl, packets.Packet{
+			FixedHeader: packets.FixedHeader{Type: packets.Subscribe},
+			PacketID:    1,
+			Filters:     packets.Subscriptions{{Filter: "a/b", Qos: 0}},
+		}))
+		<-acks // the SUBACK, which this test is not about
+	}
+	unsubscribe := func(cl *Client) byte {
+		require.NoError(t, s.processUnsubscribe(cl, packets.Packet{
+			FixedHeader: packets.FixedHeader{Type: packets.Unsubscribe},
+			PacketID:    2,
+			Filters:     packets.Subscriptions{{Filter: "a/b"}},
+		}))
+		return reasonCode()
+	}
+
+	subscribe(a)
+	subscribe(b)
+	require.Equal(t, int64(2), atomic.LoadInt64(&s.Info.Subscriptions))
+
+	require.Equal(t, packets.CodeSuccess.Code, unsubscribe(a))
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Subscriptions))
+
+	// cl-a has already gone and cl-b is holding the node open, so there is
+	// nothing of cl-a's to remove: no decrement, and 0x11 rather than
+	// success.
+	require.Equal(t, packets.CodeNoSubscriptionExisted.Code, unsubscribe(a))
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Subscriptions))
+
+	require.Equal(t, packets.CodeSuccess.Code, unsubscribe(b))
+	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Subscriptions))
+}
+
+// refusedHook records the CONNECT refusals a hook is told about.
+type refusedHook struct {
+	HookBase
+	mu    sync.Mutex
+	seen  []string
+	codes []packets.Code
+}
+
+func (h *refusedHook) ID() string { return "refused" }
+
+func (h *refusedHook) Provides(b byte) bool { return b == OnConnectRefused }
+
+func (h *refusedHook) OnConnectRefused(cl *Client, pk packets.Packet, code packets.Code) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.seen = append(h.seen, cl.ID)
+	h.codes = append(h.codes, code)
+}
+
+func (h *refusedHook) refusals() ([]string, []packets.Code) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.seen...), append([]packets.Code(nil), h.codes...)
+}
+
+// A CONNECT refused before any other hook runs tells a hook which client it
+// was. Without it the only record is the returned code, which says nothing
+// about who was refused.
+func TestOnConnectRefusedNamesTheClient(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MaximumClients = 0
+	s := New(&Options{Logger: logger, Capabilities: cc})
+	hook := new(refusedHook)
+	require.NoError(t, s.AddHook(hook, nil))
+	require.NoError(t, s.AddHook(new(AllowHook), nil))
+	defer s.Close()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() { o <- s.EstablishConnection("tcp", r) }()
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+	}()
+	go func() { _, _ = io.ReadAll(w) }()
+
+	require.ErrorIs(t, <-o, packets.ErrServerBusy)
+	_ = w.Close()
+
+	ids, codes := hook.refusals()
+	require.Len(t, ids, 1)
+	require.Equal(t, "zen", ids[0]) // the fixture CONNECT's client id
+
+	// The fixture is a 3.1.1 CONNECT, and 3.1.1 has no Server Busy: the
+	// client is sent Server Unavailable, so that is what the hook is told.
+	require.Equal(t, packets.ErrServerUnavailable, codes[0])
+}
+
+// The same refusal to an MQTT 5 client, which is sent Server Busy. The two
+// versions are the whole of the difference, so both are checked -- a hook
+// told a code the client never received cannot name what it was turned away
+// with.
+func TestOnConnectRefusedNamesTheCodeTheClientWasSentV5(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MaximumClients = 0
+	s := New(&Options{Logger: logger, Capabilities: cc})
+	hook := new(refusedHook)
+	require.NoError(t, s.AddHook(hook, nil))
+	require.NoError(t, s.AddHook(new(AllowHook), nil))
+	defer s.Close()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() { o <- s.EstablishConnection("tcp", r) }()
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectMqtt5).RawBytes)
+	}()
+	go func() { _, _ = io.ReadAll(w) }()
+
+	require.ErrorIs(t, <-o, packets.ErrServerBusy)
+	_ = w.Close()
+
+	_, codes := hook.refusals()
+	require.Len(t, codes, 1)
+	require.Equal(t, packets.ErrServerBusy, codes[0])
+}
+
+// The same for a refusal validateConnect makes — here an unacceptable
+// protocol version, which is the case an operator meets when they close the
+// door on an older fleet.
+func TestOnConnectRefusedCoversValidateConnect(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MinimumProtocolVersion = 5
+	s := New(&Options{Logger: logger, Capabilities: cc})
+	hook := new(refusedHook)
+	require.NoError(t, s.AddHook(hook, nil))
+	require.NoError(t, s.AddHook(new(AllowHook), nil))
+	defer s.Close()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() { o <- s.EstablishConnection("tcp", r) }()
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+	}()
+	go func() { _, _ = io.ReadAll(w) }()
+
+	require.ErrorIs(t, <-o, packets.ErrUnsupportedProtocolVersion)
+	_ = w.Close()
+
+	ids, codes := hook.refusals()
+	require.Len(t, ids, 1)
+	require.Equal(t, "zen", ids[0]) // the fixture CONNECT's client id
+	require.Equal(t, packets.ErrUnsupportedProtocolVersion, codes[0])
+}
+
+// A server with no such hook behaves exactly as before, which is what makes
+// this additive: HookBase's no-op means every existing hook opts out.
+func TestOnConnectRefusedIsOptional(t *testing.T) {
+	cc := NewDefaultServerCapabilities()
+	cc.MaximumClients = 0
+	s := New(&Options{Logger: logger, Capabilities: cc})
+	require.NoError(t, s.AddHook(new(AllowHook), nil))
+	defer s.Close()
+
+	r, w := net.Pipe()
+	o := make(chan error)
+	go func() { o <- s.EstablishConnection("tcp", r) }()
+	go func() {
+		_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+	}()
+	go func() { _, _ = io.ReadAll(w) }()
+
+	require.ErrorIs(t, <-o, packets.ErrServerBusy)
+	_ = w.Close()
+}
+
+// A hook that refuses a publish by WRAPPING a packets.Code, which is what
+// fmt.Errorf("%w") produces and what a hook returning context with its
+// refusal will do.
+type wrappingRefusalHook struct {
+	HookBase
+}
+
+func (h *wrappingRefusalHook) ID() string { return "wrapping-refusal" }
+
+func (h *wrappingRefusalHook) Provides(b byte) bool { return b == OnPublish }
+
+func (h *wrappingRefusalHook) OnPublish(cl *Client, pk packets.Packet) (packets.Packet, error) {
+	return pk, fmt.Errorf("refused by policy: %w", packets.ErrNotAuthorized)
+}
+
+// A refusal carrying a wrapped code is answered, not panicked on.
+//
+// errors.As succeeds through a wrapper, so a type assertion on the error
+// itself takes the broker down on an ordinary publish refusal - a hook is
+// entitled to add context to the code it returns.
+func TestPublishRefusedWithAWrappedCodeDoesNotPanic(t *testing.T) {
+	s := newServer()
+	require.NoError(t, s.AddHook(new(wrappingRefusalHook), nil))
+	defer s.Close()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	// Nothing here drains the pipe, and the refusal is written to it. Left
+	// alone the write now waits out the keepalive bound, so this test would
+	// take fifteen seconds to assert something that happens immediately.
+	cl.ops.options.ClientNetWriteTimeout = 50 * time.Millisecond
+	s.Clients.Add(cl)
+
+	go func() {
+		_, _ = io.ReadAll(w)
+	}()
+
+	pk := *packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).Packet
+	require.NotPanics(t, func() {
+		_ = s.processPublish(cl, pk)
+	})
+
+	_ = r.Close()
+	_ = w.Close()
+}
+
+// DisconnectClient always disconnects, even for a v3 client under
+// PassiveClientDisconnect.
+//
+// That option means "the client was sent a DISCONNECT and will close the
+// connection itself". A v3 client is sent nothing, so honouring it there
+// would leave the connection open after the server decided to end it.
+func TestDisconnectClientClosesAV3ClientUnderPassiveDisconnect(t *testing.T) {
+	s := newServer()
+	s.Options.Capabilities.Compatibilities.PassiveClientDisconnect = true
+	defer s.Close()
+
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 4 // 3.1.1: no server-to-client DISCONNECT
+	s.Clients.Add(cl)
+
+	go func() { _, _ = io.ReadAll(w) }()
+
+	_ = s.DisconnectClient(cl, packets.ErrNotAuthorized)
+
+	require.True(t, cl.Closed(), "a v3 client the server chose to disconnect was left connected")
+
+	_ = r.Close()
+	_ = w.Close()
 }

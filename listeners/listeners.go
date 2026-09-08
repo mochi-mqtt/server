@@ -42,7 +42,46 @@ type Listener interface {
 type Listeners struct {
 	ClientsWg sync.WaitGroup      // a waitgroup that waits for all clients in all listeners to finish.
 	internal  map[string]Listener // a map of active listeners.
+	shutdown  sync.RWMutex        // guards closed; taken for writing while shutdown latches.
+	closed    bool                // once set, no further client is registered.
 	sync.RWMutex
+}
+
+// Establish registers a connection with ClientsWg for the duration of
+// establish, and refuses it once shutdown has begun.
+//
+// sync.WaitGroup forbids a positive Add concurrent with Wait. Registering
+// a client from the connection's own goroutine, as the server used to do,
+// means a connection accepted while CloseAll is waiting races the very
+// wait that is meant to cover it -- and CloseAll can return while that
+// client is still being attached, which is the one thing a graceful
+// shutdown promises not to do.
+//
+// Latching shutdown under the write lock, and registering only under the
+// read lock, makes that ordering impossible rather than unlikely.
+//
+// Every connection the server attaches passes through here, because
+// EstablishConnection is both what ServeAll hands to a listener and what a
+// caller embedding the server calls with a connection of its own. Wrapping
+// the listener's establisher instead covered only the first of those, and
+// left a direct caller outside the latch and outside the wait -- so Close
+// returned while such a client was still being attached, which is the very
+// thing this exists to prevent.
+func (l *Listeners) Establish(id string, c net.Conn, establish EstablishFn) error {
+	l.shutdown.RLock()
+	if l.closed {
+		l.shutdown.RUnlock()
+		// Shutdown has begun and this connection will not be served.
+		// Closing it is the whole of the answer; there is nothing here
+		// worth logging on every connection that arrives while a
+		// server is going down.
+		return c.Close()
+	}
+	l.ClientsWg.Add(1)
+	l.shutdown.RUnlock()
+
+	defer l.ClientsWg.Done()
+	return establish(id, c)
 }
 
 // New returns a new instance of Listeners.
@@ -119,6 +158,12 @@ func (l *Listeners) Close(id string, closer CloseFn) {
 
 // CloseAll iterates and closes all registered listeners.
 func (l *Listeners) CloseAll(closer CloseFn) {
+	// Latch shutdown before waiting, so that no client can be registered
+	// once the wait below has begun.
+	l.shutdown.Lock()
+	l.closed = true
+	l.shutdown.Unlock()
+
 	l.RLock()
 	i := 0
 	ids := make([]string, len(l.internal))

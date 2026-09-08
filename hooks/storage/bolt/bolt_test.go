@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -36,6 +37,33 @@ var (
 
 	pkf = packets.Packet{Filters: packets.Subscriptions{{Filter: "a/b/c"}}}
 )
+
+// initHook initialises a hook on a database file of its own.
+//
+// Every test here used to share ".bolt" in the package directory, and bolt
+// takes an exclusive lock on that file with a 250ms timeout. On a slow or
+// loaded machine a test could start before the previous one's file was
+// released, fail to open it, and then report "db file not open" for every
+// operation after that - which is how this package failed at random on CI
+// while passing everywhere else. A file per test removes the contention
+// rather than widening the timeout, and t.TempDir cleans it up.
+func initHook(t *testing.T) *Hook {
+	t.Helper()
+
+	h := new(Hook)
+	h.SetOpts(logger, nil)
+	require.NoError(t, h.Init(&Options{Path: filepath.Join(t.TempDir(), "bolt.db")}))
+	// Guarded, because several tests here shut the database themselves to
+	// see what the hook does without one - and bolt panics closing a
+	// database that is already closed.
+	t.Cleanup(func() {
+		if h.db != nil {
+			_ = h.Stop()
+		}
+	})
+
+	return h
+}
 
 func teardown(t *testing.T, path string, h *Hook) {
 	_ = h.Stop()
@@ -101,10 +129,12 @@ func TestInitBadConfig(t *testing.T) {
 }
 
 func TestInitUseDefaults(t *testing.T) {
+	// The one test that must use the default path, because it is what it
+	// asserts. Nothing else opens that file any more, so there is nobody to
+	// contend with.
 	h := new(Hook)
 	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
+	require.NoError(t, h.Init(nil))
 	defer teardown(t, h.config.Path, h)
 
 	require.Equal(t, defaultTimeout, h.config.Options.Timeout)
@@ -121,16 +151,12 @@ func TestInitBadPath(t *testing.T) {
 }
 
 func TestOnSessionEstablishedThenOnDisconnect(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	h.OnSessionEstablished(client, packets.Packet{})
 
 	r := new(storage.Client)
-	err = h.getKv(clientKey(client), r)
+	err := h.getKv(clientKey(client), r)
 	require.NoError(t, err)
 	require.Equal(t, client.ID, r.ID)
 	require.Equal(t, client.Net.Remote, r.Remote)
@@ -160,27 +186,24 @@ func TestOnSessionEstablishedNoDB(t *testing.T) {
 }
 
 func TestOnSessionEstablishedClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	h.OnSessionEstablished(client, packets.Packet{})
 }
 
 func TestOnWillSent(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	c1 := client
 	c1.Properties.Will.Flag = 1
 	h.OnWillSent(c1, packets.Packet{})
 
 	r := new(storage.Client)
-	err = h.getKv(clientKey(client), r)
+	err := h.getKv(clientKey(client), r)
 	require.NoError(t, err)
 
 	require.Equal(t, uint32(1), r.Will.Flag)
@@ -188,16 +211,12 @@ func TestOnWillSent(t *testing.T) {
 }
 
 func TestOnClientExpired(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	cl := &mqtt.Client{ID: "cl1"}
 	clientKey := clientKey(cl)
 
-	err = h.setKv(clientKey, &storage.Client{ID: cl.ID})
+	err := h.setKv(clientKey, &storage.Client{ID: cl.ID})
 	require.NoError(t, err)
 
 	r := new(storage.Client)
@@ -212,11 +231,12 @@ func TestOnClientExpired(t *testing.T) {
 }
 
 func TestOnClientExpiredClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	h.OnClientExpired(client)
 }
 
@@ -233,11 +253,12 @@ func TestOnDisconnectNoDB(t *testing.T) {
 }
 
 func TestOnDisconnectClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	h.OnDisconnect(client, nil, false)
 }
 
@@ -265,16 +286,12 @@ func TestOnDisconnectSessionTakenOver(t *testing.T) {
 }
 
 func TestOnSubscribedThenOnUnsubscribed(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	h.OnSubscribed(client, pkf, []byte{0})
 	r := new(storage.Subscription)
 
-	err = h.getKv(subscriptionKey(client, pkf.Filters[0].Filter), r)
+	err := h.getKv(subscriptionKey(client, pkf.Filters[0].Filter), r)
 	require.NoError(t, err)
 	require.Equal(t, client.ID, r.Client)
 	require.Equal(t, pkf.Filters[0].Filter, r.Filter)
@@ -293,11 +310,12 @@ func TestOnSubscribedNoDB(t *testing.T) {
 }
 
 func TestOnSubscribedClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	h.OnSubscribed(client, pkf, []byte{0})
 }
 
@@ -308,20 +326,17 @@ func TestOnUnsubscribedNoDB(t *testing.T) {
 }
 
 func TestOnUnsubscribedClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	h.OnUnsubscribed(client, pkf)
 }
 
 func TestOnRetainMessageThenUnset(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	pk := packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -334,7 +349,7 @@ func TestOnRetainMessageThenUnset(t *testing.T) {
 	h.OnRetainMessage(client, pk, 1)
 
 	r := new(storage.Message)
-	err = h.getKv(retainedKey(pk.TopicName), r)
+	err := h.getKv(retainedKey(pk.TopicName), r)
 	require.NoError(t, err)
 	require.Equal(t, pk.TopicName, r.TopicName)
 	require.Equal(t, pk.Payload, r.Payload)
@@ -352,11 +367,7 @@ func TestOnRetainMessageThenUnset(t *testing.T) {
 }
 
 func TestOnRetainedExpired(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	m := &storage.Message{
 		ID:        retainedKey("a/b/c"),
@@ -364,7 +375,7 @@ func TestOnRetainedExpired(t *testing.T) {
 		TopicName: "a/b/c",
 	}
 
-	err = h.setKv(m.ID, m)
+	err := h.setKv(m.ID, m)
 	require.NoError(t, err)
 
 	r := new(storage.Message)
@@ -379,11 +390,12 @@ func TestOnRetainedExpired(t *testing.T) {
 }
 
 func TestOnRetainedExpiredClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	h.OnRetainedExpired("a/b/c")
 }
 
@@ -400,20 +412,17 @@ func TestOnRetainMessageNoDB(t *testing.T) {
 }
 
 func TestOnRetainMessageClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	h.OnRetainMessage(client, packets.Packet{}, 0)
 }
 
 func TestOnQosPublishThenQOSComplete(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	pk := packets.Packet{
 		FixedHeader: packets.FixedHeader{
@@ -427,7 +436,7 @@ func TestOnQosPublishThenQOSComplete(t *testing.T) {
 	h.OnQosPublish(client, pk, time.Now().Unix(), 0)
 
 	r := new(storage.Message)
-	err = h.getKv(inflightKey(client, pk), r)
+	err := h.getKv(inflightKey(client, pk), r)
 	require.NoError(t, err)
 	require.Equal(t, pk.TopicName, r.TopicName)
 	require.Equal(t, pk.Payload, r.Payload)
@@ -450,11 +459,12 @@ func TestOnQosPublishNoDB(t *testing.T) {
 }
 
 func TestOnQosPublishClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	h.OnQosPublish(client, packets.Packet{}, time.Now().Unix(), 0)
 }
 
@@ -465,11 +475,12 @@ func TestOnQosCompleteNoDB(t *testing.T) {
 }
 
 func TestOnQosCompleteClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	h.OnQosComplete(client, packets.Packet{})
 }
 
@@ -480,11 +491,7 @@ func TestOnQosDroppedNoDB(t *testing.T) {
 }
 
 func TestOnSysInfoTick(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	info := &system.Info{
 		Version:       "2.0.0",
@@ -494,7 +501,7 @@ func TestOnSysInfoTick(t *testing.T) {
 	h.OnSysInfoTick(info)
 
 	r := new(storage.SystemInfo)
-	err = h.getKv(storage.SysInfoKey, r)
+	err := h.getKv(storage.SysInfoKey, r)
 	require.NoError(t, err)
 	require.Equal(t, info.Version, r.Version)
 	require.Equal(t, info.BytesReceived, r.BytesReceived)
@@ -508,23 +515,20 @@ func TestOnSysInfoTickNoDB(t *testing.T) {
 }
 
 func TestOnSysInfoTickClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	h.OnSysInfoTick(new(system.Info))
 }
 
 func TestStoredClients(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	// populate with clients
-	err = h.setKv(storage.ClientKey+"_"+"cl1", &storage.Client{ID: "cl1"})
+	err := h.setKv(storage.ClientKey+"_"+"cl1", &storage.Client{ID: "cl1"})
 	require.NoError(t, err)
 
 	err = h.setKv(storage.ClientKey+"_"+"cl2", &storage.Client{ID: "cl2"})
@@ -550,25 +554,22 @@ func TestStoredClientsNoDB(t *testing.T) {
 }
 
 func TestStoredClientsClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	v, err := h.StoredClients()
 	require.Empty(t, v)
 	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredSubscriptions(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	// populate with subscriptions
-	err = h.setKv(storage.SubscriptionKey+"_"+"sub1", &storage.Subscription{ID: "sub1"})
+	err := h.setKv(storage.SubscriptionKey+"_"+"sub1", &storage.Subscription{ID: "sub1"})
 	require.NoError(t, err)
 
 	err = h.setKv(storage.SubscriptionKey+"_"+"sub2", &storage.Subscription{ID: "sub2"})
@@ -594,25 +595,22 @@ func TestStoredSubscriptionsNoDB(t *testing.T) {
 }
 
 func TestStoredSubscriptionsClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	v, err := h.StoredSubscriptions()
 	require.Empty(t, v)
 	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredRetainedMessages(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	// populate with messages
-	err = h.setKv(storage.RetainedKey+"_"+"m1", &storage.Message{ID: "m1"})
+	err := h.setKv(storage.RetainedKey+"_"+"m1", &storage.Message{ID: "m1"})
 	require.NoError(t, err)
 
 	err = h.setKv(storage.RetainedKey+"_"+"m2", &storage.Message{ID: "m2"})
@@ -641,25 +639,22 @@ func TestStoredRetainedMessagesNoDB(t *testing.T) {
 }
 
 func TestStoredRetainedMessagesClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	v, err := h.StoredRetainedMessages()
 	require.Empty(t, v)
 	require.Error(t, err)
 }
 
 func TestStoredInflightMessages(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	// populate with messages
-	err = h.setKv(storage.InflightKey+"_"+"i1", &storage.Message{ID: "i1"})
+	err := h.setKv(storage.InflightKey+"_"+"i1", &storage.Message{ID: "i1"})
 	require.NoError(t, err)
 
 	err = h.setKv(storage.InflightKey+"_"+"i2", &storage.Message{ID: "i2"})
@@ -688,25 +683,22 @@ func TestStoredInflightMessagesNoDB(t *testing.T) {
 }
 
 func TestStoredInflightMessagesClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	v, err := h.StoredInflightMessages()
 	require.Empty(t, v)
 	require.ErrorIs(t, storage.ErrDBFileNotOpen, err)
 }
 
 func TestStoredSysInfo(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	defer teardown(t, h.config.Path, h)
+	h := initHook(t)
 
 	// populate with sys info
-	err = h.setKv(storage.SysInfoKey, &storage.SystemInfo{
+	err := h.setKv(storage.SysInfoKey, &storage.SystemInfo{
 		ID: storage.SysInfoKey,
 		Info: system.Info{
 			Version: "2.0.0",
@@ -729,11 +721,12 @@ func TestStoredSysInfoNoDB(t *testing.T) {
 }
 
 func TestStoredSysInfoClosedDB(t *testing.T) {
-	h := new(Hook)
-	h.SetOpts(logger, nil)
-	err := h.Init(nil)
-	require.NoError(t, err)
-	teardown(t, h.config.Path, h)
+	h := initHook(t)
+
+	// Shut the database and then use it: this test is about what the
+	// hook does when its file is gone.
+	require.NoError(t, h.Stop())
+
 	v, err := h.StoredSysInfo()
 	require.Empty(t, v)
 	require.Error(t, err)

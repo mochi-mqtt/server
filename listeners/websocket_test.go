@@ -5,6 +5,7 @@
 package listeners
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -48,6 +49,7 @@ func TestWebsocketInit(t *testing.T) {
 	err := l.Init(logger)
 	require.NoError(t, err)
 	require.NotNil(t, l.listen)
+	l.Close(MockCloser) // Init binds the socket; release it for the next test
 }
 
 func TestWebsocketServeAndClose(t *testing.T) {
@@ -96,7 +98,7 @@ func TestWebsocketFailedToServe(t *testing.T) {
 	config.Address = "wrong_addr"
 	l := NewWebsocket(config)
 	err := l.Init(logger)
-	require.NoError(t, err)
+	require.Error(t, err, "an unbindable address is refused at Init, where the caller can see it")
 
 	o := make(chan bool)
 	go func(o chan bool) {
@@ -114,7 +116,8 @@ func TestWebsocketFailedToServe(t *testing.T) {
 
 func TestWebsocketUpgrade(t *testing.T) {
 	l := NewWebsocket(basicConfig)
-	_ = l.Init(logger)
+	require.NoError(t, l.Init(logger))
+	defer l.Close(MockCloser)
 
 	e := make(chan bool)
 	l.establish = func(id string, c net.Conn) error {
@@ -133,7 +136,8 @@ func TestWebsocketUpgrade(t *testing.T) {
 
 func TestWebsocketConnectionReads(t *testing.T) {
 	l := NewWebsocket(basicConfig)
-	_ = l.Init(nil)
+	require.NoError(t, l.Init(nil))
+	defer l.Close(MockCloser)
 
 	recv := make(chan []byte)
 	l.establish = func(id string, c net.Conn) error {
@@ -170,4 +174,60 @@ func TestWebsocketConnectionReads(t *testing.T) {
 
 	s.Close()
 	_ = ws.Close()
+}
+
+func TestWebsocketWriteDeadlineEndsAWriteToAClientThatNeverReads(t *testing.T) {
+	l := NewWebsocket(basicConfig)
+	require.NoError(t, l.Init(nil))
+	defer l.Close(MockCloser)
+
+	result := make(chan error, 1)
+	l.establish = func(id string, c net.Conn) error {
+		buf := make([]byte, 4096)
+		for {
+			if err := c.SetWriteDeadline(time.Now().Add(250 * time.Millisecond)); err != nil {
+				result <- err
+				return nil
+			}
+			if _, err := c.Write(buf); err != nil {
+				result <- err
+				return nil
+			}
+		}
+	}
+
+	s := httptest.NewServer(http.HandlerFunc(l.handler))
+	defer s.Close()
+
+	ws, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(s.URL, "http"), nil)
+	require.NoError(t, err)
+	defer ws.Close()
+	// The client never reads, so the writes above fill the socket and stop.
+
+	select {
+	case err := <-result:
+		var ne net.Error
+		require.True(t, errors.As(err, &ne) && ne.Timeout(), "want a timeout, got %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("a write to a websocket client that never reads did not end: a deadline " +
+			"set on this net.Conn has to reach the write, and gorilla overwrites one set " +
+			"on the socket underneath it")
+	}
+}
+
+// A ":0" address is bound at Init, so Address reports the port the kernel
+// assigned and the port is held before Serve runs — nothing else in the
+// process can take it in between, and a caller told the address can dial it.
+func TestWebsocketAddressIsTheBoundPortAfterInit(t *testing.T) {
+	l := NewWebsocket(Config{ID: "t1", Address: "127.0.0.1:0"})
+	require.NoError(t, l.Init(logger))
+	defer l.Close(MockCloser)
+
+	addr := l.Address()
+	require.NotEqual(t, "127.0.0.1:0", addr)
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	require.NoError(t, err, "the door must accept from the moment Init returns")
+	_ = conn.Close()
+	_, err = net.Listen("tcp", addr)
+	require.Error(t, err, "the port must be held, not merely reserved")
 }
