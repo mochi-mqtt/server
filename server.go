@@ -1239,19 +1239,16 @@ func (s *Server) processPubcomp(cl *Client, pk packets.Packet) error {
 
 // processSubscribe processes a Subscribe packet.
 func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
+	// The packet identifier is not checked against cl.State.Inflight: that map
+	// holds the server's own outbound QoS deliveries (and inbound QoS 2 publish
+	// state), and packet identifiers are scoped per direction [MQTT-2.2.1].
+	// A SUBSCRIBE is acknowledged at once, so its identifier is never in use.
 	pk = s.hooks.OnSubscribe(cl, pk)
-	code := packets.CodeSuccess
-	if _, ok := cl.State.Inflight.Get(pk.PacketID); ok {
-		code = packets.ErrPacketIdentifierInUse
-	}
 
 	filterExisted := make([]bool, len(pk.Filters))
 	reasonCodes := make([]byte, len(pk.Filters))
 	for i, sub := range pk.Filters {
-		if code != packets.CodeSuccess {
-			reasonCodes[i] = code.Code // NB 3.9.3 Non-normative 0x91
-			continue
-		} else if !IsValidFilter(sub.Filter, false) {
+		if !IsValidFilter(sub.Filter, false) {
 			reasonCodes[i] = packets.ErrTopicFilterInvalid.Code
 		} else if sub.NoLocal && IsSharedFilter(sub.Filter) {
 			reasonCodes[i] = packets.ErrProtocolViolationInvalidSharedNoLocal.Code // [MQTT-3.8.3-4]
@@ -1291,10 +1288,6 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 		},
 	}
 
-	if code.Code >= packets.ErrUnspecifiedError.Code {
-		ack.Properties.ReasonString = code.Reason
-	}
-
 	s.hooks.OnSubscribed(cl, pk, reasonCodes)
 	err := cl.WritePacket(ack)
 	if err != nil {
@@ -1314,19 +1307,11 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 
 // processUnsubscribe processes an unsubscribe packet.
 func (s *Server) processUnsubscribe(cl *Client, pk packets.Packet) error {
-	code := packets.CodeSuccess
-	if _, ok := cl.State.Inflight.Get(pk.PacketID); ok {
-		code = packets.ErrPacketIdentifierInUse
-	}
-
+	// As in processSubscribe, the packet identifier is not checked against the
+	// server's outbound in-flight state: identifiers are scoped per direction.
 	pk = s.hooks.OnUnsubscribe(cl, pk)
 	reasonCodes := make([]byte, len(pk.Filters))
 	for i, sub := range pk.Filters { // [MQTT-3.10.4-6] [MQTT-3.11.3-1]
-		if code != packets.CodeSuccess {
-			reasonCodes[i] = code.Code // NB 3.11.3 Non-normative 0x91
-			continue
-		}
-
 		if q := s.Topics.Unsubscribe(sub.Filter, cl.ID); q {
 			atomic.AddInt64(&s.Info.Subscriptions, -1)
 			reasonCodes[i] = packets.CodeSuccess.Code
@@ -1346,10 +1331,6 @@ func (s *Server) processUnsubscribe(cl *Client, pk packets.Packet) error {
 		Properties: packets.Properties{
 			User: pk.Properties.User,
 		},
-	}
-
-	if code.Code >= packets.ErrUnspecifiedError.Code {
-		ack.Properties.ReasonString = code.Reason
 	}
 
 	s.hooks.OnUnsubscribed(cl, pk)

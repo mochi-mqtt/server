@@ -2797,11 +2797,15 @@ func TestServerProcessPacketSubscribe(t *testing.T) {
 	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackMqtt5).RawBytes, buf)
 }
 
-func TestServerProcessPacketSubscribePacketIDInUse(t *testing.T) {
+// A SUBSCRIBE whose packet identifier matches one of the server's own outbound
+// in-flight QoS deliveries must still be accepted: packet identifiers are
+// scoped per direction (MQTT v5 section 2.2.1, MQTT v3.1.1 section 2.3.1), so a
+// client-chosen id is unrelated to the ids the server uses for its deliveries.
+func TestServerProcessPacketSubscribeIgnoresOutboundInflightPacketID(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
-	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Publish}})
+	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1}})
 
 	pkx := *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeMqtt5).Packet
 	pkx.PacketID = 15
@@ -2813,7 +2817,11 @@ func TestServerProcessPacketSubscribePacketIDInUse(t *testing.T) {
 
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
-	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackPacketIDInUse).RawBytes, buf)
+	require.Equal(t, packets.TPacketData[packets.Suback].Get(packets.TSubackMqtt5).RawBytes, buf)
+	_, subscribed := cl.State.Subscriptions.Get("a/b/c")
+	require.True(t, subscribed, "the subscription must be registered")
+	_, ok := cl.State.Inflight.Get(15)
+	require.True(t, ok, "the outbound delivery must stay in flight")
 }
 
 func TestServerProcessPacketSubscribeInvalid(t *testing.T) {
@@ -3048,21 +3056,30 @@ func TestServerProcessPacketUnsubscribe(t *testing.T) {
 	require.Equal(t, int64(-1), atomic.LoadInt64(&s.Info.Subscriptions))
 }
 
-func TestServerProcessPacketUnsubscribePackedIDInUse(t *testing.T) {
+// An UNSUBSCRIBE whose packet identifier matches one of the server's own
+// outbound in-flight QoS deliveries must still remove the subscription; see
+// TestServerProcessPacketSubscribeIgnoresOutboundInflightPacketID.
+func TestServerProcessPacketUnsubscribeIgnoresOutboundInflightPacketID(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
-	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Publish}})
+	s.Topics.Subscribe(cl.ID, packets.Subscription{Filter: "a/b", Qos: 0})
+	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1}})
+
+	pkx := *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribeMqtt5).Packet
+	pkx.PacketID = 15
 	go func() {
-		err := s.processPacket(cl, *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribeMqtt5).Packet)
+		err := s.processPacket(cl, pkx)
 		require.NoError(t, err)
 		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
-	require.Equal(t, packets.TPacketData[packets.Unsuback].Get(packets.TUnsubackPacketIDInUse).RawBytes, buf)
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Subscriptions))
+	require.Equal(t, packets.TPacketData[packets.Unsuback].Get(packets.TUnsubackMqtt5).RawBytes, buf)
+	require.Equal(t, int64(-1), atomic.LoadInt64(&s.Info.Subscriptions))
+	_, ok := cl.State.Inflight.Get(15)
+	require.True(t, ok, "the outbound delivery must stay in flight")
 }
 
 func TestServerProcessPacketUnsubscribeInvalid(t *testing.T) {
