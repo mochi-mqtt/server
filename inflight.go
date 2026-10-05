@@ -12,10 +12,19 @@ import (
 	"github.com/mochi-mqtt/server/v2/packets"
 )
 
-// Inflight is a map of InflightMessage keyed on packet id.
+// Inflight holds the in-flight QoS messages of a client, keyed on packet id.
+//
+// The packet identifiers the server assigns to its own deliveries and the ones
+// the client assigns to its publishes are independent of each other (MQTT 3.1.1
+// section 2.3.1, MQTT 5 section 2.2.1), so the same number can be in flight in
+// both directions at once. The two directions are therefore held apart: the
+// server's flows (an outbound Publish awaiting its PUBACK or PUBREC, or a Pubrel
+// awaiting its PUBCOMP) in one map, and the client's QoS 2 flows (a Pubrec
+// awaiting the client's PUBREL, or a Pubcomp not yet written) in another.
 type Inflight struct {
 	sync.RWMutex
-	internal            map[uint16]packets.Packet // internal contains the inflight packets
+	internal            map[uint16]packets.Packet // the server's flows, keyed on the server's packet ids
+	inbound             map[uint16]packets.Packet // the client's qos 2 flows, keyed on the client's packet ids
 	receiveQuota        int32                     // remaining inbound qos quota for flow control
 	sendQuota           int32                     // remaining outbound qos quota for flow control
 	maximumReceiveQuota int32                     // maximum allowed receive quota
@@ -26,20 +35,46 @@ type Inflight struct {
 func NewInflights() *Inflight {
 	return &Inflight{
 		internal: map[uint16]packets.Packet{},
+		inbound:  map[uint16]packets.Packet{},
 	}
 }
 
-// Set adds or updates an inflight packet by packet id.
+// isInbound returns true if m, as an in-flight message, belongs to a QoS 2 flow
+// the client started: a Pubrec or Pubcomp the server holds while the client's
+// PUBLISH is being released. Its packet id is one the client chose.
+func isInbound(m packets.Packet) bool {
+	return m.InboundFlow || m.FixedHeader.Type == packets.Pubrec || m.FixedHeader.Type == packets.Pubcomp
+}
+
+// side returns the map an in-flight message belongs to. The lock must be held.
+func (i *Inflight) side(m packets.Packet) map[uint16]packets.Packet {
+	if isInbound(m) {
+		return i.inbound
+	}
+	return i.internal
+}
+
+// Set adds or updates an inflight packet by packet id, on the side of the
+// direction it belongs to: a Pubrec or Pubcomp, or any packet marked
+// InboundFlow, is held for the client's flow, and anything else for the
+// server's. The returned value is true if no packet with that id was in flight
+// in that direction. A packet held for the client's flow is marked InboundFlow.
 func (i *Inflight) Set(m packets.Packet) bool {
 	i.Lock()
 	defer i.Unlock()
 
-	_, ok := i.internal[m.PacketID]
-	i.internal[m.PacketID] = m
+	if isInbound(m) {
+		m.InboundFlow = true
+	}
+
+	side := i.side(m)
+	_, ok := side[m.PacketID]
+	side[m.PacketID] = m
 	return !ok
 }
 
-// Get returns an inflight packet by packet id.
+// Get returns a packet the server has in flight to the client, by the packet id
+// the server assigned.
 func (i *Inflight) Get(id uint16) (packets.Packet, bool) {
 	i.RLock()
 	defer i.RUnlock()
@@ -51,11 +86,24 @@ func (i *Inflight) Get(id uint16) (packets.Packet, bool) {
 	return packets.Packet{}, false
 }
 
-// Len returns the size of the inflight messages map.
+// GetInbound returns a packet held for a QoS 2 flow the client started, by the
+// packet id the client assigned.
+func (i *Inflight) GetInbound(id uint16) (packets.Packet, bool) {
+	i.RLock()
+	defer i.RUnlock()
+
+	if m, ok := i.inbound[id]; ok {
+		return m, true
+	}
+
+	return packets.Packet{}, false
+}
+
+// Len returns the number of inflight messages in both directions.
 func (i *Inflight) Len() int {
 	i.RLock()
 	defer i.RUnlock()
-	return len(i.internal)
+	return len(i.internal) + len(i.inbound)
 }
 
 // Clone returns a new instance of Inflight with the same message data.
@@ -67,10 +115,14 @@ func (i *Inflight) Clone() *Inflight {
 	for k, v := range i.internal {
 		c.internal[k] = v
 	}
+	for k, v := range i.inbound {
+		c.inbound[k] = v
+	}
 	return c
 }
 
-// GetAll returns all the inflight messages.
+// GetAll returns all the inflight messages, in both directions. If immediate
+// is true, only the server's messages waiting for send quota are returned.
 func (i *Inflight) GetAll(immediate bool) []packets.Packet {
 	i.RLock()
 	defer i.RUnlock()
@@ -78,6 +130,12 @@ func (i *Inflight) GetAll(immediate bool) []packets.Packet {
 	m := []packets.Packet{}
 	for _, v := range i.internal {
 		if !immediate || (immediate && v.Expiry < 0) {
+			m = append(m, v)
+		}
+	}
+
+	if !immediate {
+		for _, v := range i.inbound {
 			m = append(m, v)
 		}
 	}
@@ -92,7 +150,9 @@ func (i *Inflight) GetAll(immediate bool) []packets.Packet {
 	//
 	// The packet identifier breaks the tie. It is allocated in increasing
 	// order, so within a second it is the order the packets were sent.
-	sort.Slice(m, func(i, j int) bool {
+	// The sort is stable so that, where a server delivery and a client flow
+	// share an identifier, the server's comes first as it was appended first.
+	sort.SliceStable(m, func(i, j int) bool {
 		if m[i].Created != m[j].Created {
 			return m[i].Created < m[j].Created
 		}
@@ -119,13 +179,40 @@ func (i *Inflight) NextImmediate() (packets.Packet, bool) {
 	return packets.Packet{}, false
 }
 
-// Delete removes an in-flight message from the map. Returns true if the message existed.
+// Delete removes a packet the server has in flight to the client, by the packet
+// id the server assigned. Returns true if the message existed.
 func (i *Inflight) Delete(id uint16) bool {
 	i.Lock()
 	defer i.Unlock()
 
 	_, ok := i.internal[id]
 	delete(i.internal, id)
+
+	return ok
+}
+
+// DeleteInbound removes a packet held for a QoS 2 flow the client started, by
+// the packet id the client assigned. Returns true if the message existed.
+func (i *Inflight) DeleteInbound(id uint16) bool {
+	i.Lock()
+	defer i.Unlock()
+
+	_, ok := i.inbound[id]
+	delete(i.inbound, id)
+
+	return ok
+}
+
+// deleteEntry removes m from the side of the direction it belongs to, as Set
+// chooses it. It is for messages returned by GetAll. Returns true if the
+// message existed.
+func (i *Inflight) deleteEntry(m packets.Packet) bool {
+	i.Lock()
+	defer i.Unlock()
+
+	side := i.side(m)
+	_, ok := side[m.PacketID]
+	delete(side, m.PacketID)
 
 	return ok
 }

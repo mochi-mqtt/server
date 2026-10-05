@@ -429,6 +429,17 @@ func TestClientClearInflights(t *testing.T) {
 	require.Equal(t, 0, cl.State.Inflight.Len())
 }
 
+func TestClientClearInflightsBothDirections(t *testing.T) {
+	cl, _, _ := newTestClient()
+	cl.State.Inflight.Set(packets.Packet{PacketID: 1, FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1}})
+	cl.State.Inflight.Set(packets.Packet{PacketID: 1, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}})
+
+	require.Equal(t, 2, cl.State.Inflight.Len())
+	cl.ClearInflights()
+	require.Equal(t, 0, cl.State.Inflight.Len())
+	require.Equal(t, int64(-2), atomic.LoadInt64(&cl.ops.info.Inflight))
+}
+
 func TestClientClearExpiredInflights(t *testing.T) {
 	cl, _, _ := newTestClient()
 

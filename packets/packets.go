@@ -139,6 +139,7 @@ type Packet struct {
 	ReasonCode      byte          // reason code for a packet response (acks, etc)
 	ReservedBit     byte          // reserved, do not use (except in testing)
 	Ignore          bool          // if true, do not perform any message forwarding operations
+	InboundFlow     bool          // the packet belongs to a qos flow the client started, so PacketID is one the client chose (internal use)
 }
 
 // Mods specifies certain values required for certain mqtt v5 compliance within packet encoding/decoding.

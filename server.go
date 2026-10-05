@@ -1008,14 +1008,11 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	}
 
 	if !cl.Net.Inline {
-		// A Pubrec entry is this client's own QoS 2 publish, mid-PUBREL
-		// exchange, stored under the identifier the client chose — the one
-		// kind of entry here that shares an identifier space with an inbound
-		// PUBLISH. Anything else is a message the server sent, under an
-		// identifier the server assigned, and the two spaces are independent
-		// (MQTT-2.2.1). Deleting one of those discards a delivery the server
-		// is still waiting to have acknowledged.
-		if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok && pki.FixedHeader.Type == packets.Pubrec {
+		// Only the client's own QoS 2 flows, mid-PUBREL exchange, share an
+		// identifier space with an inbound PUBLISH. The server's deliveries
+		// are held apart under the identifiers the server assigned, and the
+		// two spaces are independent (MQTT-2.2.1).
+		if _, ok := cl.State.Inflight.GetInbound(pk.PacketID); ok {
 			ack := s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.ErrPacketIdentifierInUse)
 			return cl.WritePacket(ack) // [MQTT-4.3.3-10]
 		}
@@ -1095,28 +1092,14 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	if pk.FixedHeader.Qos == 2 {
 		ack = s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.CodeSuccess) // [MQTT-3.3.4-1] [MQTT-4.3.3-8]
 	}
+	ack.InboundFlow = true // the identifier is the client's, for the hooks
 
 	// A PUBREC waits for a PUBREL, so it is held here under the client's own
-	// identifier, which is the space the rest of that exchange uses. A PUBACK
-	// waits for nothing: it is written below and the flow is over, and the
-	// Set and Delete around that write cancelled out. What they did not
-	// cancel out was the entry they overwrote — the identifier is the
-	// client's and this map is keyed by the server's, so a colliding number
-	// cost the server the delivery it had outstanding there.
-	//
-	// **The write below is still exposed to that collision and this release
-	// does not close it.** Inflight.Set overwrites unconditionally, so a
-	// client choosing an identifier the server already has outstanding
-	// replaces that delivery: it is never acknowledged, never re-sent, and
-	// its quota is never returned. Set reports false and the counter and the
-	// hook are skipped, which is why nothing observes the loss.
-	//
-	// The root of it is that one map holds two identifier spaces MQTT-2.2.1
-	// says are independent - the client's for inbound flows, the server's
-	// for outbound. Separating them is a larger change than this release
-	// should carry, and the behaviour is not a regression: it is what every
-	// earlier version does. It is written here so the next reader does not
-	// have to rediscover that the fix above covers only the read half.
+	// identifier, on the inbound side of the inflights, which is kept apart
+	// from the server's deliveries: the two identifier spaces are independent
+	// (MQTT-2.2.1), so a client may choose a number the server already has
+	// outstanding, and neither flow may displace the other. A PUBACK waits
+	// for nothing: it is written below and the flow is over.
 	if pk.FixedHeader.Qos == 2 {
 		if ok := cl.State.Inflight.Set(ack); ok {
 			atomic.AddInt64(&s.Info.Inflight, 1)
@@ -1361,6 +1344,7 @@ func (s *Server) processPubrec(cl *Client, pk packets.Packet) error {
 
 	if pk.ReasonCode >= packets.ErrUnspecifiedError.Code || !pk.ReasonCodeValid() { // [MQTT-4.3.3-4]
 		if ok := cl.State.Inflight.Delete(pk.PacketID); ok {
+			cl.State.Inflight.IncreaseSendQuota() // the delivery's flow has ended
 			atomic.AddInt64(&s.Info.Inflight, -1)
 		}
 		cl.ops.hooks.OnQosDropped(cl, pk)
@@ -1368,19 +1352,22 @@ func (s *Server) processPubrec(cl *Client, pk packets.Packet) error {
 	}
 
 	ack := s.buildAck(pk.PacketID, packets.Pubrel, 1, pk.Properties, packets.CodeSuccess) // [MQTT-4.3.3-4] ![MQTT-4.3.3-6]
-	cl.State.Inflight.DecreaseReceiveQuota()                                              // -1 RECV QUOTA
 	cl.State.Inflight.Set(ack)                                                            // [MQTT-4.3.3-5]
 	return cl.WritePacket(ack)
 }
 
 // processPubrel processes a Pubrel packet, denoting completion of a QOS 2 packet sent from the client.
+// Its packet id is the client's, so it addresses only the client's own flows.
 func (s *Server) processPubrel(cl *Client, pk packets.Packet) error {
-	if _, ok := cl.State.Inflight.Get(pk.PacketID); !ok { // [MQTT-4.3.3-7] [MQTT-4.3.3-13]
+	if _, ok := cl.State.Inflight.GetInbound(pk.PacketID); !ok { // [MQTT-4.3.3-7] [MQTT-4.3.3-13]
 		return cl.WritePacket(s.buildAck(pk.PacketID, packets.Pubcomp, 0, pk.Properties, packets.ErrPacketIdentifierNotFound))
 	}
 
+	pk.InboundFlow = true // the identifier is the client's, for the hooks
+
 	if pk.ReasonCode >= packets.ErrUnspecifiedError.Code || !pk.ReasonCodeValid() { // [MQTT-4.3.3-9]
-		if ok := cl.State.Inflight.Delete(pk.PacketID); ok {
+		if ok := cl.State.Inflight.DeleteInbound(pk.PacketID); ok {
+			cl.State.Inflight.IncreaseReceiveQuota() // the client's flow has ended
 			atomic.AddInt64(&s.Info.Inflight, -1)
 		}
 		cl.ops.hooks.OnQosDropped(cl, pk)
@@ -1395,9 +1382,8 @@ func (s *Server) processPubrel(cl *Client, pk packets.Packet) error {
 		return err
 	}
 
-	cl.State.Inflight.IncreaseReceiveQuota()             // +1 RECV QUOTA
-	cl.State.Inflight.IncreaseSendQuota()                // +1 SENT QUOTA
-	if ok := cl.State.Inflight.Delete(pk.PacketID); ok { // [MQTT-4.3.3-12]
+	cl.State.Inflight.IncreaseReceiveQuota()                    // +1 RECV QUOTA
+	if ok := cl.State.Inflight.DeleteInbound(pk.PacketID); ok { // [MQTT-4.3.3-12]
 		atomic.AddInt64(&s.Info.Inflight, -1)
 		s.hooks.OnQosComplete(cl, pk)
 	}
@@ -1406,11 +1392,11 @@ func (s *Server) processPubrel(cl *Client, pk packets.Packet) error {
 }
 
 // processPubcomp processes a Pubcomp packet, denoting completion of a QOS 2 packet sent from the server.
+// Its packet id is the server's, so it addresses only the server's own flows.
 func (s *Server) processPubcomp(cl *Client, pk packets.Packet) error {
-	// regardless of whether the pubcomp is a success or failure, we end the qos flow, delete inflight, and restore the quotas.
-	cl.State.Inflight.IncreaseReceiveQuota() // +1 RECV QUOTA
-	cl.State.Inflight.IncreaseSendQuota()    // +1 SENT QUOTA
+	// regardless of whether the pubcomp is a success or failure, we end the qos flow, delete inflight, and restore the quota.
 	if ok := cl.State.Inflight.Delete(pk.PacketID); ok {
+		cl.State.Inflight.IncreaseSendQuota() // +1 SENT QUOTA
 		atomic.AddInt64(&s.Info.Inflight, -1)
 		s.hooks.OnQosComplete(cl, pk)
 	}
@@ -1422,7 +1408,7 @@ func (s *Server) processPubcomp(cl *Client, pk packets.Packet) error {
 func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 	pk = s.hooks.OnSubscribe(cl, pk)
 	code := packets.CodeSuccess
-	if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok && pki.FixedHeader.Type == packets.Pubrec {
+	if _, ok := cl.State.Inflight.GetInbound(pk.PacketID); ok {
 		code = packets.ErrPacketIdentifierInUse
 	}
 
@@ -1502,7 +1488,7 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 // processUnsubscribe processes an unsubscribe packet.
 func (s *Server) processUnsubscribe(cl *Client, pk packets.Packet) error {
 	code := packets.CodeSuccess
-	if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok && pki.FixedHeader.Type == packets.Pubrec {
+	if _, ok := cl.State.Inflight.GetInbound(pk.PacketID); ok {
 		code = packets.ErrPacketIdentifierInUse
 	}
 
@@ -1936,11 +1922,9 @@ func (s *Server) clearExpiredRetainedMessages(now int64) {
 // clearExpiredInflights deletes any inflight messages which have expired.
 func (s *Server) clearExpiredInflights(now int64) {
 	for _, client := range s.Clients.GetAll() {
-		if deleted := client.ClearExpiredInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval); len(deleted) > 0 {
-			for _, id := range deleted {
-				s.hooks.OnQosDropped(client, packets.Packet{PacketID: id})
-			}
-		}
+		// ClearExpiredInflights calls OnQosDropped with each expired message,
+		// which says which direction it belonged to.
+		client.ClearExpiredInflights(now, s.Options.Capabilities.MaximumMessageExpiryInterval)
 	}
 }
 

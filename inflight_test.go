@@ -311,3 +311,79 @@ func TestNextImmediateDoesNotDeadlockAgainstAWriter(t *testing.T) {
 		t.Fatal("NextImmediate and a concurrent Set deadlocked on the in-flight lock")
 	}
 }
+
+// The server's and the client's packet identifiers are independent, so the
+// same number can be in flight in both directions at once.
+func TestInflightBothDirectionsSameID(t *testing.T) {
+	cl, _, _ := newTestClient()
+	out := packets.Packet{PacketID: 1, FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1}, Created: 1}
+	in := packets.Packet{PacketID: 1, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}, Created: 1}
+
+	require.True(t, cl.State.Inflight.Set(out))
+	require.True(t, cl.State.Inflight.Set(in))
+	require.Equal(t, 2, cl.State.Inflight.Len())
+
+	got, ok := cl.State.Inflight.Get(1)
+	require.True(t, ok)
+	require.Equal(t, out, got)
+
+	got, ok = cl.State.Inflight.GetInbound(1)
+	require.True(t, ok)
+	require.Equal(t, packets.Pubrec, got.FixedHeader.Type)
+	require.True(t, got.InboundFlow)
+
+	all := cl.State.Inflight.GetAll(false)
+	require.Len(t, all, 2)
+	require.Equal(t, packets.Publish, all[0].FixedHeader.Type)
+	require.Equal(t, packets.Pubrec, all[1].FixedHeader.Type)
+	require.Empty(t, cl.State.Inflight.GetAll(true))
+
+	c := cl.State.Inflight.Clone()
+	_, ok = c.Get(1)
+	require.True(t, ok)
+	_, ok = c.GetInbound(1)
+	require.True(t, ok)
+
+	require.True(t, cl.State.Inflight.DeleteInbound(1))
+	require.False(t, cl.State.Inflight.DeleteInbound(1))
+	_, ok = cl.State.Inflight.Get(1)
+	require.True(t, ok)
+	require.True(t, cl.State.Inflight.Delete(1))
+	require.Equal(t, 0, cl.State.Inflight.Len())
+}
+
+func TestInflightSetInboundFlow(t *testing.T) {
+	cl, _, _ := newTestClient()
+
+	// A Pubcomp, or any packet marked InboundFlow, is held for the client's flow.
+	require.True(t, cl.State.Inflight.Set(packets.Packet{PacketID: 2, FixedHeader: packets.FixedHeader{Type: packets.Pubcomp}}))
+	require.True(t, cl.State.Inflight.Set(packets.Packet{PacketID: 3, InboundFlow: true}))
+	_, ok := cl.State.Inflight.Get(2)
+	require.False(t, ok)
+	_, ok = cl.State.Inflight.Get(3)
+	require.False(t, ok)
+	_, ok = cl.State.Inflight.GetInbound(2)
+	require.True(t, ok)
+	_, ok = cl.State.Inflight.GetInbound(3)
+	require.True(t, ok)
+
+	// A server Pubrel is the server's flow.
+	require.True(t, cl.State.Inflight.Set(packets.Packet{PacketID: 2, FixedHeader: packets.FixedHeader{Type: packets.Pubrel, Qos: 1}}))
+	_, ok = cl.State.Inflight.Get(2)
+	require.True(t, ok)
+}
+
+func TestInflightDeleteEntry(t *testing.T) {
+	cl, _, _ := newTestClient()
+	out := packets.Packet{PacketID: 4, FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 2}}
+	in := packets.Packet{PacketID: 4, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}}
+	cl.State.Inflight.Set(out)
+	cl.State.Inflight.Set(in)
+
+	require.True(t, cl.State.Inflight.deleteEntry(in))
+	require.False(t, cl.State.Inflight.deleteEntry(in))
+	_, ok := cl.State.Inflight.Get(4)
+	require.True(t, ok)
+	require.True(t, cl.State.Inflight.deleteEntry(out))
+	require.Equal(t, 0, cl.State.Inflight.Len())
+}

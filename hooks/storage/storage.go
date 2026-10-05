@@ -7,6 +7,7 @@ package storage
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/mochi-mqtt/server/v2/system"
@@ -19,6 +20,12 @@ const (
 	InflightKey     = "IFM" // unique key to denote inflight messages in a store
 	ClientKey       = "CL"  // unique key to denote clients in a store
 )
+
+// InboundInflightSuffix ends the key of an inflight message held for a qos 2
+// flow the client started. Its packet id is from the client's identifier
+// space, which is independent of the server's, so it is keyed apart from the
+// server's deliveries.
+const InboundInflightSuffix = ":in"
 
 var (
 	// ErrDBFileNotOpen indicates that the file database (e.g. bolt/badger) wasn't open for reading.
@@ -151,7 +158,21 @@ func (d *Message) ToPacket() packets.Packet {
 	pk = pk.Copy(true)
 	pk.FixedHeader.Dup = d.FixedHeader.Dup
 
+	// The server holds a Pubrec or Pubcomp in flight only for a qos 2 flow the
+	// client started.
+	pk.InboundFlow = d.FixedHeader.Type == packets.Pubrec || d.FixedHeader.Type == packets.Pubcomp
+
 	return pk
+}
+
+// IsLegacyInboundInflight returns true if d is an inflight message of a qos 2
+// flow the client started, stored under the key of the server's delivery with
+// the same packet id, as earlier versions did. Such a message should be stored
+// again under its own key (ending InboundInflightSuffix) and the old key deleted.
+func (d *Message) IsLegacyInboundInflight() bool {
+	return d.T == InflightKey &&
+		(d.FixedHeader.Type == packets.Pubrec || d.FixedHeader.Type == packets.Pubcomp) &&
+		!strings.HasSuffix(d.ID, InboundInflightSuffix)
 }
 
 // Subscription is a storable representation of an MQTT subscription.

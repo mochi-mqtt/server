@@ -81,6 +81,11 @@ func TestInflightKey(t *testing.T) {
 	require.Equal(t, storage.InflightKey+"_cl1:1", k)
 }
 
+func TestInflightKeyInboundFlow(t *testing.T) {
+	k := inflightKey(&mqtt.Client{ID: "cl1"}, packets.Packet{PacketID: 1, InboundFlow: true})
+	require.Equal(t, storage.InflightKey+"_cl1:1"+storage.InboundInflightSuffix, k)
+}
+
 func TestSysInfoKey(t *testing.T) {
 	require.Equal(t, storage.SysInfoKey, sysInfoKey())
 }
@@ -665,6 +670,96 @@ func TestStoredInflightMessages(t *testing.T) {
 	require.Equal(t, "i1", r[0].ID)
 	require.Equal(t, "i2", r[1].ID)
 	require.Equal(t, "i3", r[2].ID)
+}
+
+// The client's QoS 2 flow and the server's delivery can share a packet id,
+// as the two identifier spaces are independent. Both are stored, both come
+// back to their own side, and each is completed by its own acknowledgement.
+func TestStoredInflightMessagesBothDirectionsSameID(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(logger, nil)
+	err := h.Init(nil)
+	require.NoError(t, err)
+	defer teardown(t, h.config.Path, h)
+
+	out := packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+		PacketID:    7,
+		TopicName:   "a/b/c",
+		Payload:     []byte("server delivery"),
+	}
+	in := packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Pubrec},
+		PacketID:    7,
+		InboundFlow: true,
+	}
+	h.OnQosPublish(client, out, time.Now().Unix(), 0)
+	h.OnQosPublish(client, in, time.Now().Unix(), 0)
+
+	r, err := h.StoredInflightMessages()
+	require.NoError(t, err)
+	require.Len(t, r, 2)
+	restored := map[bool]packets.Packet{}
+	for _, m := range r {
+		pk := m.ToPacket()
+		restored[pk.InboundFlow] = pk
+	}
+	require.Equal(t, packets.Publish, restored[false].FixedHeader.Type)
+	require.Equal(t, uint16(7), restored[false].PacketID)
+	require.Equal(t, []byte("server delivery"), restored[false].Payload)
+	require.Equal(t, packets.Pubrec, restored[true].FixedHeader.Type)
+	require.Equal(t, uint16(7), restored[true].PacketID)
+
+	// The client's PUBREL completes the client's flow only.
+	h.OnQosComplete(client, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Pubrel}, PacketID: 7, InboundFlow: true})
+	r, err = h.StoredInflightMessages()
+	require.NoError(t, err)
+	require.Len(t, r, 1)
+	require.Equal(t, packets.Publish, r[0].FixedHeader.Type)
+
+	// The client's PUBACK completes the server's delivery.
+	h.OnQosComplete(client, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Puback}, PacketID: 7})
+	r, err = h.StoredInflightMessages()
+	require.NoError(t, err)
+	require.Empty(t, r)
+}
+
+// Earlier versions stored the client's QoS 2 flow under the key of the
+// server's delivery with the same packet id. Such a message is moved to its
+// own key when it is loaded, so its completion finds it.
+func TestStoredInflightMessagesMovesLegacyInboundFlow(t *testing.T) {
+	h := new(Hook)
+	h.SetOpts(logger, nil)
+	err := h.Init(nil)
+	require.NoError(t, err)
+	defer teardown(t, h.config.Path, h)
+
+	legacyKey := inflightKey(client, packets.Packet{PacketID: 7})
+	err = h.setKv(legacyKey, &storage.Message{
+		ID:          legacyKey,
+		T:           storage.InflightKey,
+		Client:      client.ID,
+		PacketID:    7,
+		FixedHeader: packets.FixedHeader{Type: packets.Pubrec},
+	})
+	require.NoError(t, err)
+
+	r, err := h.StoredInflightMessages()
+	require.NoError(t, err)
+	require.Len(t, r, 1)
+	newKey := inflightKey(client, packets.Packet{PacketID: 7, InboundFlow: true})
+	require.Equal(t, newKey, r[0].ID)
+	require.True(t, r[0].ToPacket().InboundFlow)
+
+	m := new(storage.Message)
+	require.NoError(t, h.getKv(newKey, m))
+	require.Equal(t, packets.Pubrec, m.FixedHeader.Type)
+	require.ErrorIs(t, h.getKv(legacyKey, m), pebbledb.ErrNotFound)
+
+	h.OnQosComplete(client, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Pubrel}, PacketID: 7, InboundFlow: true})
+	r, err = h.StoredInflightMessages()
+	require.NoError(t, err)
+	require.Empty(t, r)
 }
 
 func TestStoredInflightMessagesNoDB(t *testing.T) {
