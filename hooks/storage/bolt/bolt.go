@@ -47,8 +47,12 @@ func retainedKey(topic string) string {
 	return storage.RetainedKey + "_" + topic
 }
 
-// inflightKey returns a primary key for an inflight message.
+// inflightKey returns a primary key for an inflight message. A message of a
+// qos 2 flow the client started is keyed apart from the server's deliveries.
 func inflightKey(cl *mqtt.Client, pk packets.Packet) string {
+	if pk.InboundFlow {
+		return storage.InflightKey + "_" + cl.ID + ":" + pk.FormatID() + storage.InboundInflightSuffix
+	}
 	return storage.InflightKey + "_" + cl.ID + ":" + pk.FormatID()
 }
 
@@ -290,6 +294,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 		T:           storage.InflightKey,
 		Client:      cl.ID,
 		Origin:      pk.Origin,
+		PacketID:    pk.PacketID,
 		FixedHeader: pk.FixedHeader,
 		TopicName:   pk.TopicName,
 		Payload:     pk.Payload,
@@ -435,6 +440,22 @@ func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 		}
 		return err
 	})
+	if err != nil {
+		return
+	}
+
+	// Messages of the client's own qos 2 flows were once stored under the key
+	// of the server's delivery with the same packet id. Move them to their own.
+	for i := range v {
+		if v[i].IsLegacyInboundInflight() {
+			old := v[i].ID
+			v[i].ID = inflightKey(&mqtt.Client{ID: v[i].Client}, v[i].ToPacket())
+			if h.setKv(v[i].ID, &v[i]) == nil {
+				_ = h.delKv(old)
+			}
+		}
+	}
+
 	return
 }
 

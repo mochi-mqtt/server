@@ -2119,6 +2119,324 @@ func TestServerProcessPacketPublishDoesNotDiscardServerDelivery(t *testing.T) {
 	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Inflight))
 }
 
+// readTestPackets decodes every packet written to r until the pipe closes.
+func readTestPackets(t *testing.T, r net.Conn, protocolVersion byte) <-chan []packets.Packet {
+	t.Helper()
+	rc := newClient(r, &ops{
+		info:    new(system.Info),
+		hooks:   new(Hooks),
+		log:     logger,
+		options: &Options{Capabilities: NewDefaultServerCapabilities()},
+	})
+	rc.Properties.ProtocolVersion = protocolVersion
+
+	out := make(chan []packets.Packet, 1)
+	go func() {
+		var pks []packets.Packet
+		for {
+			fh := new(packets.FixedHeader)
+			if err := rc.ReadFixedHeader(fh); err != nil {
+				break
+			}
+			pk, err := rc.ReadPacket(fh)
+			if err != nil {
+				break
+			}
+			pks = append(pks, pk)
+		}
+		out <- pks
+	}()
+
+	return out
+}
+
+// The client's and the server's packet identifiers are independent spaces
+// (MQTT 3.1.1 2.3.1, MQTT 5 2.2.1), so a client may start a QoS 2 flow under
+// an identifier the server has outstanding for one of its own deliveries.
+// Both flows must survive the collision and each must be completed by its own
+// acknowledgements. See https://github.com/mochi-mqtt/server/issues/545.
+func TestServerInboundQos2KeepsServerDeliveryWithSameID(t *testing.T) {
+	tt := []struct {
+		desc            string
+		protocolVersion byte
+		qos             byte
+		pubrel          bool // the delivery was PUBREC'd, the server's PUBREL is in flight
+	}{
+		{desc: "v4 qos 1 delivery", protocolVersion: 4, qos: 1},
+		{desc: "v4 qos 2 delivery", protocolVersion: 4, qos: 2},
+		{desc: "v4 qos 2 delivery awaiting pubcomp", protocolVersion: 4, qos: 2, pubrel: true},
+		{desc: "v5 qos 1 delivery", protocolVersion: 5, qos: 1},
+		{desc: "v5 qos 2 delivery", protocolVersion: 5, qos: 2},
+		{desc: "v5 qos 2 delivery awaiting pubcomp", protocolVersion: 5, qos: 2, pubrel: true},
+	}
+
+	for _, tx := range tt {
+		t.Run(tx.desc, func(t *testing.T) {
+			s := newServer()
+			cl, r, w := newTestClient()
+			cl.Properties.ProtocolVersion = tx.protocolVersion
+			s.Clients.Add(cl)
+			recv := readTestPackets(t, r, tx.protocolVersion)
+
+			out, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b", Qos: tx.qos}, packets.Packet{
+				FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: tx.qos},
+				TopicName:   "a/b",
+				Payload:     []byte("server delivery"),
+			})
+			require.NoError(t, err)
+			id := out.PacketID
+
+			wantType := packets.Publish
+			if tx.pubrel {
+				require.NoError(t, s.processPacket(cl, packets.Packet{
+					FixedHeader: packets.FixedHeader{Type: packets.Pubrec},
+					PacketID:    id,
+				}))
+				wantType = packets.Pubrel
+			}
+
+			require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+			require.Equal(t, int32(10), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+
+			// The client starts its own QoS 2 flow under the same identifier.
+			require.NoError(t, s.processPacket(cl, packets.Packet{
+				FixedHeader:     packets.FixedHeader{Type: packets.Publish, Qos: 2},
+				TopicName:       "c/d",
+				Payload:         []byte("client publish"),
+				PacketID:        id,
+				ProtocolVersion: tx.protocolVersion,
+			}))
+
+			got, ok := cl.State.Inflight.Get(id)
+			require.True(t, ok, "the server's delivery is no longer in flight")
+			require.Equal(t, wantType, got.FixedHeader.Type, "the server's delivery was overwritten by the client's flow")
+			if !tx.pubrel {
+				require.Equal(t, []byte("server delivery"), got.Payload)
+			}
+			require.Equal(t, 2, cl.State.Inflight.Len())
+			require.Equal(t, int64(2), atomic.LoadInt64(&s.Info.Inflight))
+			require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+			require.Equal(t, int32(9), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+
+			// The client's PUBREL completes the client's flow only.
+			require.NoError(t, s.processPacket(cl, packets.Packet{
+				FixedHeader:     packets.FixedHeader{Type: packets.Pubrel, Qos: 1},
+				PacketID:        id,
+				ProtocolVersion: tx.protocolVersion,
+			}))
+
+			got, ok = cl.State.Inflight.Get(id)
+			require.True(t, ok, "the client's PUBREL completed the server's delivery")
+			require.Equal(t, wantType, got.FixedHeader.Type)
+			require.Equal(t, 1, cl.State.Inflight.Len())
+			require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Inflight))
+			require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+			require.Equal(t, int32(10), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+
+			// The client's acknowledgements complete the server's delivery.
+			if tx.qos == 1 {
+				require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Puback}, PacketID: id}))
+			} else {
+				if !tx.pubrel {
+					require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Pubrec}, PacketID: id}))
+				}
+				require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Pubcomp}, PacketID: id}))
+			}
+
+			_, ok = cl.State.Inflight.Get(id)
+			require.False(t, ok)
+			require.Equal(t, 0, cl.State.Inflight.Len())
+			require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Inflight))
+			require.Equal(t, int32(5), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+			require.Equal(t, int32(10), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+
+			_ = w.Close()
+			pks := <-recv
+			var pubcomps []packets.Packet
+			for _, pk := range pks {
+				if pk.FixedHeader.Type == packets.Pubcomp {
+					pubcomps = append(pubcomps, pk)
+				}
+			}
+			require.Len(t, pubcomps, 1)
+			require.Equal(t, id, pubcomps[0].PacketID)
+			require.Equal(t, packets.CodeSuccess.Code, pubcomps[0].ReasonCode)
+		})
+	}
+}
+
+// Each direction's flow control is counted on its own side: the server's
+// deliveries use the send quota, the client's publishes the receive quota.
+func TestServerQos2FlowsKeepToTheirOwnQuota(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+	recv := readTestPackets(t, r, 5)
+
+	out, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b", Qos: 2}, packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 2},
+		TopicName:   "a/b",
+		Payload:     []byte("server delivery"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+
+	// The client's PUBREC for the server's delivery is not a client publish.
+	require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Pubrec}, PacketID: out.PacketID}))
+	require.Equal(t, int32(10), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+	require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+
+	// A client QoS 2 flow under another identifier returns no send quota.
+	require.NoError(t, s.processPacket(cl, packets.Packet{
+		FixedHeader:     packets.FixedHeader{Type: packets.Publish, Qos: 2},
+		TopicName:       "c/d",
+		PacketID:        out.PacketID + 1,
+		ProtocolVersion: 5,
+	}))
+	require.Equal(t, int32(9), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+	require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Pubrel, Qos: 1}, PacketID: out.PacketID + 1, ProtocolVersion: 5}))
+	require.Equal(t, int32(10), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+	require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota), "a client flow returned send quota for a delivery still in flight")
+
+	// A PUBCOMP for an identifier the server has no flow under changes nothing.
+	atomic.StoreInt32(&cl.State.Inflight.receiveQuota, 9)
+	require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Pubcomp}, PacketID: out.PacketID + 2}))
+	require.Equal(t, int32(9), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+	require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+	atomic.StoreInt32(&cl.State.Inflight.receiveQuota, 10)
+
+	require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Pubcomp}, PacketID: out.PacketID}))
+	require.Equal(t, int32(5), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+	require.Equal(t, int32(10), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+	require.Equal(t, 0, cl.State.Inflight.Len())
+
+	_ = w.Close()
+	<-recv
+}
+
+// A PUBREC refusing the server's delivery ends that flow, and the send quota
+// it held comes back (MQTT 5 section 4.9). A PUBREL that ends the client's
+// flow with an error returns the receive quota.
+func TestServerQos2FlowsEndedByAReasonCodeReturnTheirQuota(t *testing.T) {
+	s := newServer()
+	cl, r, w := newTestClient()
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+	recv := readTestPackets(t, r, 5)
+
+	out, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b", Qos: 2}, packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 2},
+		TopicName:   "a/b",
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+
+	require.NoError(t, s.processPacket(cl, packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Pubrec},
+		PacketID:    out.PacketID,
+		ReasonCode:  packets.ErrImplementationSpecificError.Code,
+	}))
+	require.Equal(t, int32(5), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+	require.Equal(t, 0, cl.State.Inflight.Len())
+
+	require.NoError(t, s.processPacket(cl, packets.Packet{
+		FixedHeader:     packets.FixedHeader{Type: packets.Publish, Qos: 2},
+		TopicName:       "c/d",
+		PacketID:        3,
+		ProtocolVersion: 5,
+	}))
+	require.Equal(t, int32(9), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+	require.NoError(t, s.processPacket(cl, packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Pubrel, Qos: 1},
+		PacketID:    3,
+		ReasonCode:  packets.ErrPacketIdentifierNotFound.Code,
+	}))
+	require.Equal(t, int32(10), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+	require.Equal(t, 0, cl.State.Inflight.Len())
+
+	_ = w.Close()
+	<-recv
+}
+
+// After a reconnect both flows are resumed: the server's delivery is re-sent
+// and the client's flow is still waiting for its PUBREL.
+func TestServerResendsBothFlowsWithSameIDAfterReconnect(t *testing.T) {
+	for _, v := range []byte{4, 5} {
+		t.Run(strconv.Itoa(int(v)), func(t *testing.T) {
+			s := newServer()
+			existing, r0, w0 := newTestClient()
+			existing.Properties.ProtocolVersion = v
+			s.Clients.Add(existing)
+			recv0 := readTestPackets(t, r0, v)
+
+			out, err := s.publishToClient(existing, packets.Subscription{Filter: "a/b", Qos: 1}, packets.Packet{
+				FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+				TopicName:   "a/b",
+				Payload:     []byte("server delivery"),
+			})
+			require.NoError(t, err)
+			require.NoError(t, s.processPacket(existing, packets.Packet{
+				FixedHeader:     packets.FixedHeader{Type: packets.Publish, Qos: 2},
+				TopicName:       "c/d",
+				Payload:         []byte("client publish"),
+				PacketID:        out.PacketID,
+				ProtocolVersion: v,
+			}))
+
+			cl, r, w := newTestClient()
+			cl.Properties.ProtocolVersion = v
+			require.True(t, s.inheritClientSession(packets.Packet{}, cl))
+			_ = w0.Close()
+			<-recv0
+
+			recv := readTestPackets(t, r, v)
+			require.NoError(t, cl.ResendInflightMessages(true))
+			_ = w.Close()
+			pks := <-recv
+
+			require.Len(t, pks, 2)
+			require.Equal(t, packets.Publish, pks[0].FixedHeader.Type)
+			require.Equal(t, out.PacketID, pks[0].PacketID)
+			require.True(t, pks[0].FixedHeader.Dup)
+			require.Equal(t, []byte("server delivery"), pks[0].Payload)
+			require.Equal(t, packets.Pubrec, pks[1].FixedHeader.Type)
+			require.Equal(t, out.PacketID, pks[1].PacketID)
+
+			// Both are still completed by their own acknowledgements.
+			require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Puback}, PacketID: out.PacketID}))
+			require.Equal(t, 1, cl.State.Inflight.Len())
+		})
+	}
+}
+
+// Inflight messages restored from a store keep to their own side: a record of
+// the client's QoS 2 flow does not replace the server's delivery that shares
+// its identifier.
+func TestServerLoadInflightMessagesBothDirections(t *testing.T) {
+	s := newServer()
+	s.loadClients([]storage.Client{{ID: "mochi"}})
+
+	s.loadInflight([]storage.Message{
+		{Client: "mochi", PacketID: 1, TopicName: "a/b", Payload: []byte("server delivery"), FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1}},
+		{Client: "mochi", PacketID: 1, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}},
+		{Client: "mochi", PacketID: 2, FixedHeader: packets.FixedHeader{Type: packets.Pubrel, Qos: 1}},
+	})
+
+	cl, ok := s.Clients.Get("mochi")
+	require.True(t, ok)
+	require.Equal(t, 3, cl.State.Inflight.Len())
+
+	msg, ok := cl.State.Inflight.Get(1)
+	require.True(t, ok)
+	require.Equal(t, packets.Publish, msg.FixedHeader.Type)
+	require.Equal(t, []byte("server delivery"), msg.Payload)
+
+	msg, ok = cl.State.Inflight.Get(2)
+	require.True(t, ok)
+	require.Equal(t, packets.Pubrel, msg.FixedHeader.Type)
+}
+
 func TestServerProcessPacketPublishQos2PacketIDInUse(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
@@ -3092,7 +3410,8 @@ func TestServerProcessPacketPubrec(t *testing.T) {
 
 	require.Equal(t, packets.TPacketData[packets.Pubrel].Get(packets.TPubrel).RawBytes, <-recv)
 
-	require.Equal(t, int32(2), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+	// The delivery is the server's flow, so the client's receive quota is untouched.
+	require.Equal(t, int32(3), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
 	require.Equal(t, int32(3), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
 	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Inflight))
 	_, ok := cl.State.Inflight.Get(pID)
@@ -3154,7 +3473,7 @@ func TestServerProcessPacketPubrel(t *testing.T) {
 	cl.State.Inflight.sendQuota = 3
 	cl.State.Inflight.receiveQuota = 3
 
-	cl.State.Inflight.Set(packets.Packet{PacketID: pID})
+	cl.State.Inflight.Set(packets.Packet{PacketID: pID, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}})
 	atomic.AddInt64(&s.Info.Inflight, 1)
 
 	recv := make(chan []byte)
@@ -3169,12 +3488,12 @@ func TestServerProcessPacketPubrel(t *testing.T) {
 	_ = w.Close()
 
 	require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
-	require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+	require.Equal(t, int32(3), atomic.LoadInt32(&cl.State.Inflight.sendQuota)) // the client's flow, so no send quota is returned
 
 	require.Equal(t, packets.TPacketData[packets.Pubcomp].Get(packets.TPubcomp).RawBytes, <-recv)
 
 	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Inflight))
-	_, ok := cl.State.Inflight.Get(pID)
+	_, ok := cl.State.Inflight.GetInbound(pID)
 	require.False(t, ok)
 }
 
@@ -3207,7 +3526,7 @@ func TestServerProcessPacketPubrelFailure(t *testing.T) {
 	pID := uint16(7)
 	s := newServer()
 	cl, _, _ := newTestClient()
-	cl.State.Inflight.Set(packets.Packet{PacketID: pID})
+	cl.State.Inflight.Set(packets.Packet{PacketID: pID, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}})
 	cl.Stop(packets.CodeDisconnect)
 	err := s.processPacket(cl, *packets.TPacketData[packets.Pubrel].Get(packets.TPubrel).Packet)
 	require.Error(t, err)
@@ -3218,11 +3537,11 @@ func TestServerProcessPacketPubrelBadReason(t *testing.T) {
 	pID := uint16(7)
 	s := newServer()
 	cl, _, _ := newTestClient()
-	cl.State.Inflight.Set(packets.Packet{PacketID: pID})
+	cl.State.Inflight.Set(packets.Packet{PacketID: pID, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}})
 	err := s.processPacket(cl, *packets.TPacketData[packets.Pubrel].Get(packets.TPubrelInvalidReason).Packet)
 	require.NoError(t, err)
 	require.Equal(t, int64(-1), atomic.LoadInt64(&s.Info.Inflight))
-	_, ok := cl.State.Inflight.Get(pID)
+	_, ok := cl.State.Inflight.GetInbound(pID)
 	require.False(t, ok)
 }
 
@@ -3254,7 +3573,7 @@ func TestServerProcessPacketPubcomp(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Inflight))
 
-			require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.receiveQuota))
+			require.Equal(t, int32(3), atomic.LoadInt32(&cl.State.Inflight.receiveQuota)) // the server's flow, so the receive quota is untouched
 			require.Equal(t, int32(4), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
 
 			_, ok := cl.State.Inflight.Get(pID)
@@ -3280,7 +3599,7 @@ func TestServerProcessInboundQos2Flow(t *testing.T) {
 			in:              packets.TPacketData[packets.Pubrel].Get(packets.TPubrel),
 			out:             packets.TPacketData[packets.Pubcomp].Get(packets.TPubcomp),
 			data: map[string]any{
-				"sendquota": int32(4),
+				"sendquota": int32(3), // the client's flow returns no send quota
 				"recvquota": int32(3),
 				"inflight":  int64(0),
 			},
@@ -3311,7 +3630,7 @@ func TestServerProcessInboundQos2Flow(t *testing.T) {
 
 			require.Equal(t, tx.out.RawBytes, <-recv)
 			if i == 0 {
-				_, ok := cl.State.Inflight.Get(pID)
+				_, ok := cl.State.Inflight.GetInbound(pID)
 				require.True(t, ok)
 			}
 
@@ -3321,7 +3640,7 @@ func TestServerProcessInboundQos2Flow(t *testing.T) {
 		})
 	}
 
-	_, ok := cl.State.Inflight.Get(pID)
+	_, ok := cl.State.Inflight.GetInbound(pID)
 	require.False(t, ok)
 }
 
@@ -3343,7 +3662,7 @@ func TestServerProcessOutboundQos2Flow(t *testing.T) {
 			out:             packets.TPacketData[packets.Pubrel].Get(packets.TPubrel),
 			data: map[string]any{
 				"sendquota": int32(2),
-				"recvquota": int32(2),
+				"recvquota": int32(3), // the server's flow takes no receive quota
 				"inflight":  int64(1),
 			},
 		},
@@ -5134,4 +5453,112 @@ func TestDisconnectClientClosesAV3ClientUnderPassiveDisconnect(t *testing.T) {
 
 	_ = r.Close()
 	_ = w.Close()
+}
+
+type qosHookCall struct {
+	event       string
+	packetType  byte
+	packetID    uint16
+	inboundFlow bool
+}
+
+// QosRecordHook records the QoS hook calls, which a storage hook keys on.
+type QosRecordHook struct {
+	HookBase
+	sync.Mutex
+	calls []qosHookCall
+}
+
+func (h *QosRecordHook) ID() string {
+	return "qos-record-hook"
+}
+
+func (h *QosRecordHook) Provides(b byte) bool {
+	return bytes.Contains([]byte{OnQosPublish, OnQosComplete, OnQosDropped}, []byte{b})
+}
+
+func (h *QosRecordHook) record(event string, pk packets.Packet) {
+	h.Lock()
+	defer h.Unlock()
+	h.calls = append(h.calls, qosHookCall{event, pk.FixedHeader.Type, pk.PacketID, pk.InboundFlow})
+}
+
+func (h *QosRecordHook) OnQosPublish(cl *Client, pk packets.Packet, sent int64, resends int) {
+	h.record("publish", pk)
+}
+
+func (h *QosRecordHook) OnQosComplete(cl *Client, pk packets.Packet) {
+	h.record("complete", pk)
+}
+
+func (h *QosRecordHook) OnQosDropped(cl *Client, pk packets.Packet) {
+	h.record("dropped", pk)
+}
+
+func (h *QosRecordHook) Calls() []qosHookCall {
+	h.Lock()
+	defer h.Unlock()
+	return append([]qosHookCall{}, h.calls...)
+}
+
+// Every QoS hook call says which identifier space its packet id is from, so a
+// storage hook can keep the client's flow and the server's delivery with the
+// same packet id apart.
+func TestServerQosHooksCarryTheFlowDirection(t *testing.T) {
+	s := newServer()
+	h := new(QosRecordHook)
+	require.NoError(t, s.AddHook(h, nil))
+	cl, r, w := newTestClient()
+	cl.ops.hooks = s.hooks
+	cl.Properties.ProtocolVersion = 5
+	s.Clients.Add(cl)
+	recv := readTestPackets(t, r, 5)
+
+	out, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b", Qos: 1}, packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+		TopicName:   "a/b",
+	})
+	require.NoError(t, err)
+	id := out.PacketID
+
+	require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 2}, TopicName: "c/d", PacketID: id, ProtocolVersion: 5}))
+	require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Pubrel, Qos: 1}, PacketID: id, ProtocolVersion: 5}))
+	require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1}, TopicName: "c/d", PacketID: id, ProtocolVersion: 5}))
+	require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Puback}, PacketID: id}))
+
+	require.Equal(t, []qosHookCall{
+		{"publish", packets.Publish, id, false}, // the server's delivery
+		{"publish", packets.Pubrec, id, true},   // the client's qos 2 flow
+		{"complete", packets.Pubrel, id, true},  // completed by the client's PUBREL
+		{"complete", packets.Puback, id, true},  // the client's qos 1 publish, never in flight
+		{"complete", packets.Puback, id, false}, // the delivery, completed by the client's PUBACK
+	}, h.Calls())
+
+	_ = w.Close()
+	<-recv
+}
+
+// An expired message is dropped once, with its own direction, so a store
+// does not lose the other direction's message with the same packet id.
+func TestServerClearExpiredInflightsDropsEachDirectionOnce(t *testing.T) {
+	s := newServer()
+	h := new(QosRecordHook)
+	require.NoError(t, s.AddHook(h, nil))
+	s.Options.Capabilities.MaximumMessageExpiryInterval = 4
+
+	n := time.Now().Unix()
+	cl, _, _ := newTestClient()
+	cl.ops.hooks = s.hooks
+	cl.ops.info = s.Info
+	cl.State.Inflight.Set(packets.Packet{PacketID: 1, FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1}, Created: n})
+	cl.State.Inflight.Set(packets.Packet{PacketID: 1, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}, Created: n - 5})
+	s.Clients.Add(cl)
+
+	s.clearExpiredInflights(n)
+	require.Equal(t, []qosHookCall{{"dropped", packets.Pubrec, 1, true}}, h.Calls())
+
+	_, ok := cl.State.Inflight.Get(1)
+	require.True(t, ok)
+	_, ok = cl.State.Inflight.GetInbound(1)
+	require.False(t, ok)
 }

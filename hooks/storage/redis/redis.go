@@ -39,8 +39,12 @@ func retainedKey(topic string) string {
 	return topic
 }
 
-// inflightKey returns a primary key for an inflight message.
+// inflightKey returns a primary key for an inflight message. A message of a
+// qos 2 flow the client started is keyed apart from the server's deliveries.
 func inflightKey(cl *mqtt.Client, pk packets.Packet) string {
+	if pk.InboundFlow {
+		return cl.ID + ":" + pk.FormatID() + storage.InboundInflightSuffix
+	}
 	return cl.ID + ":" + pk.FormatID()
 }
 
@@ -320,6 +324,7 @@ func (h *Hook) OnQosPublish(cl *mqtt.Client, pk packets.Packet, sent int64, rese
 		T:           storage.InflightKey,
 		Client:      cl.ID,
 		Origin:      pk.Origin,
+		PacketID:    pk.PacketID,
 		FixedHeader: pk.FixedHeader,
 		TopicName:   pk.TopicName,
 		Payload:     pk.Payload,
@@ -505,6 +510,21 @@ func (h *Hook) StoredInflightMessages() (v []storage.Message, err error) {
 		}
 
 		v = append(v, d)
+	}
+
+	// Messages of the client's own qos 2 flows were once stored under the key
+	// of the server's delivery with the same packet id. Move them to their own.
+	for i := range v {
+		if v[i].IsLegacyInboundInflight() {
+			old := v[i].ID
+			v[i].ID = inflightKey(&mqtt.Client{ID: v[i].Client}, v[i].ToPacket())
+			err = h.db.HSet(h.ctx, h.hKey(storage.InflightKey), v[i].ID, &v[i]).Err()
+			if err != nil {
+				h.Log.Error("failed to hset qos inflight message data", "error", err, "data", v[i])
+				continue
+			}
+			_ = h.db.HDel(h.ctx, h.hKey(storage.InflightKey), old).Err()
+		}
 	}
 
 	return v, nil

@@ -226,3 +226,29 @@ func TestMessageToPacket(t *testing.T) {
 	}, pk)
 
 }
+
+func TestMessageToPacketInboundFlow(t *testing.T) {
+	for _, typ := range []byte{packets.Pubrec, packets.Pubcomp} {
+		d := Message{T: InflightKey, PacketID: 7, FixedHeader: packets.FixedHeader{Type: typ}}
+		require.True(t, d.ToPacket().InboundFlow)
+	}
+
+	for _, typ := range []byte{packets.Publish, packets.Pubrel} {
+		d := Message{T: InflightKey, PacketID: 7, FixedHeader: packets.FixedHeader{Type: typ}}
+		require.False(t, d.ToPacket().InboundFlow)
+	}
+}
+
+func TestMessageIsLegacyInboundInflight(t *testing.T) {
+	d := Message{ID: InflightKey + "_cl1:7", T: InflightKey, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}}
+	require.True(t, d.IsLegacyInboundInflight())
+
+	d.ID += InboundInflightSuffix
+	require.False(t, d.IsLegacyInboundInflight())
+
+	d = Message{ID: InflightKey + "_cl1:7", T: InflightKey, FixedHeader: packets.FixedHeader{Type: packets.Publish}}
+	require.False(t, d.IsLegacyInboundInflight())
+
+	d = Message{ID: RetainedKey + "_a/b", T: RetainedKey, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}}
+	require.False(t, d.IsLegacyInboundInflight())
+}

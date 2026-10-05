@@ -372,7 +372,7 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 		}
 
 		if tk.FixedHeader.Type == packets.Puback || tk.FixedHeader.Type == packets.Pubcomp {
-			if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
+			if ok := cl.State.Inflight.deleteEntry(tk); ok {
 				cl.ops.hooks.OnQosComplete(cl, tk)
 				atomic.AddInt64(&cl.ops.info.Inflight, -1)
 			}
@@ -385,7 +385,7 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 // ClearInflights deletes all inflight messages for the client, e.g. for a disconnected user with a clean session.
 func (cl *Client) ClearInflights() {
 	for _, tk := range cl.State.Inflight.GetAll(false) {
-		if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
+		if ok := cl.State.Inflight.deleteEntry(tk); ok {
 			cl.ops.hooks.OnQosDropped(cl, tk)
 			atomic.AddInt64(&cl.ops.info.Inflight, -1)
 		}
@@ -403,7 +403,7 @@ func (cl *Client) ClearExpiredInflights(now, maximumExpiry int64) []uint16 {
 		enforced := maximumExpiry > 0 && now-tk.Created > maximumExpiry
 
 		if expired || enforced {
-			if ok := cl.State.Inflight.Delete(tk.PacketID); ok {
+			if ok := cl.State.Inflight.deleteEntry(tk); ok {
 				cl.ops.hooks.OnQosDropped(cl, tk)
 				atomic.AddInt64(&cl.ops.info.Inflight, -1)
 				deleted = append(deleted, tk.PacketID)
