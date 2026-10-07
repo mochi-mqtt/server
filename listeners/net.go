@@ -63,14 +63,18 @@ func (l *Net) Serve(establish EstablishFn) {
 			return
 		}
 
-		if atomic.LoadUint32(&l.end) == 0 {
-			go func() {
-				err = establish(l.id, conn)
-				if err != nil {
-					l.log.Warn("", "error", err)
-				}
-			}()
+		if atomic.LoadUint32(&l.end) == 1 {
+			// Accepted after Close began; see TCP.Serve.
+			_ = conn.Close()
+			return
 		}
+
+		go func() {
+			err = establish(l.id, conn)
+			if err != nil {
+				l.log.Warn("", "error", err)
+			}
+		}()
 	}
 }
 

@@ -80,14 +80,22 @@ func (l *TCP) Serve(establish EstablishFn) {
 			return
 		}
 
-		if atomic.LoadUint32(&l.end) == 0 {
-			go func() {
-				err = establish(l.id, conn)
-				if err != nil {
-					l.log.Warn("", "error", err)
-				}
-			}()
+		if atomic.LoadUint32(&l.end) == 1 {
+			// Accepted after Close began (Close sets end, closes the
+			// clients, then the listener). Left open, the connection is
+			// never served and never closed, and its client waits for a
+			// CONNACK until its own connect timeout. Close it so the
+			// client sees EOF and retries.
+			_ = conn.Close()
+			return
 		}
+
+		go func() {
+			err = establish(l.id, conn)
+			if err != nil {
+				l.log.Warn("", "error", err)
+			}
+		}()
 	}
 }
 
