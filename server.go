@@ -641,6 +641,20 @@ func (s *Server) SendConnack(cl *Client, reason packets.Code, present bool, prop
 		properties.MaximumQosFlag = true
 	}
 
+	// A capability the server lacks must be announced: absent means
+	// available (3.2.2.3.12, 3.2.2.3.13), and a client that is not told
+	// sends subscription identifiers and shared subscriptions the server
+	// then refuses or ignores. Written only when off, so a default server's
+	// CONNACK is unchanged.
+	if s.Options.Capabilities.SubIDAvailable == 0 {
+		properties.SubIDAvailable = 0
+		properties.SubIDAvailableFlag = true
+	}
+	if s.Options.Capabilities.SharedSubAvailable == 0 {
+		properties.SharedSubAvailable = 0
+		properties.SharedSubAvailableFlag = true
+	}
+
 	if cl.Properties.Props.AssignedClientID != "" {
 		properties.AssignedClientID = cl.Properties.Props.AssignedClientID // [MQTT-3.1.3-7] [MQTT-3.2.2-16]
 	}
@@ -1122,6 +1136,14 @@ func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, e
 		return
 	}
 
+	// The replay is sent as the result of THIS subscription, so it carries
+	// the subscription's identifier like any later delivery [MQTT-3.3.4-3].
+	// sub is the decoded SUBSCRIBE entry, whose Identifiers map (what
+	// publishToClient reads) is only filled by Merge; fill it here.
+	if sub.Identifier > 0 && sub.Identifiers == nil {
+		sub.Identifiers = map[string]int{sub.Filter: sub.Identifier}
+	}
+
 	sub.FwdRetainedFlag = true
 	for _, pkv := range s.Topics.Messages(sub.Filter) { // [MQTT-3.8.4-4]
 		_, err := s.publishToClient(cl, sub, pkv)
@@ -1241,7 +1263,7 @@ func (s *Server) processPubcomp(cl *Client, pk packets.Packet) error {
 func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 	pk = s.hooks.OnSubscribe(cl, pk)
 	code := packets.CodeSuccess
-	if _, ok := cl.State.Inflight.Get(pk.PacketID); ok {
+	if inboundPacketIDInUse(cl, pk.PacketID) {
 		code = packets.ErrPacketIdentifierInUse
 	}
 
@@ -1253,6 +1275,10 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 			continue
 		} else if !IsValidFilter(sub.Filter, false) {
 			reasonCodes[i] = packets.ErrTopicFilterInvalid.Code
+		} else if sub.Identifier > 0 && s.Options.Capabilities.SubIDAvailable == 0 {
+			reasonCodes[i] = packets.ErrSubscriptionIdentifiersNotSupported.Code // 3.2.2.3.12
+		} else if IsSharedFilter(sub.Filter) && s.Options.Capabilities.SharedSubAvailable == 0 {
+			reasonCodes[i] = packets.ErrSharedSubscriptionsNotSupported.Code // 3.2.2.3.13
 		} else if sub.NoLocal && IsSharedFilter(sub.Filter) {
 			reasonCodes[i] = packets.ErrProtocolViolationInvalidSharedNoLocal.Code // [MQTT-3.8.3-4]
 		} else if !s.hooks.OnACLCheck(cl, sub.Filter, false) {
@@ -1312,10 +1338,28 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 	return nil
 }
 
+// inboundPacketIDInUse reports whether a packet identifier the CLIENT chose
+// (for a SUBSCRIBE or UNSUBSCRIBE) is still in use by the client's own
+// inbound QoS 2 flow — a PUBLISH it sent that awaits its PUBREL, held in the
+// inflight set as the PUBREC the server answered with [MQTT-4.3.3-10].
+//
+// Only that entry can conflict. The inflight set also holds the server's
+// OUTBOUND publishes and pubrels, keyed by identifiers the SERVER chose from
+// its own space; the client's and the server's identifier spaces are
+// independent (2.2.1), so a client identifier that happens to equal one of
+// those is not "in use". Treating it as such refused a SUBSCRIBE with 0x91
+// whenever the client subscribed while a QoS 1 message was in flight to it —
+// which, with both sides counting from 1, is most of the time after a
+// retained replay.
+func inboundPacketIDInUse(cl *Client, id uint16) bool {
+	pki, ok := cl.State.Inflight.Get(id)
+	return ok && pki.FixedHeader.Type == packets.Pubrec
+}
+
 // processUnsubscribe processes an unsubscribe packet.
 func (s *Server) processUnsubscribe(cl *Client, pk packets.Packet) error {
 	code := packets.CodeSuccess
-	if _, ok := cl.State.Inflight.Get(pk.PacketID); ok {
+	if inboundPacketIDInUse(cl, pk.PacketID) {
 		code = packets.ErrPacketIdentifierInUse
 	}
 

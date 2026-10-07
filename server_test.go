@@ -2801,7 +2801,7 @@ func TestServerProcessPacketSubscribePacketIDInUse(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
-	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Publish}})
+	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}}) // an inbound QoS 2 flow of the client, awaiting its PUBREL
 
 	pkx := *packets.TPacketData[packets.Subscribe].Get(packets.TSubscribeMqtt5).Packet
 	pkx.PacketID = 15
@@ -3052,7 +3052,7 @@ func TestServerProcessPacketUnsubscribePackedIDInUse(t *testing.T) {
 	s := newServer()
 	cl, r, w := newTestClient()
 	cl.Properties.ProtocolVersion = 5
-	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Publish}})
+	cl.State.Inflight.Set(packets.Packet{PacketID: 15, FixedHeader: packets.FixedHeader{Type: packets.Pubrec}}) // an inbound QoS 2 flow of the client, awaiting its PUBREL
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Unsubscribe].Get(packets.TUnsubscribeMqtt5).Packet)
 		require.NoError(t, err)
