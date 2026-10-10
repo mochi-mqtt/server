@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 const (
 	Version                       = "2.7.9" // the current server version.
 	defaultSysTopicInterval int64 = 1       // the interval between $SYS topic publishes
+	defaultConnectTimeout   int64 = 15      // seconds a new connection has to deliver its CONNECT packet
 	LocalListener                 = "local"
 	InlineClientId                = "inline"
 )
@@ -61,6 +63,7 @@ type Capabilities struct {
 	RetainAvailable              byte            `yaml:"retain_available" json:"retain_available"`                 // support of retain messages
 	WildcardSubAvailable         byte            `yaml:"wildcard_sub_available" json:"wildcard_sub_available"`     // support of wildcard subscriptions
 	SubIDAvailable               byte            `yaml:"sub_id_available" json:"sub_id_available"`                 // support of subscription identifiers
+	ConnectTimeout               int64           `yaml:"connect_timeout" json:"connect_timeout"`                   // seconds a new connection has to send its CONNECT packet before it is closed, 0 = default (15)
 }
 
 // NewDefaultServerCapabilities defines the default features and capabilities provided by the server.
@@ -81,7 +84,19 @@ func NewDefaultServerCapabilities() *Capabilities {
 		RetainAvailable:              1,              // retain messages is available
 		WildcardSubAvailable:         1,              // wildcard subscriptions are available
 		SubIDAvailable:               1,              // subscription identifiers are available
+		ConnectTimeout:               defaultConnectTimeout,
 	}
+}
+
+// connectTimeout returns how long a new connection may take to deliver its
+// CONNECT packet. [MQTT-3.1.4] "If the Server does not receive a CONNECT
+// packet within a reasonable amount of time after the Network Connection is
+// established, the Server SHOULD close the Network Connection."
+func (c *Capabilities) connectTimeout() time.Duration {
+	if c.ConnectTimeout <= 0 {
+		return time.Duration(defaultConnectTimeout) * time.Second
+	}
+	return time.Duration(c.ConnectTimeout) * time.Second
 }
 
 // Compatibilities provides flags for using compatibility modes.
@@ -144,6 +159,76 @@ type Server struct {
 	Log          *slog.Logger         // minimal no-alloc logger
 	hooks        *Hooks               // hooks contains hooks for extra functionality such as auth and persistent storage
 	inlineClient *Client              // inlineClient is a special client used for inline subscriptions and inline Publish
+	conns        connections          // every network connection being served, registered or not
+}
+
+// connections tracks every network connection from the moment attachClient
+// takes it until attachClient returns, whether or not the client has
+// completed CONNECT and been registered in Clients. Close uses it to end the
+// connections its disconnect sweep would otherwise miss: those that have not
+// sent CONNECT yet, and those that register only after the sweep.
+//
+// Tracking and the closing flag share one mutex, so a connection is either
+// tracked before Close marks the set closing, and is then ended by the sweep
+// that follows, or it is refused. There is no window in between.
+//
+// The same lock makes the Listeners.ClientsWg accounting safe: a connection
+// is counted (Add) only while tracked, and so before Close sets closing, which
+// happens before Listeners.CloseAll calls Wait. sync.WaitGroup requires an Add
+// that starts from zero to happen before Wait; counting anywhere else (on the
+// connection's goroutine, or in an acceptor after it checked the listener is
+// open) races Close. A connection refused here is closed and never counted.
+//
+// The listener id is kept here rather than read from cl.Net.Listener, which
+// the connection's own goroutine writes while parsing CONNECT.
+type connections struct {
+	mu      sync.Mutex
+	closing bool
+	m       map[*Client]string // tracked client -> listener id
+}
+
+// add tracks cl, served on listener, and counts it in wg. It returns false,
+// tracking and counting nothing, once the server is closing.
+func (c *connections) add(cl *Client, listener string, wg *sync.WaitGroup) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closing {
+		return false
+	}
+	if c.m == nil {
+		c.m = make(map[*Client]string)
+	}
+	c.m[cl] = listener
+	wg.Add(1)
+	return true
+}
+
+// remove stops tracking cl and marks it done in wg.
+func (c *connections) remove(cl *Client, wg *sync.WaitGroup) {
+	c.mu.Lock()
+	delete(c.m, cl)
+	c.mu.Unlock()
+	wg.Done()
+}
+
+// close refuses every connection that attempts to be tracked from now on.
+func (c *connections) close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closing = true
+}
+
+// byListener returns the tracked connections of a listener.
+func (c *connections) byListener(listener string) []*Client {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	clients := make([]*Client, 0, len(c.m))
+	for cl, id := range c.m {
+		if id == listener {
+			clients = append(clients, cl)
+		}
+	}
+	return clients
 }
 
 // loop contains interval tickers for the system events loop.
@@ -404,11 +489,22 @@ func (s *Server) EstablishConnection(listener string, c net.Conn) error {
 // attachClient validates an incoming client connection and if viable, attaches the client
 // to the server, performs session housekeeping, and reads incoming packets.
 func (s *Server) attachClient(cl *Client, listener string) error {
-	defer s.Listeners.ClientsWg.Done()
-	s.Listeners.ClientsWg.Add(1)
+	// Tracking also counts the connection in ClientsWg, under the lock Close
+	// takes before CloseAll waits. See connections.
+	if !s.conns.add(cl, listener, &s.Listeners.ClientsWg) {
+		cl.Stop(packets.ErrServerShuttingDown)
+		return packets.ErrServerShuttingDown
+	}
+	defer s.conns.remove(cl, &s.Listeners.ClientsWg)
 
 	go cl.WriteLoop()
 	defer cl.Stop(nil)
+
+	if cl.Net.Conn != nil {
+		// Until CONNECT arrives there is no keepalive to bound the read, and a
+		// connection that never sends one would otherwise be held forever.
+		_ = cl.Net.Conn.SetDeadline(time.Now().Add(s.Options.Capabilities.connectTimeout()))
+	}
 
 	pk, err := s.readConnectionPacket(cl)
 	if err != nil {
@@ -1496,6 +1592,7 @@ func (s *Server) publishSysTopics() {
 func (s *Server) Close() error {
 	close(s.done)
 	s.Log.Info("gracefully stopping server")
+	s.conns.close() // before any listener's sweep: a later connection is refused, an earlier one is swept
 	s.Listeners.CloseAll(s.closeListenerClients)
 	s.hooks.OnStopped()
 	s.hooks.Stop()
@@ -1509,6 +1606,14 @@ func (s *Server) closeListenerClients(listener string) {
 	clients := s.Clients.GetByListener(listener)
 	for _, cl := range clients {
 		_ = s.DisconnectClient(cl, packets.ErrServerShuttingDown)
+	}
+
+	// Then end every connection still being served on the listener: one that
+	// has not completed CONNECT, or has completed it but not yet registered,
+	// is not in Clients and was not disconnected above. Left open, it reads
+	// its socket and Listeners.CloseAll waits for it forever.
+	for _, cl := range s.conns.byListener(listener) {
+		cl.Stop(packets.ErrServerShuttingDown)
 	}
 }
 

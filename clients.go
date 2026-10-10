@@ -92,7 +92,7 @@ func (cl *Clients) Delete(id string) {
 func (cl *Clients) GetByListener(id string) []*Client {
 	cl.RLock()
 	defer cl.RUnlock()
-	clients := make([]*Client, 0, cl.Len())
+	clients := make([]*Client, 0, len(cl.internal))
 	for _, client := range cl.internal {
 		if client.Net.Listener == id && !client.Closed() {
 			clients = append(clients, client)
