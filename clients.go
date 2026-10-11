@@ -155,6 +155,7 @@ type ClientState struct {
 	open            context.Context      // indicate that the client is open for packet exchange
 	cancelOpen      context.CancelFunc   // cancel function for open context
 	outboundQty     int32                // number of messages currently in the outbound queue
+	readAhead       atomic.Bool          // the reader holds another complete inbound packet; acks may be coalesced
 	Keepalive       uint16               // the number of seconds the connection can wait
 	ServerKeepalive bool                 // keepalive was set by the server
 }
@@ -360,11 +361,34 @@ func (cl *Client) ClearExpiredInflights(now, maximumExpiry int64) []uint16 {
 	return deleted
 }
 
+// maxAckCoalesceDelay bounds how long an ack written while the reader is
+// working through a burst of already-buffered packets may wait in the write
+// buffer before it is flushed. Without a bound, the wait would be the
+// processing time of a whole read buffer's worth of packets, which with slow
+// OnPublish hooks is unbounded in principle.
+const maxAckCoalesceDelay = time.Millisecond
+
 // Read reads incoming packets from the connected client and transforms them into
 // packets to be handled by the packetHandler.
-func (cl *Client) Read(packetHandler ReadFn) error {
-	var err error
+//
+// Ack coalescing: while the next inbound packet is already complete in the
+// read buffer, acks written by the handler (see writeAck) are held in the
+// client's write buffer instead of each costing a write(2). They are flushed
+// as soon as the reader would otherwise go back to the socket (no complete
+// packet buffered), when maxAckCoalesceDelay has passed since the burst began,
+// when the write buffer fills, when any other packet is written to the client,
+// and when Read returns. A lone packet is therefore acked exactly as before:
+// nothing is buffered behind it, so its ack is written immediately.
+func (cl *Client) Read(packetHandler ReadFn) (err error) {
+	defer func() {
+		cl.State.readAhead.Store(false)
+		// Best effort: acks held for a burst that ended in an error (or a
+		// handler-initiated disconnect) still reach the client if the
+		// connection allows. The read error is the one that matters.
+		_ = cl.flushPending()
+	}()
 
+	var burstStart time.Time
 	for {
 		if cl.Closed() {
 			return nil
@@ -377,16 +401,73 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 			return err
 		}
 
-		pk, err := cl.ReadPacket(fh)
+		var pk packets.Packet
+		pk, err = cl.ReadPacket(fh)
 		if err != nil {
 			return err
+		}
+
+		more := cl.nextPacketBuffered()
+		cl.State.readAhead.Store(more)
+		if more && burstStart.IsZero() {
+			burstStart = time.Now()
 		}
 
 		err = packetHandler(cl, pk) // Process inbound packet.
 		if err != nil {
 			return err
 		}
+
+		if !more || time.Since(burstStart) >= maxAckCoalesceDelay {
+			cl.State.readAhead.Store(false)
+			burstStart = time.Time{}
+			if err = cl.flushPending(); err != nil {
+				return err
+			}
+		}
 	}
+}
+
+// nextPacketBuffered reports whether a complete MQTT packet is already in the
+// read buffer, i.e. whether reading it will not block on the socket. It must
+// only be called from the goroutine that reads from cl.Net.bconn.
+func (cl *Client) nextPacketBuffered() bool {
+	if cl.Net.bconn == nil {
+		return false
+	}
+
+	n := cl.Net.bconn.Buffered()
+	if n < 2 {
+		return false
+	}
+
+	// Peek of at most Buffered() bytes never reads from the connection.
+	hdr, _ := cl.Net.bconn.Peek(min(n, 5)) // 1 type byte + up to 4 length bytes
+	remaining, multiplier := 0, 1
+	for i := 1; i < len(hdr); i++ {
+		remaining += int(hdr[i]&0x7f) * multiplier
+		if hdr[i]&0x80 == 0 {
+			return n >= i+1+remaining
+		}
+		multiplier *= 128
+	}
+
+	return false // length not yet fully buffered, or malformed: let the read decide
+}
+
+// flushPending writes out any bytes held in the client's write buffer.
+func (cl *Client) flushPending() error {
+	cl.Lock()
+	defer cl.Unlock()
+	if cl.Net.outbuf == nil || cl.Net.outbuf.Len() == 0 {
+		return nil
+	}
+
+	if cl.Closed() {
+		return ErrConnectionClosed
+	}
+
+	return cl.flushOutbuf()
 }
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
@@ -475,9 +556,11 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 
 	atomic.AddInt64(&cl.ops.info.BytesReceived, int64(n))
 
-	// Decode the remaining packet values using a fresh copy of the bytes,
-	// otherwise the next packet will change the data of this one.
-	px := append([]byte{}, p[:]...)
+	// Decoders may retain sub-slices (payload, topic bytes), so they must get
+	// bytes no later packet will overwrite. p is allocated fresh for every
+	// packet above, so it already is such a copy; copying it again would only
+	// add an allocation and a memmove per inbound packet.
+	px := p
 	switch pk.FixedHeader.Type {
 	case packets.Connect:
 		err = pk.ConnectDecode(px)
@@ -524,6 +607,22 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 
 // WritePacket encodes and writes a packet to the client.
 func (cl *Client) WritePacket(pk packets.Packet) error {
+	return cl.writePacket(pk, false)
+}
+
+// writeAck writes a flow-control acknowledgement (PUBACK, PUBREC, PUBREL,
+// PUBCOMP) produced while handling an inbound packet. Unlike WritePacket it
+// may leave the bytes in the client's write buffer when the reader already
+// holds another complete inbound packet; Read flushes them before it next
+// blocks on the socket (see Read). readAhead is only set by Read, so outside a
+// burst of buffered input this is exactly WritePacket; a call from another
+// goroutine (InjectPacket on a connected client) that lands during a burst is
+// held at most until the reader's next flush.
+func (cl *Client) writeAck(pk packets.Packet) error {
+	return cl.writePacket(pk, true)
+}
+
+func (cl *Client) writePacket(pk packets.Packet, coalesce bool) error {
 	if cl.Closed() {
 		return ErrConnectionClosed
 	}
@@ -602,32 +701,32 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 	n, err := func() (int64, error) {
 		cl.Lock()
 		defer cl.Unlock()
-		if len(cl.State.outbound) == 0 {
+
+		// Hold the bytes back when another write is known to follow promptly:
+		// more packets are queued for WriteLoop, or (acks only) the reader
+		// has another complete packet buffered and will flush before it
+		// blocks. Anything else flushes the buffer together with this
+		// packet, so per-client ordering is the order of the calls.
+		hold := len(cl.State.outbound) > 0 || (coalesce && cl.State.readAhead.Load())
+
+		if cl.Net.outbuf == nil || cl.Net.outbuf.Len() == 0 {
+			if !hold || buf.Len() >= cl.ops.options.ClientNetWriteBufferSize {
+				return buf.WriteTo(cl.Net.Conn)
+			}
 			if cl.Net.outbuf == nil {
-				return buf.WriteTo(cl.Net.Conn)
+				cl.Net.outbuf = new(bytes.Buffer)
 			}
-
-			// first write to buffer, then flush buffer
-			n, _ := cl.Net.outbuf.Write(buf.Bytes()) // will always be successful
-			err = cl.flushOutbuf()
-			return int64(n), err
-		}
-
-		// there are more writes in the queue
-		if cl.Net.outbuf == nil {
-			if buf.Len() >= cl.ops.options.ClientNetWriteBufferSize {
-				return buf.WriteTo(cl.Net.Conn)
-			}
-			cl.Net.outbuf = new(bytes.Buffer)
 		}
 
 		n, _ := cl.Net.outbuf.Write(buf.Bytes()) // will always be successful
-		if cl.Net.outbuf.Len() < cl.ops.options.ClientNetWriteBufferSize {
+		if hold && cl.Net.outbuf.Len() < cl.ops.options.ClientNetWriteBufferSize {
 			return int64(n), nil
 		}
 
-		err = cl.flushOutbuf()
-		return int64(n), err
+		// Flushing a full buffer blocks under the client lock, bounded by the
+		// connection's write deadline: this is the back-pressure on a client
+		// that is not reading.
+		return int64(n), cl.flushOutbuf()
 	}()
 	if err != nil {
 		return err
