@@ -949,7 +949,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		s.hooks.OnQosPublish(cl, ack, ack.Created, 0)
 	}
 
-	err = cl.WritePacket(ack)
+	err = cl.writeAck(ack)
 	if err != nil {
 		return err
 	}
@@ -1189,7 +1189,7 @@ func (s *Server) processPubrec(cl *Client, pk packets.Packet) error {
 	ack := s.buildAck(pk.PacketID, packets.Pubrel, 1, pk.Properties, packets.CodeSuccess) // [MQTT-4.3.3-4] ![MQTT-4.3.3-6]
 	cl.State.Inflight.DecreaseReceiveQuota()                                              // -1 RECV QUOTA
 	cl.State.Inflight.Set(ack)                                                            // [MQTT-4.3.3-5]
-	return cl.WritePacket(ack)
+	return cl.writeAck(ack)
 }
 
 // processPubrel processes a Pubrel packet, denoting completion of a QOS 2 packet sent from the client.
@@ -1209,7 +1209,7 @@ func (s *Server) processPubrel(cl *Client, pk packets.Packet) error {
 	ack := s.buildAck(pk.PacketID, packets.Pubcomp, 0, pk.Properties, packets.CodeSuccess) // [MQTT-4.3.3-11]
 	cl.State.Inflight.Set(ack)
 
-	err := cl.WritePacket(ack)
+	err := cl.writeAck(ack)
 	if err != nil {
 		return err
 	}
@@ -1405,7 +1405,12 @@ func (s *Server) processDisconnect(cl *Client, pk packets.Packet) error {
 	}
 
 	s.loop.willDelayed.Delete(cl.ID) // [MQTT-3.1.3-9] [MQTT-3.1.2-8]
-	cl.Stop(packets.CodeDisconnect)  // [MQTT-3.14.4-2]
+
+	// Publishes that arrived in the same read as this DISCONNECT may have
+	// their acks held in the write buffer (see Client.Read). Stop closes the
+	// connection, so send them first.
+	_ = cl.flushPending()
+	cl.Stop(packets.CodeDisconnect) // [MQTT-3.14.4-2]
 
 	return nil
 }

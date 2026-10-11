@@ -1733,8 +1733,10 @@ func TestServerProcessPublishACLCheckDeny(t *testing.T) {
 				require.Equal(t, tx.expectReponse, buf)
 			}
 
-			require.Equal(t, tx.expectDisconnect, cl.Closed())
+			// Stop closes the conn (ending ReadAll) before it marks the client
+			// closed, so only processPublish having returned settles Closed().
 			wg.Wait()
+			require.Equal(t, tx.expectDisconnect, cl.Closed())
 		})
 	}
 }

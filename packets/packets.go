@@ -701,6 +701,47 @@ func (pk *Packet) PublishValidate(topicAliasMaximum uint16) Code {
 
 // encodePubAckRelRecComp encodes a Puback, Pubrel, Pubrec, or Pubcomp packet.
 func (pk *Packet) encodePubAckRelRecComp(buf *bytes.Buffer) error {
+	// The only properties these four packet types can carry are Reason String
+	// and User Properties, and both are suppressed when the client disallowed
+	// problem info. When neither will be written, the
+	// packet is a fixed 2-3 byte body (packet id, plus the reason code when it
+	// is an error), and encodePubAckRelRecCompGeneral — two pooled scratch
+	// buffers and a walk of every property kind — produces exactly these bytes
+	// (pinned by TestEncodePubAckRelRecCompFastPathMatchesGeneral). A QoS 1
+	// PUBACK is written once per inbound publish, so this is the hot case.
+	if !pubAckRelRecCompHasProperties(pk) {
+		withReason := pk.ProtocolVersion == 5 && pk.ReasonCode >= ErrUnspecifiedError.Code
+		pk.FixedHeader.Remaining = 2
+		if withReason {
+			pk.FixedHeader.Remaining = 3
+		}
+		pk.FixedHeader.Encode(buf)
+		buf.WriteByte(byte(pk.PacketID >> 8))
+		buf.WriteByte(byte(pk.PacketID))
+		if withReason {
+			buf.WriteByte(pk.ReasonCode)
+		}
+		return nil
+	}
+
+	return pk.encodePubAckRelRecCompGeneral(buf)
+}
+
+// pubAckRelRecCompHasProperties reports whether encoding pk could write any
+// property bytes. False means its property section would be empty.
+func pubAckRelRecCompHasProperties(pk *Packet) bool {
+	switch pk.FixedHeader.Type {
+	case Puback, Pubrec, Pubrel, Pubcomp:
+	default:
+		return true // not one of ours: let the general path decide
+	}
+
+	return pk.ProtocolVersion == 5 && !pk.Mods.DisallowProblemInfo &&
+		(pk.Properties.ReasonString != "" || len(pk.Properties.User) > 0)
+}
+
+// encodePubAckRelRecCompGeneral encodes these packets with any properties.
+func (pk *Packet) encodePubAckRelRecCompGeneral(buf *bytes.Buffer) error {
 	nb := mempool.GetBuffer()
 	defer mempool.PutBuffer(nb)
 	nb.Write(encodeUint16(pk.PacketID))
