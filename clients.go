@@ -156,6 +156,7 @@ type ClientState struct {
 	cancelOpen      context.CancelFunc   // cancel function for open context
 	outboundQty     int32                // number of messages currently in the outbound queue
 	readAhead       atomic.Bool          // the reader holds another complete inbound packet; acks may be coalesced
+	acks            ackSequencer         // publish acks waiting for hooks to settle them, in arrival order
 	Keepalive       uint16               // the number of seconds the connection can wait
 	ServerKeepalive bool                 // keepalive was set by the server
 }
@@ -179,6 +180,7 @@ func newClient(c net.Conn, o *ops) *Client {
 		},
 		ops: o,
 	}
+	cl.State.acks.init()
 
 	if c != nil {
 		cl.Net = ClientConnection{
@@ -607,8 +609,25 @@ func (cl *Client) ReadPacket(fh *packets.FixedHeader) (pk packets.Packet, err er
 
 // WritePacket encodes and writes a packet to the client.
 func (cl *Client) WritePacket(pk packets.Packet) error {
-	return cl.writePacket(pk, false)
+	return cl.writePacket(pk, writeNow)
 }
+
+// writeMode says whether writePacket may leave a packet's bytes in the
+// client's write buffer instead of writing them to the connection at once.
+type writeMode uint8
+
+const (
+	// writeNow flushes the buffer with this packet (unless WriteLoop has
+	// more queued).
+	writeNow writeMode = iota
+	// writeAckCoalesced may hold an ack while the reader has another
+	// complete inbound packet buffered (see writeAck).
+	writeAckCoalesced
+	// writeHeld holds the bytes for a packet the caller writes next, in
+	// the same critical section (see writeAcks). Bounded by
+	// ClientNetWriteBufferSize like the others.
+	writeHeld
+)
 
 // writeAck writes a flow-control acknowledgement (PUBACK, PUBREC, PUBREL,
 // PUBCOMP) produced while handling an inbound packet. Unlike WritePacket it
@@ -619,10 +638,29 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 // goroutine (InjectPacket on a connected client) that lands during a burst is
 // held at most until the reader's next flush.
 func (cl *Client) writeAck(pk packets.Packet) error {
-	return cl.writePacket(pk, true)
+	return cl.writePacket(pk, writeAckCoalesced)
 }
 
-func (cl *Client) writePacket(pk packets.Packet, coalesce bool) error {
+// writeAcks writes acks in order with one write to the connection (or
+// none while the reader is in a burst, see writeAck): every ack but the
+// last is held in the write buffer, and the last decides like writeAck.
+//
+// The settled prefix of a client's
+// pending acks goes out together (see ackSequencer).
+func (cl *Client) writeAcks(acks []packets.Packet) error {
+	for i := range acks {
+		mode := writeHeld
+		if i == len(acks)-1 {
+			mode = writeAckCoalesced
+		}
+		if err := cl.writePacket(acks[i], mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (cl *Client) writePacket(pk packets.Packet, mode writeMode) error {
 	if cl.Closed() {
 		return ErrConnectionClosed
 	}
@@ -707,7 +745,8 @@ func (cl *Client) writePacket(pk packets.Packet, coalesce bool) error {
 		// has another complete packet buffered and will flush before it
 		// blocks. Anything else flushes the buffer together with this
 		// packet, so per-client ordering is the order of the calls.
-		hold := len(cl.State.outbound) > 0 || (coalesce && cl.State.readAhead.Load())
+		hold := len(cl.State.outbound) > 0 || mode == writeHeld ||
+			(mode == writeAckCoalesced && cl.State.readAhead.Load())
 
 		if cl.Net.outbuf == nil || cl.Net.outbuf.Len() == 0 {
 			if !hold || buf.Len() >= cl.ops.options.ClientNetWriteBufferSize {
