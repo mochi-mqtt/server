@@ -55,6 +55,9 @@ const (
 	StoredInflightMessages
 	StoredRetainedMessages
 	StoredSysInfo
+	// OnPublishedSettle is appended last so the values above keep their
+	// numbers.
+	OnPublishedSettle
 )
 
 var (
@@ -98,6 +101,7 @@ type Hook interface {
 	OnUnsubscribed(cl *Client, pk packets.Packet)
 	OnPublish(cl *Client, pk packets.Packet) (packets.Packet, error)
 	OnPublished(cl *Client, pk packets.Packet)
+	OnPublishedSettle(cl *Client, pk packets.Packet, s *PublishSettlement)
 	OnPublishDropped(cl *Client, pk packets.Packet)
 	OnRetainMessage(cl *Client, pk packets.Packet, r int64)
 	OnRetainPublished(cl *Client, pk packets.Packet)
@@ -426,6 +430,17 @@ func (h *Hooks) OnPublished(cl *Client, pk packets.Packet) {
 	for _, hook := range h.GetAll() {
 		if hook.Provides(OnPublished) {
 			hook.OnPublished(cl, pk)
+		}
+	}
+}
+
+// OnPublishedSettle is called right after OnPublished, with the publish's
+// settlement: the QoS 1/2 acknowledgement is written once every hold a
+// hook took on s is released.
+func (h *Hooks) OnPublishedSettle(cl *Client, pk packets.Packet, s *PublishSettlement) {
+	for _, hook := range h.GetAll() {
+		if hook.Provides(OnPublishedSettle) {
+			hook.OnPublishedSettle(cl, pk, s)
 		}
 	}
 }
@@ -801,6 +816,11 @@ func (h *HookBase) OnPublish(cl *Client, pk packets.Packet) (packets.Packet, err
 
 // OnPublished is called when a client has published a message to subscribers.
 func (h *HookBase) OnPublished(cl *Client, pk packets.Packet) {}
+
+// OnPublishedSettle is called with every publish OnPublished is called
+// with; a hook that must finish with the message before it is
+// acknowledged takes a hold on s (see PublishSettlement).
+func (h *HookBase) OnPublishedSettle(cl *Client, pk packets.Packet, s *PublishSettlement) {}
 
 // OnPublishDropped is called when a message to a client is dropped instead of being delivered.
 func (h *HookBase) OnPublishDropped(cl *Client, pk packets.Packet) {}

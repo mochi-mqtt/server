@@ -860,6 +860,18 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		return nil
 	}
 
+	// An MQTT 3 client knows no
+	// Receive Maximum, and with acks waiting for a hook it can run out of
+	// quota only because the broker is slower than it; it is then not read
+	// from until an ack returns quota (TCP back-pressure), instead of being
+	// disconnected. An MQTT 5 client that exceeds the Receive Maximum it was
+	// given is disconnected as the spec requires.
+	if atomic.LoadInt32(&cl.State.Inflight.receiveQuota) == 0 && cl.Properties.ProtocolVersion < 5 && cl.State.acks.busy() {
+		if !cl.State.acks.waitForQuota(cl) {
+			return nil // the client closed while waiting
+		}
+	}
+
 	if atomic.LoadInt32(&cl.State.Inflight.receiveQuota) == 0 {
 		return s.DisconnectClient(cl, packets.ErrReceiveMaximum) // ~[MQTT-3.3.4-7] ~[MQTT-3.3.4-8]
 	}
@@ -879,7 +891,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		}
 
 		ack := s.buildAck(pk.PacketID, ackType, 0, pk.Properties, packets.ErrNotAuthorized)
-		return cl.WritePacket(ack)
+		return cl.State.acks.writeNowOrQueue(cl, ack) // behind pending acks
 	}
 
 	pk.Origin = cl.ID
@@ -894,7 +906,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok {
 			if pki.FixedHeader.Type == packets.Pubrec { // [MQTT-4.3.3-10]
 				ack := s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.ErrPacketIdentifierInUse)
-				return cl.WritePacket(ack)
+				return cl.State.acks.writeNowOrQueue(cl, ack)
 			}
 			if ok := cl.State.Inflight.Delete(pk.PacketID); ok { // [MQTT-4.3.2-5]
 				atomic.AddInt64(&s.Info.Inflight, -1)
@@ -918,7 +930,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	} else if errors.Is(err, packets.CodeSuccessIgnore) {
 		pk.Ignore = true
 	} else if cl.Properties.ProtocolVersion == 5 && pk.FixedHeader.Qos > 0 && errors.As(err, new(packets.Code)) {
-		err = cl.WritePacket(s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, err.(packets.Code)))
+		err = cl.State.acks.writeNowOrQueue(cl, s.buildAck(pk.PacketID, packets.Puback, 0, pk.Properties, err.(packets.Code)))
 		if err != nil {
 			return err
 		}
@@ -935,6 +947,7 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 	if pk.FixedHeader.Qos == 0 || cl.Net.Inline {
 		s.publishToSubscribers(pk)
 		s.hooks.OnPublished(cl, pk)
+		s.hooks.OnPublishedSettle(cl, pk, nil) // nothing to acknowledge: Hold is a no-op
 		return nil
 	}
 
@@ -944,12 +957,27 @@ func (s *Server) processPublish(cl *Client, pk packets.Packet) error {
 		ack = s.buildAck(pk.PacketID, packets.Pubrec, 0, pk.Properties, packets.CodeSuccess) // [MQTT-3.3.4-1] [MQTT-4.3.3-8]
 	}
 
+	// With a hook that settles
+	// publishes, the ack waits for it (acks.go). It joins the client's
+	// queue now, on the reader, so acks leave in arrival order; nothing
+	// is put in the inflight store until the ack is written, so a session
+	// resumed meanwhile never resends an ack for a message not handled.
+	if s.hooks.Provides(OnPublishedSettle) {
+		settlement := &PublishSettlement{cl: cl, ack: cl.State.acks.reserve(ack)}
+		settlement.holds.Store(1) // the server's own, released below
+		s.publishToSubscribers(pk)
+		s.hooks.OnPublished(cl, pk)
+		s.hooks.OnPublishedSettle(cl, pk, settlement)
+		settlement.release(packets.CodeSuccess)
+		return nil
+	}
+
 	if ok := cl.State.Inflight.Set(ack); ok {
 		atomic.AddInt64(&s.Info.Inflight, 1)
 		s.hooks.OnQosPublish(cl, ack, ack.Created, 0)
 	}
 
-	err = cl.WritePacket(ack)
+	err = cl.writeAck(ack)
 	if err != nil {
 		return err
 	}
@@ -1189,7 +1217,7 @@ func (s *Server) processPubrec(cl *Client, pk packets.Packet) error {
 	ack := s.buildAck(pk.PacketID, packets.Pubrel, 1, pk.Properties, packets.CodeSuccess) // [MQTT-4.3.3-4] ![MQTT-4.3.3-6]
 	cl.State.Inflight.DecreaseReceiveQuota()                                              // -1 RECV QUOTA
 	cl.State.Inflight.Set(ack)                                                            // [MQTT-4.3.3-5]
-	return cl.WritePacket(ack)
+	return cl.writeAck(ack)
 }
 
 // processPubrel processes a Pubrel packet, denoting completion of a QOS 2 packet sent from the client.
@@ -1209,7 +1237,7 @@ func (s *Server) processPubrel(cl *Client, pk packets.Packet) error {
 	ack := s.buildAck(pk.PacketID, packets.Pubcomp, 0, pk.Properties, packets.CodeSuccess) // [MQTT-4.3.3-11]
 	cl.State.Inflight.Set(ack)
 
-	err := cl.WritePacket(ack)
+	err := cl.writeAck(ack)
 	if err != nil {
 		return err
 	}
@@ -1405,7 +1433,12 @@ func (s *Server) processDisconnect(cl *Client, pk packets.Packet) error {
 	}
 
 	s.loop.willDelayed.Delete(cl.ID) // [MQTT-3.1.3-9] [MQTT-3.1.2-8]
-	cl.Stop(packets.CodeDisconnect)  // [MQTT-3.14.4-2]
+
+	// Publishes that arrived in the same read as this DISCONNECT may have
+	// their acks held in the write buffer (see Client.Read). Stop closes the
+	// connection, so send them first.
+	_ = cl.flushPending()
+	cl.Stop(packets.CodeDisconnect) // [MQTT-3.14.4-2]
 
 	return nil
 }
