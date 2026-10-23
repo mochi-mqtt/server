@@ -4456,3 +4456,79 @@ func TestServerPendingResentOnReconnect(t *testing.T) {
 	require.Zero(t, next.State.Inflight.PendingLen())
 	require.Equal(t, 3, next.State.Inflight.Len()) // awaiting acknowledgement
 }
+
+// willSentHook records the clients whose wills were sent.
+type willSentHook struct {
+	HookBase
+	sent []string
+}
+
+func (h *willSentHook) ID() string { return "will-sent" }
+
+func (h *willSentHook) Provides(b byte) bool { return b == OnWillSent }
+
+func (h *willSentHook) OnWillSent(cl *Client, pk packets.Packet) {
+	h.sent = append(h.sent, cl.ID)
+}
+
+// A delayed will is retained and reported to hooks even if the session ended before the
+// delay passed.
+func TestServerSendLWTDelayedSessionEnded(t *testing.T) {
+	s := newServer()
+	hook := new(willSentHook)
+	require.NoError(t, s.AddHook(hook, nil))
+
+	s.loop.willDelayed.Add("gone", packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Retain: true},
+		TopicName:   "a/b/c",
+		Payload:     []byte("goodbye"),
+		Expiry:      time.Now().Unix() - 1,
+	})
+	s.sendDelayedLWT(time.Now().Unix())
+
+	require.Zero(t, s.loop.willDelayed.Len())
+	require.Equal(t, []string{"gone"}, hook.sent)
+	retained := s.Topics.Messages("a/b/c")
+	require.Len(t, retained, 1)
+	require.Equal(t, []byte("goodbye"), retained[0].Payload)
+	_, ok := s.Clients.Get("gone")
+	require.False(t, ok, "the stand-in client must not be added")
+}
+
+// Restored inflight messages keep their expiry, counted from when they were created, and
+// messages which have already expired are dropped.
+func TestServerRestoreSessionMessageExpiry(t *testing.T) {
+	s := newServer()
+	now := time.Now().Unix()
+	msg := func(id uint16, created int64, expiry uint32) storage.Message {
+		return storage.Message{
+			Client:      "mochi",
+			PacketID:    id,
+			TopicName:   "a/b/c",
+			FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+			Created:     created,
+			Properties:  storage.MessageProperties{MessageExpiryInterval: expiry},
+		}
+	}
+
+	cl, err := s.RestoreSession(
+		storage.Client{ID: "mochi", ProtocolVersion: 5, Properties: storage.ClientProperties{SessionExpiryInterval: 30}},
+		nil,
+		[]storage.Message{
+			msg(1, now-10, 5),  // expired
+			msg(2, now-2, 30),  // 28 seconds left
+			msg(3, now-100, 0), // no expiry
+		},
+	)
+	require.NoError(t, err)
+
+	_, ok := cl.State.Inflight.Get(1)
+	require.False(t, ok, "an expired message must be dropped")
+	pk, ok := cl.State.Inflight.Get(2)
+	require.True(t, ok)
+	require.Equal(t, now-2+30, pk.Expiry)
+	pk, ok = cl.State.Inflight.Get(3)
+	require.True(t, ok)
+	require.Zero(t, pk.Expiry)
+	require.EqualValues(t, 1, atomic.LoadInt64(&s.Info.InflightDropped))
+}

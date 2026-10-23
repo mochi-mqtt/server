@@ -1802,8 +1802,22 @@ func (s *Server) RestoreSession(c storage.Client, subs []storage.Subscription, i
 		}, reasonCodes)
 	}
 
+	now := time.Now().Unix()
 	for _, v := range inflight {
 		pk := v.ToPacket()
+
+		// Stored messages keep the time they were created but not their expiry, so it's
+		// worked out again as it was when they were published, and expired messages are
+		// dropped [MQTT-3.3.2-5]. The remaining interval is sent with them [MQTT-3.3.2-6].
+		if expiry := minimum(s.Options.Capabilities.MaximumMessageExpiryInterval,
+			int64(pk.Properties.MessageExpiryInterval)); pk.Expiry == 0 && expiry > 0 {
+			pk.Expiry = pk.Created + expiry
+		}
+		if pk.Expiry > 0 && pk.Expiry <= now {
+			atomic.AddInt64(&s.Info.InflightDropped, 1)
+			continue
+		}
+
 		if cl.State.Inflight.Set(pk) {
 			atomic.AddInt64(&s.Info.Inflight, 1)
 			s.hooks.OnQosPublish(cl, pk, pk.Created, 0)
@@ -2009,13 +2023,18 @@ func (s *Server) sendDelayedLWT(dt int64) {
 	for id, pk := range s.loop.willDelayed.GetAll() {
 		if dt > pk.Expiry {
 			s.publishToSubscribers(pk) // [MQTT-3.1.2-8]
-			if cl, ok := s.Clients.Get(id); ok {
-				if pk.FixedHeader.Retain {
-					s.retainMessage(cl, pk)
-				}
-				cl.Properties.Will = Will{} // [MQTT-3.1.2-10]
-				s.hooks.OnWillSent(cl, pk)
+			cl, ok := s.Clients.Get(id)
+			if !ok {
+				// The session has already ended, but the will is still sent, so it is
+				// retained if it should be, and hooks see it sent (a cluster forwards it to
+				// subscribers on other nodes). They are given a stand-in for the client.
+				cl = s.NewClient(nil, LocalListener, id, false)
 			}
+			if pk.FixedHeader.Retain {
+				s.retainMessage(cl, pk)
+			}
+			cl.Properties.Will = Will{} // [MQTT-3.1.2-10]
+			s.hooks.OnWillSent(cl, pk)
 			s.loop.willDelayed.Delete(id)
 		}
 	}
