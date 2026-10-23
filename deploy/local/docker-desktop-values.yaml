@@ -1,0 +1,18 @@
+# Values for running the cluster on Docker Desktop's kubernetes: task run-cluster-docker.
+# Docker Desktop serves LoadBalancer services on localhost, so clients connect to
+# localhost:2883 (2883 rather than 1883, so it doesn't clash with task run-docker).
+image:
+  repository: mochi-cluster
+  pullPolicy: Never   # built locally by the task; image.tag is set by the task
+auth:
+  allowAll: true      # local development only
+service:
+  type: LoadBalancer
+  ports:
+    mqtt: 2883
+    ws: 2882
+websocket:
+  enabled: true
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { memory: 512Mi }

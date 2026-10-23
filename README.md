@@ -88,6 +88,27 @@ docker build -t mochi:latest .
 docker run -p 1883:1883 -p 1882:1882 -p 8080:8080 -v $(pwd)/config.yaml:/config.yaml mochi:latest
 ```
 
+### Taskfile
+Common commands are in [Taskfile.yml](Taskfile.yml), for [Task](https://taskfile.dev) (`brew install go-task`). `task --list` shows them all.
+
+```sh
+task run-docker            # standalone server in docker: mqtt on localhost:1883, websocket 1882, stats 1880
+task stop-docker
+
+task run-cluster-docker    # three node cluster on Docker Desktop's kubernetes: mqtt on localhost:2883
+task stats-cluster         # membership, leader and forwarding stats from every node
+task logs-cluster
+task restart-cluster       # rolling restart, one node at a time
+task stop-cluster-docker
+
+task test                  # also: vet, test-chaos, bench-cluster, smoke
+```
+
+`run-cluster-docker` needs Kubernetes enabled in Docker Desktop (Settings > Kubernetes). It always uses the
+`docker-desktop` context in `~/.kube/config`, whatever `KUBECONFIG` or the current context is; set
+`DOCKER_DESKTOP_KUBECONFIG` or `DOCKER_DESKTOP_CONTEXT` to use another. Pass extra helm arguments with
+`HELM_ARGS`, for example `task run-cluster-docker HELM_ARGS="--set replicaCount=5"`.
+
 ### File Based Configuration
 You can use File Based Configuration with either the Docker image (described above), or by running the build binary with the `--config=config.yaml` or `--config=config.json` parameter.
 

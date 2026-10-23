@@ -1,0 +1,171 @@
+# Common commands, run with go-task (https://taskfile.dev): `task --list` shows them all.
+#
+#   task run-docker            the standalone server in docker, on localhost:1883
+#   task run-cluster-docker    a three node cluster on Docker Desktop's kubernetes, on localhost:2883
+version: "3"
+
+vars:
+  IMAGE: mochi-mqtt
+  CLUSTER_IMAGE: mochi-cluster
+  CONTAINER: mochi-mqtt
+  # Docker Desktop's kubernetes. The kubeconfig and context are always given explicitly, so
+  # these tasks never act on whatever cluster KUBECONFIG or the current context points at.
+  KUBECONFIG_FILE: '{{.DOCKER_DESKTOP_KUBECONFIG | default (print .HOME "/.kube/config")}}'
+  KUBE_CONTEXT: '{{.DOCKER_DESKTOP_CONTEXT | default "docker-desktop"}}'
+  NAMESPACE: mochi
+  RELEASE: mochi-cluster
+  KUBECTL_ALL: kubectl --kubeconfig {{.KUBECONFIG_FILE}} --context {{.KUBE_CONTEXT}}
+  KUBECTL: "{{.KUBECTL_ALL}} -n {{.NAMESPACE}}"
+  HELM: helm --kubeconfig {{.KUBECONFIG_FILE}} --kube-context {{.KUBE_CONTEXT}} -n {{.NAMESPACE}}
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  # --- development ---
+
+  build:
+    desc: Build every package
+    cmds:
+      - go build ./...
+
+  test:
+    desc: Run the tests with the race detector
+    cmds:
+      - go test -race ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  test-chaos:
+    desc: Run the cluster chaos suite in docker (about 4 minutes)
+    dir: cluster/chaos
+    cmds:
+      - go test -tags chaos -v -timeout 30m
+
+  bench-cluster:
+    desc: Benchmark standalone, one node and three node clusters on this machine
+    cmds:
+      - ./examples/benchmark/cluster-bench.sh
+
+  smoke:
+    desc: Smoke test the cluster image and helm chart on a throwaway kind cluster (needs kind)
+    cmds:
+      - ./deploy/kind/smoke.sh
+
+  # --- standalone server in docker ---
+
+  build-docker:
+    desc: Build the standalone server image
+    cmds:
+      - docker build -t {{.IMAGE}}:local .
+
+  run-docker:
+    desc: Run the standalone server in docker with config.yaml (mqtt on 1883, websocket on 1882, stats on 1880)
+    deps: [build-docker]
+    cmds:
+      - docker rm -f {{.CONTAINER}} >/dev/null 2>&1 || true
+      - >-
+        docker run -d --name {{.CONTAINER}}
+        -p 1883:1883 -p 1882:1882 -p 1880:1880
+        -v "{{.ROOT_DIR}}/config.yaml:/config.yaml:ro"
+        {{.IMAGE}}:local
+      - |
+        echo "mochi mqtt is running: mqtt://localhost:1883, ws://localhost:1882, stats http://localhost:1880"
+        echo "logs: task logs-docker   stop: task stop-docker"
+
+  logs-docker:
+    desc: Follow the standalone server's logs
+    cmds:
+      - docker logs -f {{.CONTAINER}}
+
+  stop-docker:
+    desc: Stop the standalone server
+    cmds:
+      - docker rm -f {{.CONTAINER}}
+
+  # --- cluster on Docker Desktop's kubernetes ---
+
+  build-cluster-image:
+    desc: Build the cluster image
+    cmds:
+      - docker build --provenance=false -f deploy/docker/Dockerfile.cluster --build-arg VERSION=dev -t {{.CLUSTER_IMAGE}}:dev .
+
+  run-cluster-docker:
+    desc: Run a three node cluster on Docker Desktop's kubernetes (mqtt on localhost:2883)
+    preconditions:
+      - sh: kubectl --kubeconfig {{.KUBECONFIG_FILE}} config get-contexts -o name | grep -qx {{.KUBE_CONTEXT}}
+        msg: "No docker-desktop context in {{.KUBECONFIG_FILE}}. Enable Kubernetes in Docker Desktop: Settings > Kubernetes > Enable Kubernetes."
+      - sh: kubectl --kubeconfig {{.KUBECONFIG_FILE}} --context {{.KUBE_CONTEXT}} get --raw /readyz >/dev/null 2>&1
+        msg: "Docker Desktop's kubernetes isn't running yet. Wait for it to show as running in Docker Desktop."
+    cmds:
+      - task: build-cluster-image
+      # The image is tagged by its id, so that rebuilding it rolls the nodes and an unchanged
+      # image leaves them alone. The tag is worked out here, after the build, because task
+      # evaluates vars before a task's dependencies and commands run.
+      #
+      # With the kubeadm cluster, kubernetes uses Docker Desktop's images directly. With the
+      # kind cluster (Settings > Kubernetes > Cluster type), each node has its own image
+      # store, so the image is copied into every node.
+      - |
+        tag="dev-$(docker images --no-trunc -q {{.CLUSTER_IMAGE}}:dev | head -1 | cut -d: -f2 | cut -c1-12)"
+        docker tag {{.CLUSTER_IMAGE}}:dev "{{.CLUSTER_IMAGE}}:$tag"
+        for node in $({{.KUBECTL}} get nodes -o jsonpath='{.items[*].metadata.name}'); do
+          if docker inspect "$node" >/dev/null 2>&1; then
+            echo "loading {{.CLUSTER_IMAGE}}:$tag into $node"
+            docker save "{{.CLUSTER_IMAGE}}:$tag" | docker exec -i "$node" ctr -n k8s.io images import - >/dev/null
+          fi
+        done
+        {{.HELM}} upgrade --install {{.RELEASE}} deploy/helm/mochi-cluster --create-namespace \
+          -f deploy/local/docker-desktop-values.yaml \
+          --set image.tag="$tag" {{.HELM_ARGS}} \
+          --wait --timeout 5m
+      - task: status-cluster
+      - |
+        echo
+        echo "the cluster is running: mqtt://localhost:2883"
+        echo "stats: task stats-cluster   logs: task logs-cluster   stop: task stop-cluster-docker"
+
+  status-cluster:
+    desc: Show the cluster's pods and services
+    cmds:
+      - "{{.KUBECTL}} get pods,services -o wide"
+
+  stats-cluster:
+    desc: Print cluster stats from every node
+    # Through a port-forward: the chart's NetworkPolicy only lets pods in the namespace reach
+    # the admin port, which blocks the API server's pod proxy where policies are enforced.
+    cmds:
+      - |
+        port=38080
+        for pod in $({{.KUBECTL}} get pods -l app.kubernetes.io/instance={{.RELEASE}} -o jsonpath='{.items[*].metadata.name}'); do
+          {{.KUBECTL}} port-forward "pod/$pod" "$port:8080" >/dev/null 2>&1 &
+          for _ in $(seq 50); do curl -fs -o /dev/null "127.0.0.1:$port/livez" && break; sleep 0.1; done
+          echo "--- $pod"
+          curl -fsS -m 5 "127.0.0.1:$port/stats" \
+            | jq '{Members, Leader, IsLeader, InContact, OwnedSessions, LocalRoutes, RemoteRoutes, Forwarded, Received, Dropped}' || true
+          pkill -f "port-forward pod/$pod $port:8080" || true
+          port=$((port + 1))
+        done
+
+  logs-cluster:
+    desc: Follow the logs of every node
+    cmds:
+      - "{{.KUBECTL}} logs -f -l app.kubernetes.io/instance={{.RELEASE}} --prefix --max-log-requests 10"
+
+  restart-cluster:
+    desc: Rolling restart, one node at a time
+    cmds:
+      - "{{.KUBECTL}} rollout restart statefulset/{{.RELEASE}}"
+      - "{{.KUBECTL}} rollout status statefulset/{{.RELEASE}} --timeout 5m"
+
+  stop-cluster-docker:
+    desc: Remove the cluster from Docker Desktop's kubernetes
+    cmds:
+      - "{{.HELM}} uninstall {{.RELEASE}} --wait"
+      # the gossip key is kept on uninstall (helm.sh/resource-policy: keep); remove it too
+      - "{{.KUBECTL_ALL}} delete namespace {{.NAMESPACE}} --wait"
