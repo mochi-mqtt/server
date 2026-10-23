@@ -145,18 +145,22 @@ func TestResolveSeeds(t *testing.T) {
 		switch host {
 		case "mqtt-peers":
 			return []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"}, nil
-		case "10.0.0.2":
-			return []string{"10.0.0.2"}, nil
+		case "10.0.0.1", "10.0.0.2":
+			return []string{host}, nil
 		}
 		return nil, errors.New("no such host")
 	}
 
 	self := map[string]bool{"10.0.0.1": true}
-	got := resolveSeeds(context.Background(), []string{"mqtt-peers:7946", "10.0.0.2:7946", "missing:7946", "no-port"}, self, lookup)
+	got := resolveSeeds(context.Background(), []string{"mqtt-peers:7946", "10.0.0.2:7946", "missing:7946", "no-port"}, self, 7946, lookup)
 	require.Equal(t, []string{"10.0.0.2:7946", "10.0.0.3:7946"}, got)
 
-	got = resolveSeeds(context.Background(), []string{"mqtt-peers:7946"}, map[string]bool{"10.0.0.1": true, "10.0.0.2": true, "10.0.0.3": true}, lookup)
+	got = resolveSeeds(context.Background(), []string{"mqtt-peers:7946"}, map[string]bool{"10.0.0.1": true, "10.0.0.2": true, "10.0.0.3": true}, 7946, lookup)
 	require.Empty(t, got)
+
+	// other nodes on the same host share its addresses, but not its gossip port
+	got = resolveSeeds(context.Background(), []string{"10.0.0.1:7946", "10.0.0.1:7956"}, self, 7956, lookup)
+	require.Equal(t, []string{"10.0.0.1:7946"}, got)
 }
 
 func TestClusterOptions(t *testing.T) {

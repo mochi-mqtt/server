@@ -221,7 +221,7 @@ func clusterOptions(ctx context.Context, cfg *config, logger *slog.Logger) (clus
 	self := selfAddrs(cfg.Advertise)
 	deadline := time.Now().Add(cfg.JoinTimeout)
 	for {
-		opts.Seeds = resolveSeeds(ctx, cfg.Seeds, self, net.DefaultResolver.LookupHost)
+		opts.Seeds = resolveSeeds(ctx, cfg.Seeds, self, cfg.GossipPort, net.DefaultResolver.LookupHost)
 		if len(opts.Seeds) > 0 {
 			logger.Info("joining cluster", "seeds", opts.Seeds)
 			return opts, nil

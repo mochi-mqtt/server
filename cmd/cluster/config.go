@@ -173,12 +173,14 @@ func (c *config) bootstrap() bool {
 // lookupFn resolves a host to its addresses, as net.Resolver.LookupHost.
 type lookupFn func(ctx context.Context, host string) ([]string, error)
 
-// resolveSeeds resolves the seeds to addresses, leaving out this node's own addresses. A
-// dns name such as a kubernetes headless service resolves to every node, including this
-// one; the cluster bootstraps a new cluster when given no seeds, and joining only itself
-// would leave the node waiting for a quorum which never forms. Seeds which don't resolve
-// are skipped, as nodes which haven't started yet may not have dns records.
-func resolveSeeds(ctx context.Context, seeds []string, self map[string]bool, lookup lookupFn) []string {
+// resolveSeeds resolves the seeds to addresses, leaving out this node's own address: one
+// of its addresses with its gossip port. A dns name such as a kubernetes headless service
+// resolves to every node, including this one; the cluster bootstraps a new cluster when
+// given no seeds, and joining only itself would leave the node waiting for a quorum which
+// never forms. The port matters, as other nodes on the same host share its addresses.
+// Seeds which don't resolve are skipped, as nodes which haven't started yet may not have
+// dns records.
+func resolveSeeds(ctx context.Context, seeds []string, self map[string]bool, selfPort int, lookup lookupFn) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, seed := range seeds {
@@ -194,7 +196,7 @@ func resolveSeeds(ctx context.Context, seeds []string, self map[string]bool, loo
 
 		for _, a := range addrs {
 			addr := net.JoinHostPort(a, port)
-			if self[a] || seen[addr] {
+			if (self[a] && port == strconv.Itoa(selfPort)) || seen[addr] {
 				continue
 			}
 			seen[addr] = true
