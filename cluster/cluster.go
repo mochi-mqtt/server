@@ -23,8 +23,10 @@
 // changes to a topic's retained message converge.
 //
 // Routes are eventually consistent: a message published immediately after a client
-// subscribes on another node may not reach that client. Forwarding is best effort;
-// messages are dropped if a peer's queue is full, or lost if a link fails mid-write.
+// subscribes on another node may not reach that client. When a peer can't keep up and
+// its queue is full, qos 0 publishes are dropped, while qos 1 and 2 publishes wait for
+// room, which slows their publishers down. Forwarding is otherwise best effort: messages
+// are lost if a link fails mid-write, and dropped if a peer is unreachable.
 package cluster
 
 import (
@@ -104,8 +106,9 @@ type Options struct {
 	// with Bootstrap while partitioned from the rest of the cluster forms a second cluster.
 	Bootstrap bool
 
-	// PeerQueueSize is the number of frames which may wait to be sent to each peer before
-	// forwarded messages are dropped. Defaults to 8192.
+	// PeerQueueSize is the number of frames which may wait to be sent to each peer. When
+	// it's full, forwarded qos 0 publishes are dropped, and qos 1 and 2 publishes wait for
+	// room, for up to WriteTimeout. Defaults to 8192.
 	PeerQueueSize int
 
 	// DialTimeout and WriteTimeout bound connecting to and writing to a peer link.
@@ -197,6 +200,9 @@ type Cluster struct {
 	peersMu sync.RWMutex
 	peers   map[string]*peer
 
+	membersMu sync.Mutex
+	members   map[string]member // gossip members, including this node
+
 	inboundMu sync.Mutex
 	inbound   map[string]net.Conn
 
@@ -242,6 +248,7 @@ func New(server *mqtt.Server, opts Options) (*Cluster, error) {
 		local:    localRoutes{},
 		remote:   newRemoteRoutes(),
 		peers:    map[string]*peer{},
+		members:  map[string]member{},
 		inbound:  map[string]net.Conn{},
 		retained: map[string]retainEntry{},
 		registry: newRegistry(),
@@ -655,9 +662,15 @@ func (c *Cluster) forward(pk packets.Packet) {
 		return
 	}
 
+	type send struct {
+		node  string
+		peer  *peer
+		frame []byte
+	}
+
 	var common []byte // the frame for nodes serving no shared subscriptions is the same for all
+	sends := make([]send, 0, len(targets))
 	c.peersMu.RLock()
-	defer c.peersMu.RUnlock()
 	for node, shared := range targets {
 		var frame []byte
 		switch {
@@ -669,17 +682,37 @@ func (c *Cluster) forward(pk packets.Packet) {
 		default:
 			frame = common
 		}
+		sends = append(sends, send{node: node, peer: c.peers[node], frame: frame})
+	}
+	c.peersMu.RUnlock() // not held while waiting for a queue, which would hold up peers joining and leaving
 
-		p, ok := c.peers[node]
-		if ok && p.send(frame) {
+	for _, s := range sends {
+		if s.peer != nil && c.sendPublish(s.peer, pk.FixedHeader.Qos, s.frame) {
 			c.metrics.publishesForwarded.Add(1)
-			c.metrics.bytesForwarded.Add(int64(len(frame)))
+			c.metrics.bytesForwarded.Add(int64(len(s.frame)))
 			continue
 		}
 
 		c.metrics.publishesDropped.Add(1)
-		c.log.Debug("dropped forwarded publish", "peer", node, "topic", pk.TopicName, "known", ok)
+		c.log.Debug("dropped forwarded publish", "peer", s.node, "topic", pk.TopicName, "known", s.peer != nil)
 	}
+}
+
+// sendPublish queues a forwarded publish for a peer. A qos 0 publish is dropped if the
+// peer's queue is full. A qos 1 or 2 publish waits for room, for up to WriteTimeout, so
+// that a peer which can't keep up slows its publishers down instead of losing messages
+// they have had acknowledged: forward runs on the publishing client's read goroutine, so
+// no more packets are read from that client while it waits.
+func (c *Cluster) sendPublish(p *peer, qos byte, frame []byte) bool {
+	if qos == 0 {
+		return p.send(frame)
+	}
+
+	queued, waited := p.sendWait(frame, c.opts.WriteTimeout)
+	if waited {
+		c.metrics.forwardWaits.Add(1)
+	}
+	return queued
 }
 
 // pickNode returns a random node from a set of shared subscription group members.
@@ -914,9 +947,43 @@ type events struct {
 	c *Cluster
 }
 
-func (e *events) NotifyJoin(n *memberlist.Node)   { e.c.nodeJoined(n) }
-func (e *events) NotifyLeave(n *memberlist.Node)  { e.c.nodeLeft(n) }
-func (e *events) NotifyUpdate(n *memberlist.Node) { e.c.nodeJoined(n) }
+func (e *events) NotifyJoin(n *memberlist.Node)   { e.c.setMember(n); e.c.nodeJoined(n) }
+func (e *events) NotifyLeave(n *memberlist.Node)  { e.c.removeMember(n.Name); e.c.nodeLeft(n) }
+func (e *events) NotifyUpdate(n *memberlist.Node) { e.c.setMember(n); e.c.nodeJoined(n) }
+
+// member is a copy of a gossip member's address and metadata. The nodes memberlist returns
+// from Members are its own records, which it updates in place when a node's metadata
+// changes, so they can't be read safely; events are delivered while memberlist holds its
+// lock, so they can be copied then.
+type member struct {
+	addr string
+	meta meta
+	ok   bool // the metadata is valid
+}
+
+func (c *Cluster) setMember(n *memberlist.Node) {
+	m, ok := decodeMeta(n.Meta)
+	c.membersMu.Lock()
+	defer c.membersMu.Unlock()
+	c.members[n.Name] = member{addr: n.Addr.String(), meta: m, ok: ok}
+}
+
+func (c *Cluster) removeMember(name string) {
+	c.membersMu.Lock()
+	defer c.membersMu.Unlock()
+	delete(c.members, name)
+}
+
+// memberSnapshot returns a copy of the gossip members.
+func (c *Cluster) memberSnapshot() map[string]member {
+	c.membersMu.Lock()
+	defer c.membersMu.Unlock()
+	out := make(map[string]member, len(c.members))
+	for name, m := range c.members {
+		out[name] = m
+	}
+	return out
+}
 
 // memberlistLog writes memberlist's log lines to a structured logger, keeping their level.
 type memberlistLog struct {

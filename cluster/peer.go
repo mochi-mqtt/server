@@ -56,6 +56,31 @@ func (p *peer) send(frame []byte) bool {
 	}
 }
 
+// sendWait queues a frame for the peer, waiting up to timeout for room in the queue if
+// it's full. It only waits while the link is connected, as a queue which isn't being
+// written won't drain. queued is false if the frame couldn't be queued, and waited is
+// true if the queue was full.
+func (p *peer) sendWait(frame []byte, timeout time.Duration) (queued, waited bool) {
+	if p.send(frame) {
+		return true, false
+	}
+
+	if !p.connected() {
+		return false, true
+	}
+
+	t := time.NewTimer(timeout)
+	defer t.Stop()
+	select {
+	case p.queue <- frame:
+		return true, true
+	case <-p.done:
+		return false, true
+	case <-t.C:
+		return false, true
+	}
+}
+
 // connected returns true if the link is currently connected.
 func (p *peer) connected() bool {
 	p.mu.Lock()

@@ -383,7 +383,7 @@ Closing the server leaves the cluster.
 | Quorum loss | A node that loses contact with a majority of nodes for `LeaseTimeout` (default 10s) disconnects its clients, and refuses new connections until contact is restored. Packets from its clients are refused as soon as the lease expires, so a node resuming from a pause can't serve stale sessions. Sessions favour consistency over availability. |
 | Unreachable previous node | If the node that held a session can't be reached, the new node waits a little longer than `LeaseTimeout`, by which time the old node has closed the connection, then confirms through the registry that nothing has claimed the session since, before admitting the client. That session's state is lost. |
 | Routes (which nodes have subscribers) | Eventually consistent. A message published just after a client subscribes on another node may not reach that client. |
-| Forwarding between nodes | Best effort. Messages are dropped if a peer's queue is full, and lost if a node fails mid-forward. QoS applies to each hop: publisher to node, and node to subscriber. |
+| Forwarding between nodes | When a peer can't keep up, QoS 0 messages are dropped, and QoS 1 and 2 messages wait for room, slowing their publishers down. Messages are lost if a node fails mid-forward. QoS applies to each hop: publisher to node, and node to subscriber. |
 | Shared subscriptions | Each message reaches one group member across the cluster. A local member is preferred; otherwise a random node with a member is chosen. |
 | Will messages | Forwarded like any other publish. A delayed will is cancelled if the session resumes on any node. |
 | `$SYS` topics | Per node, never forwarded. |

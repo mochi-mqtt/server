@@ -20,6 +20,7 @@ import (
 type metrics struct {
 	publishesForwarded atomic.Int64
 	publishesDropped   atomic.Int64
+	forwardWaits       atomic.Int64
 	publishesReceived  atomic.Int64
 	bytesForwarded     atomic.Int64
 
@@ -57,6 +58,7 @@ type PeerStats struct {
 type Stats struct {
 	Forwarded int64 // publishes sent to peers
 	Dropped   int64 // publishes not sent because a peer was unknown or its queue was full
+	Waits     int64 // qos 1 and 2 publishes which waited for room in a peer's queue
 	Received  int64 // publishes received from peers
 
 	BytesForwarded   int64 // bytes of publish frames sent to peers
@@ -102,6 +104,7 @@ func (c *Cluster) Stats() Stats {
 	s := Stats{
 		Forwarded:            m.publishesForwarded.Load(),
 		Dropped:              m.publishesDropped.Load(),
+		Waits:                m.forwardWaits.Load(),
 		Received:             m.publishesReceived.Load(),
 		BytesForwarded:       m.bytesForwarded.Load(),
 		RouteUpdatesSent:     m.routeUpdatesSent.Load(),
@@ -182,6 +185,7 @@ func (c *Cluster) WritePrometheus(w io.Writer) error {
 
 	counter("publishes_forwarded_total", "Publishes sent to peers.", s.Forwarded)
 	counter("publishes_dropped_total", "Publishes not sent because a peer was unknown or its queue was full.", s.Dropped)
+	counter("publish_waits_total", "Qos 1 and 2 publishes which waited for room in a peer's queue.", s.Waits)
 	counter("publishes_received_total", "Publishes received from peers.", s.Received)
 	counter("forwarded_bytes_total", "Bytes of publish frames sent to peers.", s.BytesForwarded)
 	counter("route_updates_sent_total", "Route changes queued for peers.", s.RouteUpdatesSent)

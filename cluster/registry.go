@@ -344,12 +344,11 @@ func (c *Cluster) reconcileRaft() {
 	}
 
 	alive := map[raft.ServerID]raft.ServerAddress{}
-	for _, n := range c.ml.Members() {
-		m, ok := decodeMeta(n.Meta)
-		if !ok {
+	for name, m := range c.memberSnapshot() {
+		if !m.ok {
 			continue
 		}
-		alive[raft.ServerID(n.Name)] = raft.ServerAddress(net.JoinHostPort(n.Addr.String(), itoa(m.Raft)))
+		alive[raft.ServerID(name)] = raft.ServerAddress(net.JoinHostPort(m.addr, itoa(m.meta.Raft)))
 	}
 
 	for id, addr := range alive {
