@@ -1,0 +1,9 @@
+apiVersion: v2
+name: mochi-cluster
+description: A clustered mochi mqtt broker
+type: application
+version: 0.1.0
+appVersion: "dev"
+home: https://github.com/dgduncan/mqtt
+sources:
+  - https://github.com/dgduncan/mqtt

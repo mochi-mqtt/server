@@ -418,6 +418,42 @@ func TestHooksOnConnect(t *testing.T) {
 	require.Error(t, err)
 }
 
+type admitHook struct {
+	HookBase
+	err error
+}
+
+func (h *admitHook) ID() string {
+	return "admit-hook"
+}
+
+func (h *admitHook) Provides(b byte) bool {
+	return b == OnSessionAdmit
+}
+
+func (h *admitHook) OnSessionAdmit(cl *Client, pk packets.Packet) error {
+	return h.err
+}
+
+func TestHooksOnSessionAdmit(t *testing.T) {
+	h := new(Hooks)
+	h.Log = logger
+
+	require.NoError(t, h.OnSessionAdmit(new(Client), packets.Packet{})) // no hooks
+
+	hook := new(admitHook)
+	require.NoError(t, h.Add(hook, nil))
+	require.NoError(t, h.OnSessionAdmit(new(Client), packets.Packet{}))
+
+	hook.err = errTestHook
+	require.ErrorIs(t, h.OnSessionAdmit(new(Client), packets.Packet{}), errTestHook)
+}
+
+func TestHookBaseOnSessionAdmit(t *testing.T) {
+	h := new(HookBase)
+	require.NoError(t, h.OnSessionAdmit(new(Client), packets.Packet{}))
+}
+
 func TestHooksOnPacketEncode(t *testing.T) {
 	h := new(Hooks)
 	h.Log = logger

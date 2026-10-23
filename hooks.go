@@ -55,6 +55,7 @@ const (
 	StoredInflightMessages
 	StoredRetainedMessages
 	StoredSysInfo
+	OnSessionAdmit
 )
 
 var (
@@ -83,6 +84,7 @@ type Hook interface {
 	OnACLCheck(cl *Client, topic string, write bool) bool
 	OnSysInfoTick(*system.Info)
 	OnConnect(cl *Client, pk packets.Packet) error
+	OnSessionAdmit(cl *Client, pk packets.Packet) error
 	OnSessionEstablish(cl *Client, pk packets.Packet)
 	OnSessionEstablished(cl *Client, pk packets.Packet)
 	OnDisconnect(cl *Client, err error, expire bool)
@@ -230,6 +232,20 @@ func (h *Hooks) OnConnect(cl *Client, pk packets.Packet) error {
 		if hook.Provides(OnConnect) {
 			err := hook.OnConnect(cl, pk)
 			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// OnSessionAdmit is called after a new client has authenticated, and before its session is
+// established. If any hook returns an error, the connection is refused; if the error is a
+// packets.Code it is used as the CONNACK reason code, otherwise ErrServerUnavailable is used.
+func (h *Hooks) OnSessionAdmit(cl *Client, pk packets.Packet) error {
+	for _, hook := range h.GetAll() {
+		if hook.Provides(OnSessionAdmit) {
+			if err := hook.OnSessionAdmit(cl, pk); err != nil {
 				return err
 			}
 		}
@@ -739,6 +755,12 @@ func (h *HookBase) OnACLCheck(cl *Client, topic string, write bool) bool {
 
 // OnConnect is called when a new client connects.
 func (h *HookBase) OnConnect(cl *Client, pk packets.Packet) error {
+	return nil
+}
+
+// OnSessionAdmit is called after a new client has authenticated, and before its session is
+// established. Returning an error refuses the connection.
+func (h *HookBase) OnSessionAdmit(cl *Client, pk packets.Packet) error {
 	return nil
 }
 

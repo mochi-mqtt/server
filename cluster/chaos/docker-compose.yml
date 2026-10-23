@@ -1,0 +1,62 @@
+# A five node cluster for chaos testing. See doc.go.
+name: mochi-chaos
+
+x-node: &node
+  image: mochi-cluster-chaos
+  pull_policy: never
+  cap_add: [NET_ADMIN]
+  stop_grace_period: 30s
+
+networks:
+  chaos:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+services:
+  n1:
+    <<: *node
+    build: .
+    container_name: chaos-n1
+    hostname: n1
+    networks:
+      chaos:
+        ipv4_address: 172.30.0.11
+    ports: ["18831:1883", "18081:8080"]
+    command: ["-name", "n1", "-bind", "0.0.0.0", "-advertise", "172.30.0.11", "-mqtt", ":1883", "-gossip", "7946", "-forward", ":7947", "-raft", ":7948", "-http", ":8080", "-lease", "3s", "-claim", "1s", "-seeds", "172.30.0.12:7946,172.30.0.13:7946,172.30.0.14:7946,172.30.0.15:7946", "-bootstrap"]
+  n2:
+    <<: *node
+    container_name: chaos-n2
+    hostname: n2
+    networks:
+      chaos:
+        ipv4_address: 172.30.0.12
+    ports: ["18832:1883", "18082:8080"]
+    command: ["-name", "n2", "-bind", "0.0.0.0", "-advertise", "172.30.0.12", "-mqtt", ":1883", "-gossip", "7946", "-forward", ":7947", "-raft", ":7948", "-http", ":8080", "-lease", "3s", "-claim", "1s", "-seeds", "172.30.0.11:7946,172.30.0.13:7946,172.30.0.14:7946,172.30.0.15:7946"]
+  n3:
+    <<: *node
+    container_name: chaos-n3
+    hostname: n3
+    networks:
+      chaos:
+        ipv4_address: 172.30.0.13
+    ports: ["18833:1883", "18083:8080"]
+    command: ["-name", "n3", "-bind", "0.0.0.0", "-advertise", "172.30.0.13", "-mqtt", ":1883", "-gossip", "7946", "-forward", ":7947", "-raft", ":7948", "-http", ":8080", "-lease", "3s", "-claim", "1s", "-seeds", "172.30.0.11:7946,172.30.0.12:7946,172.30.0.14:7946,172.30.0.15:7946"]
+  n4:
+    <<: *node
+    container_name: chaos-n4
+    hostname: n4
+    networks:
+      chaos:
+        ipv4_address: 172.30.0.14
+    ports: ["18834:1883", "18084:8080"]
+    command: ["-name", "n4", "-bind", "0.0.0.0", "-advertise", "172.30.0.14", "-mqtt", ":1883", "-gossip", "7946", "-forward", ":7947", "-raft", ":7948", "-http", ":8080", "-lease", "3s", "-claim", "1s", "-seeds", "172.30.0.11:7946,172.30.0.12:7946,172.30.0.13:7946,172.30.0.15:7946"]
+  n5:
+    <<: *node
+    container_name: chaos-n5
+    hostname: n5
+    networks:
+      chaos:
+        ipv4_address: 172.30.0.15
+    ports: ["18835:1883", "18085:8080"]
+    command: ["-name", "n5", "-bind", "0.0.0.0", "-advertise", "172.30.0.15", "-mqtt", ":1883", "-gossip", "7946", "-forward", ":7947", "-raft", ":7948", "-http", ":8080", "-lease", "3s", "-claim", "1s", "-seeds", "172.30.0.11:7946,172.30.0.12:7946,172.30.0.13:7946,172.30.0.14:7946"]

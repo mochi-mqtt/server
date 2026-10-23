@@ -1,0 +1,9 @@
+.git
+.github
+.idea
+.claude
+**/.claude
+cluster/chaos/bin
+cluster/chaos/chaos-logs-*.txt
+deploy/helm
+*.db

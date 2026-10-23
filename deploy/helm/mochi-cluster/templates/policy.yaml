@@ -1,0 +1,51 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+# Voluntary disruptions (node upgrades, scale downs) take out one node at a time.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mochi.fullname" . }}
+  labels: {{- include "mochi.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels: {{- include "mochi.selectorLabels" . | nindent 6 }}
+{{- end }}
+{{- if .Values.networkPolicy.enabled }}
+---
+# Peer links and raft are unauthenticated and unencrypted, so only other nodes of this
+# cluster may reach them. MQTT is open to everyone; the admin port to adminFrom.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "mochi.fullname" . }}
+  labels: {{- include "mochi.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "mochi.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {{- include "mochi.selectorLabels" . | nindent 14 }}
+      ports:
+        - { port: 7946, protocol: TCP }
+        - { port: 7946, protocol: UDP }
+        - { port: 7947, protocol: TCP }
+        - { port: 7948, protocol: TCP }
+        - { port: 8080, protocol: TCP }
+    - ports:
+        {{- if .Values.plainMQTT.enabled }}
+        - { port: 1883, protocol: TCP }
+        {{- end }}
+        {{- if .Values.tls.enabled }}
+        - { port: 8883, protocol: TCP }
+        {{- end }}
+        {{- if .Values.websocket.enabled }}
+        - { port: 1882, protocol: TCP }
+        {{- end }}
+    {{- with .Values.networkPolicy.adminFrom }}
+    - from: {{- toYaml . | nindent 8 }}
+      ports:
+        - { port: 8080, protocol: TCP }
+    {{- end }}
+{{- end }}

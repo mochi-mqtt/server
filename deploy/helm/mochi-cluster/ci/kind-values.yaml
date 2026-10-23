@@ -1,0 +1,16 @@
+# Values for the kind smoke test in CI (.github/workflows/cluster.yml).
+image:
+  repository: mochi-cluster
+  tag: ci
+  pullPolicy: Never
+service:
+  type: ClusterIP
+auth:
+  ledger:
+    auth:
+      - username: smoke
+        password: smoke-password
+        allow: true
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { memory: 512Mi }

@@ -1,0 +1,26 @@
+{{ .Values.replicaCount }} mochi cluster nodes are starting, one at a time.
+
+  kubectl -n {{ .Release.Namespace }} rollout status statefulset/{{ include "mochi.fullname" . }}
+
+Clients connect to the {{ include "mochi.fullname" . }} service ({{ .Values.service.type }}).
+{{- if eq .Values.service.type "LoadBalancer" }}
+
+  kubectl -n {{ .Release.Namespace }} get service {{ include "mochi.fullname" . }}
+{{- end }}
+
+Cluster stats from a node:
+
+  kubectl -n {{ .Release.Namespace }} port-forward pod/{{ include "mochi.fullname" . }}-0 8080
+  curl localhost:8080/stats
+{{- if .Values.auth.allowAll }}
+
+WARNING: auth.allowAll is set, so every client can connect.
+{{- end }}
+{{- if not (or .Values.cluster.gossipKey.existingSecret .Values.cluster.gossipKey.create) }}
+
+WARNING: gossip between nodes is not encrypted.
+{{- end }}
+{{- if eq (int .Values.replicaCount) 2 }}
+
+WARNING: two nodes tolerate no failures. Use 3 or 5.
+{{- end }}

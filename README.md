@@ -351,6 +351,68 @@ For more information on how the badger hook works, or how to use it, see the [ex
 
 There is also a BoltDB hook which has been deprecated in favour of Badger, but if you need it, check [examples/persistence/bolt/main.go](examples/persistence/bolt/main.go).
 
+### Clustering (experimental)
+The cluster hook joins multiple servers into one logical broker. A message published on any node reaches matching subscribers on every node, and a client can reconnect to any node and resume its session. Nodes find each other and detect failures using gossip ([hashicorp/memberlist](https://github.com/hashicorp/memberlist)). Each node announces the topic filters its clients subscribe to, and forwards each publish once to every other node with matching subscribers. A session registry, replicated with [hashicorp/raft](https://github.com/hashicorp/raft), records which node owns each client id.
+```go
+node, err := cluster.New(server, cluster.Options{
+  NodeName:    "n1",                       // must be unique in the cluster
+  BindPort:    7946,                       // gossip port
+  ForwardAddr: ":7947",                    // peer links between nodes
+  RaftAddr:    ":7948",                    // session registry
+  Seeds:       []string{"10.0.0.2:7946"}, // any existing nodes; empty only for the very first node
+})
+if err != nil {
+  log.Fatal(err)
+}
+
+err = server.AddHook(node, nil)
+if err != nil {
+  log.Fatal(err)
+}
+
+err = node.Start()
+if err != nil {
+  log.Fatal(err)
+}
+```
+Closing the server leaves the cluster.
+
+| Behaviour | Guarantee |
+|---|---|
+| Sessions | Strongly consistent. When a client connects, its node claims the client id in the registry and takes the session (subscriptions and inflight messages) over from the previous node. A client is never connected to two nodes at once. |
+| Quorum loss | A node that loses contact with a majority of nodes for `LeaseTimeout` (default 10s) disconnects its clients, and refuses new connections until contact is restored. Packets from its clients are refused as soon as the lease expires, so a node resuming from a pause can't serve stale sessions. Sessions favour consistency over availability. |
+| Unreachable previous node | If the node that held a session can't be reached, the new node waits a little longer than `LeaseTimeout`, by which time the old node has closed the connection, then confirms through the registry that nothing has claimed the session since, before admitting the client. That session's state is lost. |
+| Routes (which nodes have subscribers) | Eventually consistent. A message published just after a client subscribes on another node may not reach that client. |
+| Forwarding between nodes | Best effort. Messages are dropped if a peer's queue is full, and lost if a node fails mid-forward. QoS applies to each hop: publisher to node, and node to subscriber. |
+| Shared subscriptions | Each message reaches one group member across the cluster. A local member is preferred; otherwise a random node with a member is chosen. |
+| Will messages | Forwarded like any other publish. A delayed will is cancelled if the session resumes on any node. |
+| `$SYS` topics | Per node, never forwarded. |
+| Retained messages | Replicated to every node, and kept when the node they were published on leaves. Each change is versioned by the time and node it was published on, and the latest wins, so concurrent changes converge (node clocks should be synchronised). A node joining or reconnecting receives a snapshot of all retained messages. |
+
+Deleted retained messages are remembered for `RetainedTombstoneTTL` (default 24h), so a node which missed a deletion can't restore the message; a node rejoining after longer than that may. Storage hooks only persist retained messages published to their own node; others are recovered from the other nodes when a node rejoins.
+
+The registry is kept in memory by default. A restarted node recovers it from the other nodes, but it is lost if every node restarts at once; set `RaftLogStore`, `RaftStableStore` and `RaftSnapshotStore` (for example with [raft-boltdb](https://github.com/hashicorp/raft-boltdb)) to persist it. Only the first node of a new cluster should start without `Seeds`, as a node without seeds creates a new cluster. Traffic between nodes is not authenticated or encrypted, so keep the gossip, forward and raft ports on a private network.
+
+#### Operating a cluster
+- **Draining:** `node.Drain(ctx, cluster.DrainOptions{Rate: 100})` prepares a node for maintenance. It refuses new connections (reason code `0x9C`, use another server), hands over registry leadership, and disconnects its clients so they reconnect to other nodes, at `Rate` clients per second. Their wills are not sent, as they haven't failed. Persistent sessions left offline are then moved to other nodes. Stop the server once it returns. The example drains on `SIGTERM`, or on `POST /drain`.
+- **Metrics:** `node.Stats()` returns counters and state (forwarding, routes, retained replication, session claims and takeovers, fencing, draining, registry and per-peer link health), and `node.MetricsHandler()` serves them in the Prometheus text format, without adding a dependency.
+- **First node:** set `Bootstrap: true` on the first node, along with the other nodes as `Seeds`. It creates the cluster if no seed is reachable, and joins it otherwise, so it can be restarted with the same configuration.
+
+#### Testing under faults
+[cluster/chaos](cluster/chaos) runs a five node cluster in docker and injects real network faults while clients move sessions between nodes. The faults are partitions with `iptables` (one node, a 2/3 split, the leader, and a non-transitive bridge), delay and packet loss with `tc netem`, killing the leader, pausing a node beyond its lease, and a rolling drain and restart of every node. After each fault heals, it checks that:
+- no client was ever served by two nodes at once,
+- messages from every node reach every node exactly once,
+- retained messages converge, and
+- every session is held by exactly one node.
+```bash
+cd cluster/chaos && go test -tags chaos -v -timeout 30m
+```
+
+#### Benchmarks
+[examples/benchmark](examples/benchmark) runs standalone or, with `-cluster-name`, as a cluster node, so the two can be compared with the same settings. [examples/benchmark/loadtest](examples/benchmark/loadtest) publishes to one set of brokers and subscribes on another, reporting throughput, latency percentiles and delivery, which measures forwarding between nodes. See [cluster/BENCHMARKS.md](cluster/BENCHMARKS.md) for results.
+
+See [examples/cluster/main.go](examples/cluster/main.go) to run a cluster locally, or the [cluster](cluster) package docs for all options.
+
 ## Developing with Event Hooks
 Many hooks are available for interacting with the broker and client lifecycle. 
 The function signatures for all the hooks and `mqtt.Hook` interface can be found in [hooks.go](hooks.go).

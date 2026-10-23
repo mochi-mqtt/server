@@ -5,6 +5,7 @@
 package mqtt
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"io"
@@ -1503,14 +1504,23 @@ func TestServerProcessPacketAndNextImmediate(t *testing.T) {
 	go func() {
 		err := s.processPacket(cl, *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet)
 		require.NoError(t, err)
+		for atomic.LoadInt32(&cl.State.outboundQty) > 0 { // the write loop sends the pending packet
+			time.Sleep(time.Millisecond)
+		}
+		time.Sleep(time.Millisecond * 10)
 		_ = w.Close()
 	}()
 
 	buf, err := io.ReadAll(r)
 	require.NoError(t, err)
 	require.Equal(t, packets.TPacketData[packets.Publish].Get(packets.TPublishQos1).RawBytes, buf)
-	require.Equal(t, int64(0), atomic.LoadInt64(&s.Info.Inflight))
+
+	// The packet stays inflight until it is acknowledged, and is no longer waiting.
+	require.Equal(t, int64(1), atomic.LoadInt64(&s.Info.Inflight))
 	require.Equal(t, int32(4), cl.State.Inflight.sendQuota)
+	_, ok := cl.State.Inflight.Get(next.PacketID)
+	require.True(t, ok)
+	require.Equal(t, 0, cl.State.Inflight.PendingLen())
 }
 
 func TestServerProcessPublishAckFailure(t *testing.T) {
@@ -2117,10 +2127,11 @@ func TestPublishToClientExceedClientWritesPending(t *testing.T) {
 	require.ErrorIs(t, packets.ErrPendingClientWritesExceeded, err)
 	require.Equal(t, int32(sendQuota), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
 
-	_, err = s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, packets.Packet{FixedHeader: packets.FixedHeader{Qos: 1}})
-	require.Error(t, err)
-	require.ErrorIs(t, packets.ErrPendingClientWritesExceeded, err)
+	// A qos > 0 message isn't dropped, but waits to be sent once the client's writes drain.
+	out, err := s.publishToClient(cl, packets.Subscription{Filter: "a/b/c", Qos: 2}, packets.Packet{FixedHeader: packets.FixedHeader{Qos: 1}})
+	require.NoError(t, err)
 	require.Equal(t, int32(sendQuota), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+	require.True(t, cl.State.Inflight.IsPending(out.PacketID))
 }
 
 func TestPublishToClientServerTopicAlias(t *testing.T) {
@@ -3930,4 +3941,518 @@ func TestMinimum(t *testing.T) {
 	require.EqualValues(t, -1, minimum(-1, 0)) // negative values are not used, but included here for completeness
 	require.EqualValues(t, -1, minimum(-1, 20))
 	require.EqualValues(t, -2, minimum(-1, -2))
+}
+
+type deliverRecordingHook struct {
+	HookBase
+	onPublish    atomic.Int32
+	onPublished  atomic.Int32
+	onRetain     atomic.Int32
+	subscribed   []packets.Subscription
+	qosPublished []uint16
+}
+
+func (h *deliverRecordingHook) ID() string {
+	return "deliver-recording"
+}
+
+func (h *deliverRecordingHook) Provides(b byte) bool {
+	return bytes.Contains([]byte{OnPublish, OnPublished, OnRetainMessage, OnSubscribed, OnQosPublish}, []byte{b})
+}
+
+func (h *deliverRecordingHook) OnPublish(cl *Client, pk packets.Packet) (packets.Packet, error) {
+	h.onPublish.Add(1)
+	return pk, nil
+}
+
+func (h *deliverRecordingHook) OnPublished(cl *Client, pk packets.Packet) {
+	h.onPublished.Add(1)
+}
+
+func (h *deliverRecordingHook) OnRetainMessage(cl *Client, pk packets.Packet, r int64) {
+	h.onRetain.Add(1)
+}
+
+func (h *deliverRecordingHook) OnSubscribed(cl *Client, pk packets.Packet, reasonCodes []byte) {
+	h.subscribed = append(h.subscribed, pk.Filters...)
+}
+
+func (h *deliverRecordingHook) OnQosPublish(cl *Client, pk packets.Packet, sent int64, resends int) {
+	h.qosPublished = append(h.qosPublished, pk.PacketID)
+}
+
+// receivedWithin reports whether any bytes were written to the client within d.
+func receivedWithin(r net.Conn, d time.Duration) bool {
+	_ = r.SetReadDeadline(time.Now().Add(d))
+	buf := make([]byte, 512)
+	n, err := r.Read(buf)
+	return err == nil && n > 0
+}
+
+func TestServerDeliverLocal(t *testing.T) {
+	s := newServer()
+	hook := new(deliverRecordingHook)
+	require.NoError(t, s.AddHook(hook, nil))
+
+	cl, r, _ := newTestClient()
+	cl.ID = "cl1"
+	s.Clients.Add(cl)
+	require.True(t, s.Topics.Subscribe(cl.ID, packets.Subscription{Filter: "a/b/c"}))
+
+	pk := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+	pk.FixedHeader.Retain = true
+	s.DeliverLocal(pk, DeliverOptions{})
+
+	require.True(t, receivedWithin(r, time.Second))
+	require.Zero(t, hook.onPublish.Load())
+	require.Zero(t, hook.onPublished.Load())
+	require.Zero(t, hook.onRetain.Load())
+	require.Equal(t, 0, s.Topics.Retained.Len())
+}
+
+func TestServerDeliverLocalSharedFilters(t *testing.T) {
+	s := newServer()
+	cl1, r1, _ := newTestClient()
+	cl1.ID = "cl1"
+	cl2, r2, _ := newTestClient()
+	cl2.ID = "cl2"
+	cl3, r3, _ := newTestClient()
+	cl3.ID = "cl3"
+	s.Clients.Add(cl1)
+	s.Clients.Add(cl2)
+	s.Clients.Add(cl3)
+	require.True(t, s.Topics.Subscribe(cl1.ID, packets.Subscription{Filter: "a/b/c"}))
+	require.True(t, s.Topics.Subscribe(cl2.ID, packets.Subscription{Filter: SharePrefix + "/g1/a/b/c"}))
+	require.True(t, s.Topics.Subscribe(cl3.ID, packets.Subscription{Filter: SharePrefix + "/g2/a/b/c"}))
+
+	pk := *packets.TPacketData[packets.Publish].Get(packets.TPublishBasic).Packet
+
+	// Only the listed shared group is served, alongside non-shared subscribers.
+	s.DeliverLocal(pk, DeliverOptions{SharedFilters: map[string]bool{SharePrefix + "/g1/a/b/c": true}})
+	require.True(t, receivedWithin(r1, time.Second))
+	require.True(t, receivedWithin(r2, time.Second))
+	require.False(t, receivedWithin(r3, time.Millisecond*50))
+
+	// An empty set skips shared subscriptions entirely.
+	s.DeliverLocal(pk, DeliverOptions{SharedFilters: map[string]bool{}})
+	require.True(t, receivedWithin(r1, time.Second))
+	require.False(t, receivedWithin(r2, time.Millisecond*50))
+	require.False(t, receivedWithin(r3, time.Millisecond*50))
+}
+
+func TestServerRestoreSession(t *testing.T) {
+	s := newServer()
+	hook := new(deliverRecordingHook)
+	require.NoError(t, s.AddHook(hook, nil))
+
+	cl, err := s.RestoreSession(
+		storage.Client{
+			ID:              "mochi",
+			ProtocolVersion: 5,
+			Properties:      storage.ClientProperties{SessionExpiryInterval: 30},
+		},
+		[]storage.Subscription{
+			{Client: "mochi", Filter: "a/b/c", Qos: 1},
+			{Client: "mochi", Filter: "d/e/f", Qos: 2},
+		},
+		[]storage.Message{
+			{
+				Client:      "mochi",
+				PacketID:    7,
+				TopicName:   "a/b/c",
+				Payload:     []byte("hello"),
+				FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+			},
+		},
+	)
+	require.NoError(t, err)
+	require.True(t, cl.Closed())
+
+	got, ok := s.Clients.Get("mochi")
+	require.True(t, ok)
+	require.Same(t, cl, got)
+	require.Equal(t, 2, cl.State.Subscriptions.Len())
+	require.Contains(t, s.Topics.Subscribers("a/b/c").Subscriptions, "mochi")
+	require.Contains(t, s.Topics.Subscribers("d/e/f").Subscriptions, "mochi")
+	_, ok = cl.State.Inflight.Get(7)
+	require.True(t, ok)
+	require.EqualValues(t, 2, atomic.LoadInt64(&s.Info.Subscriptions))
+	require.EqualValues(t, 1, atomic.LoadInt64(&s.Info.Inflight))
+	require.Len(t, hook.subscribed, 2)
+	require.Equal(t, []uint16{7}, hook.qosPublished)
+
+	// A client connecting with the same id inherits the restored session.
+	next, _, _ := newTestClient()
+	next.ID = "mochi"
+	next.Properties.ProtocolVersion = 5
+	require.True(t, s.inheritClientSession(packets.Packet{Connect: packets.ConnectParams{ClientIdentifier: "mochi"}}, next))
+	require.Equal(t, 2, next.State.Subscriptions.Len())
+	require.Equal(t, 1, next.State.Inflight.Len())
+}
+
+func TestServerRestoreSessionReplacesOffline(t *testing.T) {
+	s := newServer()
+	s.loadClients([]storage.Client{{
+		ID:              "mochi",
+		ProtocolVersion: 5,
+		Properties:      storage.ClientProperties{SessionExpiryInterval: 30},
+	}})
+	s.loadSubscriptions([]storage.Subscription{{Client: "mochi", Filter: "stale/filter"}})
+	require.Contains(t, s.Topics.Subscribers("stale/filter").Subscriptions, "mochi")
+
+	_, err := s.RestoreSession(
+		storage.Client{ID: "mochi", ProtocolVersion: 5},
+		[]storage.Subscription{{Client: "mochi", Filter: "a/b/c"}},
+		nil,
+	)
+	require.NoError(t, err)
+	require.NotContains(t, s.Topics.Subscribers("stale/filter").Subscriptions, "mochi")
+	require.Contains(t, s.Topics.Subscribers("a/b/c").Subscriptions, "mochi")
+}
+
+func TestServerRestoreSessionActive(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	s.Clients.Add(cl)
+
+	_, err := s.RestoreSession(storage.Client{ID: cl.ID}, nil, nil)
+	require.ErrorIs(t, err, ErrSessionActive)
+
+	got, ok := s.Clients.Get(cl.ID)
+	require.True(t, ok)
+	require.Same(t, cl, got)
+}
+
+func TestServerCancelDelayedWill(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	cl.Properties.Will = Will{
+		Flag:              1,
+		TopicName:         "a/b/c",
+		Payload:           []byte("bye"),
+		WillDelayInterval: 30,
+	}
+	s.Clients.Add(cl)
+
+	s.sendLWT(cl)
+	require.Equal(t, 1, s.loop.willDelayed.Len())
+	require.True(t, s.CancelDelayedWill(cl.ID))
+	require.Equal(t, 0, s.loop.willDelayed.Len())
+	require.False(t, s.CancelDelayedWill(cl.ID))
+}
+
+func TestEstablishConnectionSessionAdmitRefused(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		code byte
+	}{
+		{name: "error", err: errTestHook, code: packets.Err3ServerUnavailable.Code},
+		{name: "code", err: packets.ErrBadUsernameOrPassword, code: packets.Err3NotAuthorized.Code},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newServer()
+			require.NoError(t, s.AddHook(&admitHook{err: tt.err}, nil))
+			defer s.Close()
+
+			r, w := net.Pipe()
+			o := make(chan error)
+			go func() {
+				o <- s.EstablishConnection("tcp", r)
+			}()
+
+			go func() {
+				_, _ = w.Write(packets.TPacketData[packets.Connect].Get(packets.TConnectClean).RawBytes)
+			}()
+
+			recv := make(chan []byte)
+			go func() {
+				buf, _ := io.ReadAll(w)
+				recv <- buf
+			}()
+
+			require.ErrorIs(t, <-o, tt.err)
+			_ = r.Close()
+			ack := <-recv
+			require.Len(t, ack, 4)
+			require.Equal(t, packets.Connack<<4, ack[0])
+			require.Equal(t, tt.code, ack[3])
+			require.Equal(t, 0, s.Clients.Len())
+			require.EqualValues(t, 0, atomic.LoadInt64(&s.Info.ClientsConnected))
+		})
+	}
+}
+
+type extractRecordingHook struct {
+	HookBase
+	unsubscribed []packets.Subscription
+	dropped      []uint16
+}
+
+func (h *extractRecordingHook) ID() string {
+	return "extract-recording"
+}
+
+func (h *extractRecordingHook) Provides(b byte) bool {
+	return bytes.Contains([]byte{OnUnsubscribed, OnQosDropped}, []byte{b})
+}
+
+func (h *extractRecordingHook) OnUnsubscribed(cl *Client, pk packets.Packet) {
+	h.unsubscribed = append(h.unsubscribed, pk.Filters...)
+}
+
+func (h *extractRecordingHook) OnQosDropped(cl *Client, pk packets.Packet) {
+	h.dropped = append(h.dropped, pk.PacketID)
+}
+
+func TestServerExtractSession(t *testing.T) {
+	s := newServer()
+	hook := new(extractRecordingHook)
+	require.NoError(t, s.AddHook(hook, nil))
+
+	cl, r, _ := newTestClient()
+	go func() { _, _ = io.Copy(io.Discard, r) }() // receive the disconnect
+	cl.ops.info = s.Info
+	cl.ops.hooks = s.hooks
+	cl.ID = "mochi"
+	cl.Properties.ProtocolVersion = 5
+	cl.Properties.Props.SessionExpiryInterval = 30
+	cl.Properties.Will = Will{Flag: 1, TopicName: "will", Payload: []byte("bye"), WillDelayInterval: 10}
+	s.Clients.Add(cl)
+
+	for _, sub := range []packets.Subscription{{Filter: "a/b", Qos: 1}, {Filter: "c/#", Qos: 2, NoLocal: true}} {
+		require.True(t, s.Topics.Subscribe(cl.ID, sub))
+		cl.State.Subscriptions.Add(sub.Filter, sub)
+		atomic.AddInt64(&s.Info.Subscriptions, 1)
+	}
+	require.True(t, cl.State.Inflight.Set(packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+		PacketID:    3,
+		TopicName:   "a/b",
+		Payload:     []byte("pending"),
+	}))
+	atomic.AddInt64(&s.Info.Inflight, 1)
+	s.loop.willDelayed.Add(cl.ID, packets.Packet{TopicName: "will"})
+
+	c, subs, inflight, ok := s.ExtractSession("mochi")
+	require.True(t, ok)
+	require.Equal(t, "mochi", c.ID)
+	require.EqualValues(t, 30, c.Properties.SessionExpiryInterval)
+	require.Len(t, subs, 2)
+	require.Len(t, inflight, 1)
+	require.Equal(t, uint16(3), inflight[0].PacketID)
+	require.Equal(t, []byte("pending"), inflight[0].Payload)
+
+	// The session is gone from this server, without leaving anything behind.
+	require.True(t, cl.IsTakenOver())
+	require.True(t, cl.Closed())
+	require.ErrorIs(t, cl.StopCause(), packets.ErrSessionTakenOver)
+	require.Zero(t, atomic.LoadUint32(&cl.Properties.Will.Flag))
+	_, ok = s.Clients.Get("mochi")
+	require.False(t, ok)
+	require.Empty(t, s.Topics.Subscribers("a/b").Subscriptions)
+	require.Equal(t, 0, s.loop.willDelayed.Len())
+	require.EqualValues(t, 0, atomic.LoadInt64(&s.Info.Subscriptions))
+	require.EqualValues(t, 0, atomic.LoadInt64(&s.Info.Inflight))
+	require.Len(t, hook.unsubscribed, 2)
+	require.Equal(t, []uint16{3}, hook.dropped)
+
+	// The extracted state restores on another server.
+	s2 := newServer()
+	restored, err := s2.RestoreSession(c, subs, inflight)
+	require.NoError(t, err)
+	require.Equal(t, 2, restored.State.Subscriptions.Len())
+	sub, ok := restored.State.Subscriptions.Get("c/#")
+	require.True(t, ok)
+	require.True(t, sub.NoLocal)
+	require.Equal(t, byte(2), sub.Qos)
+	pk, ok := restored.State.Inflight.Get(3)
+	require.True(t, ok)
+	require.Equal(t, []byte("pending"), pk.Payload)
+}
+
+func TestServerExtractSessionKeepsImmediateWill(t *testing.T) {
+	s := newServer()
+	cl, r, _ := newTestClient()
+	go func() { _, _ = io.Copy(io.Discard, r) }() // receive the disconnect
+	cl.Properties.Will = Will{Flag: 1, TopicName: "will", Payload: []byte("bye")}
+	s.Clients.Add(cl)
+
+	_, _, _, ok := s.ExtractSession(cl.ID)
+	require.True(t, ok)
+	require.EqualValues(t, 1, atomic.LoadUint32(&cl.Properties.Will.Flag)) // sent as with a local takeover
+}
+
+func TestServerExtractSessionMissing(t *testing.T) {
+	s := newServerWithInlineClient()
+	_, _, _, ok := s.ExtractSession("nobody")
+	require.False(t, ok)
+
+	_, _, _, ok = s.ExtractSession(InlineClientId)
+	require.False(t, ok)
+}
+
+// publishReader reads the publish packets written to a test client in the background, as
+// the client's writes block until they are read.
+type publishReader chan uint16
+
+func newPublishReader(t *testing.T, r net.Conn) publishReader {
+	ch := make(publishReader, 1024)
+	go func() {
+		br := bufio.NewReader(r)
+		for {
+			hb, err := br.ReadByte()
+			if err != nil {
+				return
+			}
+			var fh packets.FixedHeader
+			if fh.Decode(hb) != nil {
+				return
+			}
+			length, _, err := packets.DecodeLength(br)
+			if err != nil {
+				return
+			}
+			body := make([]byte, length)
+			if _, err := io.ReadFull(br, body); err != nil {
+				return
+			}
+			if fh.Type == packets.Publish {
+				pk := packets.Packet{FixedHeader: fh, ProtocolVersion: 4}
+				if pk.PublishDecode(body) == nil {
+					ch <- pk.PacketID
+				}
+			}
+		}
+	}()
+	return ch
+}
+
+// next returns the ids of the next n publishes.
+func (p publishReader) next(t *testing.T, n int) []uint16 {
+	t.Helper()
+	var ids []uint16
+	for len(ids) < n {
+		select {
+		case id := <-p:
+			ids = append(ids, id)
+		case <-time.After(time.Second * 2):
+			t.Fatalf("received %d of %d publishes", len(ids), n)
+		}
+	}
+	return ids
+}
+
+// none checks that no publish arrives for a moment.
+func (p publishReader) none(t *testing.T) {
+	t.Helper()
+	select {
+	case id := <-p:
+		t.Fatalf("unexpected publish %d", id)
+	case <-time.After(time.Millisecond * 50):
+	}
+}
+
+func qos1Packet(topic string) packets.Packet {
+	return packets.Packet{
+		FixedHeader: packets.FixedHeader{Type: packets.Publish, Qos: 1},
+		TopicName:   topic,
+		Payload:     []byte("x"),
+	}
+}
+
+func TestServerSendQuotaNotLeaked(t *testing.T) {
+	s := newServer()
+	cl, r, _ := newTestClient()
+	cl.ops = &ops{options: s.Options, info: s.Info, hooks: s.hooks, log: s.Log}
+	cl.ID = "slow"
+	cl.State.Inflight.ResetSendQuota(2)
+	s.Clients.Add(cl)
+	pubs := newPublishReader(t, r)
+	require.True(t, s.Topics.Subscribe(cl.ID, packets.Subscription{Filter: "q", Qos: 1}))
+
+	// Five messages for a client which may only have two unacknowledged.
+	for i := 0; i < 5; i++ {
+		s.publishToSubscribers(qos1Packet("q"))
+	}
+	sent := pubs.next(t, 2)
+	pubs.none(t)
+	require.Equal(t, 3, cl.State.Inflight.PendingLen())
+	require.Zero(t, atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+
+	// Each acknowledgement frees quota for the next waiting message, in order.
+	for len(sent) < 5 {
+		require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Puback}, PacketID: sent[len(sent)-2]}))
+		sent = append(sent, pubs.next(t, 1)...)
+	}
+	require.Equal(t, []uint16{1, 2, 3, 4, 5}, sent)
+
+	for _, id := range sent[3:] {
+		require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Puback}, PacketID: id}))
+	}
+
+	// Every message was acknowledged, and the full quota is available again.
+	require.Zero(t, cl.State.Inflight.Len())
+	require.Equal(t, int32(2), atomic.LoadInt32(&cl.State.Inflight.sendQuota))
+	require.Zero(t, atomic.LoadInt64(&s.Info.Inflight))
+}
+
+func TestServerPendingKeepsOrderAndExpiry(t *testing.T) {
+	s := newServer()
+	cl, r, _ := newTestClient()
+	cl.ops = &ops{options: s.Options, info: s.Info, hooks: s.hooks, log: s.Log}
+	cl.ID = "ordered"
+	cl.State.Inflight.ResetSendQuota(1)
+	s.Clients.Add(cl)
+	pubs := newPublishReader(t, r)
+	require.True(t, s.Topics.Subscribe(cl.ID, packets.Subscription{Filter: "q", Qos: 1}))
+
+	expiring := qos1Packet("q")
+	expiring.Expiry = time.Now().Unix() + 3600
+	s.publishToSubscribers(qos1Packet("q"))
+	s.publishToSubscribers(expiring)
+	s.publishToSubscribers(qos1Packet("q"))
+	require.Equal(t, []uint16{1}, pubs.next(t, 1))
+	pubs.none(t)
+
+	// The waiting message keeps its own expiry.
+	waiting, ok := cl.State.Inflight.Get(2)
+	require.True(t, ok)
+	require.Equal(t, expiring.Expiry, waiting.Expiry)
+
+	// Quota frees up while messages wait: the next message still goes after them.
+	s.publishToSubscribers(qos1Packet("q"))
+	require.Equal(t, 3, cl.State.Inflight.PendingLen())
+	for _, want := range []uint16{2, 3, 4} {
+		require.NoError(t, s.processPacket(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Puback}, PacketID: want - 1}))
+		require.Equal(t, []uint16{want}, pubs.next(t, 1))
+	}
+}
+
+func TestServerPendingResentOnReconnect(t *testing.T) {
+	s := newServer()
+	cl, _, _ := newTestClient()
+	cl.ops = &ops{options: s.Options, info: s.Info, hooks: s.hooks, log: s.Log}
+	cl.ID = "returning"
+	cl.State.Inflight.ResetSendQuota(1)
+	s.Clients.Add(cl)
+	require.True(t, s.Topics.Subscribe(cl.ID, packets.Subscription{Filter: "q", Qos: 1}))
+	cl.Stop(packets.ErrServerShuttingDown) // offline: messages wait for it
+
+	for i := 0; i < 3; i++ {
+		s.publishToSubscribers(qos1Packet("q"))
+	}
+	require.Equal(t, 3, cl.State.Inflight.PendingLen())
+
+	// The client reconnects and inherits the session, which resends everything.
+	next, r, _ := newTestClient()
+	pubs := newPublishReader(t, r)
+	next.ops = cl.ops
+	next.ID = "returning"
+	next.Properties.ProtocolVersion = 4
+	require.True(t, s.inheritClientSession(packets.Packet{Connect: packets.ConnectParams{ClientIdentifier: "returning"}}, next))
+	go func() { _ = next.ResendInflightMessages(true) }()
+	require.ElementsMatch(t, []uint16{1, 2, 3}, pubs.next(t, 3))
+	require.Zero(t, next.State.Inflight.PendingLen())
+	require.Equal(t, 3, next.State.Inflight.Len()) // awaiting acknowledgement
 }

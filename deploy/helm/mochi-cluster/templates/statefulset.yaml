@@ -1,0 +1,164 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mochi.fullname" . }}
+  labels: {{- include "mochi.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "mochi.peers" . }}
+  replicas: {{ .Values.replicaCount }}
+  # Nodes start one at a time, and a rolling update replaces one node at a time, waiting
+  # for it to rejoin and become ready. The session registry is kept in memory, so the
+  # cluster must never lose every node at once.
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: {{- include "mochi.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mochi.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/auth: {{ toYaml .Values.auth | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      {{- if .Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: {{ .Values.topologySpread.zone }}
+          labelSelector:
+            matchLabels: {{- include "mochi.selectorLabels" . | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: {{ .Values.topologySpread.hostname }}
+          labelSelector:
+            matchLabels: {{- include "mochi.selectorLabels" . | nindent 14 }}
+      {{- end }}
+      containers:
+        - name: mochi
+          image: {{ include "mochi.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          env:
+            - name: MQTT_NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: MQTT_ADVERTISE
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            - name: MQTT_SEEDS
+              value: "{{ include "mochi.peers" . }}.{{ .Release.Namespace }}.svc:7946"
+            - name: MQTT_BOOTSTRAP
+              value: auto   # only the -0 node may create a new cluster
+            - name: MQTT_JOIN_TIMEOUT
+              value: {{ .Values.cluster.joinTimeout | quote }}
+            {{- with .Values.cluster.leaseTimeout }}
+            - { name: MQTT_LEASE_TIMEOUT, value: {{ . | quote }} }
+            {{- end }}
+            {{- with .Values.cluster.claimTimeout }}
+            - { name: MQTT_CLAIM_TIMEOUT, value: {{ . | quote }} }
+            {{- end }}
+            {{- if or .Values.cluster.gossipKey.existingSecret .Values.cluster.gossipKey.create }}
+            - name: MQTT_GOSSIP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mochi.gossipSecret" . }}
+                  key: {{ .Values.cluster.gossipKey.secretKey }}
+            {{- end }}
+            {{- if include "mochi.useAuthFile" . }}
+            - { name: MQTT_AUTH_FILE, value: /etc/mochi/auth/{{ .Values.auth.secretKey }} }
+            {{- else }}
+            - { name: MQTT_ALLOW_ALL, value: "true" }
+            {{- end }}
+            - { name: MQTT_LISTEN, value: {{ ternary ":1883" "" .Values.plainMQTT.enabled | quote }} }
+            {{- if .Values.tls.enabled }}
+            - { name: MQTT_TLS_CERT_FILE, value: /etc/mochi/tls/tls.crt }
+            - { name: MQTT_TLS_KEY_FILE, value: /etc/mochi/tls/tls.key }
+            {{- end }}
+            {{- if .Values.websocket.enabled }}
+            - { name: MQTT_WS_LISTEN, value: ":1882" }
+            {{- end }}
+            - { name: MQTT_DRAIN_ON_STOP, value: {{ .Values.drain.onStop | quote }} }
+            - { name: MQTT_DRAIN_RATE, value: {{ .Values.drain.rate | quote }} }
+            - { name: MQTT_DRAIN_TIMEOUT, value: {{ .Values.drain.timeout | quote }} }
+            - { name: MQTT_LOG_LEVEL, value: {{ .Values.log.level | quote }} }
+            - { name: MQTT_LOG_FORMAT, value: {{ .Values.log.format | quote }} }
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            {{- if .Values.plainMQTT.enabled }}
+            - { name: mqtt, containerPort: 1883 }
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - { name: mqtt-tls, containerPort: 8883 }
+            {{- end }}
+            {{- if .Values.websocket.enabled }}
+            - { name: mqtt-ws, containerPort: 1882 }
+            {{- end }}
+            - { name: gossip-tcp, containerPort: 7946, protocol: TCP }
+            - { name: gossip-udp, containerPort: 7946, protocol: UDP }
+            - { name: forward, containerPort: 7947 }
+            - { name: raft, containerPort: 7948 }
+            - { name: admin, containerPort: 8080 }
+          # The admin server starts once the node has joined, which may take up to the join
+          # timeout.
+          startupProbe:
+            httpGet: { path: /livez, port: admin }
+            periodSeconds: 2
+            failureThreshold: 90
+          # Ready while the node is in contact with the session registry and not draining,
+          # so the load balancer only sends clients to nodes which can accept them.
+          readinessProbe:
+            httpGet: { path: /healthz, port: admin }
+            periodSeconds: 2
+            failureThreshold: 2
+          # Restart only a node which has stopped serving. A node cut off from the registry
+          # is taken out of the load balancer by readiness, not restarted.
+          livenessProbe:
+            httpGet: { path: /livez, port: admin }
+            periodSeconds: 10
+            failureThreshold: 6
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if include "mochi.useAuthFile" . }}
+            - { name: auth, mountPath: /etc/mochi/auth, readOnly: true }
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - { name: tls, mountPath: /etc/mochi/tls, readOnly: true }
+            {{- end }}
+      volumes:
+        {{- if include "mochi.useAuthFile" . }}
+        - name: auth
+          secret: { secretName: {{ include "mochi.authSecret" . }} }
+        {{- end }}
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret: { secretName: {{ .Values.tls.secretName }} }
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

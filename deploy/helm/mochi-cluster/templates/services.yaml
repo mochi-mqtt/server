@@ -1,0 +1,50 @@
+# Nodes find each other through this headless service. It lists nodes which aren't ready
+# yet, as a node can't become ready until it has joined the others.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mochi.peers" . }}
+  labels: {{- include "mochi.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector: {{- include "mochi.selectorLabels" . | nindent 4 }}
+  ports:
+    - { name: gossip-tcp, port: 7946, targetPort: gossip-tcp, protocol: TCP }
+    - { name: gossip-udp, port: 7946, targetPort: gossip-udp, protocol: UDP }
+    - { name: forward, port: 7947, targetPort: forward }
+    - { name: raft, port: 7948, targetPort: raft }
+    - { name: admin, port: 8080, targetPort: admin }
+---
+# Clients connect through this service. Any node accepts any client, and sessions move
+# with the client, so no session affinity is needed.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mochi.fullname" . }}
+  labels: {{- include "mochi.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- if .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}
+  {{- with .Values.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if .Values.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  {{- end }}
+  selector: {{- include "mochi.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- if .Values.plainMQTT.enabled }}
+    - { name: mqtt, port: {{ .Values.service.ports.mqtt }}, targetPort: mqtt }
+    {{- end }}
+    {{- if .Values.tls.enabled }}
+    - { name: mqtt-tls, port: {{ .Values.service.ports.tls }}, targetPort: mqtt-tls }
+    {{- end }}
+    {{- if .Values.websocket.enabled }}
+    - { name: mqtt-ws, port: {{ .Values.service.ports.ws }}, targetPort: mqtt-ws }
+    {{- end }}

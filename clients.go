@@ -151,6 +151,7 @@ type ClientState struct {
 	outbound        chan *packets.Packet // queue for pending outbound packets
 	endOnce         sync.Once            // only end once
 	isTakenOver     atomic.Bool          // used to identify orphaned clients
+	corked          atomic.Bool          // more packets from the client are already buffered, so writes are held to send together
 	packetID        uint32               // the current highest packetID
 	open            context.Context      // indicate that the client is open for packet exchange
 	cancelOpen      context.CancelFunc   // cancel function for open context
@@ -306,6 +307,7 @@ func (cl *Client) ResendInflightMessages(force bool) error {
 		return nil
 	}
 
+	cl.State.Inflight.ClearPending() // every inflight packet is (re)sent
 	for _, tk := range cl.State.Inflight.GetAll(false) {
 		if tk.FixedHeader.Type == packets.Publish {
 			tk.FixedHeader.Dup = true // [MQTT-3.3.1-1] [MQTT-3.3.1-3]
@@ -382,11 +384,29 @@ func (cl *Client) Read(packetHandler ReadFn) error {
 			return err
 		}
 
+		// While more packets from the client are already buffered, hold replies (such as
+		// acknowledgements) to write them together once those packets are processed.
+		cl.State.corked.Store(cl.Net.bconn.Buffered() > 0)
+
 		err = packetHandler(cl, pk) // Process inbound packet.
 		if err != nil {
 			return err
 		}
+
+		if cl.Net.bconn.Buffered() == 0 {
+			if err := cl.uncork(); err != nil {
+				return err
+			}
+		}
 	}
+}
+
+// uncork writes any replies held while processing buffered packets.
+func (cl *Client) uncork() error {
+	cl.State.corked.Store(false)
+	cl.Lock()
+	defer cl.Unlock()
+	return cl.flushOutbuf()
 }
 
 // Stop instructs the client to shut down all processing goroutines and disconnect.
@@ -602,7 +622,7 @@ func (cl *Client) WritePacket(pk packets.Packet) error {
 	n, err := func() (int64, error) {
 		cl.Lock()
 		defer cl.Unlock()
-		if len(cl.State.outbound) == 0 {
+		if len(cl.State.outbound) == 0 && !cl.State.corked.Load() {
 			if cl.Net.outbuf == nil {
 				return buf.WriteTo(cl.Net.Conn)
 			}

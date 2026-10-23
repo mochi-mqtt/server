@@ -1,0 +1,29 @@
+{{- if .Values.metrics.podMonitoring.enabled }}
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "mochi.fullname" . }}
+  labels: {{- include "mochi.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {{- include "mochi.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: admin
+      path: /metrics
+      interval: {{ .Values.metrics.podMonitoring.interval }}
+{{- end }}
+{{- if .Values.metrics.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "mochi.fullname" . }}
+  labels: {{- include "mochi.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {{- include "mochi.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: admin
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+{{- end }}

@@ -41,6 +41,7 @@ var (
 	ErrConnectionClosed       = errors.New("connection not open")                                      // connection is closed
 	ErrInlineClientNotEnabled = errors.New("please set Options.InlineClient=true to use this feature") // inline client is not enabled by default
 	ErrOptionsUnreadable      = errors.New("unable to read options from bytes")
+	ErrSessionActive          = errors.New("client session is active") // a connected client with the same id already exists
 )
 
 // Capabilities indicates the capabilities and features provided by the server.
@@ -449,6 +450,19 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 		return packets.ErrBadUsernameOrPassword
 	}
 
+	if err := s.hooks.OnSessionAdmit(cl, pk); err != nil {
+		reason := packets.ErrServerUnavailable
+		var code packets.Code
+		if errors.As(err, &code) && code.Code >= packets.ErrUnspecifiedError.Code {
+			reason = code
+		}
+
+		if err := s.SendConnack(cl, reason, false, nil); err != nil {
+			return fmt.Errorf("invalid connection send ack: %w", err)
+		}
+		return err
+	}
+
 	atomic.AddInt64(&s.Info.ClientsConnected, 1)
 	defer atomic.AddInt64(&s.Info.ClientsConnected, -1)
 
@@ -716,16 +730,7 @@ func (s *Server) processPacket(cl *Client, pk packets.Packet) error {
 		return err
 	}
 
-	if cl.State.Inflight.Len() > 0 && atomic.LoadInt32(&cl.State.Inflight.sendQuota) > 0 {
-		next, ok := cl.State.Inflight.NextImmediate()
-		if ok {
-			_ = cl.WritePacket(next)
-			if ok := cl.State.Inflight.Delete(next.PacketID); ok {
-				atomic.AddInt64(&s.Info.Inflight, -1)
-			}
-			cl.State.Inflight.DecreaseSendQuota()
-		}
-	}
+	s.sendPending(cl) // acknowledgements may have freed send quota
 
 	return nil
 }
@@ -981,8 +986,30 @@ func (s *Server) retainMessage(cl *Client, pk packets.Packet) {
 	atomic.StoreInt64(&s.Info.Retained, int64(s.Topics.Retained.Len()))
 }
 
+// DeliverOptions controls how DeliverLocal fans a packet out to local subscribers.
+type DeliverOptions struct {
+	// SharedFilters, if not nil, limits shared subscription delivery to the listed
+	// shared filters (e.g. "$share/group/a/b"). A non-nil empty map skips shared
+	// subscriptions entirely. A nil map serves every matching shared group.
+	SharedFilters map[string]bool
+}
+
+// DeliverLocal publishes a packet to the subscribers of this server only. Unlike Publish,
+// it does not trigger the OnPublish or OnPublished hooks and does not retain the message.
+// It is intended for packets which have already been processed elsewhere, such as messages
+// forwarded from another node in a cluster.
+func (s *Server) DeliverLocal(pk packets.Packet, opts DeliverOptions) {
+	s.deliverToSubscribers(pk, opts.SharedFilters)
+}
+
 // publishToSubscribers publishes a publish packet to all subscribers with matching topic filters.
 func (s *Server) publishToSubscribers(pk packets.Packet) {
+	s.deliverToSubscribers(pk, nil)
+}
+
+// deliverToSubscribers publishes a publish packet to all subscribers with matching topic filters,
+// limiting shared subscription delivery to sharedFilters if it is not nil.
+func (s *Server) deliverToSubscribers(pk packets.Packet, sharedFilters map[string]bool) {
 	if pk.Ignore {
 		return
 	}
@@ -999,6 +1026,14 @@ func (s *Server) publishToSubscribers(pk packets.Packet) {
 	}
 
 	subscribers := s.Topics.Subscribers(pk.TopicName)
+	if sharedFilters != nil {
+		for filter := range subscribers.Shared {
+			if !sharedFilters[filter] {
+				delete(subscribers.Shared, filter)
+			}
+		}
+	}
+
 	if len(subscribers.Shared) > 0 {
 		subscribers = s.hooks.OnSelectSubscribers(subscribers, pk)
 		if len(subscribers.SharedSelected) == 0 {
@@ -1078,18 +1113,28 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 		}
 
 		out.PacketID = uint16(i) // [MQTT-2.2.1-4]
-		sentQuota := atomic.LoadInt32(&cl.State.Inflight.sendQuota)
+		offline := cl.Net.Conn == nil || cl.Closed()
+
+		// A message waits to be sent if the client's send quota is exhausted, if older
+		// messages are already waiting (so it isn't sent out of order), or if the client
+		// is offline. It stays inflight either way, so it is never lost [MQTT-4.3.2-3].
+		if offline || !cl.State.Inflight.hasSendQuota() || cl.State.Inflight.PendingLen() > 0 {
+			if ok := cl.State.Inflight.SetPending(out); ok {
+				atomic.AddInt64(&s.Info.Inflight, 1)
+				s.hooks.OnQosPublish(cl, out, out.Created, 0)
+			}
+
+			if offline {
+				return out, packets.CodeDisconnect
+			}
+			s.sendPending(cl)
+			return out, nil
+		}
 
 		if ok := cl.State.Inflight.Set(out); ok { // [MQTT-4.3.2-3] [MQTT-4.3.3-3]
 			atomic.AddInt64(&s.Info.Inflight, 1)
 			s.hooks.OnQosPublish(cl, out, out.Created, 0)
 			cl.State.Inflight.DecreaseSendQuota()
-		}
-
-		if sentQuota == 0 && atomic.LoadInt32(&cl.State.Inflight.maximumSendQuota) > 0 {
-			out.Expiry = -1
-			cl.State.Inflight.Set(out)
-			return out, nil
 		}
 	}
 
@@ -1101,16 +1146,46 @@ func (s *Server) publishToClient(cl *Client, sub packets.Subscription, pk packet
 	case cl.State.outbound <- &out:
 		atomic.AddInt32(&cl.State.outboundQty, 1)
 	default:
+		if out.FixedHeader.Qos > 0 {
+			// The client's writes are backed up, so send the message once they drain.
+			cl.State.Inflight.SetPending(out)
+			cl.State.Inflight.IncreaseSendQuota()
+			return out, nil
+		}
+
 		atomic.AddInt64(&s.Info.MessagesDropped, 1)
 		cl.ops.hooks.OnPublishDropped(cl, pk)
-		if out.FixedHeader.Qos > 0 {
-			cl.State.Inflight.Delete(out.PacketID) // packet was dropped due to irregular circumstances, so rollback inflight.
-			cl.State.Inflight.IncreaseSendQuota()
-		}
 		return out, packets.ErrPendingClientWritesExceeded
 	}
 
 	return out, nil
+}
+
+// sendPending queues a client's waiting qos > 0 messages for sending, in order, for as
+// long as its send quota and outbound queue allow.
+func (s *Server) sendPending(cl *Client) {
+	if cl.State.Inflight.PendingLen() == 0 || cl.Net.Conn == nil || cl.Closed() {
+		return
+	}
+
+	cl.State.Inflight.drainMu.Lock()
+	defer cl.State.Inflight.drainMu.Unlock()
+
+	for cl.State.Inflight.hasSendQuota() {
+		next, ok := cl.State.Inflight.TakePending()
+		if !ok {
+			return
+		}
+
+		select {
+		case cl.State.outbound <- &next:
+			atomic.AddInt32(&cl.State.outboundQty, 1)
+			cl.State.Inflight.DecreaseSendQuota()
+		default:
+			cl.State.Inflight.requeue(next) // still backed up; try again later
+			return
+		}
+	}
 }
 
 func (s *Server) publishRetainedToClient(cl *Client, sub packets.Subscription, existed bool) {
@@ -1624,14 +1699,7 @@ func (s *Server) loadServerInfo(v system.Info) {
 // loadSubscriptions restores subscriptions from the datastore.
 func (s *Server) loadSubscriptions(v []storage.Subscription) {
 	for _, sub := range v {
-		sb := packets.Subscription{
-			Filter:            sub.Filter,
-			RetainHandling:    sub.RetainHandling,
-			Qos:               sub.Qos,
-			RetainAsPublished: sub.RetainAsPublished,
-			NoLocal:           sub.NoLocal,
-			Identifier:        sub.Identifier,
-		}
+		sb := subscriptionFromStore(sub)
 		if s.Topics.Subscribe(sub.Client, sb) {
 			if cl, ok := s.Clients.Get(sub.Client); ok {
 				cl.State.Subscriptions.Add(sub.Filter, sb)
@@ -1643,24 +1711,7 @@ func (s *Server) loadSubscriptions(v []storage.Subscription) {
 // loadClients restores clients from the datastore.
 func (s *Server) loadClients(v []storage.Client) {
 	for _, c := range v {
-		cl := s.NewClient(nil, c.Listener, c.ID, false)
-		cl.Properties.Username = c.Username
-		cl.Properties.Clean = c.Clean
-		cl.Properties.ProtocolVersion = c.ProtocolVersion
-		cl.Properties.Props = packets.Properties{
-			SessionExpiryInterval:     c.Properties.SessionExpiryInterval,
-			SessionExpiryIntervalFlag: c.Properties.SessionExpiryIntervalFlag,
-			AuthenticationMethod:      c.Properties.AuthenticationMethod,
-			AuthenticationData:        c.Properties.AuthenticationData,
-			RequestProblemInfoFlag:    c.Properties.RequestProblemInfoFlag,
-			RequestProblemInfo:        c.Properties.RequestProblemInfo,
-			RequestResponseInfo:       c.Properties.RequestResponseInfo,
-			ReceiveMaximum:            c.Properties.ReceiveMaximum,
-			TopicAliasMaximum:         c.Properties.TopicAliasMaximum,
-			User:                      c.Properties.User,
-			MaximumPacketSize:         c.Properties.MaximumPacketSize,
-		}
-		cl.Properties.Will = Will(c.Will)
+		cl := s.clientFromStore(c)
 
 		// cancel the context, update cl.State such as disconnected time and stopCause.
 		cl.Stop(packets.ErrServerShuttingDown)
@@ -1674,6 +1725,218 @@ func (s *Server) loadClients(v []storage.Client) {
 			s.Clients.Add(cl)
 		}
 	}
+}
+
+// clientFromStore returns a new offline client populated from a stored client.
+func (s *Server) clientFromStore(c storage.Client) *Client {
+	cl := s.NewClient(nil, c.Listener, c.ID, false)
+	cl.Properties.Username = c.Username
+	cl.Properties.Clean = c.Clean
+	cl.Properties.ProtocolVersion = c.ProtocolVersion
+	cl.Properties.Props = packets.Properties{
+		SessionExpiryInterval:     c.Properties.SessionExpiryInterval,
+		SessionExpiryIntervalFlag: c.Properties.SessionExpiryIntervalFlag,
+		AuthenticationMethod:      c.Properties.AuthenticationMethod,
+		AuthenticationData:        c.Properties.AuthenticationData,
+		RequestProblemInfoFlag:    c.Properties.RequestProblemInfoFlag,
+		RequestProblemInfo:        c.Properties.RequestProblemInfo,
+		RequestResponseInfo:       c.Properties.RequestResponseInfo,
+		ReceiveMaximum:            c.Properties.ReceiveMaximum,
+		TopicAliasMaximum:         c.Properties.TopicAliasMaximum,
+		User:                      c.Properties.User,
+		MaximumPacketSize:         c.Properties.MaximumPacketSize,
+	}
+	cl.Properties.Will = Will(c.Will)
+	return cl
+}
+
+// subscriptionFromStore converts a stored subscription to a packet subscription.
+func subscriptionFromStore(sub storage.Subscription) packets.Subscription {
+	return packets.Subscription{
+		Filter:            sub.Filter,
+		RetainHandling:    sub.RetainHandling,
+		Qos:               sub.Qos,
+		RetainAsPublished: sub.RetainAsPublished,
+		NoLocal:           sub.NoLocal,
+		Identifier:        sub.Identifier,
+	}
+}
+
+// RestoreSession recreates an offline client session from its stored state, so that a
+// client connecting with the same id will inherit it. It is intended for moving a session
+// from another node in a cluster. The OnSubscribed and OnQosPublish hooks are called for the
+// restored subscriptions and inflight messages, so that other hooks (such as storage) can
+// record them. Any offline session with the same id is replaced; if a client with the same
+// id is connected, ErrSessionActive is returned.
+func (s *Server) RestoreSession(c storage.Client, subs []storage.Subscription, inflight []storage.Message) (*Client, error) {
+	if existing, ok := s.Clients.Get(c.ID); ok {
+		if !existing.Closed() {
+			return nil, ErrSessionActive
+		}
+
+		existing.ClearInflights()
+		s.UnsubscribeClient(existing)
+		s.Clients.Delete(existing.ID)
+	}
+
+	cl := s.clientFromStore(c)
+	cl.Stop(packets.ErrSessionTakenOver)
+	s.Clients.Add(cl)
+
+	filters := make([]packets.Subscription, 0, len(subs))
+	reasonCodes := make([]byte, 0, len(subs))
+	for _, v := range subs {
+		sub := subscriptionFromStore(v)
+		if s.Topics.Subscribe(cl.ID, sub) {
+			atomic.AddInt64(&s.Info.Subscriptions, 1)
+		}
+		cl.State.Subscriptions.Add(sub.Filter, sub)
+		filters = append(filters, sub)
+		reasonCodes = append(reasonCodes, sub.Qos)
+	}
+
+	if len(filters) > 0 {
+		s.hooks.OnSubscribed(cl, packets.Packet{
+			FixedHeader: packets.FixedHeader{Type: packets.Subscribe},
+			Filters:     filters,
+		}, reasonCodes)
+	}
+
+	for _, v := range inflight {
+		pk := v.ToPacket()
+		if cl.State.Inflight.Set(pk) {
+			atomic.AddInt64(&s.Info.Inflight, 1)
+			s.hooks.OnQosPublish(cl, pk, pk.Created, 0)
+		}
+	}
+
+	return cl, nil
+}
+
+// ExtractSession removes a client's session from the server and returns its state, so that
+// it can be restored elsewhere with RestoreSession. It is intended for moving a session to
+// another node in a cluster. If the client is connected, it is disconnected with
+// ErrSessionTakenOver. Its subscriptions and inflight messages are removed with the
+// OnUnsubscribed and OnQosDropped hooks, and any delayed LWT message is cancelled, as the
+// session is resuming elsewhere [MQTT-3.1.3-9]. ok is false if there is no such session.
+func (s *Server) ExtractSession(id string) (c storage.Client, subs []storage.Subscription, inflight []storage.Message, ok bool) {
+	cl, ok := s.Clients.Get(id)
+	if !ok || cl.Net.Inline {
+		return c, nil, nil, false
+	}
+
+	c = clientToStore(cl)
+	filters := cl.State.Subscriptions.GetAll()
+	for _, sub := range filters {
+		subs = append(subs, storage.Subscription{
+			Client:            id,
+			Filter:            sub.Filter,
+			Identifier:        sub.Identifier,
+			RetainHandling:    sub.RetainHandling,
+			Qos:               sub.Qos,
+			RetainAsPublished: sub.RetainAsPublished,
+			NoLocal:           sub.NoLocal,
+		})
+	}
+
+	for _, pk := range cl.State.Inflight.GetAll(false) {
+		inflight = append(inflight, messageToStore(id, pk))
+	}
+
+	// Mark the session as taken over before disconnecting, so that the client's own
+	// disconnect handling doesn't clean up the session concurrently.
+	cl.State.isTakenOver.Store(true)
+	if cl.Properties.Will.WillDelayInterval > 0 {
+		atomic.StoreUint32(&cl.Properties.Will.Flag, 0) // a delayed will is not sent if the session resumes [MQTT-3.1.3-9]
+	}
+	if !cl.Closed() {
+		_ = s.DisconnectClient(cl, packets.ErrSessionTakenOver) // [MQTT-3.1.4-3]
+	}
+	s.loop.willDelayed.Delete(id)
+
+	removed := make([]packets.Subscription, 0, len(filters))
+	for filter, sub := range filters {
+		cl.State.Subscriptions.Delete(filter)
+		if s.Topics.Unsubscribe(filter, id) {
+			atomic.AddInt64(&s.Info.Subscriptions, -1)
+		}
+		removed = append(removed, sub)
+	}
+
+	if len(removed) > 0 {
+		s.hooks.OnUnsubscribed(cl, packets.Packet{FixedHeader: packets.FixedHeader{Type: packets.Unsubscribe}, Filters: removed})
+	}
+
+	cl.ClearInflights()
+	s.Clients.Delete(id)
+
+	return c, subs, inflight, true
+}
+
+// clientToStore converts a client to a stored client.
+func clientToStore(cl *Client) storage.Client {
+	props := cl.Properties.Props.Copy(false)
+	return storage.Client{
+		ID:              cl.ID,
+		T:               storage.ClientKey,
+		Remote:          cl.Net.Remote,
+		Listener:        cl.Net.Listener,
+		Username:        cl.Properties.Username,
+		Clean:           cl.Properties.Clean,
+		ProtocolVersion: cl.Properties.ProtocolVersion,
+		Properties: storage.ClientProperties{
+			SessionExpiryInterval:     props.SessionExpiryInterval,
+			SessionExpiryIntervalFlag: props.SessionExpiryIntervalFlag,
+			AuthenticationMethod:      props.AuthenticationMethod,
+			AuthenticationData:        props.AuthenticationData,
+			RequestProblemInfo:        props.RequestProblemInfo,
+			RequestProblemInfoFlag:    props.RequestProblemInfoFlag,
+			RequestResponseInfo:       props.RequestResponseInfo,
+			ReceiveMaximum:            props.ReceiveMaximum,
+			TopicAliasMaximum:         props.TopicAliasMaximum,
+			User:                      props.User,
+			MaximumPacketSize:         props.MaximumPacketSize,
+		},
+		Will: storage.ClientWill(cl.Properties.Will),
+	}
+}
+
+// messageToStore converts an inflight packet to a stored message.
+func messageToStore(client string, pk packets.Packet) storage.Message {
+	props := pk.Properties.Copy(false)
+	return storage.Message{
+		T:           storage.InflightKey,
+		Client:      client,
+		Origin:      pk.Origin,
+		PacketID:    pk.PacketID,
+		FixedHeader: pk.FixedHeader,
+		TopicName:   pk.TopicName,
+		Payload:     pk.Payload,
+		Created:     pk.Created,
+		Properties: storage.MessageProperties{
+			PayloadFormat:          props.PayloadFormat,
+			PayloadFormatFlag:      props.PayloadFormatFlag,
+			MessageExpiryInterval:  props.MessageExpiryInterval,
+			ContentType:            props.ContentType,
+			ResponseTopic:          props.ResponseTopic,
+			CorrelationData:        props.CorrelationData,
+			SubscriptionIdentifier: props.SubscriptionIdentifier,
+			TopicAlias:             props.TopicAlias,
+			User:                   props.User,
+		},
+	}
+}
+
+// CancelDelayedWill cancels any delayed LWT message pending for a client, returning true
+// if one was pending. It is intended for sessions which have resumed elsewhere, such as
+// on another node in a cluster [MQTT-3.1.3-9].
+func (s *Server) CancelDelayedWill(id string) bool {
+	if _, ok := s.loop.willDelayed.Get(id); !ok {
+		return false
+	}
+
+	s.loop.willDelayed.Delete(id)
+	return true
 }
 
 // loadInflight restores inflight messages from the datastore.

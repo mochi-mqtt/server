@@ -7,6 +7,7 @@ package mqtt
 import (
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mochi-mqtt/server/v2/packets"
 	"github.com/stretchr/testify/require"
@@ -196,4 +197,151 @@ func TestNextImmediate(t *testing.T) {
 
 	_, ok = cl.State.Inflight.NextImmediate()
 	require.False(t, ok)
+}
+
+func TestInflightNextImmediateConcurrentWrites(t *testing.T) {
+	i := NewInflights()
+	stop := make(chan struct{})
+	writer, reader := make(chan struct{}), make(chan struct{})
+
+	go func() {
+		defer close(writer)
+		for n := 0; n < 20000; n++ {
+			i.Set(packets.Packet{PacketID: uint16(n%100 + 1), Expiry: -1})
+		}
+	}()
+
+	go func() {
+		defer close(reader)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_, _ = i.NextImmediate()
+			}
+		}
+	}()
+
+	select {
+	case <-writer:
+	case <-time.After(time.Second * 20):
+		t.Fatal("NextImmediate deadlocked with a concurrent writer")
+	}
+
+	close(stop)
+	select {
+	case <-reader:
+	case <-time.After(time.Second * 5):
+		t.Fatal("NextImmediate deadlocked with a concurrent writer")
+	}
+}
+
+func TestInflightPendingOrder(t *testing.T) {
+	i := NewInflights()
+	i.Set(packets.Packet{PacketID: 1})
+	for _, id := range []uint16{5, 3, 9} {
+		require.True(t, i.SetPending(packets.Packet{PacketID: id, Expiry: 100}))
+	}
+	require.False(t, i.SetPending(packets.Packet{PacketID: 3, Expiry: 100})) // already pending
+	require.Equal(t, 3, i.PendingLen())
+	require.True(t, i.IsPending(5))
+	require.False(t, i.IsPending(1))
+
+	next, ok := i.NextImmediate() // peeks, without taking
+	require.True(t, ok)
+	require.Equal(t, uint16(5), next.PacketID)
+	require.Equal(t, []packets.Packet{{PacketID: 5, Expiry: 100}, {PacketID: 3, Expiry: 100}, {PacketID: 9, Expiry: 100}}, i.GetAll(true))
+
+	// Taking a packet marks it as sent, but keeps it inflight with its expiry.
+	pk, ok := i.TakePending()
+	require.True(t, ok)
+	require.Equal(t, packets.Packet{PacketID: 5, Expiry: 100}, pk)
+	require.False(t, i.IsPending(5))
+	got, ok := i.Get(5)
+	require.True(t, ok)
+	require.Equal(t, int64(100), got.Expiry)
+
+	// Deleted packets are no longer pending; requeued ones go back to the front.
+	require.True(t, i.Delete(3))
+	i.requeue(pk)
+	pk, _ = i.TakePending()
+	require.Equal(t, uint16(5), pk.PacketID)
+	pk, _ = i.TakePending()
+	require.Equal(t, uint16(9), pk.PacketID)
+	_, ok = i.TakePending()
+	require.False(t, ok)
+	require.Equal(t, 3, i.Len()) // 1, 5 and 9 are still awaiting acknowledgement
+}
+
+func TestInflightPendingLegacyExpiry(t *testing.T) {
+	i := NewInflights()
+	i.Set(packets.Packet{PacketID: 1, Expiry: -1}) // the original pending marker
+	require.True(t, i.IsPending(1))
+
+	pk, ok := i.TakePending()
+	require.True(t, ok)
+	require.Zero(t, pk.Expiry)
+	got, _ := i.Get(1)
+	require.Zero(t, got.Expiry)
+}
+
+func TestInflightClearPendingAndClone(t *testing.T) {
+	i := NewInflights()
+	i.SetPending(packets.Packet{PacketID: 2})
+	i.SetPending(packets.Packet{PacketID: 1, Expiry: -1})
+
+	c := i.Clone()
+	require.Equal(t, []packets.Packet{{PacketID: 2}, {PacketID: 1, Expiry: -1}}, c.GetAll(true))
+
+	i.ClearPending()
+	require.Zero(t, i.PendingLen())
+	got, _ := i.Get(1)
+	require.Zero(t, got.Expiry)
+	require.Equal(t, 2, c.PendingLen()) // the clone is independent
+}
+
+func TestInflightPendingCompaction(t *testing.T) {
+	i := NewInflights()
+	for n := 0; n < 10000; n++ {
+		id := uint16(n%500 + 1)
+		i.SetPending(packets.Packet{PacketID: id})
+		if n%3 == 0 {
+			i.Delete(id)
+		}
+		if n%7 == 0 {
+			i.TakePending()
+		}
+	}
+
+	// The queue stays bounded, and only live pending packets come out, each once.
+	require.LessOrEqual(t, len(i.pending), 64+i.PendingLen()*4)
+	seen := map[uint16]bool{}
+	for {
+		pk, ok := i.TakePending()
+		if !ok {
+			break
+		}
+		require.False(t, seen[pk.PacketID])
+		seen[pk.PacketID] = true
+		_, ok = i.Get(pk.PacketID)
+		require.True(t, ok)
+	}
+	require.Zero(t, i.PendingLen())
+}
+
+// BenchmarkInflightNextImmediate finds the next pending packet among many inflight, as the
+// server does after each packet from a client which is behind on acknowledgements.
+func BenchmarkInflightNextImmediate(b *testing.B) {
+	i := NewInflights()
+	for id := 1; id <= 8192; id++ {
+		i.Set(packets.Packet{PacketID: uint16(id), Created: int64(id)})
+	}
+	i.Set(packets.Packet{PacketID: 9000, Expiry: -1})
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		_, _ = i.NextImmediate()
+	}
 }

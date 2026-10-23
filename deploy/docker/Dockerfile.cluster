@@ -1,0 +1,26 @@
+# Builds cmd/cluster into a small, non-root image. Build from the repository root:
+#
+#   docker build -f deploy/docker/Dockerfile.cluster -t mochi-cluster .
+#
+# The binary is cross-compiled on the build platform, so multi-arch builds
+# (docker buildx --platform linux/amd64,linux/arm64) don't need emulation.
+ARG GO_VERSION=1.27
+
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS builder
+ARG TARGETOS TARGETARCH VERSION=dev
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/mochi-cluster ./cmd/cluster
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /out/mochi-cluster /mochi-cluster
+# distroless nonroot, numeric so that kubernetes runAsNonRoot can verify it
+USER 65532:65532
+EXPOSE 1883 8883 7946/tcp 7946/udp 7947 7948 8080
+ENTRYPOINT ["/mochi-cluster"]

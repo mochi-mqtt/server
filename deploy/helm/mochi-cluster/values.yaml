@@ -1,0 +1,120 @@
+# Nodes in the cluster. Use an odd number, 3 or 5: the session registry needs a majority of
+# nodes to accept connections (3 tolerate one failure, 5 tolerate two).
+replicaCount: 3
+
+image:
+  repository: ghcr.io/dgduncan/mochi-cluster
+  tag: ""          # defaults to the chart's appVersion
+  digest: ""       # sha256:..., used instead of the tag when set (CI deploys by digest)
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+cluster:
+  leaseTimeout: ""   # default 10s
+  claimTimeout: ""   # default 5s
+  joinTimeout: 2m    # how long a node waits for another node to appear before failing
+  gossipKey:
+    # Gossip between nodes is encrypted with this key (base64 of 16, 24 or 32 bytes).
+    # Use an existing secret, or set create to generate one on install and keep it on
+    # upgrades. Generation uses helm's lookup, so tools which render the chart without a
+    # cluster (helm template, Argo CD) would generate a new key on every render: use
+    # existingSecret with those.
+    existingSecret: ""
+    secretKey: gossip-key
+    create: true
+
+auth:
+  # Clients are checked against an auth ledger (see hooks/auth/ledger.go), from an
+  # existing secret holding auth.yaml, or the ledger below rendered into a secret.
+  existingSecret: ""
+  secretKey: auth.yaml
+  ledger: {}
+  #  auth:
+  #    - username: device
+  #      password: change-me
+  #      allow: true
+  #  acl:
+  #    - username: device
+  #      filters:
+  #        "devices/#": 3
+  # Allow every client without a ledger. For testing only.
+  allowAll: false
+
+tls:
+  # Serve mqtt over tls on port 8883 from a kubernetes.io/tls secret, such as one issued by
+  # cert-manager. Renewed certificates are picked up without a restart.
+  enabled: false
+  secretName: ""
+
+websocket:
+  enabled: false
+
+# Plain tcp mqtt on 1883. Disable it to accept only tls or websocket clients.
+plainMQTT:
+  enabled: true
+
+drain:
+  onStop: true     # move clients to other nodes before a node stops
+  rate: 0          # clients disconnected per second, 0 for all at once
+  timeout: 60s
+
+# Must be longer than drain.timeout, or kubernetes kills the node mid-drain.
+terminationGracePeriodSeconds: 90
+
+log:
+  level: info
+  format: json
+
+extraEnv: []
+
+service:
+  type: LoadBalancer
+  annotations: {}
+  # Vultr:  service.beta.kubernetes.io/vultr-loadbalancer-protocol: tcp
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  externalTrafficPolicy: ""   # Local keeps client source addresses
+  ports:
+    mqtt: 1883
+    tls: 8883
+    ws: 1882
+
+networkPolicy:
+  enabled: true
+  # Sources allowed to reach the admin port (metrics, stats and draining). Other nodes and
+  # kubelet probes are always allowed. Defaults to pods in the release's namespace.
+  adminFrom:
+    - podSelector: {}
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+metrics:
+  podMonitoring:    # GKE managed service for prometheus
+    enabled: false
+    interval: 30s
+  serviceMonitor:   # prometheus-operator
+    enabled: false
+    interval: 30s
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+topologySpread:
+  enabled: true
+  zone: ScheduleAnyway       # spread across zones where the cloud has them
+  hostname: ScheduleAnyway   # and across nodes
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
