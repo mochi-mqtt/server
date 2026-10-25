@@ -956,8 +956,11 @@ func (pk *Packet) SubscribeDecode(buf []byte) error {
 		}
 
 		if pk.ProtocolVersion == 5 {
-			sub.decode(buf[offset])
-			offset += 1
+			option, offset, err = decodeByte(buf, offset)
+			if err != nil {
+				return ErrMalformedQos
+			}
+			sub.decode(option)
 		} else {
 			option, offset, err = decodeByte(buf, offset)
 			if err != nil {
