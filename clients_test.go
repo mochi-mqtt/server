@@ -12,7 +12,9 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -129,6 +131,45 @@ func TestClientsGetByListener(t *testing.T) {
 	require.NotEmpty(t, clients)
 	require.Equal(t, 1, len(clients))
 	require.Equal(t, "tcp1", clients[0].Net.Listener)
+}
+
+// GetByListener must not take the read lock twice: a writer waiting between the two read locks
+// blocks the second one, and both wait forever (seen when Server.Close ran while a client was
+// being attached or removed).
+func TestClientsGetByListenerWithConcurrentWriters(t *testing.T) {
+	cl := NewClients()
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			id := strconv.Itoa(i % 8)
+			cl.Add(&Client{ID: id, State: ClientState{open: context.Background()}, Net: ClientConnection{Listener: "tcp1"}})
+			cl.Delete(id)
+		}
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100000; i++ {
+			cl.GetByListener("tcp1")
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("GetByListener deadlocked with a concurrent writer")
+	}
+	close(stop)
+	wg.Wait()
 }
 
 func TestNewClient(t *testing.T) {
