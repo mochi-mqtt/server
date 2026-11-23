@@ -565,7 +565,7 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 
 	if expire {
 		unlock := s.sessions.lock(cl.ID)
-		if !cl.IsTakenOver() {
+		if current, ok := s.Clients.Get(cl.ID); ok && current == cl { // not taken over, nor dropped
 			cl.ClearInflights()
 			s.UnsubscribeClient(cl)
 			s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
@@ -586,27 +586,31 @@ func (s *Server) takeOver(pk packets.Packet, cl *Client) bool {
 	return sessionPresent
 }
 
-// DropSession ends the session cl holds, or that the client which took it over now holds, so that the client
-// id's next connection starts without one (Session Present 0). The holder is disconnected with reason, its
-// subscriptions and inflight messages are removed, and so is its entry in Clients. It returns the client whose
-// session was dropped, or nil when no session descended from cl is held any more.
+// DropSession ends the session cl holds, or that a client which took it over without a clean start now holds,
+// so that the client id's next connection starts without one (Session Present 0). The holder is marked dropped
+// (IsDropped), its subscriptions and inflight messages are removed, and so is its entry in Clients; then it is
+// disconnected with reason. It returns the client whose session was dropped, or nil when none descended from cl
+// is held any more: one dropped already, expired, or replaced by a clean start.
 //
-// A storage hook that can no longer keep a client's messages uses it to make the loss visible: the client
-// reconnects without its session instead of with an incomplete one. Unlike calling Clients.Delete, it cannot
-// remove a connection that took the session over, since the check and the removal run under the lock that a
-// takeover holds. It must not be called from a hook that runs during a takeover or an expiry of the same client
-// id (OnUnsubscribed, OnClientExpired), which hold that lock.
+// The check and the removal run under the lock a takeover holds, so a connection that takes the session over at
+// the same time is never removed without its session. That lock is also held while a takeover, an expiry or a
+// drop runs its hooks (OnUnsubscribed, OnQosDropped, OnClientExpired), so DropSession must not be called from
+// those hooks, for any client.
 func (s *Server) DropSession(cl *Client, reason packets.Code) *Client {
 	unlock := s.sessions.lock(cl.ID)
 	holder, ok := s.Clients.Get(cl.ID)
-	if !ok || holder != cl && !cl.IsTakenOver() {
+	c := cl
+	for ok && c != nil && c != holder {
+		c = c.State.inheritor.Load()
+	}
+	if !ok || c == nil {
 		unlock()
 		return nil
 	}
+	holder.State.dropped.Store(true)
 	s.Clients.Delete(cl.ID)
 	s.UnsubscribeClient(holder)
 	holder.ClearInflights()
-	holder.State.isTakenOver.Store(true) // after UnsubscribeClient, which skips a taken-over client's topics; its own disconnect then leaves Clients alone
 	unlock()
 	_ = s.DisconnectClient(holder, reason)
 	return holder
@@ -711,6 +715,7 @@ func (s *Server) inheritClientSession(pk packets.Packet, cl *Client) bool {
 			return false                           // [MQTT-3.2.2-3]
 		}
 
+		existing.State.inheritor.Store(cl)
 		existing.State.isTakenOver.Store(true)
 		if existing.State.Inflight.Len() > 0 {
 			cl.State.Inflight = existing.State.Inflight.Clone() // [MQTT-3.1.2-5]
@@ -1968,7 +1973,7 @@ func (s *Server) clearExpiredClients(dt int64) {
 		if disconnected+int64(expire) < dt {
 			// A client that reconnected since GetAll has taken the session over and is not expired.
 			unlock := s.sessions.lock(id)
-			if current, ok := s.Clients.Get(id); ok && current == client && !client.IsTakenOver() {
+			if current, ok := s.Clients.Get(id); ok && current == client {
 				s.hooks.OnClientExpired(client)
 				s.Clients.Delete(id) // [MQTT-4.1.0-2]
 			}
