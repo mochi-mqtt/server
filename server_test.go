@@ -5250,3 +5250,29 @@ func TestDropSessionRacingATakeover(t *testing.T) {
 		}
 	}
 }
+
+// A takeover does not hold the session lock while it tells a connection that does not read that it was taken
+// over, so other client ids on the same stripe are not held up.
+func TestTakeOverDoesNotLockWhileItDisconnects(t *testing.T) {
+	s := newServer()
+	existing, _, _ := newTestClient() // a net.Pipe nobody reads
+	existing.ID = "mochi"
+	existing.Properties.ProtocolVersion = 5
+	existing.State.Keepalive = 0
+	s.Clients.Add(existing)
+
+	go s.takeOver(packets.Packet{Connect: packets.ConnectParams{ClientIdentifier: "mochi"}}, sessionTestClient("mochi"))
+	time.Sleep(100 * time.Millisecond)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		unlock := s.sessions.lock("mochi") // the same stripe, by definition
+		unlock()
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the session lock was held while the takeover wrote to a connection that does not read")
+	}
+}

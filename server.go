@@ -579,6 +579,11 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 // takeOver gives cl the session of an existing client with its id, unless pk asks for a clean start, and adds cl
 // to Clients, under the session lock of its id. It reports whether a session was taken over.
 func (s *Server) takeOver(pk packets.Packet, cl *Client) bool {
+	// The existing connection is told before the lock is taken: a peer that does not read would hold the write,
+	// and with it every client id on the same stripe. inheritClientSession's own disconnect then finds it closed.
+	if existing, ok := s.Clients.Get(cl.ID); ok {
+		_ = s.DisconnectClient(existing, packets.ErrSessionTakenOver) // [MQTT-3.1.4-3]
+	}
 	unlock := s.sessions.lock(cl.ID)
 	defer unlock()
 	sessionPresent := s.inheritClientSession(pk, cl)
