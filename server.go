@@ -1492,6 +1492,9 @@ func (s *Server) processPubcomp(cl *Client, pk packets.Packet) error {
 
 // processSubscribe processes a Subscribe packet.
 func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
+	if cl.IsTakenOver() || cl.IsDropped() {
+		return nil // its session is another connection's now, or gone, and shares its client id in Topics
+	}
 	pk = s.hooks.OnSubscribe(cl, pk)
 	code := packets.CodeSuccess
 	if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok && pki.FixedHeader.Type == packets.Pubrec {
@@ -1573,6 +1576,9 @@ func (s *Server) processSubscribe(cl *Client, pk packets.Packet) error {
 
 // processUnsubscribe processes an unsubscribe packet.
 func (s *Server) processUnsubscribe(cl *Client, pk packets.Packet) error {
+	if cl.IsTakenOver() || cl.IsDropped() {
+		return nil // its session is another connection's now, or gone, and shares its client id in Topics
+	}
 	code := packets.CodeSuccess
 	if pki, ok := cl.State.Inflight.Get(pk.PacketID); ok && pki.FixedHeader.Type == packets.Pubrec {
 		code = packets.ErrPacketIdentifierInUse
