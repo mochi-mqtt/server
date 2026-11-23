@@ -171,6 +171,9 @@ type ClientState struct {
 	outboundQty     int32                // number of messages currently in the outbound queue
 	Keepalive       uint16               // the number of seconds the connection can wait
 	ServerKeepalive bool                 // keepalive was set by the server
+
+	inheritor atomic.Pointer[Client] // the client that took this one's session over, if it did not start clean
+	dropped   atomic.Bool            // the session was ended by Server.DropSession
 }
 
 // newClient returns a new instance of Client. This is almost exclusively used by Server
@@ -483,6 +486,12 @@ func (cl *Client) Closed() bool {
 
 func (cl *Client) IsTakenOver() bool {
 	return cl.State.isTakenOver.Load()
+}
+
+// IsDropped returns true if the client's session was ended by Server.DropSession. It is already true in the hooks
+// the drop runs, such as OnUnsubscribed.
+func (cl *Client) IsDropped() bool {
+	return cl.State.dropped.Load()
 }
 
 // ReadFixedHeader reads in the values of the next packet's fixed header.
