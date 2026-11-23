@@ -810,9 +810,10 @@ func (s *Server) processPacket(cl *Client, pk packets.Packet) error {
 		next, ok := cl.State.Inflight.NextImmediate()
 		if ok {
 			_ = cl.WritePacket(next)
-			if ok := cl.State.Inflight.Delete(next.PacketID); ok {
-				atomic.AddInt64(&s.Info.Inflight, -1)
-			}
+			// The delivery waits for its acknowledgement like any other, and is sent again if the session
+			// resumes before it comes: it is no longer queued, but it stays in flight.
+			next.Expiry = 0
+			cl.State.Inflight.Set(next)
 			cl.State.Inflight.DecreaseSendQuota()
 		}
 	}
