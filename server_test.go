@@ -5135,3 +5135,97 @@ func TestDisconnectClientClosesAV3ClientUnderPassiveDisconnect(t *testing.T) {
 	_ = r.Close()
 	_ = w.Close()
 }
+
+func sessionTestClient(id string) *Client {
+	cl, _, _ := newTestClient()
+	cl.Net.Conn = nil
+	cl.ID = id
+	cl.Properties.ProtocolVersion = 5
+	return cl
+}
+
+func TestDropSession(t *testing.T) {
+	s := newServer()
+	cl := sessionTestClient("mochi")
+	sub := packets.Subscription{Filter: "a/b/c", Qos: 1}
+	cl.State.Subscriptions.Add(sub.Filter, sub)
+	s.Topics.Subscribe(cl.ID, sub)
+	cl.State.Inflight.Set(packets.Packet{PacketID: 1})
+	s.Clients.Add(cl)
+
+	require.Equal(t, cl, s.DropSession(cl, packets.ErrImplementationSpecificError))
+	_, ok := s.Clients.Get("mochi")
+	require.False(t, ok)
+	require.Equal(t, 0, cl.State.Inflight.Len())
+	require.Empty(t, s.Topics.Subscribers("a/b/c").Subscriptions)
+	require.True(t, cl.IsTakenOver())
+	require.True(t, cl.Closed())
+
+	// Nothing is left to drop.
+	require.Nil(t, s.DropSession(cl, packets.ErrImplementationSpecificError))
+}
+
+func TestDropSessionFollowsATakeover(t *testing.T) {
+	s := newServer()
+	existing := sessionTestClient("mochi")
+	existing.State.Inflight.Set(packets.Packet{PacketID: 1})
+	s.Clients.Add(existing)
+	cl := sessionTestClient("mochi")
+	require.True(t, s.takeOver(packets.Packet{Connect: packets.ConnectParams{ClientIdentifier: "mochi"}}, cl))
+	require.Equal(t, 1, cl.State.Inflight.Len())
+
+	// The session cl took over is the one dropped, not the stale client.
+	require.Equal(t, cl, s.DropSession(existing, packets.ErrImplementationSpecificError))
+	_, ok := s.Clients.Get("mochi")
+	require.False(t, ok)
+	require.Equal(t, 0, cl.State.Inflight.Len())
+}
+
+func TestDropSessionLeavesAnUnrelatedClient(t *testing.T) {
+	s := newServer()
+	old := sessionTestClient("mochi") // its session expired: it is in neither Clients nor taken over
+	cl := sessionTestClient("mochi")
+	s.Clients.Add(cl)
+
+	require.Nil(t, s.DropSession(old, packets.ErrImplementationSpecificError))
+	current, ok := s.Clients.Get("mochi")
+	require.True(t, ok)
+	require.Equal(t, cl, current)
+}
+
+// A drop racing a takeover never leaves Clients holding a dropped session, and never removes the connection
+// that took a session over without dropping that session.
+func TestDropSessionRacingATakeover(t *testing.T) {
+	for i := 0; i < 2000; i++ {
+		s := newServer()
+		existing := sessionTestClient("mochi")
+		existing.State.Inflight.Set(packets.Packet{PacketID: 1})
+		s.Clients.Add(existing)
+		cl := sessionTestClient("mochi")
+
+		var dropped *Client
+		var present bool
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() { defer wg.Done(); dropped = s.DropSession(existing, packets.ErrImplementationSpecificError) }()
+		go func() {
+			defer wg.Done()
+			present = s.takeOver(packets.Packet{Connect: packets.ConnectParams{ClientIdentifier: "mochi"}}, cl)
+		}()
+		wg.Wait()
+
+		current, ok := s.Clients.Get("mochi")
+		switch dropped {
+		case existing: // dropped first: cl started without a session
+			require.False(t, present)
+			require.True(t, ok)
+			require.Equal(t, cl, current)
+		case cl: // taken over first: the session went with cl, and was dropped there
+			require.True(t, present)
+			require.False(t, ok)
+			require.Equal(t, 0, cl.State.Inflight.Len())
+		default:
+			t.Fatalf("iteration %d: dropped %v", i, dropped)
+		}
+	}
+}
