@@ -5255,7 +5255,8 @@ func TestDropSessionRacingATakeover(t *testing.T) {
 // over, so other client ids on the same stripe are not held up.
 func TestTakeOverDoesNotLockWhileItDisconnects(t *testing.T) {
 	s := newServer()
-	existing, _, _ := newTestClient() // a net.Pipe nobody reads
+	existing, r, _ := newTestClient() // a net.Pipe nobody reads
+	t.Cleanup(func() { _ = r.Close() })
 	existing.ID = "mochi"
 	existing.Properties.ProtocolVersion = 5
 	existing.State.Keepalive = 0
@@ -5275,4 +5276,24 @@ func TestTakeOverDoesNotLockWhileItDisconnects(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the session lock was held while the takeover wrote to a connection that does not read")
 	}
+}
+
+// A dropped client whose session expires on disconnect leaves the connection that came after it alone.
+func TestExpiredSessionRemovalLeavesASuccessor(t *testing.T) {
+	s := newServer()
+	old := sessionTestClient("mochi")
+	s.Clients.Add(old)
+	require.Equal(t, old, s.DropSession(old, packets.ErrImplementationSpecificError))
+
+	cl := sessionTestClient("mochi")
+	sub := packets.Subscription{Filter: "a/b/c", Qos: 1}
+	require.False(t, s.takeOver(packets.Packet{Connect: packets.ConnectParams{ClientIdentifier: "mochi"}}, cl))
+	cl.State.Subscriptions.Add(sub.Filter, sub)
+	s.Topics.Subscribe(cl.ID, sub)
+
+	s.removeExpiredSession(old)
+	current, ok := s.Clients.Get("mochi")
+	require.True(t, ok)
+	require.Equal(t, cl, current)
+	require.NotEmpty(t, s.Topics.Subscribers("a/b/c").Subscriptions)
 }

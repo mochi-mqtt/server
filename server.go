@@ -564,16 +564,22 @@ func (s *Server) attachClient(cl *Client, listener string) error {
 	s.hooks.OnDisconnect(cl, err, expire)
 
 	if expire {
-		unlock := s.sessions.lock(cl.ID)
-		if current, ok := s.Clients.Get(cl.ID); ok && current == cl { // not taken over, nor dropped
-			cl.ClearInflights()
-			s.UnsubscribeClient(cl)
-			s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
-		}
-		unlock()
+		s.removeExpiredSession(cl)
 	}
 
 	return err
+}
+
+// removeExpiredSession removes the session of a client whose session expires on disconnect, if the client still
+// holds it: one taken over or dropped is left to its holder.
+func (s *Server) removeExpiredSession(cl *Client) {
+	unlock := s.sessions.lock(cl.ID)
+	defer unlock()
+	if current, ok := s.Clients.Get(cl.ID); ok && current == cl {
+		cl.ClearInflights()
+		s.UnsubscribeClient(cl)
+		s.Clients.Delete(cl.ID) // [MQTT-4.1.0-2] ![MQTT-3.1.2-23]
+	}
 }
 
 // takeOver gives cl the session of an existing client with its id, unless pk asks for a clean start, and adds cl

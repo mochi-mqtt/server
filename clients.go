@@ -157,22 +157,23 @@ type Will struct {
 
 // ClientState tracks the state of the client.
 type ClientState struct {
-	TopicAliases    TopicAliases           // a map of topic aliases
-	stopCause       atomic.Value           // reason for stopping
-	Inflight        *Inflight              // a map of in-flight qos messages
-	Subscriptions   *Subscriptions         // a map of the subscription filters a client maintains
-	disconnected    int64                  // the time the client disconnected in unix time, for calculating expiry
-	outbound        chan *packets.Packet   // queue for pending outbound packets
-	endOnce         sync.Once              // only end once
-	isTakenOver     atomic.Bool            // used to identify orphaned clients
-	inheritor       atomic.Pointer[Client] // the client that took this one's session over, if it did not start clean
-	dropped         atomic.Bool            // the session was ended by Server.DropSession
-	packetID        uint32                 // the current highest packetID
-	open            context.Context        // indicate that the client is open for packet exchange
-	cancelOpen      context.CancelFunc     // cancel function for open context
-	outboundQty     int32                  // number of messages currently in the outbound queue
-	Keepalive       uint16                 // the number of seconds the connection can wait
-	ServerKeepalive bool                   // keepalive was set by the server
+	TopicAliases    TopicAliases         // a map of topic aliases
+	stopCause       atomic.Value         // reason for stopping
+	Inflight        *Inflight            // a map of in-flight qos messages
+	Subscriptions   *Subscriptions       // a map of the subscription filters a client maintains
+	disconnected    int64                // the time the client disconnected in unix time, for calculating expiry
+	outbound        chan *packets.Packet // queue for pending outbound packets
+	endOnce         sync.Once            // only end once
+	isTakenOver     atomic.Bool          // used to identify orphaned clients
+	packetID        uint32               // the current highest packetID
+	open            context.Context      // indicate that the client is open for packet exchange
+	cancelOpen      context.CancelFunc   // cancel function for open context
+	outboundQty     int32                // number of messages currently in the outbound queue
+	Keepalive       uint16               // the number of seconds the connection can wait
+	ServerKeepalive bool                 // keepalive was set by the server
+
+	inheritor atomic.Pointer[Client] // the client that took this one's session over, if it did not start clean
+	dropped   atomic.Bool            // the session was ended by Server.DropSession
 }
 
 // newClient returns a new instance of Client. This is almost exclusively used by Server
